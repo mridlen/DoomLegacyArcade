@@ -3012,7 +3012,7 @@ restart_command:
 #ifdef LAUNCHER
 fatal_error_action:
     //---------------------------------------------------- LAUNCHER display
-    if ( fatal_error || init_sequence == 1 || ((init_sequence == 0) && (myargc < 2) ))
+    if ( fatal_error || init_sequence == 1 )
     {
         // [WDJ] Invoke built-in launcher command line
         if ( fatal_error )
