@@ -4972,12 +4972,8 @@ void M_QuitResponse(int ch)
 static
 void M_QuitDOOM(int choice)
 {
-  // We pick index 0 which is language sensitive,
-  //  or one at random, between 1 and maximum number.
-  snprintf(msgtmp, MSGTMP_LEN,
-           text[DOSY_NUM], text[ QUITMSG_NUM+(gametic%NUM_QUITMESSAGES)]);
-  msgtmp[MSGTMP_LEN-1] = '\0';
-  M_StartMessage( msgtmp, M_QuitResponse, MM_YESNO);
+  // Arcade cabinet: quit immediately, skip the Y/N confirmation prompt.
+  M_QuitResponse('y');
 }
 
 
@@ -6361,6 +6357,15 @@ void M_Init (void)
         MainMenu[3].status = IT_DISABLED;  // Options
         if( MainDef.lastOn >= 1 && MainDef.lastOn <= 3 )
             MainDef.lastOn = 0;
+
+        ServerMenu[5].status = IT_DISABLED;  // Wait Players
+        ServerMenu[6].status = IT_DISABLED;  // Wait Timeout
+        ServerMenu[7].status = IT_DISABLED;  // Internet Server
+        ServerMenu[8].status = IT_DISABLED;  // Server Name
+        ServerMenu[10].status = IT_DISABLED; // Dedicated
+        if( (ServerDef.lastOn >= 5 && ServerDef.lastOn <= 8)
+            || ServerDef.lastOn == 10 )
+            ServerDef.lastOn = 0;
     }
 
     CV_RegisterVar_list( menu_init_cvar_list );
