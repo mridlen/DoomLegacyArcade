@@ -1,0 +1,316 @@
+Recognizing various doom wads.
+Some info from Legacy code.
+Some info from ZDoom doc.
+Some info from wad examination.
+
+Most every iwad has the same dmxgus.lmp.
+
+
+====
+Game: Doom shareware
+mode: doom (shareware)
+flags: id-wad
+title: "DOOM Shareware"
+date: 1994
+file: doom1.wad
+size: 4196020
+maps: E1M1-E1M9
+ZDoom check: E1M1 > no TITLE > no E2M1 > no E3M9 > not anything else
+
+
+====
+Game: Doom I
+mode: doom (registered)
+flags: id-wad
+title: "DOOM Registered"
+date: 1994
+file: doom.wad
+size:
+maps: E1M1-E1M9, E2M1-E2M9, E3M1-E3M9	???
+ZDoom check: E1M1 > no TITLE > no E4M1 > and not anything else
+
+
+====
+Game: Ultimate doom
+mode: Ultimate doom (retail)
+flags: id-wad
+title: "The Ultimate DOOM"
+date: 1995
+notes: doom_se.wad (floppy)
+file: doom.wad, doomu.wad, doom_se.wad
+size: 12408292
+maps: E1M1-E1M9, E2M1-E2M9, E3M1-E3M9, E4M1-E4M9
+check for map: E4M1
+lumps: TEXTURE1, TEXTURE2
+lumps: ENDOOM
+ZDoom check: E1M1 > no TITLE > E4M1 > no W94_1, POSSH0M0 > and not anything else
+
+
+====
+Game: Doom II
+mode: DoomII (commercial)
+flags: id-wad
+title: "DOOM 2: Hell on Earth"
+file: doom2.wad
+maps: MAP01-MAP32
+ZDoom check: MAP01 > no TITLE > not anything else
+
+
+====
+Game: Plutonia Experiment
+mode: DoomII (commercial)
+flags: id-wad
+title: "DOOM 2: Plutonia Experiment"
+notes: Final Doom
+date: 1996
+file: plutonia.wad
+maps: MAP01-MAP32
+ZDoom check: MAP01 > CAMO1
+
+
+====
+Game: TNT
+mode: DoomII (commercial)
+flags: id-wad
+title: "DOOM 2: TNT - Evilution"
+notes: Final Doom
+date: 1996
+file: tnt.wad
+maps: MAP01- ??
+ZDoom check: MAP01 > REDTNT2
+
+
+
+====
+Game: Heretic
+mode: heretic
+flags: id-wad raven
+title: "Heretic"
+notes: RAVEN
+file: heretic.wad
+maps: E1M1-  E2M1-  ??
+ZDoom check: E1M1 > TITLE > E2M1 > not anything else
+
+
+====
+Game: Heretic shareware ver 1.2
+mode: heretic
+flags: id-wad raven
+title: "Heretic shareware"
+file: heretic1.wad
+size: 5120920
+maps: E1M1-E1M9
+ZDoom check: E1M1 > TITLE > no E2M1
+
+
+====
+Game: Heretic SotSR
+mode: heretic
+flags: id-wad ?? raven ??
+title:
+notes: RAVEN ??
+file: heretic.wad
+maps: E1M1- E2M1- ??
+lump: EXTENDED
+ZDoom check: E1M1 > TITLE > EXTENDED
+
+
+====
+Game: Hexen
+mode: hexen
+flags: id-wad raven
+title: "Hexen"
+title: "HEXEN: Beyond Heretic"
+notes: RAVEN
+file: hexen.wad
+maps: MAP01- MAP40 ??
+ZDoom check: MAP01 > TITLE > MAP40
+
+
+====
+Game: Hexen demo
+mode: hexen
+flags: id-wad raven
+title: "Hexen Demo"
+title: "HEXEN: Beyond Heretic"
+notes: RAVEN
+file: hexen.wad
+date: 1995
+maps: MAP01-MAP04
+lumps: MAPINFO = strings "WINNOWING HALL" "SEVEN PORTALS"
+	"GUARDIAN OF ICE" "GUARDIAN OF FIRE"
+lumps: TITLE
+lumps: ANIMDEFS = "; Heretic 2"
+lumps: DMXGUS = "HEXEN: Beyond Heretic"
+ZDoom check: MAP01 > TITLE > no MAP40
+
+
+====
+Game: HexenDK
+mode: ??
+file: ??
+flags: ??  raven ??
+title:
+notes: RAVEN ??
+file:
+maps: MAP01- MAP60  ??
+check map: MAP60
+lump: TITLE
+ZDoom check: TITLE, MAP60
+
+
+====
+Game: Strife
+mode: strife
+flags:
+title:
+file: strife.wad
+maps: MAP01- MAP33 ??
+ZDoom check: MAP33, ENDSTRF > MAP01
+
+
+====
+Game: Strife demo
+mode: strife
+flags:
+title:
+file: strife0.wad
+date: 1995 ROGUE Entertainment
+maps: MAP32-MAP34
+lumps: no INVCURS
+lumps: COPYRITE, ENDSTRF
+lumps: SCRIPT00
+lumps: TEXTURE1
+lumps: log1 = "HELLO?  COMMAND, A COM-UNIT HAS" ...
+lumps: log2 = "LISTEN, THIS COM-UNIT TELLS ME" ... 
+lumps: t1text = "Congratulations!  <LF>You have completed the Strife demo."
+
+
+====
+Game: StrifeTeaser
+mode: strife
+title:
+file: ??
+maps: - MAP33 - ??
+lumps: ENDSTRF
+ZDoom check: MAP33, ENDSTRF > no MAP01 > no INVCURS
+
+
+====
+Game: StrifeTeaser2
+mode: strife
+file: ??
+lumps: ENDSTRF
+lumps: INVCURS
+ZDoom check: MAP33, ENDSTRF > no MAP01 > INVCURS
+
+
+====
+Game: FreeDoom
+mode: DoomII (commercial)
+flags: Boom202
+title: "FreeDoom"
+file: doom2.wad (versions upto 0.8 )
+      freedoom2.wad (after  1/12/2014)
+size: 19800000 to 20100000 varies
+lump:  "FREEDOOM"
+ZDoom check: MAP01 > FREEDOOM
+
+
+====
+Game: FreeDM
+mode: DoomII (commercial)
+flags: Boom202
+title: "FreeDM"
+file: freedm.wad
+lump:  "FREEDOOM"
+ZDoom check: MAP01 > FREEDOOM > wad=freedm.wad
+
+
+====
+Game: Ultimate FreeDoom
+mode: Ultimate Doom (retail)
+flags:
+title: "Ultimate FreeDoom"
+file: doom.wad (versions upto 0.8 )
+      freedoom1.wad (after  1/12/2014)
+maps: E1M1-  E2M1-
+lump:  "FREEDOOM"
+ZDoom check: E1M1 > no TITLE > FREEDOOM > E2M1
+
+
+====
+Game: FreeDoom I
+note: transitional version due to errors ??, no longer valid
+mode: Doom (registered)
+flags:
+title: "Ultimate FreeDoom"
+file: doom.wad
+maps: E1M1-
+lump:  "FREEDOOM"
+ZDoom check: E1M1 > no TITLE > FREEDOOM > no E2M1
+
+
+====
+Game: Blasphemer
+mode: heretic
+flags:
+title: "Blasphemer"
+file: heretic.wad  (version 0.1.2)
+      BLASPHEM.WAD (version 0.1.4 and later)
+maps: E1M1-E1M9, E2M1- ??
+lump:  "BLASPHEM"
+lump: TITLE
+ZDoom check: E1M1 > TITLE > BLASPHEM
+
+
+====
+Game: Chexquest
+mode: (chexquest1)
+flags:
+title: "Chex Quest"
+file: chex.wad
+size: ??
+maps: E1M1-  E4M1- ??
+lumps: W94_1, POSSH0M0
+ZDoom check: E1M1 > no TITLE > E4M1 > W94_1, POSSH0M0
+
+
+====
+Game: ChexQuest 3
+mode: chexquest-3 ??
+flags:
+title: "ChexQuest 3"
+file: chex3.wad
+size: 18458493
+maps: E1M1-E1M5, E2M1-E1M5, E3M1-E3M5
+lumps: CYCLA1, FLMBA1, MAPINFO
+lumps: chexweap  strings "Bootspoon" "MiniZorcher"
+lumps: language  - all text strings  "flemkey" "zorcher" "Chex"
+ZDoom check: E1M1 > no TITLE > CYCLA1, FLMBA1, MAPINFO
+
+
+====
+Game: ActionDoom2
+mode: ??
+flags:
+title: "ActionDoom2"
+file: ??
+size: 
+maps: MAP01  ??
+lumps: AD2LIB
+ZDoom check: MAP01 > no TITLE > AD2LIB
+
+
+====
+Game: Harmony
+mode: ??
+flags:
+title: "Harmony"
+file: ??
+size: 
+lumps: HAWK, CAR, NOSE
+ZDoom check: MAP01 > no TITLE > HAWK, CAR, NOSE
+
+
+

@@ -1,0 +1,472 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom, Legacy, Doom2, fps, classic, game, download, news"/>
+  <meta name="description" content="Doom Legacy is your premiere source port engine for id Software's classic DOOM games and more!"/>
+  <title>Compiling Doom Legacy</title>
+</head>
+
+<!-- $Id:$ -->
+<body>
+
+<h2>Compiling Doom Legacy 1.4x SDL</h2>
+
+<div class="column">
+
+<p>In order to compile Doom Legacy 1.4x SDL you'll need to have the following
+libraries installed on your system.<br/>
+Make sure you install the <b>developer</b> packages of the
+libraries, which include both the runtime libraries (DLLs) and
+the stuff required during compilation (header files and import libraries).</p>
+
+<p>NOTE: Most Linux distributions offer these libraries in the form of
+precompiled packages.</p>
+
+<table>
+<tr>
+  <th>Library</th><th>Version</th><th>Ubuntu/Debian package</th><th>Description</th>
+</tr>
+<tr>
+  <td><a href="http://www.libsdl.org/download-1.2.php">SDL</a></td> <td>1.2.10+</td>
+  <td><a href="http://packages.ubuntu.com/libsdl1.2-dev">libsdl1.2-dev</a></td>
+  <td>Simple DirectMedia Layer. A multiplatform multimedia library.</td>
+</tr>
+<tr>
+  <td><a href="http://www.libsdl.org/projects/SDL_mixer/">SDL_mixer</a></td>
+  <td>1.2.7+</td>
+  <td><a href="http://packages.ubuntu.com/libsdl-mixer1.2-dev">libsdl-mixer1.2-dev</a></td>
+  <td>A multichannel mixer library based on SDL.</td>
+</tr>
+<tr>
+  <td>OpenGL</td> <td>1.3+</td> <td>(several)</td>
+  <td>The standard cross-platform graphics library, usually comes with
+    the OS.</td>
+</tr>
+</table>
+
+<p>
+You will require the following programs during the build process:
+</p>
+
+<ul>
+<li>A C compiler such as <a href="http://gcc.gnu.org/">GCC</a> 3.3, or
+better.  GCC is the Gnu Compiler Collection which, among other things, is
+a free C/C++ compiler.
+<br/>
+Linux systems most likely already have it installed.</li>
+<li>Has been compiled on Linux with Gnu GCC 5.5.0, GCC 10.5, GCC 11.2, and GCC 12.3.0.</li>
+<li>Has been compiled on Linux with Clang 3.8.0, Clang 13.0.0</li>
+<li>Windows users should install <a href="http://www.mingw.org/">MinGW</a>, a
+GCC port, and <a href="http://www.mingw.org/node/18">MSYS</a>, a
+collection of POSIX utilities for Win32.</li>
+<li>Has been compiled on Windows XP with Mingw-32 5.0.2, and MSYS 1.0.11.
+<br>Use the command "mingw32-make".
+Using the default "make" command invokes something else that does not work.</li>
+</ul>
+
+<p>
+Download the
+<a href="http://sourceforge.net/projects/doomlegacy/">Doom Legacy source</a>.
+You can either get the source package or, for the latest code
+snapshot, checkout the <b>legacy_one/trunk/</b> directory from the
+<a href="http://subversion.apache.org/">Subversion</a> repository:
+</p>
+<div class="code">svn co https://doomlegacy.svn.sourceforge.net/svnroot/doomlegacy/legacy_one/trunk some_local_dir</div>
+<p>
+From now on, your local copy of this directory will be referred to as <b>TRUNK</b>.
+</p>
+<p>
+You can have multiple versions of the 'src' directory, such as d01,
+d02, d03, etc..
+To compile these, cd to the src directory you wish to compile, and run
+'make' from there.  The src Makefile will find the BUILD directory.
+</p>
+
+<h3>Make Options</h3>
+
+The make_options file controls the make process.
+<p>
+Edit it to select various compiling options.  Spelling of options must
+be exactly one of the specified choices.
+</p>
+
+<ul>
+<li>The "make_options" file must be created by you.  It is customized to your
+preferences.</li>
+<li>Select the make_options_xx for your operation system, and copy it
+to make_options.</br>
+Linux Example:</br>
+<b><code>>> cp  make_options_nix  make_options</code></b>
+<p>The make_options_xx will contain appropriate selections for your
+operating system.  Copying options from a make_options file for a different
+operating system probably will not work.</p>
+</li>
+<li>Lines that start with # are comments.  To turn off an option, put
+a # at the beginning of that line. Lines without the # are active
+selections.</li>
+<li>MAKE_OPTIONS_PRESENT: this informs 'make' that the make_options file has
+been read. Leave it alone.
+</li>
+<li>OS: the operating system, such as LINUX, FREEBSD.</li>
+<li>SMIF: the port draw library, such as SDL, or X11.</li>
+<li>ARCH: the cpu architecture.
+<p>You can build a binary customized to your processor. The examples work for most processors. It does not
+need to be exact, as processors will run binaries compiled for any
+older CPU versions of their line.</p>
+<p>
+See your compiler docs for the -march, -mcpu, and -mtune command line
+switches specifics. Without this line the compiler will select its
+default build target, such a generic32, or i386.<p>
+<p>For a modern x86 process, selecting "ARCH=-march=i686" will compile
+a binary for an x686, which will be smaller and faster than an x386
+binary. The binary will run on any x686 compatible processor.</p>
+<p>If you have a specific processor, like an Athlon, then specifying
+that will have the compiler use specific optimizations for the Athlon.
+The resultant binary will run faster on an Athlon.  It may run on
+other processors too, but in some cases this is not guaranteed.<p>
+</li>
+<li>CD_MUSIC: if you don't have the music libraries, then turn off
+music by setting CD_MUSIC=0.  The build will not play music from the
+CD player, but will still play midi, ogg, and mp3 music from the wad.
+CD music is not supported by SDL2.  You can still play CD discs from
+another OS program, which probably works better anyway.</li>
+<li>USEASM: use assembly code for certain operations.
+This used to be slightly faster code, but modern compilers will now beat this.
+The assembly is not updated often enough, so it may not be current.
+Avoid this unless you like pain.
+</li>
+<li>There are several install options for DoomLegacy.  Each can be
+customized.  See the next section.</li>
+</ul>
+
+<h3>Install Options</h3>
+
+<p>The Makefile has options for installing the program.  This is
+traditional for Linux makefiles.  It is espcially useful when
+compiling your own binary.
+<p>You can use any other kind of installation too, such as copying the
+bin files to a "run" directory.  Do not try to run DoomLegacy from the
+compile environment, as the run setup is quite different.</p>
+<p>You can have several doomlegacy versions in your run directory.
+They may have any name you choose.  I suggest making a name that
+identifies the variation, such as "dl_i686_athlon_v3".<p>
+<p>You must have system permissions for the type of install.
+An ordinary user can only install_user.</p>
+
+<b><code>>> make  install</code></b>
+<br>Provides install instructions.
+
+<p>The following are supported in "make_options":</br>
+<ul>
+<li>Install doomlegacy to the system.
+<br><b><code>>> make  install_sys</code></b>
+<br>INSTALL_SYS_DIR: the system directory where the binary will be installed.
+<br>INSTALL_SHARE_DIR: the system directory where the support files will be installed.
+</li>
+<li>Install doomlegacy to the system games.
+<br><b><code>>> make  install_games</code></b>
+<br>INSTALL_GAMES_DIR: the system directory where the binary will be installed.
+<br>INSTALL_SHARE_DIR: the system directory where the support files will be installed.
+</li>
+<li>Install doomlegacy to a user directory.
+<br><b><code>>> make  install_user</code></b>
+<br>INSTALL_USER_DIR: the user directory where the binary and suport files will be installed.
+<br>INSTALL_LEGACYWAD_DIR: the directory where the support files will be installed.
+</li>
+</ul>
+
+
+<h3>Compiling Legacy</h3>
+
+<ol>
+<li>Open a shell window, like console. Go to the <b>TRUNK</b>.</li>
+
+<li>If you want a separate BUILD directory, then create it.
+Create bin, dep, objs directories there.
+The BUILD directory will need its own make_options file (see step 4).
+This allows you to compile SDL in one directory, and X11 in another.</br>
+<b><code>>> make  BUILD=x11  dirs</code></b>
+</li>
+<li>The top level TRUNK is the default BUILD directory.
+The make_options file there will control the build, when BUILD is not specified.
+</li>
+<li>Select and configure your make_options file.
+Copy one of the make_options_xx files to make_options of your BUILD
+directory.  Edit your make_options to set your configure options.</br>
+<b><code>>> cp  make_options_nix  x11/make_options</code></b>
+</li>
+<li>Edit compile options in doomdef.c.
+These are options within DoomLegacy.
+Some features can be disabled to make a smaller binary.
+There are also some experimental code options, that are kept disabled.
+</li>
+<li>To clean the build:</br>
+<b><code>>> make  clean</code></b></li>
+<li>To build the executable:</br>
+<b><code>>> make</code></b></li>
+<li>To build a debug version:</br>
+This puts the debugging symbols for the debugger in the binary.
+The debug version also forces DoomLegacy video to an 800x600 window,
+so the user can switch between the debugger window and the DoomLegacy window.</br>
+<b><code>>> make  DEBUG=1</code></b>
+</li>
+<li>To build with bin, obj, dep, in a separate directory (example x11):</br>
+<b><code>>> make  BUILD=x11</code></b></li>
+<li>Example:</br>
+<b><code>>> make  BUILD=x11d  clean</code></b></li>
+<li>Example:</br>
+<b><code>>> make  BUILD=x11d  DEBUG=1  MIXER=1</code></b></li>
+<li>Example MinGW:</br>
+Must use mingw32-make, not the make command from MSYS.</br>
+<b><code>>> mingw32-make  DEBUG=1  clean</code></b>
+</li>
+<li>Read the Makefile for the help at the top of the file.
+This will document the latest commands.</li>
+</ol>
+
+<hr/>
+<h2>Coding rules and practices</h2>
+
+<ul>
+<li>There is one subdirectory in the repository for each platform
+  (SDL, X11, Win32 etc.). Ideally these subdirectories should contain all
+  platform-dependent code.
+</li>
+<li>Do not commit tests or buggy code. Every revision should at least
+  compile and link. If you absolutely feel you need to commit
+  experimental code that does not fully work yet, use #ifdefs with a
+  descriptive name to disable it.</li>
+<li>Fix any and all warnings the compiler gives. They are there for
+  a reason.</li>
+<li>Keep the list of major bugs in ??? up-to-date.</li>
+<li>Doom Legacy is a Doom source port. Do not make noticeable changes
+  to the gameplay without adding an user-controlled option (consvar
+  for example) to disable them.</li>
+<li>Use the developer mailing list to keep other devs informed of
+  your work. If you are not sure about whether a feature/change is a
+  good idea or what is the best way to implement it, discuss it on the mailing list.
+</li>
+<li>
+  Keep a log of your work in the _log directory.
+  This will help other devs to keep up with you and makes it much
+  simpler to update the what's new section of the docs 
+  when making a release.
+</li>
+<li>
+  Use spaces when indenting code, not tab characters.
+  Use either 2 or 4 space indents.
+</li>
+<li>
+  Document all code, variables and functions must have names that
+  are descriptive and help to understand the code (so no names like
+  a2, ex, asdf2721...). Exception: variables that are entirely local
+  in scope and have an obvious purpose, like for loop indices (i, j, k, s, t...) or
+  coordinates (x, y, z, w...).
+</li>
+<li>
+  The original Doom was written for memory limited systems with
+  limited cache and was subject to memory access speeds.
+  <p>On a modern system it is cache hits that are
+  critical.  Keeping the memory footprint and cache use small will
+  keep the render speed up, which is where we suffer now.
+  <p>Keep large data structures such that if part of an entry is read, the
+  whole entry is likely used.
+  Reading one field of many records of a large structure will wipe
+  out the cache and slow the whole program.  This is because a cache
+  miss will load an entire cache line which is a fixed size, which may
+  be 8 bytes or more invalidated for each read.
+  <p>There are many uses of ptrs in the old data structures, that at one
+  time those were considered faster.  A modern computer can now do several local
+  operations in the time of one main memory access.  Use consise enum
+  in large data structures, and do the table lookup.
+</li>
+<li>
+  Try not to have extern declarations and function prototypes in a .c
+  file, they belong in the headers. Use static-scope variables and functions
+  whenever you can to make it clear what their role is.
+  <p>There are situations where an extern reference is needed, and
+  involving a header file just introduces extraneous indirection.
+  We have a few where it is the only use of that variable.
+  <p>Global variables are usually a bad idea, however vanilla Doom had
+  many globals and that is not going to change.  It also has functions
+  where most of the context is passed with global variables, and that is
+  not going to change.
+</li>
+<li>
+  Do not overuse #ifdef. Especially avoid platform-dependent #ifdefs in
+  the main code. Likewise, __BIG_ENDIAN__ and __LITTLE_ENDIAN__
+  conditionals only belong in m_swap.
+  <p>All the optional and new features use #ifdef to separate out what
+  is an extension and what was the original code behavior.
+  This code has gotten complicated, with interacting layers of
+  modifications, so keeping the original behavior helps understand it.
+</li>
+<li>
+Remember that other developers are working on the same code.  Please
+do not reverse changes made by other developers. Make the change
+conditional on detecting your platform, or enabling some compile option.
+</li>
+<li>
+Avoid habits from C++, this is C code.  It is not object oriented.
+We do not want any fake C++ look alike in the code.  The other
+developers are used to working with C.
+</li>
+<li>
+The C standard used by DoomLegacy.
+<p>It is more than C89, and not quite C99 yet.
+<p>The code extensively uses // comments, so it is not C98 compatible.
+<p>The code uses alloca, so it is not C99 compatible.
+<p>The Makefile DEBUG mode has a -pedantic switch that can be enabled, but it
+throws 100's of warnings.  Most of these are things we cannot fix.
+Others are irritating pedantic and would force us to use kludged code just to
+avoid the warning message.
+<p>The problems include tests of return values of SDL functions calls.
+SDL returns a ptr value of -1 to indicate not needing the returned
+list.  It will be a slow process to find kludge code that eliminates
+such warnings.  In the meantime, it already compiles on multiple compilers.
+<p>The amount of work to bring this to C99 standard is daunting, and
+would probably leave many warning messages.
+Compiling without warning messages is more helpful, as
+we can see immediately where problems have arisen.
+<p>For the moment, it is compiling on many systems in spite of this.
+</li>
+</ul>
+
+<hr/>
+<h2>Known bugs/issues</h2>
+
+These are very old issues.
+<pre>
+ - splats on opengl/glide have serious z-problems and are not clipped 
+   to the seg 
+ - the splats should be in segs and not in linedefs, so we can clip it 
+   and render only when needed (actualy there is overdraw in opengl/3dfx)
+ - when clientprediction2 is enabled (see doomdef.h) the spirit mobjs
+   have some serious z problems when exiting/entering moving platforms
+ - there is no splats on floors and ceiling, fab have begon but 
+   haven't finish
+ - sprite that have transparent region (torch, lost soul...) are full 
+   transparent in 3dfx/opengl
+</pre>
+
+<h2>Explanation of the code</h2>
+
+<pre>
+ 3.1 The memory model (z_zone.c) (by BP) (revised WDJ)
+ --------------------
+
+ DoomLegacy allocates memory at program start, and in some modes
+ increases that allocation as needed.  It provides allocations from that via
+ Z_Malloc functions, primarily for those that can make use of the
+ memory free by usage.  Do not use it for everything.
+
+ There are several compile-time options for the memory block allocation.
+   PLAIN_MALLOC:  Substitute malloc for zone memory allocation.
+        This ignores memory tags, and it cannot recover PU_LEVEL, PU_CACHE memory.
+   TAGGED_MALLOC: Uses malloc, and uses memory tags.
+   ZONE_ZALLOC:   The zone memory system, with preallocated memory.
+                  The memory allocation size is set by #define, and command line switches.
+   GROW_ZONE:	  An option that grows the zone memory allocation when needed.
+                  This is currently the preferred memory allocation mode.
+   AGGRESSIVE_PURGE:  Aggressive purge of PU_CACHE, primarily as a
+                  memory allocation test.
+ 
+ 
+ Z_Malloc( int size, int tag, void* user )
+ 
+ size: is the size in bytes
+ tag:
+   PU_STATIC:  Allocated static (like malloc does).
+               Call Z_Free to free it.
+   PU_SOUND, PU_MUSIC: Static while playing. Specific to music uses.
+   PU_LOCK_SB: Static and protected against changing tag or releasing.
+               Must change with PU_UNLOCK_CACHE to unlock it.
+               Used to protect status bar textures.
+   PU_HWRPATCHINFO:  Hardware renderer texture cache only.
+   PU_HWRPATCHCOLMIPMAP:  Hardware renderer texture cache only.
+   PU_LUMP:    Generic allocation for lump reading.
+               At end of level, will be converted to PU_CACHE.
+   PU_IN_USE:  Protected against other allocations while it is in use. The user
+               is expected to FREE it or change it to PU_CACHE when they are done.
+               At end of level, will be converted to PU_CACHE.
+   PU_LEVEL:   Static until level is over, where a call to Z_FreeTag will
+               release all PU_LEVEL allocations, and their user ptrs set NULL.
+   PU_LEVELSPEC: A PU_LEVEL for thinkers.
+   PU_HWRPLANE:  A PU_LEVEL for hardware renderer planes.
+   PU_PRIVCACHE: PU_CACHE allocation that is kept longer, until PU_CACHE is gone.
+               Used by expensive combined patch textures.
+   PU_HWRCACHE: PU_CACHE for hardware renderer graphics.
+   PU_CACHE:   Automatic free, when memory is needed by another Z_Malloc
+               allocation.  When Z_Malloc reuses it for another allocation,
+	       the user ptr will be set to NULL.
+	       When the user accesses a PU_CACHE allocation, where other allocation
+	       calls could have occurred, the user ptr must be checked for NULL,
+	       and the item reloaded when necessary.
+	       Change this allocation to a more protected tag when accessing
+               it around any code that does Z_Malloc allocation.
+
+ (...)
+
+ 3.2 Hardware Texture model (by BP)
+ --------------------------
+
+ Each texture/patch/flats/pic in legacy are converted to hardware texture at 
+ runtime (the GlideMipmap_s structure (hw_data.h)). I will call hardware 
+ texture a gr_texture so there is no confusion.
+
+ To remind you :
+  - Texture are set of patch and are associate to linedefs (walls) can be 
+    upper, lower or middle texture. It can have hole on it.
+  - patch are sprites (the doom patch are run of vertical lines)
+  - flats are used for floors and ceiling of sectors and have size of 64x64.
+    It cannot have any holes in it
+  - pic are new legacy format for picture, it can only handle plain texture 
+    like flats it is now used for hud in full screen for the main picture 
+    of legacy and for coronas (the format was extended to handle 32 bit color
+    or intensity + alpha, not all are implemented at this time)
+
+ Since patch, flat and pic are basic structure represented by only one lump in
+ the wad, the wad loader allocate for each lump a GlideMipmap_s (cache3Dfx) 
+ and init data field to NULL. Since the data structure is allocated in 
+ PU_3DFXCACHE (like PU_CACHE) the data will be initialised when needed 
+ (hw_cache.c).
+
+ The GlideMipmap_s structures for textures are initialized on 
+ HWR_PrepLevelCache (hw_cache.c), and is called in P_SetupLevel (load level).
+ The number of textures is computed with TEXTURE1, TEXTURE2 lumps since this
+ can be changed at runtime in legacy (load a wad while runing), when it must be 
+ reallocated. Well, at this time it is realloceted at each level start. We 
+ can do better, since numtextures change only when a wad is loaded.
+
+ The 3dfx driver use glide3, it loads the gr_texture in gr_texture memory
+ of the video card in fifo order.  When there is no more room it removes the
+ first gr_texture.  Its texture downloaded field of GlideMipmap_s
+ will be set to false, and when needed it is reloaded in gr_texture memory.
+ In OpenGL, since OpenGL keep texture in there 
+ own memory and handle gr_texture memory of the card we no more need to 
+ redownload it. However, if we do not free some gr_texture memory in OpenGL
+ from time to time, it will grow to be alot of memory usage,
+ so the gr_texture memory is cleared at each new level
+ (same time of texture reallocation).
+ Opengl and 3dfx link the 
+ loaded gr_texture with the nextmipmap field of GlideMipmap_s so before clear 
+ textures of the heap we MUST free gr_texture memory of OpenGL or 3dfx !
+
+ Legacy can also draw a patch with a differant colormap (thanks to Hurdler).
+ When needed it creates the same gr_texture but just with a differant colormap. 
+ This one is linked with the original in the GlideMipmap_s with the 
+ nextcolormap field.
+
+ So when a polygon with a gr_texture must be drawn, first we check if the 
+ gr_textures is not already loaded in hardware memory (downloaded field).
+ If not then we check if gr_texture data is there (not grabbed by z_malloc 
+ function).  If not we must recompute it.  Each type of gr_texture (texture, 
+ patch, flat, pic) each have their own method.
+ Then we can send the gr_texture to 3dfx or OpenGL.
+</pre>
+
+</div>
+</body>
+</html>

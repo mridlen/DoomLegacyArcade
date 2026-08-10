@@ -1,0 +1,1545 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom, Legacy, documentation, manual, docs, FAQ"/>
+  <meta name="description" content="DoomLegacy is your premiere source port engine for id Software's classic DOOM games and more!"/>
+  <title>DoomLegacy FAQ</title>
+</head>
+<!-- $Id$ -->
+<body>
+<div class="column">
+<h1>DoomLegacy 1.48 FAQ</h1>
+<h1 class="tagline">Last updated 2025-03-14</h1>
+
+<p>
+If you have any trouble with DoomLegacy, you might find a solution here.
+</p>
+<p>
+If you find a solution to a problem that was not listed here,
+please tell us so that we can update the FAQ and help other people!
+</p>
+
+<div class="floatbox">
+<ul>
+  <li><a href="#version">Version</a></li>
+  <li><a href="#setup">Setup</a></li>
+  <li><a href="#errors">Errors</a></li>
+  <li><a href="#misc">Compatibility</a></li>
+  <li><a href="#input">Mouse/Joystick/Keyboard</a></li>
+  <li><a href="#video">Video</a></li>
+  <li><a href="#audio">Audio</a></li>
+  <li><a href="#network">Network</a></li>
+  <li><a href="#hints">Hints</a></li>
+</ul>
+</div>
+
+<h2><a name="version">Version</a></h2>
+<dl>
+ <dt>
+ Doomlegacy version.
+ </dt>
+ <dd>
+ As of 1.48.16, the doomlegacy version, and options, can be gotten by:
+<pre>
+> doomlegacy --version
+</pre>
+This will print out the Operating system, video system, and the major options
+that doomlegacy can have.
+<p>The compile-time options include:
+<ul>
+<li>ZLIB : zlib is used on compressed extended nodes that some wads
+have.</li>
+<li>LIBZIP : is used on zip compressed wads.</li>
+<li>DLOPEN : The Linux dlopen is used to dynamically detect and load.
+libraries.  Libraries that are dynamically detected have a (dl) after
+their name.</li>
+<li>ALSA : the ALSA sound system.</li>
+<li>OSS : the OSS sound system.</li>
+<li>ESD : the ESD sound deamon.</li>
+<li>PulseAudio : the PulseAudio sound system.</li>
+<li>TiMidity : the TiMidity MIDI player for music.</li>
+<li>FluidSynth : the FluidSynth MIDI player for music.</li>
+</ul>
+<p>These are selections in the make_options file, when
+you compile DoomLegacy yourself.
+<p>For earlier versions of DoomLegacy, look at the first line printed
+out, which will have the version and rev number.
+<p>For any error reporting or questions, it is important to include the version
+of DoomLegacy you are using.
+ </dd>
+</dl>
+
+
+<h2><a name="setup">Setup</a></h2>
+
+<dl>
+  <dt>
+What command line switches should I use to start DoomLegacy?
+  </dt>
+  <dd>
+See the docs/legacy.html for an explanation of the switches.
+<p>
+If you have a console, start DoomLegacy with the -h switch to see the
+help output.
+<p>If you do not want the Launcher to start, then have at least one
+switch on the command line.
+It does not have to be a real switch, -nolaunch, or even -xx will do it.
+<p>If you do not have a command line console, or do not want to use it,
+you can start DoomLegacy without any switches, which will bring up the
+DoomLegacy built-in Launcher.
+From the Launcher you can specify almost all switches.
+The switches -mb (Zalloc memory size), -h (help) are handled before the built-in Launcher runs,
+and thus the Launcher will ignore them.
+<p>
+You must select the game in the command line switches.
+<br>
+<pre>
+> doomlegacy -game doom2
+</pre>
+I also recommend using native video, but as that can now be selected by
+the saved config, it is not necessary to specify it on the command line.
+<pre>
+> doomlegacy -game doom2 -native
+</pre>
+</p>
+  </dd>
+</dl>
+
+From the Launcher this would be:
+<pre>
+  Switch:  -native
+  Game:    doom2
+  Continue
+</pre>
+
+<dl>
+  <dt>
+  How does DoomLegacy determine the HOME directory.
+  </dt>
+  <dd>
+<p>There are two home directories to consider. The user home, and the
+legacy home directory.  The legacy home directory, where DoomLegacy
+saves config and savegames, is created within the user home
+directory.</p>
+<p>The directory names vary by OS (Operating System, like Linux,
+Windows, DOS), due to filesystem differences.
+The directory names are specified in the doomdef.h for each OS.
+These may be changed to compile a DoomLegacy for special circumstances.
+<p>The DEFHOME directory name is specified in the doomdef.h file for each OS.
+It is usually "legacyhome", but is "DL_HOME" on DOS.
+This is used where an OS (such as DOS) does not have a home directory for each user.
+<p>The legacy home directory name also is specified for each OS in the
+doomdef.h file.
+There is also an alternative name, such as if your legacy home was created by an older DoomLegacy version.
+It is usually ".doomlegacy" or ".legacy", or may be
+a "doomlegacy", "dmlegacy", or "legacy" depending on the OS.</p>
+</p>
+  <ul>
+  <li>The user home can be specified by the -home switch on the command line.</li>
+  <li>
+If a HOME environment variable is found, it specifies the user home.  Linux, BSD,
+and unix-like operating systems setup HOME during user login.
+  </li>
+  <li>
+If a "UserProfile" environment variable is specified, it specifies the user home.
+The is done by WinXP, and probably later versions of Windows (but they change and break things too).
+This will make the parent of "My Documents" your user home directory by default.
+  </li>
+  </ul>
+<br>
+Having a user home directory.
+  <ul>
+  <li>After having determined the user home directory, DoomLegacy
+tries to find the legacy home directory within it.
+  </li>
+  <li>If legacy home is not found, DoomLegacy creates it within the user home directory.
+  </li>
+  </ul>
+<br>
+No user home directory:
+  <ul>
+  <li>
+If a home directory is not determined, DoomLegacy will look for the
+DEFHOME directory (example: legacyhome) in the current directory.
+If found, it is used as the legacyhome directory.
+This would have been created by the user, as DoomLegacy would not
+have created it there.
+  </li>
+  <li>
+DoomLegacy will use the DEFHOME directory in the program directory as legacy home.
+It may already exist, or DoomLegacy will create it.
+  </li>  
+  </ul>
+  </p>
+<p>If you are inconsistent about specifying the home directory, you
+can easily have more than one set of config files.
+The above does not apply on a Mac, where a legacy home directory is
+provided by the OS.
+<p>Write protected directories, or system protected directories, will
+prevent DoomLegacy from creating directories.  Then you will not be
+able to save config, nor savegames.
+</p>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+DoomLegacy tries to use the MSYS home directory.
+<br>DoomLegacy does not use the MSYS home directory anymore.
+  </dt>
+  <dd>
+MSYS sets the HOME environment variable to its own home directory
+for use by MSYS commands.
+<p>
+Older versions of DoomLegacy would use the MSYS home,
+but since DoomLegacy 1.46 it ignores a HOME environment variable that has
+the string MSYS in it.
+<p>
+If you had your home directory in MSYS,
+then it would be best to move to a more reasonable home location.
+You may have to specify it with the -home switch if it is an odd location.
+<p>Since DoomLegacy 1.46 also recognizes the environment variable "UserProfile" as
+home, which appears on WinXP (and probably later versions of Windows too).
+This will make the parent of "My Documents" your home directory automatically.</p>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+Where does DoomLegacy put the savegames.
+  </dt>
+  <dd>
+DoomLegacy puts savegames and the saved config file in a doomlegacy
+home directory within the user home directory.
+<br>The doomlegacy home directory name is operating-system dependent.
+It is compiled with two choices, defined as DEFAULTDIR1 and DEFAULTDIR2
+in the doomdef.h file.
+If neither of those directories is found, DoomLegacy will make a directory
+using the name from DEFAULTDIR1.
+The name defined by DEFAULTDIR2 is an older directory name,
+used to find existing directories from older versions of DoomLegacy.
+<ul>
+<li>Linux:  ".doomlegacy", or previously ".legacy".
+<br>This is a hidden directory. Use "ls -a" to see hidden directories,
+or enable seeing hidden directories in your preferences.
+</li>
+<li>Windows: "doomlegacy", or previously "legacy".
+<br>On WinXP and later, this may be hidden in the parent directory
+above "My Documents".
+</li>
+<li>DOS: "dmlegacy", or previously "legacy".
+</li>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+DoomLegacy keeps losing my config settings.
+  </dt>
+  <dd>
+<p>The config settings are saved by DoomLegacy during program shutdown.
+If it is being killed some other way, the settings will not be
+saved.</p>
+<p>If you are inconsisent about specifying your home directory, then
+DoomLegacy will create a new config file in each new location.
+If you find you have to setup your keyboard again, then you may have
+mistyped your -home directory name.  Setup a profile or a batch
+file to start DoomLegacy from saved settings to ensure getting a consistent
+home directory.</p>
+<p>Previous versions of DoomLegacy had a separate config file for
+OpenGL hardware rendering.  This config file is no longer used.
+There is a new drawmode config file for OpenGL, with a different file
+name, and different content.
+<p>You will have to setup the drawmode config files if you want separate
+video settings for OpenGL hardware rendering.  Each drawmode has an
+separate optional drawmode config file that pushes down and hides settings from
+the main config file.
+<p>The drawmode config files are optional. You do not have to create
+them or use them.  You could only create one, such as for OpenGL.
+<p>Only put into each drawmode config file the video settings that are
+unique for that drawmode.  This is usually video mode, fullscreen, and
+gamma settings.
+</p>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+How to create an OpenGL config file.
+  </dt>
+  <dd>
+The Menu system offers to create an initial drawmode config file.
+When you are in drawmode config edit mode, and it detects that the
+drawmode config does not exist, it will offer to create one.
+ <ul>
+ <li>Goto the Video options menu. </li>
+ <li>Press "F3" to enter drawmode config edit mode.</li>
+ <li>Drawmode config edit mode will have DRAWMODE in WHITE text at the top of the screen.
+ If you do not have DRAWMODE in WHITE text at the top of the screen, you are not in drawmode config edit mode.</li>
+ <li>Use the drawmode menu to select a drawmode (such as OpenGL).</li>
+ <li>If the config file for that drawmode does not exist, the menu will offer to create it (in WHITE text).
+If it does not offer to create the file, then a drawmode config file
+must already exist.</li>
+ <li>Press "C" to create an initial drawmode config mode.
+ The video mode, fullscreen, vidwait, and gamma, will be included automatically.</li>
+ <li>Exit to the Video options menu.  The drawmode config file entries are shown
+ there while in drawmode config edit mode.  Menu items that are not in
+the drawmode config file will be blank.</li>
+ <li>To add a menu item to the drawmode config mode, move to it, and press "INSERT".
+ This will create a separate entry in drawmode config file, that will
+be used whenever that drawmode is being used.</li>
+ <li>To remove a menu item from the drawmode config mode, move to it, and press "DELETE".
+ The setting from the main config file will then be used.</li>
+ <li>Press "F1" to exit the drawmode config edit mode.  Now the menu
+will show the current settings that DoomLegacy is using.  Some of
+these will be from the main config, and some will be from the drawmode
+config.</li>
+ </ul>
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+Config file edit mode.  What is that?
+  </dt>
+  <dd>
+DoomLegacy supports editing the config files from the menus.
+Not all menus support this.  Some menus have items that only appear
+in the main config file, like the keyboard setup.
+<ul>
+<li>F1: Normal menu.</br>
+Settings from the main config file and the
+drawmode config file are shown, and other.</li>
+<li>F2: Edit main config file.</br>
+Only settings from the main config file will show.</li>
+<li>F3: Edit drawmode config file.</br>
+Only settings from the drawmode config file will show.
+Menu items that are not in the drawmode config file will be blank.</li>
+<li>F4: Normal menu</br></li>
+<li>INSERT: Insert current menu item (at the cursor), into the config
+file being edited.  The config file being edited appears in WHITE at
+the top of the screen.</li>
+<li>DELETE: Remove the current menu item (at the cursor), from the
+config file being edited.  The config file being edited appears in WHITE at
+the top of the screen.</li>
+</ul>
+Config file changes will be saved when exiting DoomLegacy.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+My old OpenGL config file does not work.
+  </dt>
+  <dd>
+The config file naming has changed.
+<ul>
+<li>The main config file is still named config.cfg.</li>
+<li>The old OpenGL config file, glconfig.cfg, which contained all settings including
+keyboard settings, is no longer used.</li>
+<li>The new OpenGL config file, configgl.cfg, contains only video
+specific settings.  The user decides which settings they want using
+drawmode config edit mode (F3).</li>
+<li>DoomLegacy remembers which settings were loaded from the drawmode
+config file, and writes them back again.</li>
+<li>If you do something like rename glconfig.cfg to configgl.cfg, then
+the new drawmode config file will takeover all the config settings,
+including the keyboard setup.  You also need to edit the new
+configgl.cfg file and delete any lines that the OpenGL config should
+not control. That is most of the config file. Those will default to the main config file settings.
+<br>Be sure to delete the drawmode line from the drawmode config file.
+</li>
+</ul>
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+How many config files are there?
+  </dt>
+  <dd>
+Only config.cfg is required.  The others are optional.  Every drawmode
+can have its own drawmode config file, which only contains drawmode specific
+settings like video mode, fullscreen, and gamma.
+<ul>
+<li>The main config file: config.cfg</li>
+<li>8 bit palette draw: config8p.cfg</li>
+<li>15 bit software draw: config15.cfg</li>
+<li>16 bit software draw: config16.cfg</li>
+<li>24 bit software draw: config24.cfg</li>
+<li>32 bit software draw: config32.cfg</li>
+<li>Explicit bpp software draw: configbp.cfg</br>
+This currently has its own config.  This may change.
+</li>
+<li>Native software draw: confign.cfg</br>
+This is the native video mode that is detected when DoomLegacy starts.</li>
+<li>OpenGL draw: configgl.cfg</li>
+<li>MiniGL draw: configmg.cfg</li>
+<li>Glide draw: configwg.cfg</br>
+Windows native port only</li>
+<li>D3D draw: configwd.cfg</br>
+Windows native port only</li>
+</ul>
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+Can I put any other config lines into the drawmode config file?
+  </dt>
+  <dd>
+Yes, almost any config file line can appear in a drawmode config file.
+<p>
+One exception is drawmode, do not put that in your drawmode config file.
+<p>
+You can go to other menus and insert entries into your drawmode config
+file.
+Some menus, like keyboard setup, do not have any menu support for
+INSERT to a drawmode config file.
+</p>
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+When a friend comes over to play, he changes my keyboard settings.
+Is there any way to save my settings?
+  </dt>
+  <dd>
+<p>Give your friend (George) their own config file.
+<br>Start DoomLegacy with "-config george.cfg".
+<p>George will now have his own config settings, such as keyboard
+settings, and option settings.  As long as you do not delete the file,
+George's settings will still be there next time he comes to visit.
+However, any video settings (such as gamma) in drawmode config files will still be shared.
+Make him a savegame subdirectory, otherwise his savegames will be mixed in with your savegames.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+My friend needs more than just a config file.
+Is there any way to keep his settings and savegames separate?
+  </dt>
+  <dd>
+<p>Give your friend their own home directory.<br>
+Your friend will have an independent config.cfg, a set of
+drawmode config files, and a place for savegames.
+<br>Make a directory named "george_home".
+<br>Start DoomLegacy with "-home george_home".
+<p>DoomLegacy will make a doomlegacy directory in the george_home
+directory, where it will put config.cfg and savegames.  On Linux this
+is a hidden directory, so the george_home directory will appear empty,
+but it is not empty.
+</p>
+  </dd>
+</dl>
+
+
+<h2><a name="errors">Errors</a></h2>
+
+<dl>
+  <dt>
+I don't see any error messages from DoomLegacy, and I think there
+should be some.  Where are the error messages going?
+  </dt>
+  <dd>
+DoomLegacy now has an improved message control in the Options menu.
+It allows you to block some messages from the HUD and console during gameplay.
+If a problem occurs during gameplay, then turn the message control up to
+debug to see the messages.
+The message control only filters some of the messages from appearing
+on the HUD or console.
+The message routing will still send a copy of each message to other locations,
+to stderr, and to the log file (if enabled).
+<p>Starting DoomLegacy with the verbose switch (-v or -v2) will
+enable generating more messages, and will provide more detail about what
+DoomLegacy is doing.
+The -v2 switch dumps much more detail than you usually want to see,
+especially about video hardware.
+<p>Pre-release versions of DoomLegacy usually have debugging print statements
+(EMSG_debug) enabled full-time.
+Compiling with DEBUG_MESSAGES_ON enabled in doomdef.h,
+allows debug messages to be seen on the console and HUD at all times.
+<p>With a release version of DoomLegacy, use verbose (-v or -v2)
+to enable the same debug message displays.
+The message option control also can enable seeing debug messages
+during game play.
+<p>
+The development switch ( -devparm ) provides details meant for
+developing the game and game wads.
+<p>
+On Windows, the error messages go to a file "stderr.txt" that is left
+in the program directory.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+I get the error "Error: W_GetNumForName: STBAR not found!"
+What is it?
+  </dt>
+  <dd>
+You have an old version of doom.wad. Just upgrade your version to 1.9.
+You can find a patch on the id Software site.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+When I play Heretic, there are all these error messages about missing textures.
+  </dt>
+  <dd>
+The switch texture names for Doom and Heretic are hard coded into the program.
+The heretic switches were simply incuded with all the Doom switches, and the warning messages previously output were about
+the Doom switches that are not in the Heretic wad. 
+<br>Since DoomLegacy 1.46, it has separate lists, and no longer puts out these warning messages.
+  </dd>
+</dl>
+
+
+<h2><a name="misc">Compatibility</a></h2>
+
+<dl>
+  <dt>
+The rocket launcher blows up and kills me.
+  </dt>
+  <dd>
+This is the dehacked dehthing problem.  Please read the other dehacked FAQ too.
+<br>
+The wad is putting a monster or other thing at the dehthing number that is
+used by DoomLegacy for rocket smoke.  When a rocket is launched,
+DoomLegacy creates the rocket smoke, but the smoke has been changed to some
+monster instead by the DEH in the wad, so the rocket explodes.
+<br>
+DoomLegacy tries to detect dehacked thing numbers that conflict with
+doomlegacy uses of things, but sometimes it is not detectable.
+The user will need to specify the dehthing system that the wad used.
+If you do not know, then try some starting with prboom.
+<br>
+Examples:
+<br>
+Valiant:
+<pre>
+> doomlegacy -game doom2 -dehthing prboom -file valiant.zip
+</pre>
+<br>
+Man on the Moon:
+<pre>
+> doomlegacy -game doom2 -dehthing boom -file motm.zip
+</pre>
+<br>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+Wads with Dehacked monsters are not working properly ?
+<br>In wads like Valiant.wad, shooting the rocket launcher creates a
+monster in mid-air, and detonates the missile.
+<br>The "Lunch" item in this wad runs around the room and tries to bite me.
+  </dt>
+  <dd>
+This is due to the wad creator using PrBoom thing numbers in the
+dehacked lump.  PrBoom provides things for some of the Beta monsters,
+and their monster states.  The matching thing numbers in Legacy are used for
+Legacy additions, and things like MBF Dogs.  These things are hard-wired
+into the Legacy code, such as the rocket missile creating smoke, and
+the dog behavior.
+The PrBoom thing number for the Beta monster happens to match the
+smoke thing number in Doom Legacy.
+<p>
+As of Doom Legacy 1.48.10, there is automatic translation of dehacked
+thing numbers in the range 138 to 150.
+This detects the comment to translate the dehacked thing number to a
+thing in Doom Legacy that is similar.
+<p>
+To force the dehacked thing translation, use the dehthing command line switch.
+This forces the dehacked thing translation for the range 138 to 150.
+The switch selects: legacy, boom, prboom, or ee (Eternity Engine).
+Without the switch, it is automatic.
+<pre>
+> doomlegacy -game doom2 -dehthing prboom -file prboom_specific.wad
+</pre>
+If you have a wad with legacy dehacked things in the range 138 to 150,
+and one with prboom dehacked things in the range 138 to 150,
+on the same command line, you will have to leave it at automatic.
+<p>This is an improvised solution, and will likely see changes.
+For new wads, please use BEX.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+The dogs in this wad are not displayed.
+  </dt>
+  <dd>
+Doom Legacy does not provide dog sprites nor sounds in the legacy.wad.
+An IWAD or PWAD is expected to supply its own dogs, and dog sounds.
+<p>A supplementary dogs wad for Doom Legacy has been created, called dogs.wad.
+It has a basic German Shepherd, with dog sounds.
+<p>
+Specify the dogs.wad first, in case the wad does supply its own
+dog sprites or sounds.  The dogs sprites and sounds, from the wad that is
+specified last, will be the ones that are used.  This does not always
+work, due to some wads changing the names using dehacked.
+<pre>
+> doomlegacy -game doom2 -file dogs.wad dogs_specific.wad
+</pre>
+<p>The wad can be renamed to dogs_dl.wad, if necessary.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+The dogs get stuck upon on ledges.  When I play this wad in PrBoom they jump down.
+  </dt>
+  <dd>
+There are several options that control dogs, and they correspond to
+some of the compatibility settings in PrBoom.  These are inherited
+from MBF.
+<ul>
+<li>dogs: adds friendly dogs to your party.</li>
+<li>dogs jumping: allows friendly dogs to jump down, randomly, when player is
+within 144 units.
+When their target is below them, dogs can jump down from 128 high.
+Otherwise is dependent upon the setting of monkeys.</li>
+<li>monkeys: substitutes MBF jump down tests that limit actual floor
+change to 24 units, and dropoff change to 24 units.
+Without monkeys, dogs are limited to 24 high dropoffs when
+their target is not near.
+Monkeys affects dogs, and all monsters too.</li>
+<li>monster dropoff: MBF compatibility which allows dogs and monsters
+to use MBF rules for going over dropoffs.
+This also enables the MBF dogs jumping height tests, and monkeys logic.
+When their target is below them, monsters can jump down from 128 high.
+Without this, all monster jump down is limited to 24 high.
+</ul>
+  </dd>
+</dt>
+
+
+<dl>
+  <dt>
+The monsters walk weird, walk backwards, and moon-walk.
+  </dt>
+  <dd>
+This started with 1.47.2, and was fixed with 1.48.8.
+<br>For the affected versions, turn OFF the MBF monster avoid hazard option.  That will stop it.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+  The monsters are distorted, appearing thin or fat.
+  </dt>
+  <dd>
+  Yes they are, and that is a new feature.  Monsters can now have
+individual variations, with fat, thin, tall, short, fast, slow variations.
+If you want the standard monsters, turn off the monster variation
+control, OPTIONS > MAP VARIATIONS > MONSTER VARY.
+ </dd>
+</dl>
+
+<dl>
+  <dt>
+The player acts weird in the Doom wad demos.
+Is there a setting to make the demos work right?
+  </dt>
+  <dd>
+No, Demo compatibility is automated.
+Some improvements have been made in this compatibility with each release.
+<p>
+DoomLegacy loses sync with most of the Doom demos.  It was decided some
+years back, that demo compatibility would be sacrificed in favor of
+new features and improvements.
+<p>The demos only record the player actions and movements.
+Every monster and object reaction is the result of applying random numbers
+and player input.
+<p>To playback a demo, the engine must generate the exact same sequence of
+random numbers, and apply them to get the exact same situation that developed
+during the recording.  The monsters must react and walk the exact same
+paths as when the demo was recorded.  Almost every calculation of the
+DoomLegacy engine must come out identical to the recording Doom engine.
+The slightest difference in using a random number, or in
+calculating a monster, player, or projectile position, has cumulative
+effects in the playback.
+With the slightest position error, it rapidly gets to the point where the
+playback of player movements is completely irrelevant to the current situation.
+<p>Some attempts have been made fix this with compatibility enables in
+the code, to revert the engine to generate compatible output
+This puts the bugs back in the code.
+The current demo compatibility code mostly covers Doom demo and Boom
+demo formats, but not others.  It has improved old demo playback, somewhat.
+<p>DoomLegacy has its own variation on the demo format.  Like Boom,
+it needs to record a whole bunch of optional settings, all which
+affect demo playback.
+<p>DoomLegacy 1.46, will playback demos recorded with DoomLegacy, and
+remain in sync.
+I will not make any guarantees on this for long demos, or every situation,
+as it has not been tested much.
+<p>Doomlegacy 1.47, has included some old code that is run for some
+old demos. This makes some of the old Doom demos stay in sync for
+much longer now.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+The game does not look the same as other versions of Doom.
+  </dt>
+  <dd>
+DoomLegacy is an advanced port with many new features.  These features
+offer improved and alternative behaviors over previous versions and other ports.
+The controls to select your preferred behavior for these features are
+in the <b>options menu</b>.  Your settings will be saved to your config
+file when you exit the game.  These features can also be controlled
+by setting variables using the console.
+<p>However, if you're looking for the 100% authentic 1990s Doom experience, you
+could try <a href="http://www.chocolate-doom.org/wiki/index.php/Chocolate_Doom">Chocolate Doom</a>.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+I want to add switches to Heretic and Blasphemer wads.
+The SWITCHES lump works for Doom, but it does not work with Heretic.
+  </dt>
+  <dd>
+<p>This was fixed in DoomLegacy 1.46, which has separate Doom and Heretic
+internal switch tables.
+<p>
+Historical Info:
+Doom and Heretic would only load the switches for that version and lower,
+as identified by an episode number in the switch tables.
+The code has Shareware Doom episode = 1, Ultimate Doom episode = 2, Doom II episode = 3.
+Heretic has a similar scheme with Shareware episode = 1,
+and Heretic episode = 2, but it only contained two switches both with episode = 1.
+<p>The Boom SWITCHES lump was loaded for both Doom and Heretic game modes.
+The usage problem with Heretic was that in previous DoomLegacy the Heretic
+switch names were distinguished by having an episode = 4 in the entry,
+which required the SWITCHES lump to also have episode = 4.
+Such a SWITCHES lump would not have worked with other ports.
+<p>
+Since DoomLegacy 1.46, we no longer use that scheme.
+For compatibility, a Heretic SWITCHES lump should have episode = 1,
+or even episode = 2,
+but DoomLegacy will still accept switches lump entries with episode = 4 for Heretic.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+I want to use the MBF21 features, how do I enable them.
+  </dt>
+  <dd>
+<p>The features of MBF21 are enabled by having a dehacked lump that uses them.
+This is also true of features of MBF, and other dehacked functions,
+such as those from Boom, PrBoom, and Eternity Engine.
+As of yet, there is no way to just turn on MBF, or MBF21, functionality.
+The dehacked lump can use dehacked or BEX format.  Dehacked handling has been
+expanded to interpret MBF21 dehacked input.
+<br>These are new flags.  Interpretations are from DSDA-Doom and the specs.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+What are the dehacked attributes understood by DoomLegacy.
+  </dt>
+  <dd>
+<ul>
+<li>SOLID: Blocks other things, otherwise could walk through it.</li>
+<li>SHOOTABLE: Can be hit.</li>
+<li>COUNTKILL: When killed, counts toward kill total on intermission.</li>
+<li>COUNTITEM: When pickup, counts toward item total on intermission.</li>
+<li>AMBUSH: Not to be activated by sound.  A deaf monster.</li>
+<li>SPAWNCEILING: Will spawn hanging from the ceiling.</li>
+<li>SHADOW: Partial invisibility (spectre), which makes targeting harder.</li>
+<li>DROPOFF: Can jump or drop from high places.</li>
+<li>PICKUP: Can and will pickup items (players).</li>
+<li>SLIDE: Can slide against walls.</li>
+<li>NOGRAVITY: Does not feel gravity (like floaters).</li>
+<li>FLOAT: Active floater, can move freely in air.</li>
+<li>INFLOAT: Do not auto-float to target height.</li>
+<li>MISSILE: Is a missile.  Explode on contact, except that cannot his same species as user (which may be altered much now).</li>
+<li>SKULLFLY: Flying skulls, not a missile and not a floater.</li>
+<li>SPECIAL: Call TouchSpecial when touched.</li>
+<li>NOTDMMATCH: Do not spawn in DeathMatch, (like keycards).</li>
+<li>NOBLOOD: Does not blood splat when hit, (like furniture).</li>
+<li>NOCLIP: Not affected by collisions with lines nor other things.</li>
+<li>TELEPORT: Not affected by cross lines, similar to NOCLIP.  Docs
+claim it does check heights when teleport, but such behavior is not
+evident in the code.</li>
+<li>NOSECTOR: Do not link into sector things.  This makes it invisible but touchable.</li>
+<li>NOBLOCKMAP: Do not link into the blockmap.  This makes it inert but visible.</li>
+<li>DROPPED: Item that can be dropped by a monster.</li>
+<li>CORPSE: Act like a corpse, fall down stairs.</li>
+<li>JUSTHIT: Will try to attack right back.</li>
+<li>JUSTATTACKED: Will take at least one step before attacking.</li>
+
+<li>Boom, PrBoom flags:</li>
+<li>TRANSLATION4,TRANSLATION3,TRANSLATION2,TRANSLATION1: Player color
+translation, bit 4,3,2,1.
+PrBoom, MBF, Eternity Engine has only two bits of color translation.</li>
+<li>TRANSLATION: Player color translation.  Boom and PrBoom compatibility.</li>
+<li>UNUSED1: Boom and PrBoom compatibility.</li>
+<li>TRANSLUCENT: Boom translucent.</li>
+
+<li>DoomLegacy flags:</li>
+<li>MF2CLEAR: Clear all MF2 bits.</li>
+<li>FLOORHUGGER: Stay on floor.</li>
+<li>ONMOBJ: Thing is resting on top of another thing. DoomLegacy internal flag.  There is little sense in setting it.</li>
+
+<li>Heretic flags:</li>
+<li>LOWGRAVITY: Experience 1/8 of gravity. Heretic.</li>
+<li>WINDTHRUST: Affected by wind. Heretic.</li>
+<li>HERETICBOUNCE: Bounces off floor. Heretic. (was FLOORBOUNCE)</li>
+<li>THRUGHOST: Will pass through ghosts (missiles). Heretic.</li>
+<li>FLOORCLIP: Feet may be clipped. Heretic.</li>
+<li>SPAWNFLOAT: Spawned at random height. Heretic.</li>
+<li>NOTELEPORT: Does not teleport. Heretic.</li>
+<li>RIPPER: Rips through solid targets (missile). Heretic.</li>
+<li>PUSHABLE: Can be pushed by other actor movements. Heretic.</li>
+<li>CANNOTPUSH: Cannot push other pushable things. Heretic.</li>
+<li>PASSMOBJ: Enable over and under other objects. Heretic.</li>
+<li>BOSS: A major Boss, harder to kill, may have special effects. Heretic.</li>
+<li>FIREDAMAGE: Does fire damage. Heretic.</li>
+<li>NODAMAGETHRUST: Does not thrust the target when doing damage. Heretic.</li>
+<li>TELESTOMP: Can telefrag another actor. Heretic.</li>
+<li>FLOATBOB: Float uses bobbing motion. Heretic.</li>
+<li>DONTDRAW: Invisible. Heretic.</li>
+
+<li>MBF flags:</li>
+<li>TOUCHY: Reacts upon contact. MBF.</li>
+<li>BOUNCES: Bounces off walls. MBF.</li>
+<li>FRIEND: Friend to player, such as dog. MBF.</li>
+
+<li>MBF21 flags:</li>
+<li>LOGRAV: Experience only 1/8 of gravity. MBF21.</li>
+<li>RIP: Projectile rip, full volume sounds, splash immunity. MBF21.</li>
+<li>SHORTMRANGE: Short missile range (14*64) (like vile). MBF21.</li>
+<li>DMGIGNORED: Other monsters ignore when it attacks (like vile).
+MBF21.</li>
+<li>NORADIUSDMG: Does not take damage from blast radius (like cyborg).
+MBF21.</li>
+<li>FORCERADIUSDMG: Take damage from blast radius (cancels cyborg,
+spider, minotaur, sorcerer immunity). MBF21.</li>
+<li>HIGHERMPROB: Missile attack prob min 37.5% (normal is 22%) (like
+cyborg). MBF21.</li>
+<li>RANGEHALF: Missile attack prob uses half range (like undead,
+cyborg, spider, skull). MBF21.</li>
+<li>NOTHRESHOLD: No target threshold (like vile). MBF21.</li>
+<li>LONGMELEE: Long melee range (like revenant). MBF21.</li>
+<li>MAP07BOSS1: Map07 Boss1 type, TAG 666 (like mancubus). MBF21.</li>
+<li>MAP07BOSS2: Map07 Boss2 type, TAG 667 (like anachrotron). MBF21.</li>
+<li>E1M8BOSS: E1M8 Boss type (like baron). MBF21.</li>
+<li>E2M8BOSS: E2M8 Boss type (like cyborg). MBF21.</li>
+<li>E3M8BOSS: E3M8 Boss type (like spider). MBF21.</li>
+<li>E4M6BOSS: E4M8 Boss type (like cyborg). MBF21.</li>
+<li>E4M8BOSS: E4M8 Boss type (like spider). MBF21.</li>
+<li>FULLVOLSOUNDS: Full volume sounds (like spider, cyborg). MBF21.</li>
+</ul>
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+Avactor wad sometimes has segfaults.  This sometimes happens with
+other wads.
+  </dt>
+  <dd>
+This has been investigated at least twice, and it is the Avactor
+dehacked changes that are causing it.
+<p>Doom states, from the original, have had some state action
+functions that require two parameters (player, psp).
+The two parameter functions are called when the player interacts with the current weapon.
+All other action functions only have the parameter (mobj).
+<p>Avactor dehacked is setting up new states, one of which is
+setting state[7] as its next state.  State[7] is one of those that
+interacts with the weapons and has an action function with two parameters.
+This results in calling that function with only one parameter, and it segfaults.
+<p>Preventing this, or even detecting it, is going to require some inventiveness as this situation
+cannot be detected until all the dehacked changes are done.  The problem is
+keeping compatibility with all the wads that have dehacked in them.
+There were no restrictions on what dehacked can do to the states, so
+anything that does not outright fail on the port they tested the wad
+upon, probably can be expected.
+<p>Some of the states differ for other ports, like PrBoom and
+Eternity.  We have tried to get some compatibility with those ports
+and have provided a thing switch.  However, this problem does not seem
+to hit those differing states. This being such a large dehacked lump,
+exactly how it fails is hard to determine.
+<p>Many of the Avactor maps can be played without encountering this.
+Again, do not know why.
+<p>With 1.48.16, could play most maps.  There is now a -dehthing
+switch that can specify the deh interpretation needed for the wad.
+<p>With 1.48.18 it will detect and adapt.  Segfaults due to bad state
+action functions are now prevented.
+ </dd>
+</dl>
+
+
+
+<h2><a name="input">Mouse/Joystick/Keyboard</a></h2>
+
+<dl>
+  <dt>Mouse2 is grabbed by the system.</dt>
+  <dd>
+<p>This happens for both Linux and Windows.  The system uses both mice
+for moving the same screen pointer.</p>
+<p>Windows: Go to the Devices control, find the mouse devices,
+and DISABLE the "Serial Mouse" driver.  The serial mouse port itself will
+remain available through the COM devices.
+</p>
+<p>Linux: Trying to get the X11 windowing system to not attach a
+serial mouse, is a work in progress.  Let us know if you achieve a
+workable solution, that does not actually require mangling the X11 system.
+</p>
+  </dd>
+</dl>
+
+<dl>
+  <dt>Using the Linux "/dev/mouse2" port selection.</dt>
+  <dd>
+This follows the Linux practice of putting indirection in "/dev/"
+for common devices.
+<pre>
+<br>A mouse port that is showing up as "/dev/input/gpm2data"
+(a completely fictious example).
+<br>As root user:
+> ln -s /dev/input/gpm2data   /dev/mouse2
+</pre>
+Then in DoomLegacy you can use the "mouse2" setting of mouse2port.
+  </dd>
+</dl>
+
+<dl>
+  <dt>The "mouse2" options do not appear.</dt>
+  <dd>
+MOUSE2 can be enabled/disabled as a compile option.
+When DoomLegacy is compiled without MOUSE2, the mouse2 options
+will not appear in the mouse menus.
+<br>The "Use_Mouse2" option will remain, as it disables keybord
+movement control.  Joystick and other input devices may require that.
+</dd>
+</dl>
+
+<dl>
+  <dt>Connecting a serial mouse as MOUSE2 in Windows.</dt>
+  <dd>
+<p>If the serial mouse is connected when Windows is started, then
+Windows will install a "Serial Mouse" driver.  This will send serial
+mouse input to control the system pointer.
+Both mice will move the same screen pointer.</p>
+<p>If the serial mouse is plugged in after the computer is started,
+then there is a risk of damaging the serial port.  However, this is
+often done anyway (do at your own risk). Try to minimize static
+differences by touching the connector shell to the computer frame first.
+In this case, Windows does not install the "Serial Mouse" driver.
+</p>
+<p>
+Go to the "Devices control" screen, find the serial devices.
+Find the "Serial Mouse" driver and disable it.
+This will prevent it from connecting in the future.
+</p>
+</dd>
+</dl>
+
+<dl>
+  <dt>Connecting a serial mouse as MOUSE2 in Linux.</dt>
+  <dd>
+We don't know yet.  Be the first to discover this amazing secret, and
+tell us so we can put that information here.
+The main problem seems to be getting X11 to not attach to the mouse.
+  </dd>
+</dt>
+
+<dl>
+  <dt>Connecting a USB mouse as MOUSE2 in Windows.</dt>
+  <dd>
+Some Windows can connect a USB device to a COM port, like COM7.
+Don't know for older Windows, nor which Windows versions.
+  </dd>
+</dl>
+
+<dl>
+  <dt>Connecting a USB mouse as MOUSE2 in Linux.</dt>
+  <dd>
+This is really desireable, but needs someone to figure it out.
+The main problem seems to be getting X11 to not attach to the mouse.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>My mouse/joystick does not work.</dt>
+  <dd>
+<p>
+First, check that the mouse/joystick is activated.
+On the console type either 'use_mouse', or 'use_joystick'.
+If it is '0' or off then that mouse/joystick is disabled.
+To set the variable to 1, type 'use_mouse 1'.
+There are also mouse menus with these control items.
+</p>
+<p>
+Once the mouse or joystick is activated, you have to
+bind the buttons to controls in the <b>setup controls menu</b>.
+</p>
+ </dd>
+  <dt>My mouse/joystick settings don't work anymore.</dt>
+  <dd>
+DoomLegacy 1.48 changed some of the KEY names, and the config file key names.
+  <ul>
+  <li>The KEY_2MOUSExx are now KEY_MOUSE2xx.</li>
+  <li>The KEY_DBLMOUSExx are now KEY_MOUSExxDBL.</li>
+  <li>Unnecessary spaces were taken out of the button names.
+  Thus, "mouse 2 b 3" is now "mouse2 b3".
+  </ul>
+  </dd>
+  <dt>How do I use an XBOX controller.</dt>
+  <dd>
+<p>Support for XBOX controller is in DoomLegacy 1.48, but only
+for the SDL port.
+It is a compile option, so if you have a custom compilation, check that
+XBOX_CONTROLLER is defined.
+<p>If you are using the XBOX controller, without a keyboard, then
+several button controls need to be defined to access the menus and
+start the game.  There are default assignments for these in the
+config, using buttons 0 through 8 of the first joystick/controller.
+Plug in a keyboard to do the setup, if you can.
+If you have 6 or more buttons, you should be able to play simple Doom
+and Heretic wads without a keyboard.
+<p>There is support for 4 joysticks, with each having 16 buttons, 2 triggers, and 2 hats.
+</p>
+  </dd>
+</dl>
+
+
+<h2><a name="video">Video</a></h2>
+
+<dl>
+  <dt>The game doesn't restore the video mode I have chosen the last time
+I played DoomLegacy.
+  </dt>
+  <dd>
+Doom Legacy lets the user test video modes before committing to using them.
+If you select a bad video mode, wait and let Doom Legacy timeout, and
+it will revert to the last good video mode.
+If you crash Doom Legacy or the system during a video mode test,
+do not worry, Doom Legacy will revert to the default Video Mode saved in the config.
+<p>
+When you change the video mode using the menus, it is only for the
+current session.  To save it to the config file, it has to be made the
+'default' video mode.  The next time DoomLegacy is started it will
+use the 'default' video mode from the config file.
+<p>To set the current video mode as the default, press the 'd' key when in the Video mode menu.
+<p>To test an unknown video mode, press the 't' key.  This provides an
+escape, and a timeout, in case the video mode displays badly.
+<p>If you select some video mode that will not display
+properly and you have to abort, or even reboot, you can kill
+DoomLegacy without letting it save config.  The next time DoomLegacy is started it will
+revert to the known good video mode saved in the config file.
+<p>Do not set a video mode to default until you know it is good.
+If you have saved a bad video mode in the config
+and cannot see the video controls in the DoomLegacy menu,
+you will have to edit the config file by hand,
+or delete your config file to clear the bad video mode.
+The config file is re-written when DoomLegacy exits, so do not leave
+the config file open in your editor while running DoomLegacy.
+  </dd>
+</dl>
+
+<dl>
+  <dt>The game display is sideways.</dt>
+  <dd>
+Some monitors can be tilted to be tall, for working with documents.
+They have display modes like 800x600, and 600x800.
+They can detect 600x800 (where the 800 is the height), assume the
+tilted mode, and display the raster accordingly.  Other tilt monitors
+may sense the tilted mode with a switch instead.
+Use the 800x600 video mode instead.
+  </dd>
+</dl>
+
+<dl>
+  <dt>The game display proportions are wrong.</dt>
+  <dd>
+  <p>
+There is a new "viewfit" control, which can be found in the Video menu.
+It has selections to fit the screen to the height or the width of the screen.
+With these selections the aspect ratio will be adjusted to draw on square pixels.
+The stretch selection will try to fit the screen, and will have
+an unusual aspect ratio for wide screens.
+  </p>
+  <p>
+The original Doom graphics were designed for a 320x200 VGA display with
+a screen 4:3 physical aspect ratio. Consequently the pixels on these displays
+had a 5:6 physical aspect ratio, unlike most modern displays which have
+square pixels. This makes rendering the graphics on modern displays
+somewhat complicated.
+  </p>
+  <p>
+The menus and intermission screens are scaled at integer ratios to
+fit the screen.  This will often leave bars at the edges.  Because
+these are wad images using color palette graphics, attempts
+at finer interpolation would require looking up blended palette colors,
+which would lead to a muddy look.  To avoid this problem, the menus will be
+scaled larger or smaller in only integer ratios, with background fill bars.
+  </p>
+  <p>
+The game rendering is fully scaled to display the same view at
+all video display modes.
+  </p>
+  <p>
+In software render mode, DoomLegacy will proportion the display to keep
+the original display appearance.  It will display with filler bars if
+necessary to do this.
+The pixels will not be identical to those from the original Doom.
+  </p>
+  <p>
+In OpenGL mode using fullscreen, the introduction and intermission pictures
+are stretched to fill the screen.  This does not keep the original
+aspect ratio and uses pixel RGB color blending.
+  </p>
+  <p>
+There is an OpenGL FOV control, but it zooms and does not change the aspect ratio.
+The viewfit control, for fit_width and fit_height selections, scales the other direction to keep a proper aspect ratio.
+  </p>
+  <p>
+When you have a 16:9 display, use the viewfit control to choose how the scaling is affected during gameplay.
+The stretch selection, stretches the normal 4:3 game screen to fit the actual video size.
+This was the behavior in previous DoomLegacy versions.
+The monitor may stretch it again to fill the actual monitor shape, or the monitor may use black bars instead.
+This will alter the appearance of rooms and sprites.
+  </p>
+  <p>
+The fit_width selection, will scale to fit the width, with the height being scaled
+to the aspect ratio, and clipped to the screen size.
+If the height is extended, this may leave the player hand and gun floating in mid-air.
+The only thing that can be done about that is to select fit_height instead.
+  </p>
+  <p>
+The fit_height selection, will size the scaling to fit the height, with
+the width being scaled to the aspect ratio, and clipped to the screen size.
+  </p>
+  <p>
+If you are confused, put it into Auto mode.  That chooses the least
+likely to annoy selection, based on the actual video mode.
+  </p>
+  <p>
+Most monitors can be set to display a 4:3 aspect with black borders.
+Another alternative is to turn off fullscreen, and choose a window size
+that fills most of the screen.
+  </p>
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>I cannot use some of the large fullscreen video modes of my monitor.
+  </dt>
+  <dd>
+There are many large format monitors that exceed the internal display
+limits in DoomLegacy.
+<p>There are limits to the monitor width because some structures are
+dependent upon the maxiumum video width.
+To expand the line width limit for a few, we would have to do it for every
+user regardless of their hardware.
+<p>Eventually, this will have to be changed to allow using larger monitors
+in fullscreen.  That will require a rewrite of most of the texture segment
+code to some other, slower, texture segment state storage scheme.
+<p>DoomLegacy 1.48 has removed the maxiumum video width structures
+from the drawsegs, making them allocated.  But, there is still work to be
+done before the maxiumum video width can be increased.
+<p>Display at a high resolution monitor may look nice, but drawing
+such a large screen slows the frame rate.
+Drawing at a resolution above 1600x1200 has limited
+appeal because the game response would be slow.
+  </dd>
+</dl>
+
+<dl>
+  <dt>I cannot use the 16:9 format of my monitor.
+  </dt>
+  <dd>
+DoomLegacy considers all monitor modes.
+Wide window modes have been added to the video selections.
+<p>
+There are some problems caused by wider monitor modes that are yet to
+be solved.
+<p>Is that cheating for one player to have a wider view?
+It is more fair in deathmatch for all players to have the same field of view?
+There may need to be network controls to limit the field of view in deathmatch.
+<p>This will also have to be changed soon (been saying that for years),
+as wide screen monitors are now commonplace.
+  </dd>
+</dl>
+
+
+<h2><a name="audio">Audio</a></h2>
+
+<dl>
+  <dt>
+The music volume control is not independent of the sound effects
+volume control.
+  </dt>
+  <dd>
+More recent Windows products changed the sound interface to implement
+only one volume control for a program.  All the Doom ports have had
+problems with this.  DoomLegacy has not implemented any of
+the suggested solutions yet.  One requires starting an independent task to
+play the music, just to get the independent volume control.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+Sometimes the music will not start in the DoomLegacy X11 port.
+  </dt>
+  <dd>
+If DoomLegacy is terminated, sometimes the Midi ports are not cleanly
+closed.  Starting DoomLegacy again, setting the sound devices to
+something safe, and shutting it down again seems to work.
+After that, I have found that DoomLegacy music will work again.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+FluidSynth does not make any music.
+  </dt>
+  <dd>
+You have to have a FluidSynth server running before starting Doom
+Legacy.  This would often be started by the system.
+<p>
+If you start FluidSynth yourself, do not forget to specify a
+soundfont with music devices.
+You can use FluidR3_GM.sv2, which also can be used with TiMidity.
+You might also try the GeneralUser_GS sound font.
+<p>
+The FluidR3_GS.sv2 soundfont,
+is just weird sounds and special effects, and does not work for music.
+  </dd>
+</dl>
+
+<dl>
+  <dt>
+FluidSynth sounds much different than TiMidity.
+  </dt>
+  <dd>
+This would be the soundfont used, and FluidSynth default settings.
+The same DoomLegacy code drives both TiMidity and FluidSynth.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>
+SDL sound failures.
+  </dt>
+  <dd>
+The SDL Mixer is detected at the compile time.
+The User must have an SDL Mixer version installed that is compatible or better.
+Otherwise the DoomLegacy code will call SDL Mixer functions that do not exist in
+your installed SDL Mixer version.
+<br>
+My machine for compiling Win binaries has SDL Mixer 1.2.8.
+<br>
+My machine for compiling Linux binaries has SDL Mixer 1.2.12 (but
+1.2.10 will probably work too).
+<br>
+The sound code will detect and compile with SDL Mixer 1.2.8, SDL Mixer 1.2.10,
+SDL Mixer 1.2.12, and SDL2 Mixer.  This is detected at compile time.
+The compiled sound code is adjusted
+according to the SDL Mixer library present when compiled.
+<br>
+The run-time user must have a compatible SDL installed (the same or better).
+<br>
+The SDL Mixer 1.2.8 does NOT have MIX_INIT, but the SDL Mixer 1.2.10
+does, and SDL2 does too.
+The MIX_INIT provides some device detection and reporting to the user what was found.
+<br>
+The code still supports compiling for SDL Mixer older than 1.2.8,
+but those do not have RWOPS, and thus music playing with that Mixer will then use the hard-drive.
+This is detected and determined at compile-time, and running with a
+newer SDL Mixer will not affect that compile decision.
+  </dd>
+</dl>
+
+
+<li>
+</li>
+
+
+<h2><a name="network">Network</a></h2>
+
+<dl>
+  <dt>Where can I find Internet servers?</dt>
+  <dd>
+    Try <a href="http://doomconnector.co.nr/">Doom Connector</a>.
+<p>The last I heard, there was still a DoomLegacy server up, but it was
+running an older DoomLegacy.
+<p>The Game server locations respond to requests.
+The interested parties should submit a request to the Game Server to host a
+DoomLegacy 1.48 Server.
+  </dd>
+</dl>
+
+<dl>
+  <dt>We have a fast computer, can we use it as an DoomLegacy Internet server?</dt>
+  <dd>
+You only need the IP address of your fast computer, and that IP
+addresses must be communicated to the other players
+(probably by cell-phone or email).
+<p>A static IP address only has to be setup once in the
+DoomLegacy Server menu of each player.
+<p>If it is a dynamic IP address, then each player must setup the server IP
+address every time the server connects to the Internet, because that
+IP address will likely be different each time.
+<p>Your success at this may depend upon filtering done by your IP service providers.
+It will not work if they are blocking packets using the
+DoomLegacy port address (port 5029).
+<p>Your firewall also has to let through the DoomLegacy port address
+(port 5029).
+<p>You could use a different port number, and even have several servers on the
+same machine using different port numbers.  See the network port explanation in the docs.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>What IP address should we use for a local network?</dt>
+  <dd>
+The IP addresses in the range 192.168.1.1 to 192.168.254.254 are
+reserved for local network usage.
+<p>Your local network will be limited to an address range, a subnet.
+If your netmask is the usual 255.255.255.0, then your subnet is limited to
+only vary the last number, and all the computers on that subnet must
+have the same first three numbers.
+<p>Pick an IP address for your server, such as 192.168.3.2.  All your
+player computers then need to have unique IP addresses on the subnet 192.168.3.xx,
+where xx is 2..254.
+<p>
+For this example, lets consider the network 192.168.3.0,
+which has a computer 192.168.3.2,
+and two visitors at 192.1.3.72, and 192.1.3.246.
+<p>
+If you have a router with DHCP, such as your wifi-router,
+then it will automatically assign an IP address in your subnet when the
+visitor computer connects to the wifi.
+Without DHCP, you have static IP addresses, and the visitors will have to modify
+their IP address to work on your network.
+<p>If your DoomLegacy server is connected using DHCP, then the server IP address
+may be different then last time you played.  You will then have to config every
+client computer to use the new server IP address, which is bothersome.
+Most modern routers will connect a recognized computer to the same IP address it
+used last time it was connected.
+You can set up your router to do this.
+Make sure the server connects to the network first, so some
+client does not steal the preferred IP address it uses.
+<p> Even better is to set the router to assign a static IP address to the server.
+That IP address will then be reserved to be only used by the server.
+<p>Without DHCP, modern internet communications should allow you to add the server IP address
+to your recognized addresses (static or manual routing) for a particular hardware device
+(like your wifi-router, or Ethernet router, assuming you have the firewall enabled).
+Just login to your router and add the needed addresses, you should not have to replace any existing internet address.
+<p>Your firewall has to let through the DoomLegacy server port address
+(by default, port 5029).  You can setup DoomLegacy to use a different port number.
+<p>It does not matter what IP address the clients get, as long as it
+is an address on your subnet.
+The server will discover the client IP address from their first connect message.
+<p>If any of your clients are using an unusual port address, then your
+firewall will also need to let through messages to that port.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>My ISP does not like Port 5029, can we change it?</dt>
+  <dt>There is another Doom at 5029, can we use a different port?</dt>
+  <dd>
+The server port can be specified using a command line switch "-udpport 5104".
+You must avoid any existing port your ISP may be using for services.
+<p>The user reserved ports start at 5000.  I recommend only going up from
+5029, such as 5100 .. 5199, to avoid other programs.
+<p>All your players (clients) must specify the same port number on their command
+line, and fix their firewalls to allow through packets that use that port.
+  </dd>
+</dl>
+
+
+<dl>
+  <dt>DoomLegacy will not play with older DoomLegacy servers?
+  </dt>
+  <dd>
+<p>Minor versions of DoomLegacy (1.48) are usually not network compatible
+with other minor versions of DoomLegacy (1.46).  It will likely have a
+different network version number.  They would also quickly lose sync,
+and someone would get kicked, due to differences in random number usage.
+<p>DoomLegacy 1.47 uses Network Version 24</br>
+DoomLegacy 1.48 uses Network Verson 26.</br>
+Some of the network messages have been changed.
+<p>Since DoomLegacy 1.46, the network code has been hardened against
+malicious packets overrunning buffers and to block others from using file download to
+explore your file system.
+<p>Older versions of DoomLegacy should be eliminated from network usage for security reasons.
+With so many important bug fixes, there is no reason to be using older DoomLegacy for network play.
+<p>Each client should ideally run the same version of DoomLegacy as the server.
+Otherwise, some slight play difference may get them kicked due to consistency failure.
+</p>
+  </dd>
+</dl>
+
+<dl>
+  <dt>As soon as I add a bot to the game, the other players are kicked
+with a consistency error message.</dt>
+<dt>Is there a way to have bots in a network game?</dt>
+  <dd>
+Yes, bots are compatible with network play, now (finger's crossed).
+Bots have gotten much more reliable since DoomLegacy 1.48.10, 
+when some more network communication and startup evils were corrected.
+You should be able to use them like other players now.
+But, they are still annoying, running around and getting into trouble.
+Try playing with 4 of them, as you may lose some.
+<p>
+Otherwise, it depends upon the DoomLegacy version.
+Bot creation, and bot game play, got improved in DoomLegacy 1.48 early versions.
+You can try adding the bots last. Sometimes a new player got the same player slot that a bot had taken.
+The startup communications got reworked in later versions to fix these problems.
+<p>
+DoomLegacy before 1.48, bots would not work with network games. 
+They would trigger players getting kicked in the clients.
+<p>Some integration with other DoomLegacy features,
+such as network play, splitplayer, and saving games, has not been entirely done yet.
+<p>With 1.48.16 and later, bots have been given more ability to stay
+out of trouble, and in a coop game with behave better.  A "come here"
+command has been added that often times they actually obey.
+</p>
+  </dd>
+</dl>
+
+
+<h2><a name="hints">Hints</a></h2>
+<dl>
+  <dt>Phobiata</dt>
+  <dd>
+Phobiata is one of the classic DoomLegacy wads.  Dark and dramatic, it
+uses many of the DoomLegacy special extensions.
+<p>In spite of the dramatic "Nightmare" as the only difficulty level showing,
+all the difficulty levels are there.  If you ignore this you
+will get a hard game with multiple CyberDemons.
+<p>Within Phobiata there are also Myth, War, and Chaos.  Myth removes
+most of the monsters, but there still are some monsters, and traps.
+Chaos is similar to War, but Chaos seems to be the most difficult.
+It is a difference in style.
+<p>Give yourself a Phobiata savegame directory.  When you save your
+first savegame, move up to the directory line and create a new
+directory.  Use that for all your Phobiata savegames (up to 99 of them).
+This greatly saves on inventing names that all are variations of phobiata.
+<p>Phobiata is not fair, with waves of monsters, and often 2 viles in the same room.
+In hard skill level, there are 3 CyberDemons and a SpiderDemon in the
+same area, guarding the same key.
+Save your game often, and especially when entering a dark doorway.
+<p>Some of the DoomLegacy special map options can be used to make it
+more playable.  This is recomended if you are not good at dealing with
+monster mobs.  Recommend using the delayed reaction to give you a chance
+to react first.
+<p>You can get the monsters to fight each other.  Lead the cyberdemon,
+spiderdemon, and the bruisers into shooting each other.
+<p>One option is to just use the GOD mode (console).  This will allow you to
+enjoy the map in spite of being clobbered constantly.
+<p>Phobiata has more monsters than it has ammo to kill them.
+Often there is not enough ammo, so you will have to use console to
+"give ammo" when you run out.
+<p>Another way to play it is to not even try to kill all monsters, but
+just run, get around to the keys.  You will have to shoot your way
+through the mobs of monsters many times, but this will reduce the
+number you must kill to about half.
+<p>Phobiata uses mp3 music files for some special effect.  Set the
+sound options so that MP3 sound can play, otherwise you will just get
+Doom2 music.
+<p>Phobiata is dark, and it is hard to see very far.  This is the
+intended effect.  Adjust all the video controls for best effect.
+Also select the corona method, as coronas are heavily used.
+<p>Coronas are also used for fireflies on the opening map. You should be able
+to see them.  The fireflies move like flies, they are not the stuff
+that is falling.  Stand still and watch for them, they will not hurt you.
+<p>The opening map coronas are above the lamps, we know.  Is is reported that
+they were left that way on purpose because they looked more dramatic.
+<p>Extensive use of fragglescript.
+ </dd>
+</dl>
+
+<dl>
+  <dt>HTH2</dt>
+  <dd>
+<p>Developed for DoomLegacy, it uses many of the DoomLegacy features.
+<p>Will get to crawl around many non-obvious routes to get things
+done.  Remember that you can jump, and climb up on things.
+<p>Extensive use of fragglescript.
+ </dd>
+</dl>
+
+
+<dl>
+  <dt>Lost Civilization</dt>
+  <dd>
+<p>This wad has excellent constructions and realism.  This has been
+tested with DoomLegacy, with changes to support it.
+It uses DeePsea, and blockmap compression.
+  </dd>
+</dl>
+
+<dl>
+  <dt>Sleepwalking</dt>
+  <dd>
+<p>This uses MBF21 to greatly alter the monsters and behavior, creating
+surreal effects.  Because this wad was developed on DSDA, it uses many
+undocumented behaviors of DSDA, and we do not implement all of them.
+It has been made to play reasonably well, as it was used for testing MBF21.
+<p>This is a nightmare slaughter wad, so expect waves of monsters.
+Give yourself a savegame directory, and savegame often.
+<p>In the starting room, there is a bookcase.
+It fails to give you the chaingun, so just use the console to give
+yourself a chaingun.
+<p>The sky displayed is a DoomLegacy sky.
+The sky from the wad uses an unknown mechanism and is not recognized, nor loaded.
+<p>As with many MBF21 wads developed on DSDA, it may help to play
+them using the "-dsda" command line switch.  This enables the DSDA
+effects and does not rely upon detecting them automatically.
+  </dd>
+</dl>
+
+<dl>
+  <dt>Eviternity</dt>
+  <dd>
+<p>Tested and supported by DoomLegacy. This uses uncompressed ZDoom extended nodes.
+  </dd>
+</dl>
+
+<dl>
+  <dt>Eviternity II</dt>
+  <dd>
+<p>This is massively large, with a dehacked over 1.4 MB, and over 10000 states.
+That greatly exceeds the number of DoomLegacy states (settable in doomdef, nominally 2600)
+and DEHEXTRA extra states (3999).
+Even if it ever finished loading it would exceed available space.
+  </dd>
+</dl>
+
+
+</div>
+</body>
+</html>

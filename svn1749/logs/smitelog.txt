@@ -1,0 +1,246 @@
+smite-meister's log
+Doom Legacy 1.x
+Started: 2010-02-07
+
+*** Initial SVN import
+rev 1, 2009-09-23
+  * Initial SVN import from CVS module doomlegacy
+  * Bump version number to 1.44
+
+
+*** OLDWATER removal
+rev 596, 597
+OLDWATER was an attempt at implementing realistic water using negative
+sector tag values (-tag == water height). It used values 888 and 887
+in the player_t::specialsector field to denote negative tag- and floor
+flat image -based water content, respectively. It also used
+visplane_t::picnum value 1998 to denote a water plane.
+
+Removed completely, as we now have better methods for creating water.
+
+
+*** Added this log
+rev 598
+
+
+*** Makefile cleanup
+rev 604
+Replaced all the separate multimedia interface options by one option, IF,
+which defaults to SDL. Removed unnecessary defines DIRECTFULLSCREEN, VID_X11.
+Also: Removed some old unused endianness code, small bugfix in p_floor.c.
+
+
+*** Fixing the savegame system
+rev 605, 606
+Replaced the hack used for saving and loading mobj_t pointers, the new system
+should be 64-bit safe. The savegame files are not yet platform-independent
+since the memcpy-based saving system does not take care of endianness.
+FS save/load should work also, including FS arrays.
+
+Fixed handling of active plats, now stopped plats should stay stopped
+when loading.
+
+
+*** vsprintf fixes
+rev 608
+Replaced a number of unsafe uses of vsprintf with vsnprintf, fixing
+several console-related crashing bugs. There may be more of the same
+in the interface code (SDL and OpenGL are clean).
+
+
+*** The great compiler warning cleanup
+rev 609, 610
+Fixed a LOT of compiler warnings. Now the 64-bit version compiles cleanly.
+There were lots of questionable pointer hacks in the code, some of which still remain.
+Also backported some stuff to tables.h and tables.c from Legacy2.
+
+
+*** Small z_zone changes
+rev 635
+ZONEID is now the first field in memblock_t so that it'll be the first
+field to be corrupted by an overflow in the preceding block(s).
+Replaced all if(block->user > 0x100) tests by if(block->user).
+
+
+*** Game modes, commandline switches
+rev 636
+GDESC system now recognizes Strife, will abort if an unsupported game
+is run (currently Hexen or Strife).
+Added support for the standard --version and --help commandline switches.
+
+
+*** ENDOOM fixed
+rev 688
+Now the ENDOOM lump has current information in it. Also created a new
+directory, resources, for legacy.wad lumps.
+
+
+*** Documentation cleanup/update
+rev 692
+Removed obsolete docs:
+  doomlic.txt (old, non-GPL Doom licence)
+  sound.cfg (Allegro configuration file?)
+  Doublescan.txt (ancient configuration info for XFree86)
+  README_SDL (obsolete caveats for version 1.40 SDL)
+Readme.OS2 moved to os2/ directory.
+Updated source.html.
+
+
+*** Warnings fixed
+rev 699
+Fixed a number of warnings in p_saveg.c and one in p_hsight.c
+Use id/pointer unions when loading mobj*'s from a savegame instead of
+cast hacks to be 64-bit safe.
+
+
+*** Backported international keyboard support from Legacy 2
+rev 700, 752
+Now we support arbitrary keyboard layouts via SDL (only ASCII chars,
+though), and use SDL keycodes internally.
+Removed some redundant code from console.c and hu_stuff.c
+Moved all SDL input handling to sdl/i_system.c
+
+
+*** New legacy.wad resources, FS fixes, updated FS docs
+rev 702, 703
+Added the WAD inventory and updated VERSION and THINGS.H lumps.
+Small FS fixes in the new funcs introduced after 1.42.
+Fixed and partially updated _doc/fsfuncs.html.
+
+
+*** Backported SDL joystick code from Legacy 2
+rev 714
+Input handling is much cleaner now, but could still be better.
+Linux-specific joystick code removed from sdl/.
+
+
+*** Simplified SDL audio/music startup/shutdown
+rev 724
+Sound and music are now initialized and shut down simultaneously.
+Also fixed an improper call to SDL_Init in sdl/i_cdmus.c
+
+
+*** Removed FMOD/digmusic references from the music interface
+rev 725
+Since not every platform uses FMOD (SDL version doesn't need it, for
+example) it should not be explicitly mentioned in the music interface.
+Also removed the -digmusic switch.
+
+
+*** SDL sound fixes, raised audio output samplerate to 22 kHz
+rev 730
+Removed unnecessary code and unwarranted assumptions, fixed a possible
+buffer overflow. Now my sound works again :)
+
+
+*** Renamed consvars and commands
+rev 733
+Some of the console vars and commands have really confusing names
+right now, so a little renaming is in order. To be continued.
+
+
+*** Preparing for 1.44 alpha1
+rev 736, 737
+Small beautification fixes.
+Renamed legacy.dat to legacy.wad (since it is a WAD file).
+
+
+*** Windows/SDL fixes
+rev 743, 744
+The __WIN32__ macro was used in lots of conditionals for things specific
+to the WinAPI version, yet they are unapplicable to the Windows/SDL
+version. Replaced them with the macro WIN_NATIVE_PLACEHOLDER if we
+ever need a Windows/WinAPI version.
+Likewise, removed lots of inappropriate uses of the LINUX macro (which
+actually means "UNIX-like"...)
+Removed VID_PrepareModeList from the video interface, it doesn't need to be exposed.
+Modified the Makefile to include a platform option, Linux/SDL and
+Windows/SDL both compile and link.
+
+
+*** Fuzzymode consvar
+rev 745
+Added a consvar for choosing between the original (fuzziness) and new
+(transparency) partial invisibility effect.
+
+
+*** System interface fixes, improved SDL_mixer music.
+rev 754
+Fixed I_GetFreeMem and I_GetDiskFreeSpace for Windows.
+Now we can actually pause and resume the music using SDL_mixer.
+All music loops by default. Fixed a potential bug where non-looping
+music wasn't played at all.
+
+
+*** Mouse consvars and menu items renamed.
+rev 760
+Confusingly named mouse sensitivity consvars and menu items renamed.
+
+
+*** FS fixes
+rev 798
+FS documentation updated, Spider Mastermind name in THINGS.H fixed.
+
+
+*** Menu bug fixed
+rev 811
+Bug 3078853: Non-character keys should not initiate an alphaKey search.
+Also now draws disabled small text menuitems in white (gamma).
+
+
+*** Added backslash escapes to command parser
+rev 812
+Bug 3159614: Command parser could not handle nested quotes, now they
+can be backslash-escaped.
+Manual updated.
+
+
+*** Signed fields in map structs changed to unsigned to accommodate larger maps
+rev 823
+Bug 3170768: blowup.wad overflowed signed map structures.
+Fixed by making them unsigned.
+
+
+*** CFG files amnesia bug fixed
+rev 827
+Bug 653278: Netvars loaded from config file have no effect.
+Solution: Do not try to change cvars through the XCmd interface unless
+we are in a netgame, do it directly instead.
+
+
+*** Input bugfixes, cleanup
+rev 828
+Restored localaiming pitch angle clipping.
+Fixed mousewheel functionality by adding the gamekeytapped array
+ (mouse wheel events are virtual keys which are depressed and immediately released).
+Cleaned up some game messages, Makefile.
+
+
+*** Bugfixes, docs updated.
+rev 841
+Apparently harmless buffer overflow bug fixed in w_wad.c.
+Splitscreen now works again, rev 827 introduced a bug in which
+ non-netvar cvars could not be changed in netgames.
+Docs fixed/beautified.
+
+
+*** 1.44 alpha3 release
+rev 845
+Updated version to 1.44 alpha3.
+
+
+*** CMake build system
+rev 1077
+Added CMakeLists.txt files for building Legacy using CMake.
+Cross compilation does not work yet.
+
+
+*** Updated version to 1.45.0 beta1
+rev 1078
+
+
+*** Source tree reorganization
+rev 1110-1113
+Source code went into trunk/src/, now the build happens entirely inside trunk/.
+Removed some unnecessary files, created necessary ones.
+Makefile has not been fixed yet.

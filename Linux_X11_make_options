@@ -1,0 +1,30 @@
+# DoomLegacy Make options for Linux X11
+MAKE_OPTIONS_PRESENT=1
+# Place your make file options here (see Makefile).
+# This is a comment line. Remove the # on any active line.
+# Compile on Linux (default) for X11.
+SMIF=LINUX_X11
+
+# If you have FreeBSD, use this SMIF instead.
+#SMIF=FREEBSD_X11
+
+# CD-Music enable/disable, if you don't have the special libraries, etc.
+# NOCDMUS=1
+
+# Music options for some special platforms.
+#openserver5
+# MUS_OS=SCOOS5
+#unixware2
+# MUS_OS=SCOUW2
+#unixware7
+# MUS_OS=SCOUW7
+#ESD demon
+# HAVE_ESD=1
+
+# Debugging
+# DEBUG=1
+
+# GGI option on X11  (Requires GGI libraries) (old code not tested lately)
+#X11_GGI=1
+
+

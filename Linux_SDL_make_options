@@ -1,0 +1,14 @@
+# DoomLegacy Make options for Linux SDL
+MAKE_OPTIONS_PRESENT=1
+# Place your make file options here (see Makefile).
+# This is a comment line. Remove the # on any active line.
+# Compile on Linux (default) for SDL.
+SMIF=SDL
+# Have SDL mixer library
+HAVE_MIXER=1
+
+# Without CD-music
+#  NOCDMUS=1
+
+# Debugging
+# DEBUG=1

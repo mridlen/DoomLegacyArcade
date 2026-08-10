@@ -1,0 +1,1671 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom Legacy, FS, FraggleScript, reference"/>
+  <meta name="description" content="Doom Legacy FraggleScript function reference"/>
+  <meta name="author" content="James Haley"/>
+  <meta name="copyright" content="Copyright 2000 James Haley"/>
+  <title>FraggleScript Function Reference</title>
+</head>
+
+<body>
+<p>
+Note: We'd like to thank Quasar for allowing us to modify the docs of the 
+<a href="http://www.doomworld.com/eternity/etcengine.html">Eternity Engine</a>
+ to reflect Legacy FraggleScript implementation.
+</p>
+ 
+<h1><a name="top">FraggleScript Function Reference</a></h1>
+<h1 class="tagline">Last updated 2019-10-02</h1>
+
+<div class="floatbox">
+<ul>
+  <li><a href="#basic_ctrl">Basic Flow Control</a></li>
+  <li><a href="#core">Core Functions</a></li>
+  <li><a href="#level_game">Level Transfer and Game State</a></li>
+  <li><a href="#plr_inter">Player Interaction</a></li>
+  <li><a href="#map_inter">Mapthing Interaction</a></li>
+  <li><a href="#sector_inter">Sector Interaction</a></li>
+  <li><a href="#line_inter">Linedef Interaction</a></li>
+  <li><a href="#camera_ctrl">Camera Control</a></li>
+  <li><a href="#math_geo">Math and Geometry</a></li>
+  <li><a href="#sound_mus">Sound and Music</a></li>
+  <li><a href="#fspics">Heads-Up Graphics</a></li>
+  <li><a href="#arrays">Array Functions</a></li>
+  <li><a href="#misc">Miscellaneous</a></li>
+</ul>
+</div>
+
+<div class="column">
+<p>
+Notation for the following description:
+</p><p>
+[return-type] [function-name]([parameter list])
+</p><p>
+[return-type] : The type of data returned by the function.<br>
+This may by int for
+integers, fixed for fixed-point numbers, string for strings, mobj for a mapthing
+reference, array for an array reference, the type name for any other arbitrary type,
+label for the literal name of a label, or void for nothing. If a function returns void, it 
+cannot be meaningfully used in an assignment statement or as a parameter to 
+another function because it does not evaluate to any meaningful value. Also 
+notice that void is not actually a keyword in FraggleScript, and you cannot
+declare variables of type void.
+</p><p>
+[function-name] : The name of the function.<br>
+Use this name to call the function in your program, in the form "name(x)".
+</p>
+<p>
+[parameter-list] : The parameters passed into the function.<br>
+If this is empty, then the function does not accept any
+parameters.
+</p>
+Function call example:<br>
+<div class="code">script 0
+{
+  print("Hello Dwarf King!\n");
+  dwarfking = spawn(DWARF, 300, -1012, 0, -44);
+  dooropen( 3 );
+}
+</div>
+
+<p>
+<h4 id="paramtype">Parameter type:</h4>
+Items appear in the list as [type] [name] constructs,
+where [type] indicates the type of variable you can pass in this position,
+and [name] is the name used within the function body.  In many cases the
+actual parameter will be coerced into the parameter type by automatic
+type conversion.
+</p><p>
+<h4 id="optparam">Optional parameters:</h4>
+Optional parameter items appear in the descriptions
+inside square brackets, such as "[ int optional_z_position ]".
+These square brackets only appear in the descriptions to denote that
+those parameters are optional, not to be confused with array brackets
+which are part of an array reference.
+Do not include the optional parameter denoting square brackets in any actual script.
+When there are two optional parameters, then to use the second requires that
+the first also be present (they are positional).<br>
+<br>
+Example:  void opendoor(int tagnum, [int waittime], [int speed]) <br>
+Valid usages for this description (using named consts) would be:<br>
+<ul>
+<li>dooropen( tag1 )</li>
+<li>dooropen( tag1, wait15 )</li>
+<li>dooropen( tag1, wait15, speed2 )</li>
+</ul>
+In some cases the first parameter is optional, which is allowed only
+because it has a unique type that can be tested, such as an mobj, and/or
+because the function can test the actual number of parameters.
+<br>
+<br>
+Example: void teleport([mobj mo], int sectortag)<br>
+Valid usages (using named consts) would be:<br>
+<ul>
+<li>teleport( tag1 )</li>
+<li>teleport( thatobj, tag1 )</li>
+</ul>
+</p><p>
+<h4 id="varlistparam">Variable list of parameters:</h4>
+Appears as "..." in the function description.
+At the position of the "...", the actual function call takes a variable number
+of parameters, up to 128 parameters for the function.
+The number of actual parameters allowed for the "..." is 128 minus the number
+of any other function parameters.
+The "..." only appears in the function description to denote a
+variable number of parameters, do not include it in any script.
+</p><p>
+<h4 id="scripttrigger">Script trigger mobj:</h4>
+The mobj (player or monster) that triggered the
+start of the script.  This may occur from pushing a button or walking
+over a linedef trigger that has a fragglescript type.  Fragglescript
+keeps a reference to the mobj that started the script running.
+Many fragglescript functions will operate upon
+the script trigger mobj when an explicit, optional, mobj parameter is absent.<br>
+<br>
+Examples:<ul>
+<li>kill the explicit mobj :  kill(mons1)</li>
+<li>kill the script trigger mobj:  kill()</li>
+</ul>
+</p><p>
+<h4 id="angleparam">Angle parameter:</h4>
+There are several types of angle parameters used in
+Doom Legacy, and in fragglescript.
+<ul>
+<li>Angles in degrees.
+Used for several fragglescript function parameters.</li>
+<li>Angles in radians.
+These are used for fragglescript trig operation parameters,
+which call the standard trig library functions.</li>
+<li>Angles in the internal angle_t units.  These should not be seen
+as fragglescript parameters.
+The functions internally convert them to and from degrees.</li>
+</ul>
+</p><p>
+<h4 id="objtype">Object type:</h4>
+An int parameter that identifies the type of an object.
+Object type consts are defined in the header THINGS.H, which is in
+<a href="editing.html#wadcontents">legacy.wad</a>.
+To use these consts include THINGS.H in the script file.
+The include will be performed just before run-time.
+</p>
+Example of include:<br>
+<div class="code">[scripts]
+include("things.h");
+spawn( DEMON, 1024, 522, 0 );
+</div>
+<br>
+<span class="warning">Do not use literal numbers to refer to object
+types as they may change between versions</span>.
+</p>
+
+<h2><a name="basic_ctrl">Basic Flow Control</a></h2>
+
+<dl>
+  <dt><a name="break">void break()</a></dt>
+  <dd>
+    Exits the while-loop or for-loop construct. It will only exit
+    from the inner-most loop in which it lies.  Goto can also be used
+    to exit a loop.
+  </dd>
+
+  <dt><a name="continue">void continue()</a></dt>
+  <dd>
+    Advances the loop statements while() and for() to the next
+    iteration.
+  </dd>
+  
+  <dt><a name="return">void return()</a></dt>
+  <dd>
+    Causes the current script to stop executing and destroys its local
+    context (ie. local variables will become invalid). A return() does not
+    pass a return value.  Passing values must be done using variables.
+    If this script was called by another, control will return to the
+    calling script.
+  </dd>
+       
+  <dt><a name="goto">void goto(label lblname)</a></dt>
+  <dd>
+    Execution jumps to the label with name lblname.<br/>
+    Note that labels are not strings, and that constructs such as 
+    goto("lblname") or goto(stringvar) where stringvar is of type string
+    are not valid statements.
+  </dd>
+       
+  <dt><a name="include">void include(string lumpname)</a></dt>
+  <dd>
+    <p>
+    Brings in variables and statements from the lump named lumpname as if
+    they were defined in the current module. Note that included lumps
+    cannot contain scripts or block statements involving braces.
+    The include is performed just before run-time.
+    </p>
+    Include example:<br>
+<div class="code">[scripts]
+
+include("things.h")
+
+script 0
+{
+...
+}
+</div>
+  </dd>
+</dl>
+
+
+
+<h2><a name="core">Core Functions</a></h2>
+
+<dl>
+  <dt><a name="print">void print(...)</a></dt>
+  <dd>
+       Prints a line of text to the console. Accepts up to 128 parameters of
+       any printable type (int, fixed, string, or mobj) and prints them
+       consecutively. See the player messaging tutorial for more information on
+       formatting and supported escape characters.
+  </dd>
+  <dt><a name="rnd">int rnd()</a></dt>
+  <dd>
+       Returns a random integer between 0 and 255 inclusive.
+  </dd>
+  <dt><a name="prnd">int prnd()</a></dt>
+  <dd>
+       Returns a random integer between 0 and 255 inclusive (using the Doom random table).
+  </dd>
+  <dt><a name="beep">void beep()</a></dt>
+  <dd>
+       Plays an implementation-defined sound for the console player. 
+       (same as the one you hear with 'say' command).
+  </dd>       
+  <dt><a name="clock">int clock()</a></dt>
+  <dd>
+       Returns the relative game time since startup with a conversion factor
+       of 100 clocks = 1 s.
+  </dd>       
+
+  <dt><a name="wait">void wait(int time)</a></dt>
+  <dd>
+       The current script execution is delayed for time number of
+       clocks (100 clocks = 1 s), while other scripts and the game
+       continues to run.
+  </dd>
+
+  <dt><a name="tagwait">void tagwait(int tag)</a></dt>
+  <dd>
+       The current script execution is delayed until all activity
+       associated with the sector tag number has stopped. This is useful
+       for coordination with sector effects that have their own timing.
+       Beware of calling
+       this function on perpetually moving or specially lighted sectors as the 
+       script may never be able to finish execution.
+  </dd>       
+  <dt><a name="scriptwait">void scriptwait(int scriptnum)</a></dt>
+  <dd>
+       The current script execution is delayed until all instances
+       of the script with number scriptnum have finished execution. If no instances
+       of the script are waiting at time of call, the script will not wait.
+       This is useful for coordination with scripts that are started by
+       linedef trigger actions.
+  </dd>
+  <dt><a name="scriptwaitpre">void scriptwaitpre(int scriptnum)</a></dt>
+  <dd>
+    <span class="warning">NOT YET IMPLEMENTED</span>
+
+       The current script is delayed until at least one
+       instance of the script with number scriptnum has started execution. Note
+       that the target script itself must consequently call a wait function in
+       order to give the waiting script time to notice it, otherwise the
+       waiting script will never awaken.
+  </dd>
+  <dt><a name="startscript">void startscript(int scriptnum)</a></dt>
+  <dd>
+       Starts a new instance of the script with scriptnum. Note that multiple
+       instances of a script can be running at any time. This function is
+       particularily useful in the outer context to start scripts when the map
+       is loaded the first time.
+  </dd>
+  <dt><a name="scriptrunning">int scriptrunning(int scriptnum)</a></dt>
+  <dd>
+       Returns a non-zero result if any instances of the script with scriptnum
+       are currently waiting, and zero otherwise.
+  </dd>
+</dl>
+
+
+<h2><a name="level_game">Level Transfer and Game State</a></h2>
+
+<dl>
+  <dt><a name="startskill">void startskill(int level)</a></dt>
+  <dd>
+       Starts a new game on skill level. level can be a value between 1 and 5
+       inclusive, 1 being "I'm Too Young To Die" and 5 being "Nightmare." This
+       function should only be used in limited contexts as it would be rude to
+       restart the player's game unexpectedly.
+  </dd>
+  <dt><a name="exitlevel">void exitlevel()</a></dt>
+  <dd>
+       Exits the current map as if the player had pressed a switch or crossed
+       a line to cause this to happen. Game play will proceed normally to the
+       next level or to an intermission sequence.
+  </dd>
+  <dt><a name="exitsecret">void exitsecret()</a></dt>
+  <dd>
+  <span class="warning">NOT YET IMPLEMENTED</span>
+       Exits the current map as if the player had activated a secret exit. If
+       the "nextsecret" MapInfo field for the current map is set, the player
+       will proceed to that map, otherwise the default exit behavior will occur
+       (which in Ultimate DOOM could cause you to replay a level).
+  </dd>
+  <dt><a name="warp">void warp(int skill, string mapname, [int reset])</a></dt>
+  <dd>
+    Exits the current map and warps to a new map, setting the skill level.
+    If reset (0 or 1) is 1, then the player is reset effectively starting
+    a new game.  Valid reset is 0 or 1, skill is 1..5.
+  </dd>
+  <dt><a name="gameskill">int gameskill()</a></dt>
+  <dd>
+       Returns a value from 1 to 5 representing the skill level of the current
+       game, with 1 being "I'm Too Young To Die" and 5 being "Nightmare!"
+  </dd>
+  <dt><a name="gamemode">int gamemode()</a></dt>
+  <dd>
+       Returns an integer value representing the current mode of gameplay as
+       follows:<br/>
+       Single-player = 0<br/>
+       Multiplayer Cooperative = 1<br/>
+       Multiplayer Deathmatch = 2
+  </dd>
+</dl>
+
+
+<h2><a name="plr_inter">Player Interaction</a></h2>
+
+<dl>
+  <dt><a name="tip">void tip(...)</a></dt>
+  <dd>
+       Prints a centered message to all players. Accepts up to 128
+       printable parameters.
+  </dd>
+  <dt><a name="timedtip">void timedtip(int clocks, ...)</a></dt>
+  <dd>
+       Prints a centered message to all players that lasts clocks/100 number
+       of seconds.  Accepts up to 127 printable parameters.
+  </dd>
+  <dt><a name="playertip">void playertip(int playernum, ...)</a></dt>
+  <dd>
+       Prints a centered message to a particular player.
+       Current implementation: playernum has no restriction
+       (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="playertimedtip">void playertimedtip(int playernum, int clocks, ...)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Prints a centered message to a particular player that lasts clocks/100
+       number of seconds.
+       Current implementation: playernum has no restriction
+       (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="message">void message(...)</a></dt>
+  <dd>
+       Prints a normal message to all players.
+  </dd>
+  <dt><a name="playermsg">void playermsg(int playernum, ...)</a></dt>
+  <dd>
+    Prints a normal message to a particular player.
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="playeringame">int playeringame(int playernum)</a></dt>
+  <dd>
+    Returns non-zero if player playernum is in the game, otherwise 0.
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="playername">string playername([int playernum])</a></dt>
+  <dd>
+    Returns the playername of the specified player (player number).
+    If playernum is absent, returns the playername of the script
+    trigger mobj. If this object was not a player, an error will occur.<br/>
+    Does not check if player is in the game (previous docs said it did).
+    Returns empty string when playernum exceeds bounds.<br>
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="playerobj">mobj playerobj([int playernum])</a></dt>
+  <dd>
+    Returns the player mobj for the specified player.
+    With no parameters, retrieves a reference to the
+    mapthing belonging to the player that triggered the current script. If the
+    current script was not started by a player, an error will occur.<br/>
+    If passed a valid player number, it will retrieve a reference
+    to that player's mapthing.
+    If the player is not in the game, a NULL is returned.
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).
+  </dd>
+  <dt><a name="player">int player([mobj mo])</a></dt>
+  <dd>
+    Return the playernum of the specified player.
+    With no parameters, returns the player number of the trigger object.
+    Passed either a mapthing number or an mobj reference, it will do likewise for
+    the specified object.
+    Returns -1 when not a player.
+  </dd>
+  <dt><a name="playerskin">string playerskin([int playernum])</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Returns the name of the skin the player is currently using.
+       If no parameter is given, it will attempt to retrieve the skin of the
+       trigger object. If the trigger object was not a player, an error will
+       occur.
+       Current implementation: playernum has no restriction.
+  </dd>
+  <dt><a name="skincolor">int skincolor(mobj player, [int colornum])</a></dt>
+  <dd>
+    Will test or set the skincolor for a player.
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Returns the skin colornum for the tested player.<br>
+    SET: With colornum parameter, sets the player to the specified
+    colornum, and returns that colornum.
+  </dd>
+  <dt><a name="isplayerobj">int isplayerobj([mobj mo])</a></dt>
+  <dd>
+    Will test a specified mobj (mo), or without parameter mo will test the
+    trigger object, for being a player.
+    Returns 1 if the tested object is a player, and 0 otherwise.
+  </dd>       
+  <dt><a name="playerkeys">int playerkeys(mobj player, int keynum, [int givetake])</a></dt>
+  <dd>
+    Will test or set a key for player number (plnum) and keynum (0-7).
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Without givetake. Will
+    return 1 if the player possesses that key, or 0 if he does not.<br/>
+    SET: With givetake parameter, it will give key to the 
+    player if givetake is non-zero, or will take the key away from the player 
+    if givetake is zero. Returns zero. <br>
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3, keynum 0-5).
+  </dd>       
+  <dt><a name="playerkeysbyte">int playerkeysbyte(mobj player, [int keybyte])</a></dt>
+  <dd>
+    Will test or set all keys for player number (plnum).
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Without keybyte. Will return a keybyte with the corresponding bit
+    set for every key possessed by the player.<br/>
+    SET: With keybyte parameter, it will set the keys possessed by
+    the player, to the values in the keybyte.  Returns new keybyte.<br>
+    Current implementation: playernum has no restriction.<br>
+    The keybyte has one bit per key, as per this table.
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>Blue card</td><td>1</td></tr>
+    <tr><td>Yellow card</td><td>2</td></tr>
+    <tr><td>Red card</td><td>4</td></tr>
+    <tr><td>Blue skull</td><td>8</td></tr>
+    <tr><td>Yellow skull</td><td>16</td></tr>
+    <tr><td>Red skull</td><td>32</td></tr>
+    </table><br>
+  </dd>       
+  <dt><a name="playerarmor">int playerarmor(mobj player, [int armorvalue])</a></dt>
+  <dd>
+    Will test or set the armor of a player.
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Returns the armor rating of the player (0-200).<br>
+    SET: Sets the armor rating of the player (0-200), also changing
+    armor to advanced type when greater than 100.
+    Current implementation: playernum has no restriction
+  </dd>       
+  <dt><a name="playerammo">int playerammo(mobj player, int ammonum, [int amount])</a></dt>
+  <dd>
+    Will test or set the ammo of a player, for the selected ammonum.
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Returns the ammo for that ammonum.<br>
+    SET: Sets the ammo for that ammonum, limited to the max ammo allowed.
+    Returns the set ammo amount.<br>
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).<br>
+    The ammonum as per this table.
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0:</td><td>Clip</td><td>Wand</td></tr>
+    <tr><td>1:</td><td>Shell</td><td>Crossbow</td></tr>
+    <tr><td>2:</td><td>Cell</td><td>Blaster</td></tr>
+    <tr><td>3:</td><td>Missile</td><td>Skullrod</td></tr>
+    <tr><td>4:</td><td>-</td><td>Phoenixrod</td></tr>
+    <tr><td>5:</td><td>-</td><td>Mace</td></tr>
+    </table><br>
+  </dd>       
+  <dt><a name="maxplayerammo">int maxplayerammo(mobj player, int ammonum, [int amount])</a></dt>
+  <dd>
+    Will test or set the maxammo of a player, for the selected ammonum.
+    The player can be specified by mobj, or playernum (int).
+    Ammonum is the same as in playerammo.<br>
+    TEST: Returns the maxammo for that ammonum.<br>
+    SET: Sets the maxammo for that ammonum.
+    Returns the set maxammo amount.<br>
+    Current implementation: playernum has no restriction
+    (previous: playernum must be in the range 0 to 3).<br>
+  </dd>       
+  <dt><a name="playerweapon">int playerweapon(mobj player, int weaponnum, [int give])</a></dt>
+  <dd>
+    Will test or set having the weapon for a player.
+    The player can be specified by mobj, or playernum (int).<br>
+    TEST: Returns 1 if the player has the weapon, otherwise 0.<br>
+    SET: The give parameter (0 or 1) sets the weapon presense.
+    Give=1 gives the weapon, Give=0 takes it.
+    Returns the give parameter.<br>
+    Current implementation: playernum has no restriction
+    Weaponnum is (0-8) as per this table.<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0:</td><td>Fist</td><td>Staff</td></tr>
+    <tr><td>1:</td><td>Pistol</td><td>Wand</td></tr>
+    <tr><td>2:</td><td>Shotgun</td><td>Crossbow</td></tr>
+    <tr><td>3:</td><td>Chaingun</td><td>Blaster</td></tr>
+    <tr><td>4:</td><td>Launcher</td><td>Skullrod</td></tr>
+    <tr><td>5:</td><td>Plasma</td><td>Phoenixrod</td></tr>
+    <tr><td>6:</td><td>BFG</td><td>Mace</td></tr>
+    <tr><td>7:</td><td>Chainsaw</td><td>Gauntlets</td></tr>
+    <tr><td>8:</td><td>Supershotgun</td><td>Beak</td></tr>
+    </table><br>
+  </dd>
+  <dt><a name="playerselectedweapon">int playerselectedweapon(mobj player, int weaponnum, [int give])</a></dt>
+  <dd>
+    Will test or set the current selected weapon for a player.
+    The player can be specified by mobj, or playernum (int).
+    TEST: Returns the selected weapon for the player.<br>
+    SET: Sets the player to change to the specified weapon, without checking if the player has it.
+    Returns the current selected weapon.<br>
+    Current implementation: playernum has no restriction.
+    Weaponnum is (0-8) as per the weaponnum table.<br>
+  </dd>
+  <dt><a name="playeraddfrag">int playeraddfrag(mobj player, [int plnum2])</a></dt>
+  <dd>
+    Will add a frag to the player (plnum).
+    With optional parameter plnum2, it will add a frag to the
+    player (plnum) from player (plnum2).
+    Current implementation: playernum has no restriction.
+  </dd>       
+  <dt><a name="playerpitch">int playerpitch(mobj player, [int angle])</a></dt>
+  <dd>
+    Will test or set the pitch angle of a player.
+    The player can be specified by mobj, or playernum (int).
+    The angle is in degrees
+    (previously reported to be radians, suitable for the trig functions).<br>
+    TEST: Returns the current pitch angle.<br>
+    SET: Sets the new pitch angle.
+    Returns the current pitch angle.<br>
+  </dd>       
+  <dt><a name="playerproperty">void playerproperty(int select, int value)</a></dt>
+  <dd>
+    Set the trigger player's property to a new value.
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>PROP_SPEED:</td><td>Extra speed</td></tr>
+    <tr><td>PROP_JUMPHEIGHT:</td><td>Jump gravity</td></tr>
+    <tr><td>PROP_LOCKED:</td><td>Controls blocked</td></tr>
+    </table><br>
+  </dd>       
+</dl>
+
+
+<h2><a name="map_inter">Mapthing Interaction</a></h2>
+
+<dl>
+  <dt><a name="spawn">mobj spawn(int objtype, int x, int y, [int angle], [int z])</a></dt>
+  <dd>  
+       Spawns a new mapthing with various parameters. The mapthing types are
+       named constants defined in the header THINGS.H in
+       <a href="editing.html#wadcontents">legacy.wad</a>,
+       which <span class="hilite">must</span> be included by your
+       script file. See <a href="#objtype">object type</a>.
+       <span class="warning">Do not use numbers to refer to mapthing
+       types as they will change between versions</span>.
+       <br>
+       Angle is the facing angle in degrees.
+       To use the z coordinate parameter, the angle coordinate parameter must also
+       be provided.
+       Parameter z is absolute here rather than relative to the floor height. If z is not
+       provided, the thing will spawn on either the floor or ceiling as it would
+       normally.
+  </dd>       
+  <dt><a name="kill">void kill([mobj mo])</a></dt>
+  <dd>
+    Kill the specified mobj.
+    Parameter mo can be specified by mapthing number or mobj reference.
+    If the parameter mo is absent, will kill the script trigger mobj.
+  </dd>       
+  <dt><a name="removeobj">void removeobj(mobj mo)</a></dt>
+  <dd>       
+    Remove the specified mobj.
+    Parameter mo can be specified by mapthing number or mobj reference.
+  </dd>
+  <dt><a name="objx">fixed objx([mobj mo])</a></dt>
+  <dd>
+       Passed nothing, retrieves the high-precision x coordinate of
+       the mapthing that triggered the current script.<br/>
+       Passed a mapthing number or mobj reference, returns the x 
+       coordinate of the object to which it refers.
+  </dd>
+  <dt><a name="objy">fixed objy([mobj mo])</a></dt>
+  <dd>       
+       Passed nothing, retrieves the high-precision y coordinate of
+       the mapthing that triggered the current script.<br/>
+       Passed a mapthing number or mobj reference, returns the y 
+       coordinate of the object to which it refers.
+  </dd>
+  <dt><a name="objz">fixed objz([mobj mo])</a></dt>
+  <dd>
+       Passed nothing, retrieves the high-precision z coordinate of
+       the mapthing that triggered the current script.<br/>
+       Passed a mapthing number or mobj reference, returns the z 
+       coordinate of the object to which it refers.
+  </dd>       
+  <dt><a name="setobjectposition">void setobjposition(mobj mo, int x, [int y], [int z])</a></dt>
+  <dd>
+    Sets the mobj of parameter (mo) to the x, y, z absolute position.
+    Parameter mo may be passed as a mapthing number or mobj reference.
+    If y, or z, are absent, then that coordinate of the mobj is unchanged.
+    Parameters are positional, to have parameter z requires parameter y.
+  </dd>       
+  <dt><a name="objangle">fixed objangle([mobj mo], [int angle])</a></dt>
+  <dd>
+    Test or set the facing angle of an mobj.
+    The parameter mo can be passed as a mapthing number or mobj
+    reference.  If the mobj is absent then the script trigger mobj is test
+    or set.  The angle parameter is in degrees.<br>
+    TEST: Returns the high-precision angle of the tested mobj.<br>
+    SET: Set the facing angle of the explicit mobj (mo and angle must be present).
+    The mobj can be the player, in which case it imitates a commanded turn.
+  </dd>       
+  <dt><a name="setobjectproperty">void setobjproperty(int attribute, int propertyvalue, [mobj mo])</a></dt>
+  <dd>
+    Set the attribute to the propertyvalue, for the specified type of mobj.
+    This changes the attributes for all mobj of that type.
+    Parameter mo may be passed as a mapthing number or mobj reference.
+    If parameter mo is absent, then the attribute of the script trigger mobj
+    will be set.<br>
+    Include things.h to get the following property const names.<br>
+    Property attribute:
+    RADIUS, HEIGHT, MASS, HEALTH, DAMAGE, SPEED, REACTIONTIME,
+    PAINCHANCE, ST_SPAWNSTATE, ST_SEESTATE, ST_MELEESTATE, ST_MISSILESTATE,
+    ST_PAINSTATE, ST_DEATHSTATE, ST_XDEATHSTATE, ST_CRASHSTATE, ST_RAISESTATE,
+    SEESOUND, ACTIVESOUND, ATTACKSOUND, PAINSOUND, DEATHSOUND.
+  </dd>       
+  <dt><a name="getobjectproperty">int getobjproperty([mobj mo], int attribute)</a></dt>
+  <dd>
+    Return the attribute value, for the specified type of mobj.
+    These are attributes shared for all mobj of that type.
+    Parameter mo may be passed as a mapthing number or mobj reference.
+    If parameter mo is absent, then the attribute of the script trigger mobj
+    will be returned.<br>
+    Include things.h to get the property const names, which are the
+    same as in setobjproperty.<br>
+  </dd>       
+  <dt><a name="objstate">int objstate([mobj mo], int stateattribute)</a></dt>
+  <dd>
+    Set the state of the specified mobj to the state number selected by
+    the stateattribute parameter.  The state number is obtained from the
+    thing properties, which can be changed by dehacked, BEX, or
+    other fragglescript functions.<br>
+    Each actor and object has several states (represented by integer numbers),
+    from a range (0..250) shared with other actors and objects.
+    These are the same state numbers used by dehacked.
+    The state controls the object behavior (idle, walk, attack, shoot,
+    stunned, die, explode, dead, resurrect).<br>
+    Include things.h to get the stateattribute const names.<br>
+    State attribute:
+    ST_SPAWNSTATE, ST_SEESTATE, ST_MELEESTATE, ST_MISSILESTATE, ST_PAINSTATE,
+    ST_DEATHSTATE, ST_XDEATHSTATE, ST_CRASHSTATE, ST_RAISESTATE
+  </dd>       
+  <dt><a name="damageobj">void damageobj([mobj mo], int damage)</a></dt>
+  <dd>       
+    Applies damage to the mobj, by the amount in the parameter
+    damage, using the normal damage routines.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then applies damage to the script trigger mobj.
+    The script trigger mobj gets the blame for the attack.
+  </dd>       
+  <dt><a name="objdead">int objdead([mobj mo])</a></dt>
+  <dd>
+    Returns 1 if the specified mobj is dead or a corpse.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then tests the script trigger mobj.
+    Returns 0 upon failure to resolve the mobj.
+  </dd>       
+  <dt><a name="objhealth">int objhealth([mobj mo])</a></dt>
+  <dd>
+    Return the health of the specified mobj.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then the health of the script trigger mobj
+    is returned.
+    Returns 0 upon failure to resolve the mobj.
+  </dd>       
+  <dt><a name="healobj">void healobj([mobj mo], [int health])</a></dt>
+  <dd>
+    Set the health of the specified mobj.  This does NOT add
+    health, the script must do any such addition.
+    Currently, there are no limits applied to the health.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then the health of the script trigger mobj
+    is affected.
+    If parameter health is absent, then the mobj is restored to its
+    spawn health.
+  </dd>       
+  <dt><a name="resurrect">void resurrect(mobj mo)</a></dt>
+  <dd>       
+    Resurrects (un-kill) the thing of the mobj parameter (mo).
+    Parameter mo can be passed as a mapthing number or mobj reference.
+  </dd>       
+  <dt><a name="reactiontime">int reactiontime(mobj mo, [int val])</a></dt>
+  <dd>
+    Test or set the reaction time of the specified mobj.
+    The mobj will wait, unable to move, until the reaction time counts down to 0.
+    The reaction time is typically used to stun the player and actors after
+    damage and teleport.
+    The parameter mo can be passed as a mapthing number or an mobj reference.<br>
+    TEST: Return the raw reaction time field (35 tics = 1 second).<br>
+    SET: Parameter val is present. Set the reaction time to val,
+    which is in 100'ths of seconds (100=1 second).  Returns the raw
+    reaction time field.
+  </dd>
+  <dt><a name="objtype">int objtype([mobj obj])</a></dt>
+  <dd>
+    Return the object type number for the specified object.
+    The parameter obj can be passed as mapthing number or an mobj reference.
+    If parameter obj is absent, then the object type number of the
+    script trigger mobj is returned.
+    Returns 0 when cannot resolve mobj.
+  </dd>       
+  <dt><a name="objsector">int objsector([mobj mo])</a></dt>
+  <dd>
+    Return the sector tag of the sector the mobj is in.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, gets the sector tag for the script trigger mobj.
+    Returns 0 upon failure to resolve mobj.
+  </dd>       
+  <dt><a name="objflag">int objflag([mobj mo], int flagnum, [int flagvalue])</a></dt>
+  <dd>  
+    Tests or sets the specified flag bit of the specified mobj.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then operates upon the script trigger mobj.
+    The parameter flagnum specifies the flag bit using the consts MF_SPECIAL
+    .. MF_TRANSLUCENT, which are (0..31).<br>
+    TEST: Return 1 if the specified flag is already set.<br>
+    SET: Parameter flagvalue is present. Set the specified flag to flagvalue (0 or 1).
+    Return the specified flag after setting it to flagvalue.
+    <br><br>
+    These are still the best functions to test and set single flag bits.<br>
+    Previous warning, which was premature:<br>
+       This function has been unofficially deprecated due to research into a
+       better method of access to flag fields. It is still internally supported,
+       but further use in new scripts is not recommended.
+  </dd>       
+  <dt><a name="objflag2">int objflag2([mobj mo], int flagnum, [int flagvalue])</a></dt>
+  <dd>
+    Tests or sets the specified flag2 bit of the specified mobj.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then operates upon the script trigger mobj.
+    The parameter flagnum specifies the flag2 bit using the consts MF2
+    (which are not yet present in THINGS.H), which are (0..31).<br>
+    TEST: Return 1 if the specified flag2 bit is already set.<br>
+    SET: Parameter flagvalue is present. Set the specified flag2 bit to flagvalue (0 or 1).
+    Return the specified flag after setting it to flagvalue.
+    <br><br>
+    These are still the best functions to test and set single flag bits.<br>
+    Previous warning, which was premature:<br>
+       This function has been unofficially deprecated due to research into a
+       better method of access to flag fields. It is still internally supported,
+       but further use in new scripts is not recommended.
+  </dd>
+  <dt><a name="objflag2">int objeflag([mobj mo], int flagnum, [int flagvalue])</a></dt>
+  <dd>
+    Tests or sets the specified eflag bit of the specified mobj.
+    These bits are mostly concerned with mobj state.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then operates upon the script trigger mobj.
+    The parameter flagnum specifies the eflag bit using the extra
+    flag consts MF_ (which are not yet present in THINGS.H),
+    which are (0..31).<br>
+    TEST: Return 1 if the specified eflag bit is already set.<br>
+    SET: Parameter flagvalue is present. Set the specified eflag bit to
+    flagvalue (0 or 1).
+    Return the specified eflag bit after setting it to flagvalue.
+  </dd>
+  
+  <dt><a name="objmomx">fixed objmomx(mobj mo, [fixed momx])</a></dt>
+  <dd>
+    Test or set the x momentum of the specified object.
+    The parameter mo can be passed as mapthing number or an mobj reference.
+    TEST: Return the mobj x momentum.<br>
+    SET: Parameter momx is present. Set the mo x momentum to the
+    value of parameter momx. Return momx.<br>
+    Return 0 when cannot resolve the mobj.
+  </dd>
+  <dt><a name="objmomy">fixed objmomy(mobj mo, [fixed momy])</a></dt>
+  <dd>
+    Test or set the y momentum of the specified object.
+    The parameter mo can be passed as mapthing number or an mobj reference.
+    TEST: Return the mobj y momentum.<br>
+    SET: Parameter momy is present. Set the mo y momentum to the
+    value of parameter momy. Return momy.<br>
+    Return 0 when cannot resolve the mobj.
+  </dd>
+  <dt><a name="objmomz">fixed objmomz(mobj mo, [fixed momz])</a></dt>
+  <dd>
+    Test or set the z momentum of the specified object.
+    The parameter mo can be passed as mapthing number or an mobj reference.
+    TEST: Return the mobj z momentum.<br>
+    SET: Parameter momz is present. Set the mo z momentum to the
+    value of parameter momz. Return momz.<br>
+    Return 0 when cannot resolve the mobj.
+  </dd>
+  <dt><a name="pushthing">void pushthing(mobj mo, fixed angle, fixed force)</a></dt>
+  <dd>
+    Push the mobj (giving it momentum), by apply the parameter force,
+    at the parameter angle.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    Pushes the specified thing along a line from its location in the direction
+    of angle for a distance and speed affected by the force applied
+    and its mass.
+    External forces such as friction, wind, or explosions are vector-additive
+    and will still affect the object while it is moving.
+    Angle is in degrees.
+  </dd>       
+  <dt><a name="teleport">void teleport([mobj mo], int sectortag)</a></dt>
+  <dd>
+    Teleports the mobj to the sector marked with sectortag, using
+    a linedef teleport.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then teleports the script trigger mobj.
+    Automatically spawns fog objects and plays sounds in the appropriate locations.
+  </dd>       
+  <dt><a name="silentteleport">void silentteleport([mobj mo], int sectortag)</a></dt>
+  <dd>       
+    Teleports the mobj to the sector marked with sectortag, using
+    a linedef silent teleport.
+    The parameter mo can be passed as a mapthing number or an mobj reference.
+    If parameter mo is absent, then teleports the script trigger mobj.
+    Works identically to teleport() except that no fog is
+    spawned and no sounds are played.
+  </dd>       
+  <dt><a name="spawnmissile">mobj spawnmissile(mobj source_obj, mobj target_obj, int missiletype)</a></dt>
+  <dd>  
+    Spawns a missile of type missiletype, created at source_obj,
+    targeted to parameter target_obj.
+    The missiletype is one of the named constants defined in the header
+    THINGS.H.  See <a href="#objtype">object type</a>.
+    Returns the mobj of the missile.<br>
+    Valid missile types have the MISSILE and NOBLOCKMAP flags:
+    IMPSHOT, CACOSHOT, SPAWNSHOT, BARONSHOT, MANCUBUSSHOT,
+    REVENANTMISL, FLYINGROCKET, FLYINGPLASMA, FLYINGBFG, ARACHPLAZ <BR>
+    <BR>
+    Heretic TODO( EGGFX, PODGOO, SPLASH, SLUDGECHUNK,
+    VOLCANOBLAST, VOLCANOTBLAST, TELEGLITTER, TELEGLITTER2,
+    BLASTERFX1, RIPPER, MACEFX1, MACEFX2, MACEFX3, MACEFX4,
+    HORNRODFX1, HORNRODFX2, RAINPLR1, RAINPLR2, RAINPLR3, RAINPLR4,
+    GOLDWANDFX1, GOLDWANDFX2, PHOENIXFX1, PHOENIXFX2,
+    CRBOWFX1, CRBOWFX2, CRBOWFX3, BLOODSPLATTER, FEATHER,
+    MUMMYFX1, BEASTBALL, BURNBALL, BURNBALLFB, PUFFY,
+    SNAKEPRO_A, SNAKEPRO_B, HEADFX1, HEADFX2, HEADFX3, WHIRLWIND,
+    WIZFX1, IMPBALL, KNIGHTAXE, REDAXE, SRCRFX1, SOR2FX1, SOR2FX2,
+    MNTRFX1, MNTRFX2, MNTRFX3)
+  </dd>       
+  <dt><a name="spawnshot">mobj spawnshot(int type, mobj source, mobj target, int face)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+    <p>
+       Causes one object to fire a projectile at
+       another object. Type constants are provided in THINGS.H as with spawn().
+       The source and target parameters may be either integer mapthing numbers
+       or mobj references, and can be set to -1 to cause these parameters to
+       default with the following effects:
+    </p><p>
+       source set, target = -1: specified object fires at its current target<br/>
+       source = -1, target set: trigger object fires at specified object<br/>
+       source set, target set: specified object 1 fires at specified object 2<br/>
+       source = -1, target = -1: trigger object fires at its current target
+    </p><p>
+       The face parameter, if non-zero, will cause the source object to face the
+       target object before firing, possibly incurring inaccuracy if the
+       target object is partially or totally invisible. If face is zero, the
+       projectile will be fired toward the target from whatever side of the source
+       that currently faces it, which may be appropriate for certain effects.
+    </p><p>
+       This function is primarily designed for use with the StartScript code
+       pointer via DeHackEd.
+    </p><p>
+       DO *NOT* attempt to spawn objects which do not have the MISSILE and
+       NOBLOCKMAP flags with this function. This can cause run-time memory
+       errors. Flag information for objects is available in the DeHackEd
+       documentation.
+    </p>
+  </dd>
+  <dt><a name="checklife">int checklife([mobj mo])</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       This is a utility function that returns non-zero if the trigger object or
+       specified object, if any, is alive, and zero if its health is less than or
+       equal to zero or it does not exist on the map. This function is not
+       necessary but has been left intact to support maps that used it
+       before addition of &gt;= and &lt;= operators to FraggleScript.
+  </dd>
+  <dt><a name="objtarget">mobj objtarget(mobj mo, [mobj target])</a></dt>
+  <dd>
+    Test or set the target of parameter mobj.
+    The mobj parameters can be passed as mapthing number or an mobj reference.
+    Will return, or set, a reference to that object's current target, which for enemies is
+    the last thing to hurt them and get their attention.<br>
+    TEST: Return the mobj target object, which is NULL when there
+    is no target.<br>
+    SET: Parameter target is present. Set the mo target to the
+    value of parameter target.<br>
+    CLEAR: Parameter target is -1.  Clear mo target to NULL.<br>
+    Returns NULL when cannot resolve mobj.
+  </dd>
+  <dt><a name="objawaken">void objawaken([mobj mo])</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Awakens an object which was spawned on the map at startup
+       with the DORMANT mapthing flag. If passed no argument, it will function on
+       the trigger object. This function has no effect on normal objects.
+  </dd>
+  <dt>Description of spawnexplosion in previous documentation did not
+  match the implementation, and had different parameters. See the function
+  radiusattack instead.</dt>
+  <dt><a name="spawnexplosion">int spawnexplosion(int objtype, int x, int y, [int z])</a></dt>
+  <dd>
+    An exploding object will be spawned at the x, y, z absolute coordinates.
+    The objects's deathsound (explosion) will be heard.
+    If parameter z is not provided, then the floorheight will be used.
+    The object type will determine the damage radius and damage amount.
+    The object type is from the list of thing numbers, which
+    includes: BARREL, REVENANTMISL, FLYINGROCKET, FLYINGPLASMA, FLYINGBFG.
+    Other things can have been made to explode by BEX, dehacked, or
+    fragglescript modifications.
+    Returns 1 if the mobj is still present.
+  </dd>
+  <dt><a name="radiusattack">void radiusattack(mobj location, mobj source, int damage )</a></dt>
+  <dd>
+    The map object location will emit an explosion (radius attack),
+    with radius (32 ...) that is dependent upon damage.
+    The damage parameter is the amount of damage at the epicenter of the
+    explosion. The source parameter identifies the player, monster,
+    or object that is blamed as
+    as the cause of the explosion for purposes of frags or retaliation.
+    This function will not emit any sound nor will it directly change the
+    state of the spot object (which could indirectly be killed by the explosion).
+    Such actions must be handled separately by the script.
+  </dd>
+  <dt><a name="lineattack">void lineattack(mobj location, int angle, int damage, [int pitch])</a></dt>
+  <dd>
+    The map object will lineattack (like shooting a weapon), from location,
+    in direction of angle parameter.
+    The parameter location can be passed as mapthing number or an mobj reference.
+    The damage parameter is the amount of damage when the lineattack hits.
+    The location mobj identifies the player, monster,
+    or object that is blamed for frags or retaliation.
+    This function will not emit any sound nor will it directly change the
+    state of the location object.
+    The maximum range is that of a missile.
+  </dd>
+</dl>
+
+<h2><a name="sector_inter">Map Interaction</a></h2>
+<dl>
+
+  <dt><a name="mapthingnumexist">int mapthingnumexist(int mapthingnum)</a></dt>
+  <dd>
+    Return 1 if there is a mobj for the mapthingnum.  Mapthings are
+    the map objects on the map, and are loaded from the wad.
+  </dd>       
+  <dt><a name="mapthings">int mapthings()</a></dt>
+  <dd>
+    Return the number of mapthings.  The number of mapthings is fixed
+    when loading the level map and does not change.
+  </dd>       
+  <dt><a name="testlocation">void testlocation([mobj mo])</a></dt>
+  <dd>
+    Returns 1 if the mobj is not blocked by anything at its current
+    location, otherwise returns 0.
+    Parameter mo may be passed as a mapthing number or mobj reference.
+    If parameter mo is absent, then the script trigger mobj will be tested.
+  </dd>       
+  <dt><a name="checksight">int checksight(mobj obj1, [mobj obj2])</a></dt>
+  <dd>
+    Returns 1 if a straight line between obj1 and obj2 is unobstructed,
+    otherwise 0.
+    Mobj parameters can be passed as a mapthing number or an mobj reference.
+    If obj2 is absent, then the script trigger mobj is used for obj2.
+  </dd>
+  <dt><a name="setnodenext">void setnodenext(mobj node1, mobj nextnode)</a></dt>
+  <dd>
+    Link parameter nextnode as the next node after node1.
+    Both node1 and nextnode mobjs must have type NODE.
+    The nodes are map objects can be used as targets for monsters,
+    to set patrol routes, or to make them go somewhere.
+    A node can be set as a monster target.
+    When they reach a node, they will check for a nextnode and target that next.
+    The mobj parameters can be passed as a mapthing number or an mobj reference.
+  </dd>
+  <dt><a name="setnodepause">void setnodepause(mobj node1, int waittime)</a></dt>
+  <dd>
+    Set a node to delay a monster by the time in parameter waittime.
+    The node1 mobj must have type NODE.
+    The parameter waittime is in tics (35 = 1 second).
+  </dd>
+  <dt><a name="setnodescript">void setnodescript(mobj node1, int scriptnum)</a></dt>
+  <dd>
+    Set the node (parameter node1) to run a script (parameter scriptnum) when
+    a monster touches that node.
+    The node1 mobj must have type NODE.
+    The scriptnum must reference a defined script.
+  </dd>
+</dl>
+
+<h2><a name="sector_inter">Sector Interaction</a></h2>
+
+<dl>       
+  <dt><a name="floorheight">int floorheight(int tagnum, [int floorheight], [int crush])</a></dt>
+  <dd>  
+    Test or set the floor height of sectors tagged with tagnum.
+    It is an error if there is no sector with the tagnum.<br>
+    TEST: Only tagnum parameter. Returns the floor height of the first
+    sector found with the tagnum.<br>
+    SET: Instantly sets the floor height of all sectors with this
+    tagnum, to the parameter floorheight.
+    Optional parameter crush enables crushing when non-zero.  The
+    default is no crushing.
+    Returns 1 when done, 0 if it is crushing something.
+  </dd>
+  <dt><a name="movefloor">void movefloor(int tagnum, int destheight, [int speed])</a></dt>
+  <dd>       
+    Move floors in all sectors tagged with tagnum, to the new height (destheight).
+    The optional parameter speed is a floor speed multiplier (x2, x3, x4, etc.).
+    When the parameter speed is absent, the floors will move at normal speed.
+  </dd>       
+  <dt><a name="ceilingheight">int ceilingheight(int tagnum, [int ceilheight], [int crush])</a><br/>
+       <a name="ceilheight">&nbsp;&nbsp;alias: ceilheight</a></dt>
+  <dd>       
+    Test or set the ceiling height of sectors tagged with tagnum.
+    It is an error if there is no sector with the tagnum.<br>
+    TEST: Only tagnum parameter. Returns the ceiling height of the first
+    sector found with the tagnum.<br>
+    SET: Instantly sets the ceiling height of all sectors with this
+    tagnum, to the parameter ceilheight.
+    Optional parameter crush enables crushing when non-zero.  The
+    default is no crushing.
+    Returns 1 when done, 0 if it is crushing something.
+  </dd>       
+  <dt><a name="moveceiling">void moveceiling(int tagnum, int destheight, [int speed])</a><br/>
+       <a name="moveceil">&nbsp;&nbsp;alias: moveceil</a></dt>
+  <dd>  
+    Move ceilings in all sectors tagged with tagnum, to the new height (destheight).
+    The optional parameter speed is a floor speed multiplier (x2, x3, x4, etc.).
+    When the parameter speed is absent, the floors will move at normal speed.
+  </dd>  
+  <dt><a name="floortexture">string floortexture(int tagnum, [string flatname])</a><br/>
+       <a name="floortext">&nbsp;&nbsp;alias: floortext</a></dt>
+  <dd>       
+    Test or set the floor texture of sectors tagged with tagnum.
+    It is an error if there is no sector with the tagnum.<br>
+    TEST: Only tagnum parameter.
+    Returns the floor texture name of the first sector found with the tagnum.<br>
+    SET: Sets the floor texture of all sectors with this
+    tagnum, to the parameter flatname.
+    Returns the new floor texture name.<br>
+    If the flatname does not exist in some currently loaded
+    wad, an R_FlatNumForName error will occur and the game will exit.
+  </dd>       
+  <dt><a name="ceilingtexture">string ceilingtexture(int tagnum, [string flatname])</a><br/>
+       <a name="ceiltext">&nbsp;&nbsp;alias: ceiltext</a></dt>
+  <dd>       
+    Test or set the ceiling texture of sectors tagged with tagnum.
+    It is an error if there is no sector with the tagnum.<br>
+    TEST: Only tagnum parameter.
+    Returns the ceiling texture name of the first sector found with the tagnum.<br>
+    SET: Sets the ceiling texture of all sectors with this
+    tagnum, to the parameter flatname.
+    Returns the new ceiling texture name.<br>
+    If the flatname does not exist in some currently loaded
+    wad, an R_FlatNumForName error will occur and the game will exit.
+  </dd>       
+  <dt><a name="lightlevel">int lightlevel(int tagnum, [int level])</a></dt>
+  <dd>  
+    Test or set the light level in sectors tagged with tagnum.
+    TEST: Only tagnum parameter. Returns the light level of the first
+    sector found with the tagnum.<br>
+    SET: Instantly sets the light level of all sectors with this
+    tagnum, to the parameter level.  Returns the new lightlevel.
+  </dd>
+  <dt><a name="fadelight">void fadelight(int tagnum, int destlevel, [int speed])</a></dt>
+  <dd>
+    Gradually fades the light level to the new light level (destlevel).
+    The optional speed parameter is a multiplier of the amount of
+    change per tic.
+    When the speed parameter is absent, the fade speed will be 1.
+  </dd>
+  <dt><a name="colormap">string colormap(int tagnum, [string cmap])</a></dt>
+  <dd>
+    Test or set the colormap of sectors tagged with tagnum.
+    It is an error if there is no sector with the tagnum.<br>
+    TEST: Only tagnum parameter.
+    Returns the colormap name of the first sector found with the tagnum.<br>
+    SET: Sets the colormap of all sectors with this
+    tagnum, to the parameter cmap.
+    Returns the new colormap name.<br>
+    If the colormap name does not exist in some currently loaded wad
+    (between C_START and C_END),
+    an error will occur and the game will exit.
+  </dd>
+  <dt><a name="opendoor">void opendoor(int tagnum, [int waittime], [int speed])</a></dt>
+  <dd>
+    Opens all sectors tagged with tagnum, like doors.
+    The parameter waittime is the delay (100 = 1 second) before the door closes.
+    If waittime is absent, the door will stay open.
+    The parameter speed multiplies the door speed (1=normal, 4=blaze).
+    If speed is absent, the door will move at normal speed.
+  </dd>
+  <dt><a name="closedoor">void closedoor(int tagnum, [int speed])</a></dt>
+  <dd>
+    Closes all sectors tagged with tagnum, like doors.
+    The parameter speed multiplies the door speed (1=normal, 4=blaze).
+    If speed is absent, the door will move at normal speed.
+  </dd>
+  <dt><a name="setfriction">void setfriction(int tagnum, int friction)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Sets the friction values of all sectors tagged tagnum
+       to a value represented by the friction parameter. This friction parameter
+       takes the same value used on a BOOM friction transfer linedef, with 100
+       being normal friction, values less than 100 being greater friction (mud), and
+       values greater than 100 being less friction (ice). It also sets the
+       friction flags of the sectors in question.
+  </dd>
+  <dt><a name="getfriction">int getfriction(int tagnum)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Returns the friction value as per above for the first
+       sector with tag number tagnum.
+  </dd>
+  <dt><a name="sectoreffect">void sectoreffect(int tagnum, int effectselect)</a></dt>
+  <dd>
+    Applies the selected effect (effectselect) to all sectors with tagnum.
+    The effectselect is the same as Doom map sector types, as in the
+    following table:<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>1:</td><td>FLICKERING LIGHTS</td></tr>
+    <tr><td>2:</td><td>STROBE FAST</td></tr>
+    <tr><td>3:</td><td>STROBE SLOW</td></tr>
+    <tr><td>8:</td><td>GLOWING LIGHT</td></tr>
+    <tr><td>10:</td><td>DOOR CLOSE IN 30 SECONDS</td></tr>
+    <tr><td>12:</td><td>SYNC STROBE SLOW</td></tr>
+    <tr><td>13:</td><td>SYNC STROBE FAST</td></tr>
+    <tr><td>14:</td><td>DOOR RAISE IN 5 MINUTES</td></tr>
+    <tr><td>17:</td><td>LIGHT FLICKERS RANDOMLY</td></tr>
+    </table><br>
+  </dd>
+</dl>
+
+
+<h2><a name="line_inter">Linedef Interaction</a></h2>
+
+<dl>
+  <dt><a name="linetrigger">void linetrigger(int special, [int tagnum])</a></dt>
+  <dd>
+    Activates the specified linedef effect (special), for all sectors
+    tagged with tagnum.
+    If the parameter tagnum is absent, then it will use a tagnum of 0,
+    and that usually affects many sectors.
+    The parameter special can be any linedef type that can be trigged
+    like a switch, or triggered like a walkover.
+  </dd>
+  <dt><a name="lineflag">int lineflag(int linenum, [int flagnum], [int flagvalue])</a></dt>
+  <dd>
+    Test or set the linedef flags for the specified linedef.
+    The parameter linenum must be a valid linenum for the map, and
+    flagnum must be 0..31. <br>
+    TEST: Returns the value of the linedef flag (0 or 1).<br>
+    SET: Sets the linedef flag to the flagvalue (1:Set, 0:Clear).<br>
+    The following linedef flags are defined in THINGS.H:<br>
+    ML_BLOCKING, ML_BLOCKMONSTERS, ML_TWOSIDED,
+    ML_DONTPEGTOP, ML_DONTPEGBOTTOM, ML_SECRET, ML_SOUNDBLOCK,
+    ML_DONTDRAW, ML_MAPPED, ML_REPEAT_SPECIAL, ML_ALLTRIGGER. <br>
+    When changing ML_BLOCKING, ML_TWOSIDED, they must be compatible with the
+    map or serious draw errors and movement errors can occur.  The
+    effects on reject map use and line-of-sight tests is unpredictable.
+  </dd>
+  <dt><a name="setlineblocking">void setlineblocking(int tagnum, int block)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>, use setlineflag instead
+       Toggles the blocking flag for all lines tagged tagnum.<br/>
+       Set block to 1 to cause the line to block all objects, and set it to 0
+       to cause the line to not block objects. Note that 1-sided lines will
+       always block clipped objects even if the blocking flag is cleared.
+  </dd>
+  <dt><a name="setlinemnblock">void setlinemnblock(int tagnum, int block)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>, use setlineflag instead
+       Toggles the monster blocking flag for all lines tagged tagnum.<br/>
+       Set block to 1 to cause the line to block monsters, and set it to 0 to
+       cause the line to not block monsters. Note that 1-sided lines will always
+       block clipped monsters regardless of this flag.
+  </dd>
+  <dt><a name="setlinetexture">void setlinetexture(int tagnum, string texturename, int side, int sectionflags)</a></dt>
+  <dd>
+    Set the specified (lower, middle, upper) textures of all linedefs
+    with tag == tagnum.<br>
+    The parameter texturename must be the name of a valid texture
+    (not a patch), otherwise an
+    R_TextureNumForName error will occur and the game will exit.<br>
+    The parameter side selects:<br>
+      0: side 1<br>
+      1: side 2<br>
+    <br>
+    The parameter sectionflags selects one or more of lower, middle,
+    upper textures, to be set.<br>
+    OR of the following bits:<br>
+      1: upper texture<br>
+      2: middle texture<br>
+      4: lower texture<br>
+    <br>
+    If a linedef side does not exist, it is skipped without error.
+    The previous implementation would cause a script error. 
+  </dd>
+</dl>
+
+
+<h2><a name="camera_ctrl">Camera Control</a></h2>
+
+<dl>
+  <dt><a name="setcamera">void setcamera(mobj cameraobj, [fixed angle], [int height], [int pitch])</a></dt>
+  <dd>
+    Sets the script camera viewpoint be the mobj of parameter cameraobj,
+    and turns on the camera.
+    When angle, height, pitch parameters are present, then the script
+    camera, and cameraobj, are set to those values of angle, height, and
+    pitch. The optional parameters are positional.
+    Parameter cameraobj may be passed as a mapthing number or mobj reference.
+    Angle and pitch are in degrees.  Pitch may be a value between -50 and 50
+    degrees, with 0 being straight ahead.
+    <br><br>
+    The default angle is the current cameraobj angle.
+    The default pitch is 0.
+    The default height is 41 units above the floor.
+    <br><br>
+    When the cameraobj is not the current script camera mobj, then
+    the current script camera mobj is restored to its saved angle, and
+    the current angle of the camerobj is saved.  Position, height, and pitch of
+    the cameraobj are not restored.
+    Using a temporary mobj or an unimportant mapthing for the camera object
+    is recommended.  Recommend mapthings #5003.
+    <br><br>
+    Previous implementation, and DoomLegacy2.0, have returned a pitch
+    value from setcamera, for no good reason.  This implementation does not.
+    No script has been found that uses this.
+    Please do not assume setcamera returns anything.
+  </dd>
+  <dt><a name="clearcamera">void clearcamera()</a></dt>
+  <dd>
+    Turns off the script camera and returns the
+    viewpoint to the console player.
+    The current script camera mobj is restored to its saved angle,
+    and is disconnected from the script camera.
+  </dd>
+  <dt><a name="movecamera">int movecamera(mobj cameraobj, mobj target, fixed targetheight, fixed movespeed, fixed targetangle, fixed anglespeed)</a></dt>
+  <dd>
+    Move the script camera object toward the target object and height
+    (targetheight),  while independently turning it to angle (targetangle).
+    The movement speed is parameter movespeed, and the turning speed is
+    parameter anglespeed.  A zero movespeed gives instantaneous movement.
+    A zero anglespeed will slave the anglespeed to the movement.
+    Parameters cameraobj and target may be passed as a mapthing number or mobj reference.
+    The parameters targetangle, and anglespeed, are in degrees.
+    Returns 1 if the camera moved, and 0 otherwise.<br>
+    <br>
+    The camera is moved as an mobj, and will be obstructed by walls and objects.
+    The script and camera behavior in such cases is implementation dependent.
+    Previous versions caused a script error.<br>
+    <br>    
+    Best used in a loop that calls it repeatedly, until it returns 0, waiting
+    for the next gametic.
+    <br>
+    Camera example:<br>
+<div class="code">script 5
+{
+  // move mapthing 126 as a camera
+  // towards mapthing 129, height 40, angle 90
+  // movement speed 5, angle speed 0 (slaved to movement)
+  while( movecamera(126, 129, 40.0, 5.0, 90.0, 0.0) )
+  {
+    wait(1);
+  }
+}
+</div>
+  </dd>
+</dl>
+
+
+<h2><a name="math_geo">Math and Geometry</a></h2>
+<dl>
+  <dt><a name="pointtoangle">fixed pointtoangle(int x1, int y1, int x2, int y2)</a></dt>
+  <dd>
+       Returns the high-precision angle (in degrees) between the two points
+       (x1, y1) and (x2, y2) relative to the coordinate axes.
+  </dd>
+  <dt><a name="pointtodist">fixed pointtodist(int x1, int y1, int x2, int y2)</a></dt>
+  <dd>
+       Returns the high-precision distance between the two
+       points (x1, y1) and (x2, y2).
+  </dd>
+  <dt><a name="max">fixed max(fixed x, fixed y)</a></dt>
+  <dd>
+       Returns the maximum of two fixed-precision numbers.
+  </dd>
+  <dt><a name="min">fixed min(fixed x, fixed y)</a></dt>
+  <dd>
+       Returns the minimum of two fixed-precision numbers.
+  </dd>
+  <dt><a name="abs">fixed abs(fixed x)</a></dt>
+  <dd>
+    Returns the absolute value of a fixed-precision number.
+  </dd>
+  <dt><a name="sin">fixed sin(fixed x)</a></dt>
+  <dd>
+    Returns the sine of the fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="asin">fixed asin(fixed x)</a></dt>
+  <dd>
+    Returns the arc sine of (x), as a fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="cos">fixed cos(fixed x)</a></dt>
+  <dd>
+    Returns the cosine of the fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="acos">fixed acos(fixed x)</a></dt>
+  <dd>
+    Returns the arc cosine of (x), as a fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="tan">fixed tan(fixed x)</a></dt>
+  <dd>
+    Returns the tangent of the fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="atan">fixed atan(fixed x)</a></dt>
+  <dd>
+    Returns the arc tangent of (x), as a fixed-precision angle (in radians).
+  </dd>
+  <dt><a name="exp">fixed exp(fixed x)</a></dt>
+  <dd>
+    Returns exp(x), (e to the power x), in fixed-precision numbers.
+  </dd>
+  <dt><a name="log">fixed log(fixed x)</a></dt>
+  <dd>
+    Returns log(x), (natural log-e), in fixed-precision numbers.
+  </dd>
+  <dt><a name="sqrt">fixed sqrt(fixed x)</a></dt>
+  <dd>
+    Returns the square root of (x), in fixed-precision numbers.
+  </dd>
+  <dt><a name="floor">fixed floor(fixed x)</a></dt>
+  <dd>
+    Returns floor(x), (round down to integer part of x), in fixed-precision numbers.
+  </dd>
+  <dt><a name="pow">fixed pow(fixed x, fixed y)</a></dt>
+  <dd>
+    Returns the power of a fixed-precision number by another fixed-precision number.
+  </dd>
+</dl>
+
+
+<h2><a name="sound_mus">Sound and Music</a></h2>
+
+<dl>
+  <dt><a name="startsound">void startsound(mobj mo, string soundname)</a></dt>
+  <dd>
+    Plays a sound from lump "soundname" at the location of the mobj.
+    The parameter soundname can be a sound normally in the game
+    or a one from a PWAD file.
+    The sound must exist and the name must start with "DS".
+    Parameter mo may be passed as a mapthing number or mobj reference.
+  </dd>
+  <dt><a name="startsectorsound">void startsectorsound(int tagnum, string soundname)</a></dt>
+  <dd>
+    Plays a sound from lump "soundname" in all sectors with tag number tagnum.
+    The parameter soundname can be a sound normally in the game
+    or a one from a PWAD file.
+    The sound must exist and the name must start with "DS".
+  </dd>
+  <dt><a name="ambientsound">void ambientsound(string soundname)</a></dt>
+  <dd>
+    Plays a sound from lump "soundname" at full-volume on the
+    global sound channel. The ambient sound has no source.
+    The parameter soundname can be a sound normally in the game
+    or a one from a PWAD file.
+    The sound must exist and the name must start with "DS".
+  </dd>
+  <dt><a name="changemusic">void changemusic(string musname)</a></dt>
+  <dd>
+    Changes the currently playing music to the music lump "musname."
+    The parameter musname can be music normally in the game
+    or a music lump from a PWAD file.
+    The music lump must exist and the name must start with "D_".
+    A musname of "-" will cause the music to stop, and does not allow
+    any normal music either.
+  </dd>
+</dl>
+
+
+<h2><a name="fspics">Heads-Up Graphics</a></h2>
+
+<dl>
+  <dt><a name="createpic">int createpic(string lumpname, int x, int y, int draw, int trans, fixed priority)</a></dt>
+  <dd>
+    <p>Creates a new heads-up pic using the lump (lumpname), in the
+    first available handle, and returns that handle number.
+    It is initialized with draw disabled.
+    Draw must be enabled by setpicvisible.
+    It is always drawn as a patch with tranparent areas, in handle order,
+    later handle on top.  Sequential createpic calls will draw in that
+    same order, later on top.  Deletepic will delete a handle that
+    will be before some earlier createpic, and the next createpic will
+    reuse that handle.
+    Fragglescript pics are drawn last over everything else,
+    except the console.
+    </p><p>
+    The lump must be a standard DOOM-format screen graphic, at unscaled screen
+    coordinates (x, y), which may range from 0 to 319 and from 0 to 199
+    respectively.
+    </p><p>
+    Heads-up pics are valid for the duration of the level in which they
+    were created, and will be saved in savegames. This function returns an
+    integer handle that is needed to display, modify, or delete the pic later.
+    </p>
+  </dd>
+  <dt><a name="modifypic">void modifypic(int handle, string lumpname, int x, int y)</a></dt>
+  <dd>
+     Modifies the picture and position of an existing FS pic handle, without
+     changing its draw order.
+  </dd>
+  <dt><a name="setpicvisible">void setpicvisible(int handle, int visible)</a></dt>
+  <dd>
+     Set the draw enable for the FS pic handle.  Drawing is enabled
+     when parameter visible is non-zero, hidden when 0.
+  </dd>
+  
+  <dt><a name="setpictrans">void setpictrans(int handle, int trans)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Modifies the translucency of the FS heads-up pic with this handle. Set
+       trans to a non-zero value to make the pic translucent, and set it to zero
+       to make it solid.
+  </dd>
+  <dt><a name="getpichandle">int getpichandle(string lumpname, int x, int y)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Attempts to get a handle for a pic matching all three provided attributes.
+       This function is not one-to-one. If multiple identical pics are created,
+       it will always retrieve a handle to the one that either has lower priority,
+       or was created last if the priorities are equal. This function is provided
+       for instances where a handle was not saved for some reason (it is recommended
+       that the handle returned by createpic always be saved in a levelscript
+       variable). Returns -1 if no such pic exists.
+  </dd>
+  <dt><a name="getpicattr">int getpicattr(int handle, string selector)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Retrieves an attribute from the FS heads-up pic with this handle. Valid
+       values for selector are "lumpnum", "x", "y", "draw", and "trans". The
+       appropriate attribute will be returned, or -1 will be returned if either
+       there is no such pic, or an invalid selector string is passed.
+  </dd>
+  <dt><a name="getpiclp">fixed getpiclp()</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Returns the lowest priority number currently in use by a FS heads-up
+       pic.
+  </dd>
+  <dt><a name="getpichp">fixed getpichp()</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Returns the highest priority number currently in use by a FS heads-up
+       pic.
+  </dd>
+  <dt><a name="getpicpriority">fixed getpicpriority(int handle)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Returns the priority number of the FS heads-up pic with this handle.
+       Returns -FRACUNIT if no such pic exists.
+  </dd>
+  <dt><a name="setpicpriority">void setpicpriority(int handle, fixed priority)</a></dt>
+  <dd>  <span class="warning">NOT YET IMPLEMENTED</span>
+       Sets the priority number of the FS heads-up pic with this handle.
+  </dd>
+</dl>
+
+
+<h2><a name="typeforcing">Type forcing Functions</a></h2>
+
+<dl>
+  <dt><a name="mobjvalue">mobj mobjvalue( mobj mo )</a></dt>
+  <dd>
+    Returns the mobj for the specified mobj.
+    The parameter mo can be passed as a mapthing number or mobj.
+  </dd>
+  <dt><a name="mobjvalue">string stringvalue( polytype v )</a></dt>
+  <dd>
+    Returns a string for the parameter v.
+    The parameter v is coerced into a string value.
+  </dd>
+  <dt><a name="intvalue">int intvalue( polytype v )</a></dt>
+  <dd>
+    Returns an int value for the parameter v.
+    The parameter v is coerced into a int value.
+  </dd>
+  <dt><a name="fixedvalue">fixed fixedvalue( polytype v )</a></dt>
+  <dd>
+    Returns a fixed point value for the parameter v.
+    The parameter v is coerced into a fixed-point value.
+  </dd>
+</dl>
+
+<h2><a name="arrays">Array Functions</a></h2>
+
+<dl>
+  <dt><a name="newArray">array newArray(...)</a></dt>
+  <dd>
+       Instantiates a new array containing any elements passed, in passing order,
+       preserving the current type of any variable, or the default type of
+       any literal (no coercions will occur).
+
+       Arrays may contain int, fixed, and mobj values in any combination, but
+       cannot contain strings or other arrays. Additionally, arrays cannot be
+       created in the hubscript, and they cannot be coerced into any other type
+       of value.
+       
+       Up to 128 elements can be passed into a new array using this function,
+       but FS arrays are not limited to 128 elements. A function for adding
+       elements to the end of an array will be added soon.
+  </dd>
+  <dt><a name="copyInto">void copyInto(array source, array target)</a></dt>
+  <dd>
+    Copies all values from the array 'source' to the array 'target'. Both
+    source and target must be pre-instantiated arrays of equal length.
+
+    Remember that the syntax source.copyInto(target) is valid.
+  </dd>
+  <dt><a name="elementAt">&lt;type&gt; elementAt(array source, int index)</a></dt>
+  <dd>
+       Returns the value stored at 'index' in the array 'source'. Return-type
+       is dependent on the type of the value at that index. An error will
+       occur if index is out of range.
+
+       Remember that the syntax source.elementAt(index) is valid.
+  </dd>
+  <dt><a name="setElementAt">void setElementAt(array target, int index, 'a element)</a></dt>
+  <dd>
+       Copies the value of 'element' into the array 'target' at 'index'; no
+       coercions will occur. An error will occur if index is out of range.
+
+       Remember that the syntax target.setElementAt(index, element) is valid.
+  </dd>
+  <dt><a name="length">int length(array target)</a></dt>
+  <dd>
+       Returns the current length of array 'target'. Like in C, an array's length
+       is always one greater than the greatest valid index into that array.
+       This function is appropriate for use in the conditional of a for loop as
+       well as for general bounds-checking.
+
+       Remember that the syntax target.length() is valid.
+  </dd>
+</dl>
+
+
+<h2><a name="misc">Miscellaneous</a></h2>
+
+<dl>
+  <dt><a name="runcommand">void runcommand(...)</a></dt>
+  <dd>
+       Executes a console command or list of console commands in the form
+       of strings.
+  </dd>
+  <dt><a name="setcorona">void setcorona( int id, int attribute, polytype value )</a></dt>
+  <dd>
+    Set a corona attribute to parameter value, for the corona of
+    parameter id.  The COLOR attributes are specified as {A R G B},
+    which can be supplied as an integer, or a string of HEX digits.
+    The alpha is required, if it is 0 then alpha will be set to FF.
+<br>
+    Attribute:<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0:</td><td>CORONA_TYPE</td><td>See corona type table.</td><td>int</td></tr>
+    <tr><td>1:</td><td>CORONA_OFFX</td><td>x offset</td><td>fixed</td></tr>
+    <tr><td>2:</td><td>CORONA_OFFY</td><td>y offset</td><td>fixed</td></tr>
+    <tr><td>3:</td><td>CORONA_COLOR</td><td>Hex RGB</td><td>string, int</td></tr>
+    <tr><td>4:</td><td>CORONA_SIZE</td><td>radius</td><td>fixed</td></tr>
+    <tr><td>5:</td><td>LIGHT_COLOR</td><td>Hex RGB</td><td>string, int</td></tr>
+    <tr><td>6:</td><td>LIGHT_SIZE</td><td>radius</td><td>fixed</td></tr>
+    </table><br>
+
+    <p>The corona type now has a new format with bit enables and the type of corona.
+    The older predefined names and their values are still recognized.
+    Doom Legacy will convert them to an appropriate new field setting (heuristic guessing).
+    </p>
+
+    <br>Corona type (predefined combination values):<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0:</td><td>UNDEFINED_SPR</td><td>off</td></tr>
+    <tr><td>1:</td><td>CORONA_SPR</td><td>corona only</td></tr>
+    <tr><td>2:</td><td>DYNLIGHT_SPR</td><td>dynamic light only</td></tr>
+    <tr><td>3:</td><td>LIGHT_SPR</td><td>corona+light</td></tr>
+    <tr><td>19:</td><td>ROCKET_SPR</td><td>rocket+corona+light+randomradius</td></tr>
+    </table><br>
+
+    <br>For example: ROCKET_SPR works out to be
+    <br>(DYNLIGHT_SPR | CORONA_SPR | SPLT_rocket)
+    <br>
+
+    <br>Corona type (bit enables):<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0x01</td><td>CORONA_SPR</td><td>enable corona draw</td></tr>
+    <tr><td>0x02</td><td>DYNLIGHT_SPR</td><td>enable dynamic light</td></tr>
+    </table><br>
+
+    The corona type selection should OR'ed with the CORONA_SPR bit.
+    <br>These names are not defined for fragglescript yet, please use literals.
+    <br>Corona type selection (field mask 0xF0):<br>
+    <table align="center", border="4", cellpadding="2">
+    <tr><td>0x00</td><td>SPLT_unk</td><td>plain corona, near and far fadeout</td></tr>
+    <tr><td>0x10</td><td>SPLT_rocket</td><td>rocket corona with random flicker, near and far fadeout</td></tr>
+    <tr><td>0x20</td><td>SPLT_lamp</td><td>lamp and corona, brighter than plain corona, different size, near and far fadeout</td></tr>
+    <tr><td>0x30</td><td>SPLT_fire</td><td>fire and torches, slow flicker, near and far fadeout, 64 generators</td></tr>
+    <tr><td>0xC0</td><td>SPLT_light</td><td>a light source without an object, far fadeout</td></tr>
+    <tr><td>0xD0</td><td>SPLT_firefly</td><td>blinking firefly, far fadeout, 64 generator phases</td></tr>
+    <tr><td>0xE0</td><td>SPLT_random</td><td>random LED, no fadeout, 32 generators</td></tr>
+    <tr><td>0xF0</td><td>SPLT_pulse</td><td>slow pulsation, no fadeout, 256 generator phases</td></tr>
+    </table><br>
+    <p>
+    The generator phases are selected automatically (by some attribute of the mobj), to avoid lights all blinking in synch.
+    </p>
+    <p>
+    These effects will be improved in future versions of Doom Legacy,
+    so do not rely upon them remaining exactly as they are.
+    Please use them according to their descriptions and intended usage.
+    </p>
+  </dd>
+  <dt><a name="setcorona">void setcorona( int id, int type,
+  int xoffset, int yoffset, int color, int radius, int dynamic_color,
+  int dynamic_radius )</a></dt>
+  <dd>
+    Set all corona attributes for the corona of parameter id.
+    Parameters are as described in the Attribute table.
+    Parameter type is the CORONA_TYPE attribute, and is from the Corona type table.
+    Parameter color is the CORONA_COLOR attribute, and is a hex rgba color.
+    Parameter radius is the CORONA_SIZE attribute (fixed type value).
+    Parameter dynamic_color is the LIGHT_COLOR attribute, and is a hex rgba color.
+    Parameter dynamic_radius is the LIGHT_SIZE attribute (fixed type value).
+  </dd>
+  <dt><a name="setfade">void setfade(int red, int green, int blue, int alpha)</a></dt>
+  <dd>
+     Set the hardware render fade using the rgba parameters.
+     This fades the background for a menu to look better.
+  </dd>
+  <dt><a name="playdemo">void playdemo( string lumpname )</a></dt>
+  <dd>
+    Plays the demo (lumpname), same as the playdemo console command.
+    If a lump of lumpname is not found, it appends ".lmp" and tries to
+    play a demo file of that name.
+  </dd>
+  <dt><a name="checkcvar">string checkcvar( string cvarname )</a></dt>
+  <dd>
+    Returns the string value of the specified cvar.  These are the cvar
+    names that are accessible from the console.
+  </dd>
+</dl>
+
+</div>
+</body>
+</html>

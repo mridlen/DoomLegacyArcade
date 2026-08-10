@@ -1,0 +1,414 @@
+# $Id: d_french.bex $
+#
+# Copyright (C) 1993-1996 by id Software, Inc.
+# Copyright (C) 1998-2011 by DooM Legacy Team.
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# DESCRIPTION:
+#      Printed strings, french translation, in BEX format.
+#
+#-----------------------------------------------------------------------------
+
+# Use \n for LF
+
+[STRINGS]
+# D_Main.C
+D_DEVSTR   = "Mode developpement ON.\n"
+D_CDROM    = "Version CD-ROM: DEFAULT.CFG dans C:\\DOOMDATA\n"
+
+# M_Menu.C
+PRESSKEY   = "appuyez sur une touche."
+PRESSYN    = "appuyez sur Y ou N"
+QUITMSG    = "Vous voulez vraiment\nQuitter ce super jeu?"
+LOADNET    = "Vous ne pouvez pas charger\nun jeu en reseau!\n\nAppuyez sur une touche."
+QLOADNET   = "Chargement rapide interdit en reseau!\n\nAppuyez sur une touche."
+QSAVESPOT  = "Vous n'avez pas choisi un emplacement!\n\nAppuyez sur une touche."
+SAVEDEAD   = "Vous ne pouvez pas sauver si vous ne jouez pas!\n\nAppuyez sur une touche."
+QSPROMPT   = "Sauvegarde rapide dans le fichier\n\n'%s'?\n\nAppuyez sur une touche."
+QLPROMPT   = "Voulez-vous charger la sauvegarde\n\n'%s'?\n\nAppuyez sur Y ou N"
+NEWGAME    = "Vous ne pouvez pas lancer\n"\
+"un nouveau jeu sur reseau.\n\nAppuyez sur une touche."
+NIGHTMARE  = "Vous confirmez? Ce niveau est\n"\
+"vraiment impitoyable!nAppuyez sur Y ou N"
+SWSTRING   = "Ceci est une version shareware de doom.\n\n"\
+"Vous devriez commander la trilogie complete.\n\nAppuyez sur une touche."
+MSGOFF     = "Messages OFF"
+MSGON      = "Messages ON"
+NETEND     = "Vous ne pouvez pas mettre fin a un jeu sur reseau!\n\nAppuyez sur une touche."
+ENDGAME    = "Vous voulez vraiment mettre fin au jeu?\n\nAppuyez sur Y ou N"
+
+DOSY       = "(Appuyez sur Y pour revenir au os.)"
+
+EMPTYSTRING = "emplacement vide"
+
+# Not used in DoomLegacy
+#DETAILHI   = "Graphismes maximum "
+#DETAILLO   = "Graphismes minimum "
+#GAMMALVL0  = "Correction gamma OFF"
+#GAMMALVL1  = "Correction gamma niveau 1"
+#GAMMALVL2  = "Correction gamma niveau 2"
+#GAMMALVL3  = "Correction gamma niveau 3"
+#GAMMALVL4  = "Correction gamma niveau 4"
+
+# P_inter.C
+GOTARMOR   = "Armure recuperee."
+GOTMEGA    = "Mega-armure recuperee!"
+GOTHTHBONUS = "Bonus de sante recupere."
+GOTARMBONUS = "Bonus d'armure recupere."
+GOTSTIM    = "Stimpack recupere."
+GOTMEDINEED = "Medikit recupere. Vous en avez vraiment besoin!"
+GOTMEDIKIT = "Medikit recupere."
+GOTSUPER   = "Supercharge!"
+
+GOTBLUECARD = "Carte magnetique bleue recuperee."
+GOTYELWCARD = "Carte magnetique jaune recuperee."
+GOTREDCARD  = "Carte magnetique rouge recuperee."
+GOTBLUESKUL = "Clef crane bleue recuperee."
+GOTYELWSKUL = "Clef crane jaune recuperee."
+GOTREDSKULL = "Clef crane rouge recuperee."
+
+GOTINVUL   = "Invulnerabilite!"
+GOTBERSERK = "Berserk!"
+GOTINVIS   = "Invisibilite Partielle"
+GOTSUIT    = "Combinaison Anti-radiations"
+GOTMAP     = "Carte Informatique "
+GOTVISOR   = "Viseur a Amplification de Lumiere"
+GOTMSPHERE = "Megasphere!"
+
+GOTCLIP    = "Chargeur recupere."
+GOTCLIPBOX = "Boite de balles recuperee."
+GOTROCKET  = "Roquette recuperee."
+GOTROCKBOX = "Caisse de roquettes recuperee."
+GOTCELL    = "Cellule d'energie recuperee."
+GOTCELLBOX = "Pack de cellules d'energie recupere."
+GOTSHELLS  = "4 Cartouches recuperees."
+GOTSHELLBOX = "Boite de cartouches recuperee."
+GOTBACKPACK = "Sac plein de munitions recupere!"
+
+GOTBFG9000 = "Vous avez un bfg9000!  Oh, oui!"
+GOTCHAINGUN = "Vous avez la mitrailleuse!"
+GOTCHAINSAW = "Une tronconneuse!"
+GOTLAUNCHER = "Vous avez un lance-roquettes!"
+GOTPLASMA  = "Vous avez un fusil a plasma!"
+GOTSHOTGUN = "Vous avez un fusil!"
+GOTSHOTGUN2 = "Vous avez un super fusil!"
+
+# P_Doors.C
+PD_BLUEO   = "Il vous faut une clef bleue"
+PD_REDO    = "Il vous faut une clef rouge"
+PD_YELLOWO = "Il vous faut une clef jaune"
+PD_BLUEK   = "Il vous faut une clef bleue"
+PD_REDK    = "Il vous faut une clef rouge"
+PD_YELLOWK = "Il vous faut une clef jaune"
+#PD_BLUEC   = "You need a blue card to open this door"
+#PD_REDC    = "You need a red card to open this door"
+#PD_YELLOWC = "You need a yellow card to open this door"
+#PD_BLUES   = "You need a blue skull to open this door"
+#PD_REDS    = "You need a red skull to open this door"
+#PD_YELLOWS = "You need a yellow skull to open this door"
+#PD_ANY     = "Any key will open this door"
+#PD_ALL3    = "You need all three keys to open this door"
+#PD_ALL6    = "You need all six keys to open this door"
+
+# G_game.C
+GGSAVED    = "jeu sauvegarde."
+
+# HU_stuff.C
+HUSTR_MSGU = "[Message non envoye]"
+
+HUSTR_E1M1 = "E1M1: Hangar"
+HUSTR_E1M2 = "E1M2: Usine Nucleaire"
+HUSTR_E1M3 = "E1M3: Raffinerie de Toxines"
+HUSTR_E1M4 = "E1M4: Centre de Controle"
+HUSTR_E1M5 = "E1M5: Laboratoire Phobos"
+HUSTR_E1M6 = "E1M6: Traitement Central"
+HUSTR_E1M7 = "E1M7: Centre Informatique"
+HUSTR_E1M8 = "E1M8: Anomalie Phobos"
+HUSTR_E1M9 = "E1M9: Base Militaire"
+
+HUSTR_E2M1 = "E2M1: Anomalie Deimos"
+HUSTR_E2M2 = "E2M2: Zone de Confinement"
+HUSTR_E2M3 = "E2M3: Raffinerie"
+HUSTR_E2M4 = "E2M4: Laboratoire Deimos"
+HUSTR_E2M5 = "E2M5: Centre de Controle"
+HUSTR_E2M6 = "E2M6: Halls des Damnes"
+HUSTR_E2M7 = "E2M7: Cuves de Reproduction"
+HUSTR_E2M8 = "E2M8: Tour de Babel"
+HUSTR_E2M9 = "E2M9: Forteresse du Mystere"
+
+HUSTR_E3M1 = "E3M1: Donjon de L'Enfer"
+HUSTR_E3M2 = "E3M2: Bourbier du Desespoir"
+HUSTR_E3M3 = "E3M3: Pandemonium"
+HUSTR_E3M4 = "E3M4: Maison de la Douleur"
+HUSTR_E3M5 = "E3M5: Cathedrale Profane"
+HUSTR_E3M6 = "E3M6: Mont Erebus"
+HUSTR_E3M7 = "E3M7: Limbes"
+HUSTR_E3M8 = "E3M8: Dis"
+HUSTR_E3M9 = "E3M9: Clapiers"
+
+HUSTR_1    = "NIVEAU 1: Entree"
+HUSTR_2    = "NIVEAU 2: Halls Souterrains"
+HUSTR_3    = "NIVEAU 3: Le Feu Nourri"
+HUSTR_4    = "NIVEAU 4: Le Foyer"
+HUSTR_5    = "NIVEAU 5: Les Egouts"
+HUSTR_6    = "NIVEAU 6: Le Broyeur"
+HUSTR_7    = "NIVEAU 7: L'Herbe de la Mort"
+HUSTR_8    = "NIVEAU 8: Ruses et Pieges"
+HUSTR_9    = "NIVEAU 9: Le Puits"
+HUSTR_10   = "NIVEAU 10: Base de Ravitaillement"
+HUSTR_11   = "NIVEAU 11: Le Cercle de la Mort!"
+
+HUSTR_12   = "NIVEAU 12: L'Usine"
+HUSTR_13   = "NIVEAU 13: Le Centre Ville"
+HUSTR_14   = "NIVEAU 14: Les Antres Profondes"
+HUSTR_15   = "NIVEAU 15: La Zone Industrielle"
+HUSTR_16   = "NIVEAU 16: La Banlieue"
+HUSTR_17   = "NIVEAU 17: Les Immeubles"
+HUSTR_18   = "NIVEAU 18: La Cour"
+HUSTR_19   = "NIVEAU 19: La Citadelle"
+HUSTR_20   = "NIVEAU 20: Je T'ai Eu!"
+
+HUSTR_21   = "NIVEAU 21: Le Nirvana"
+HUSTR_22   = "NIVEAU 22: Les Catacombes"
+HUSTR_23   = "NIVEAU 23: La Grande Fete"
+HUSTR_24   = "NIVEAU 24: Le Gouffre"
+HUSTR_25   = "NIVEAU 25: Les Chutes de Sang"
+HUSTR_26   = "NIVEAU 26: Les Mines Abandonnees"
+HUSTR_27   = "NIVEAU 27: Chez les Monstres"
+HUSTR_28   = "NIVEAU 28: Le Monde de L'esprit"
+HUSTR_29   = "NIVEAU 29: La Limite "
+HUSTR_30   = "NIVEAU 30: L'icone du Peche"
+
+HUSTR_31   = "NIVEAU 31: Wolfenstein"
+HUSTR_32   = "NIVEAU 32: Le Massacre"
+
+HUSTR_CHATMACRO1 = "Je suis pret a leur en faire baver!"
+HUSTR_CHATMACRO2 = "Je vais bien."
+HUSTR_CHATMACRO3 = "Je n'ai pas l'air en forme!"
+HUSTR_CHATMACRO4 = "Au secours!"
+HUSTR_CHATMACRO5 = "Tu crains!"
+HUSTR_CHATMACRO6 = "La prochaine fois, minable..."
+HUSTR_CHATMACRO7 = "Viens ici!"
+HUSTR_CHATMACRO8 = "Je vais m'en occuper."
+HUSTR_CHATMACRO9 = "Oui"
+HUSTR_CHATMACRO0 = "Non"
+
+HUSTR_TALKTOSELF1 = "Vous parlez tout seul"
+HUSTR_TALKTOSELF2 = "Qui est la?"
+HUSTR_TALKTOSELF3 = "Vous vous faites peur"
+HUSTR_TALKTOSELF4 = "Vous commencez a delirer"
+HUSTR_TALKTOSELF5 = "Vous etes largue..."
+
+HUSTR_MESSAGESENT = "[Message Envoye]"
+
+# AM_map.C
+
+AMSTR_FOLLOWON  = "Mode poursuite ON"
+AMSTR_FOLLOWOFF = "Mode poursuite OFF"
+
+AMSTR_GRIDON    = "Grille ON"
+AMSTR_GRIDOFF   = "Grille OFF"
+
+AMSTR_MARKEDSPOT = "Repere Marque"
+AMSTR_MARKSCLEARED = "Reperes Effaces"
+
+#
+# ST_stuff.C
+#
+
+STSTR_MUS    = "Changement de Musique"
+STSTR_NOMUS  = "IMPOSSIBLE SELECTION"
+STSTR_DQDON  = "Invulnerabilite ON "
+STSTR_DQDOFF = "Invulnerabilite OFF"
+
+STSTR_KFAADDED = "Armement Maximum!"
+STSTR_FAADDED  = "Armes (sauf clefs) Ajoutees"
+
+STSTR_NCON   = "Barrieres ON"
+STSTR_NCOFF  = "Barrieres OFF"
+
+STSTR_BEHOLD = "inVuln, Str, Inviso, Rad, Allmap, or Lite-amp"
+STSTR_BEHOLDX = "Amelioration Activee"
+
+STSTR_CHOPPERS = "... doesn't suck - GM"
+STSTR_CLEV    = "Changement de Niveau..."
+
+# F_Finale.C
+E1TEXT = "Apres avoir vaincu les gros mechants\n"\
+"et nettoye la base lunaire, vous avez\n"\
+"gagne, non? Pas vrai? Ou est donc votre\n"\
+"recompense et votre billet de retour?\n"\
+"Qu'est-que ca veut dire?\n"\
+"Ce n'est pas la fin esperee!\n"\
+"\n"\
+"Ca sent la viande putrefiee, mais\n"\
+"on dirait la base Deimos. Vous etes\n"\
+"apparemment bloque aux portes de l'enfer.\n"\
+"La seule issue est de l'autre cote.\n"\
+"\n"\
+"Pour vivre la suite de doom, jouez\n"\
+"a 'aux portes de l'enfer' et a\n"\
+"l'episode suivant, 'l'enfer'!\n"
+
+E2TEXT = "VOUS AVEZ REUSSI. L'INFAME DEMON\n"\
+"QUI CONTROLAIT LA BASE LUNAIRE DE\n"\
+"DEIMOS EST MORT, ET VOUS AVEZ\n"\
+"TRIOMPHE! MAIS... OU ETES-VOUS?\n"\
+"VOUS GRIMPEZ JUSQU'AU BORD DE LA\n"\
+"LUNE ET VOUS DECOUVREZ L'ATROCE\n"\
+"VERITE.\n"\
+"\n"\
+"DEIMOS EST AU-DESSUS DE L'ENFER!\n"\
+"VOUS SAVEZ QUE PERSONNE NE S'EN\n"\
+"EST JAMAIS ECHAPPE, MAIS CES FUMIERS\n"\
+"VONT REGRETTER DE VOUS AVOIR CONNU!\n"\
+"VOUS REDESCENDEZ RAPIDEMENT VERS\n"\
+"LA SURFACE DE L'ENFER.\n"\
+"\n"\
+"VOICI MAINTENANT LE CHAPITRE FINAL DE\n"\
+"DOOM! -- L'ENFER."
+
+E3TEXT = "LE DEMON ARACHNEEN ET REPUGNANT\n"\
+"QUI A DIRIGE L'INVASION DES BASES\n"\
+"LUNAIRES ET SEME LA MORT VIENT DE SE\n"\
+"FAIRE PULVERISER UNE FOIS POUR TOUTES.\n"\
+"\n"\
+"UNE PORTE SECRETE S'OUVRE. VOUS ENTREZ.\n"\
+"VOUS AVEZ PROUVE QUE VOUS POUVIEZ\n"\
+"RESISTER AUX HORREURS DE L'ENFER.\n"\
+"IL SAIT ETRE BEAU JOUEUR, ET LORSQUE\n"\
+"VOUS SORTEZ, VOUS REVOYEZ LES VERTES\n"\
+"PRAIRIES DE LA TERRE, VOTRE PLANETE.\n"\
+"\n"\
+"VOUS VOUS DEMANDEZ CE QUI S'EST PASSE\n"\
+"SUR TERRE PENDANT QUE VOUS AVEZ\n"\
+"COMBATTU LE DEMON. HEUREUSEMENT,\n"\
+"AUCUN GERME DU MAL N'A FRANCHI\n"\
+"CETTE PORTE AVEC VOUS..."
+
+
+
+# after level 6, put this:
+# CAPS
+
+C1TEXT = "VOUS ETES AU PLUS PROFOND DE L'ASTROPORT\n"\
+"INFESTE DE MONSTRES, MAIS QUELQUE CHOSE\n"\
+"NE VA PAS. ILS ONT APPORTE LEUR PROPRE\n"\
+"REALITE, ET LA TECHNOLOGIE DE L'ASTROPORT\n"\
+"EST AFFECTEE PAR LEUR PRESENCE.\n"\
+"\n"\
+"DEVANT VOUS, VOUS VOYEZ UN POSTE AVANCE\n"\
+"DE L'ENFER, UNE ZONE FORTIFIEE. SI VOUS\n"\
+"POUVEZ PASSER, VOUS POURREZ PENETRER AU\n"\
+"COEUR DE LA BASE HANTEE ET TROUVER \n"\
+"L'INTERRUPTEUR DE CONTROLE QUI GARDE LA \n"\
+"POPULATION DE LA TERRE EN OTAGE."
+
+# After level 11, put this:
+
+C2TEXT = "VOUS AVEZ GAGNE! VOTRE VICTOIRE A PERMIS\n"\
+"A L'HUMANITE D'EVACUER LA TERRE ET \n"\
+"D'ECHAPPER AU CAUCHEMAR. VOUS ETES \n"\
+"MAINTENANT LE DERNIER HUMAIN A LA SURFACE \n"\
+"DE LA PLANETE. VOUS ETES ENTOURE DE \n"\
+"MUTANTS CANNIBALES, D'EXTRATERRESTRES \n"\
+"CARNIVORES ET D'ESPRITS DU MAL. VOUS \n"\
+"ATTENDEZ CALMEMENT LA MORT, HEUREUX \n"\
+"D'AVOIR PU SAUVER VOTRE RACE.\n"\
+"MAIS UN MESSAGE VOUS PARVIENT SOUDAIN\n"\
+"DE L'ESPACE: \"NOS CAPTEURS ONT LOCALISE\n"\
+"LA SOURCE DE L'INVASION EXTRATERRESTRE.\n"\
+"SI VOUS Y ALLEZ, VOUS POURREZ PEUT-ETRE\n"\
+"LES ARRETER. LEUR BASE EST SITUEE AU COEUR\n"\
+"DE VOTRE VILLE NATALE, PRES DE L'ASTROPORT.\n"\
+"VOUS VOUS RELEVEZ LENTEMENT ET PENIBLEMENT\n"\
+"ET VOUS REPARTEZ POUR LE FRONT."
+
+# After level 20, put this:
+
+C3TEXT = "VOUS ETES AU COEUR DE LA CITE CORROMPUE,\n"\
+"ENTOURE PAR LES CADAVRES DE VOS ENNEMIS.\n"\
+"VOUS NE VOYEZ PAS COMMENT DETRUIRE LA PORTE\n"\
+"DES CREATURES DE CE COTE. VOUS SERREZ\n"\
+"LES DENTS ET PLONGEZ DANS L'OUVERTURE.\n"\
+"\n"\
+"IL DOIT Y AVOIR UN MOYEN DE LA FERMER\n"\
+"DE L'AUTRE COTE. VOUS ACCEPTEZ DE\n"\
+"TRAVERSER L'ENFER POUR LE FAIRE?"
+
+# After level 29, put this:
+
+C4TEXT = "LE VISAGE HORRIBLE D'UN DEMON D'UNE\n"\
+"TAILLE INCROYABLE S'EFFONDRE DEVANT\n"\
+"VOUS LORSQUE VOUS TIREZ UNE SALVE DE\n"\
+"ROQUETTES DANS SON CERVEAU. LE MONSTRE\n"\
+"SE RATATINE, SES MEMBRES DECHIQUETES\n"\
+"SE REPANDANT SUR DES CENTAINES DE\n"\
+"KILOMETRES A LA SURFACE DE L'ENFER.\n"\
+"\n"\
+"VOUS AVEZ REUSSI. L'INVASION N'AURA.\n"\
+"PAS LIEU. LA TERRE EST SAUVEE. L'ENFER\n"\
+"EST ANEANTI. EN VOUS DEMANDANT OU IRONT\n"\
+"MAINTENANT LES DAMNES, VOUS ESSUYEZ\n"\
+"VOTRE FRONT COUVERT DE SUEUR ET REPARTEZ\n"\
+"VERS LA TERRE. SA RECONSTRUCTION SERA\n"\
+"BEAUCOUP PLUS DROLE QUE SA DESTRUCTION.\n"
+
+# Before level 31, put this:
+
+C5TEXT = "FELICITATIONS! VOUS AVEZ TROUVE LE\n"\
+"NIVEAU SECRET! IL SEMBLE AVOIR ETE\n"\
+"CONSTRUIT PAR LES HUMAINS. VOUS VOUS\n"\
+"DEMANDEZ QUELS PEUVENT ETRE LES\n"\
+"HABITANTS DE CE COIN PERDU DE L'ENFER."
+
+# Before level 32, put this:
+
+C6TEXT = "FELICITATIONS! VOUS AVEZ DECOUVERT\n"\
+"LE NIVEAU SUPER SECRET! VOUS FERIEZ\n"\
+"MIEUX DE FONCER DANS CELUI-LA!\n"
+
+# Character cast strings F_FINALE.C
+# CAPS
+CC_ZOMBIE  = ZOMBIE
+CC_SHOTGUN = TYPE AU FUSIL
+CC_HEAVY   = MEC SUPER-ARME
+CC_IMP     = DIABLOTIN
+CC_DEMON   = DEMON
+CC_LOST    = AME PERDUE
+CC_CACO    = CACODEMON
+CC_HELL    = CHEVALIER DE L'ENFER
+CC_BARON   = BARON DE L'ENFER
+CC_ARACH   = ARACHNOTRON
+CC_PAIN    = ELEMENTAIRE DE LA DOULEUR
+CC_REVEN   = REVENANT
+CC_MANCU   = MANCUBUS
+CC_ARCH    = ARCHI-INFAME
+CC_SPIDER  = L'ARAIGNEE CERVEAU
+CC_CYBER   = LE CYBERDEMON
+CC_HERO    = NOTRE HEROS
+
+# The following should NOT be changed unless it seems
+# just AWFULLY necessary
+
+# BEX player names, not used in DoomLegacy
+#HUSTR_PLRGREEN   = "VERT: "
+#HUSTR_PLRINDIGO  = "INDIGO: "
+#HUSTR_PLRBROWN   = "BRUN: "
+#HUSTR_PLRRED     = "ROUGE: "
+
+# BEX player keys, not used in DoomLegacy
+# french key should be "V"
+#HUSTR_KEYGREEN  = 'g'
+#HUSTR_KEYINDIGO = 'i'
+#HUSTR_KEYBROWN  = 'b'
+#HUSTR_KEYRED    = 'r'

@@ -1,0 +1,267 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom, Legacy, documentation, editing guide, tutorial"/>
+  <meta name="description" content="Doom Legacy Editing Guide"/>
+  <title>Doom Legacy Map Editing Tutorial</title>
+</head>
+
+<body>
+<h1>Map Editing</h1>
+<h1 class="tagline">Getting Started Tutorial</h1>
+
+<div class="column">
+<p>
+This tutorial explains how to create 2 rooms, a door, and a teleport using 
+the Doom Builder map editor.
+This tutorial assumes that you already have Doom Builder installed, configured 
+properly and running. More info about Doom Builder and its configuration can 
+be found on the Doom builder web site.
+However, even if you're using a different editor, the concept of this tutorial 
+is still the same.<br />
+Let's get started.
+</p>
+
+<h2>Overview</h2>
+
+<h3>Grid Rules</h3>
+<p>
+  First we need to examine our grid table.
+  Like the grid, textures are usually laid out on grids in multiples of 8 unit 
+  pixels, for example 8, 16, 32, 64, 128, 256, and so on. Here's a visual:
+</p>
+<p><img src="images/demo/grid8.png" width="534" height="267" alt="" /><b>Flat Texture</b></p>
+
+<p>
+Doom editing has pretty much always been focused on an overhead or X,Y top 
+view aspect.
+We had to imagine our wall heights without seeing the grid, of course until 
+Doom Builder's 3d Mode came along.
+But as you can see the wall textures use the same grid rules as our floor and 
+ceiling flat textures.
+Here's a 128x128 door texture. And a 64x64 panel texture from Doom.</p>
+<p><img src="images/demo/grid8_door.png" width="534" height="267" alt="" /><b>Wall Texture</b></p>
+
+<p>
+Now that you have a pretty good idea about the grid table, let's move
+along.
+</p>
+
+
+
+<h2>First Room</h2>
+
+<p>
+In Doom Builder, Select Lines Mode.<br />
+Now lets make a 256x256 Sector in the middle of our grid.<br />
+It's floor height will be 0 and it's ceiling height will be
+128. This will be our first room.
+</p>
+<p>
+Next, Select Things Mode, and slap a Player 1 start in there.
+It should look something like this:
+</p>
+<p><img src="images/demo/d1.png" width="604" height="301" alt="" /></p>
+<hr />
+
+<p>Now let's make another 256x256 Sector and a 32X128 Sector between them.<br />
+  With the same floor and ceiling heights as before, 0 floor and 128 ceiling.</p>
+<img src="images/demo/d2.png" width="604" height="301" alt="" />
+<hr />
+
+<h2>Creating a Door</h2>
+<p>
+This will be our other room and the door between them.
+Now lets connect them, it should look something like this:</p>
+<p><img src="images/demo/d3.png" width="604" height="301" alt="" /></p>
+<hr />
+
+<p>
+Now to get our door to activate:<br />
+Select Lines Mode.<br />
+Select both of the door face Linedefs and Flip them so they will be pointing outward, 
+this is done in Doom Builder by pressing the F key.<br />
+Now while the Linedefs are still selected, Right click and add Linedef Action 
+(114) and a Tag of 1.
+</p>
+<p>
+<img src="images/demo/d4.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Now the door needs to be shut so our Linedefs will activate it
+properly. Let's do that now.<br/>
+Select Sectors Mode and Right click the door Sector.<br />
+Set its Ceiling height to 0 so the door will be shut.<br />
+Finally while the door Sector is still selected, give it a Tag of 1.
+</p>
+<p>
+<img src="images/demo/d5.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Now let's start applying <b>textures</b> to our walls and door. 
+Don't forget the Door track. :D<br/>
+Speaking of door tracks, as it is, the door track <b>textures</b> 
+will move. It's a personal preference but if you would like for them not to 
+move, in <b>Lines Mode</b> select both door tracks and then Right 
+click them, in the <b>Flags</b> area check the box: <b>Lower 
+Unpegged</b>. Now those textures won't move anymore.
+</p>
+<p>
+Sometimes it helps to change the lighting a bit in different areas 
+of a map. I made one of my rooms a little brighter than the other.
+After texturing, we should probably stop and test out our map. 
+Have a go and make sure our door is working. ;)
+</p>
+<p>
+<img src="images/demo/d6.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<h2>Teleports</h2>
+
+<p>
+<b>Hey it works!</b>
+But it's kind of boring, let's put a <b>teleport</b> 
+in there to make things a bit more interesting.
+</p>
+<p>
+Select <b>Lines Mode</b> and draw a 64x64 unit <b>Sector</b> 
+in our second room.
+Orientate the <b>Sector</b> so it fits in a <b>64x 
+grid rule</b>. This way our <b>texture flat</b> won't look 
+out of place.
+Next <b>Flip</b> the <b>Linedefs</b> outward 
+by pressing <b>F</b>, like we did with our door.
+While the <b>Linedefs</b> are still selected, Right 
+click them and add <b>Linedef Action (97)</b> and give them a <b>Tag</b> 
+of <b>2</b>.
+</p>
+<p>
+<img src="images/demo/d7.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Now that we have our first teleport made, we need to make a <b>destination 
+teleport</b>.
+</p>
+<p>
+Let's draw a small room in and connect it to our first room.
+Make a 128x128 <b>Sector</b> and connect it to the room. 
+It's always fun to teleport to a higher area in a map, so lets change the little 
+rooms <b>floor height</b> to <b>64</b>.
+Now lets draw our other teleport in, draw a 64x64 unit <b>Sector</b> 
+into the little room.
+Next and again, <b>Flip</b> its <b>Linedefs</b> by press <b>F</b>.
+Now go into <b>Sectors Mode</b>, and Right click the 
+new <b>teleport sector</b> in the little room, and give it a <b>Tag</b> 
+of <b>2</b>.
+</p>
+<p>
+<img src="images/demo/d8.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Now we should probably go ahead and apply some <b>textures</b> 
+to our new structures in the map. Let's do that now.
+Add your teleport <b>Texture Flats</b> in, and hey don't 
+forget to apply the <b>Wall Texture</b> for the new little room.
+</p>
+<p>
+Now we are almost ready to test out our teleport, but first! We 
+need to add a <b>Teleport Destination Thing type</b>.
+Let's do that now. Select <b>Things Mode</b> and add 
+a <b>Teleport Destination</b>.
+It should look like this:
+</p>
+<p>
+<img src="images/demo/d9.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Ok now we're ready to go in-game and test it out.
+</p>
+<p>
+Nice! it works perfectly. But it's missing something, that teleport needs to 
+have a reason to be there.
+Let's give it a reason, lets put a crate in there with an item to pick up!
+</p>
+<p>
+Select Lines Mode and draw a 64x64 unit Sector in your first room and place 
+it in front of the destination teleport.
+Now go into Sectors Mode and Right click on the crate Sector. Set its sector 
+Floor height to 64. Don't forget to texture it in!
+Good, now lets place something on top of it. I put an Invisibility sphere on 
+mine. :P
+</p>
+<p>
+<img src="images/demo/d10.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Sweet, the teleport now has a reason behind it. But lets say we 
+want to walk back into the teleport after we pickup our item.
+Let's do that now.
+</p>
+<p>
+Select the <b>4 Linedefs</b> of our current destination teleport.
+Now like the first one, Right click the lines and add <b>Linedef 
+Action (97)</b>, and give them a <b>Tag</b> of <b>3</b>.
+Now, go into <b>Sector Mode</b> and select our first 
+teleport sector, Right click and give it a <b>Tag</b> of <b>3</b>.
+</p>
+<p>
+<img src="images/demo/d11.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+
+<p>
+Finally, put a <b>Teleport Destination Thing type</b> 
+in our first teleport<b>.</b>
+<b>Run the map and try it out!</b>
+</p>
+<p>
+<img src="images/demo/d12.png" width="604" height="301" alt="" />
+</p>
+<hr />
+
+<p>
+Excellent work!
+</p>
+<p>
+<img src="images/demo/d13.png" width="604" height="402" alt="" />
+</p>
+<hr />
+
+<p>
+You have learned how to make 2 rooms connected by a door, 
+and 2 teleports, each with their own destination!
+</p>
+
+<ul>
+  <li>This tutorial has focused on connecting <b>Sectors</b>, <b>Linedef 
+    Actions</b>, and <b>Tagging</b> them for effect, using</li>
+  <li><b>Linedef Action (114)</b> = <b>Door Open wait Close Fast 
+    S/R - Switchable/Repeatable</b></li>
+  <li><b>Linedef Action (97)</b> = <b>Teleport W/R - Walkover/Repeatable</b></li>
+</ul>
+
+<p>
+Here is the tutorial <a href="res/demo.wad">Demo.wad</a>.<br />
+You are now on your way to using more advanced editing features.<br />
+See the Doom Legacy <a href="editing.html">Editing Guide</a> for more details!
+</p>
+
+</div>
+</body>
+</html>

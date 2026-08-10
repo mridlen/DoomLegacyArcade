@@ -1,0 +1,154 @@
+# DoomLegacy Make options for Linux, FreeBSD
+# See README_compiling.txt
+# Edit for OS, SMIF, and other compile options.
+#
+MAKE_OPTIONS_PRESENT=1
+
+# Select an OS: LINUX FREEBSD NETBSD
+#  Linux works for all other *nix platforms, as far as we know.
+#  FreeBSD requires differences in the Makefile and code.
+#  NetBSD requires COMP_ENVIRONMENT too.
+OS=LINUX
+
+# Select a draw library:
+#  SDL: the SDL library is recommended and is the best maintained interface
+#  LINUX_X11: LINUX X11 native drawing
+#  FREEBSD_X11: FreeBSD X11 native drawing
+SMIF=SDL
+#  Enable to use SDL2, otherwise will use SDL 1.2
+# SDL2=1
+#  If sdl-config is missing, then where the SDL/SDL2 library was installed.
+# SDL_DIR=/usr/local
+
+# SDL_Mixer library is a separate library from SDL
+HAVE_MIXER=1
+
+# Enable compile environment settings be used:
+# NETBSD seems to require this be enabled.
+# COMP_ENVIRONMENT=1
+
+# Put other options here, see the src/Makefile or README_compiling.
+# Compiler select: GCC MINGW WATCOM CLANG
+# CC_SELECT=GCC
+# Enable CC_ENVIRONMENT to use the environment CC var.
+# CC_ENVIRONMENT=1
+# CC_EXPLICIT=clang
+
+# Architecture custom compile will result in faster smaller code,
+# but will not execute on incompatible machines.
+# Any valid value for -march= on your compiler may be set here.
+# For more information, ask your compiler.
+# > gcc --target-help
+# The default for GCC may be generic or i386.
+# generic32, generic64, i386, i486, i586, i686
+# pentium4, prescott, core, core2, athlon, k6, k8, amdfam10, etc.
+# + mmx, sse, sse2, sse3, sse4, 3dnow
+# Examples:
+# ARCH=-march=i386
+# ARCH=-march=i486+sse2
+# ARCH=-march=i586
+# ARCH=-march=i686 -mtune=athlon -msse -mno-sse4 -m64
+# For PowerPC: 401, 403, 630, 740, 7400, 7450, 8540, power7, etc.
+# GCC info only uses -mcpu for powerpc, dont know if -march will work.
+# ARCH=-mcpu=630 -m64
+# ARCH=-mcpu=G5 -maltivec -mabi=altivec
+# Let the compiler detect your hardware.
+# ARCH=-march=native
+# Plain cpu selection will default to -march.
+# ARCH=i686
+ARCH=-march=i686
+
+# For PowerPC: 401, 403, 630, 740, 7400, 7450, 8540, power7, G5, etc.
+# GCC info only uses -mcpu for powerpc, dont know if -march will work.
+# ARCH=-mcpu=630 -m64
+# ARCH=-mcpu=G5 -maltivec -mabi=altivec
+
+# To enable debug code, with no fullscreen.
+# DEBUG=1
+
+# The dlopen lib is needed for dynamic loading of device libraries (HAVE_xx=3).
+# The dlopen lib is standard, unless you are making a really minimal Linux.
+# Not having this set means dynamic loading will be disabled,
+# which removes any support code for dynamic loading.
+# Have dlopen lib.
+HAVE_DLOPEN=1
+
+# The option ZIPWAD (in doomdef.h) needs libzip. 
+# Have libzip.
+HAVE_LIBZIP=1
+# Optional, load with dlopen.
+# HAVE_LIBZIP=3
+
+# Extended nodes require zlib.
+HAVE_ZLIB=1
+# Optional, load with dlopen.
+# HAVE_ZLIB=3
+
+# X11 sound options
+# Sound Server
+SOUND_SERVER=1
+# Have openserver and unixwave sound options.
+# Sound device selection, on Linux native X11.
+# For sound devices to be optional, where dlopen will be used
+# to load the library, set it to 3.
+#   HAVE_xx=3  (1=linked, 3=dlopen)
+# ESD is Esound, OSS, ALSA, JACK, PULSE is PulseAudio
+HAVE_OSS=1
+HAVE_ALSA=1
+# HAVE_ESD=3
+# HAVE_JACK=3
+HAVE_PULSE=3
+
+# Music Server
+MUSIC_SERVER=1
+# For music devices to be optional, where dlopen will be used
+# to load the library, set it to 3.
+#   HAVE_xx=3  (1=linked, 3=dlopen)
+HAVE_TIMIDITY=1
+#HAVE_FLUIDSYNTH=3
+#HAVE_EXTMIDI=1
+#HAVE_FMSYNTH=3
+#HAVE_AWE32_SYNTH=3
+
+# Have openserver and unixwave sound options.
+# Music options: none
+#   SCOOS5: openserver5
+#   SCOUW2: unixware2
+#   SCOUW7: unixware7
+# MUS_OS=
+
+# This disables having code to play CD-ROM music tracks.
+# Might not have the CD music libraries.
+# CD_MUSIC=0
+
+# Linux or FreeBSD X11 GGI video interface libs.
+# X11_GGI=1
+
+# Uncomment if you want to use the POLL_POINTER hack in X11.
+# POLL_POINTER=-DPOLL_POINTER
+
+# If you have a slow computer you may want to try assembly, but the
+# assembly code is not often updated with the latest improvements.
+# USEASM=1
+
+# Other Make compile vars can be overridden too, see Makefile.
+
+# Install settings for install_sys
+# GROUP:=games
+# OWNER:=games
+# PREFIX:=/usr/local
+# INSTALL_SYS_DIR:=$(PREFIX)/bin
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_games
+# INSTALL_GAMES_DIR:=$(PREFIX)/games/doomlegacy
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_user
+# INSTALL_USER_DIR:=$(HOME)/games/doomlegacy
+
+# To override where the legacy.wad is installed.
+# INSTALL_LEGACYWAD_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install files from legacy_common.
+# COMMON_DIR:=..\legacy_common

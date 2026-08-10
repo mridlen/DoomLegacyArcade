@@ -1,0 +1,31 @@
+Doom Legacy 1.48
+================
+
+See the documentation in the docs directory.
+
+Index : index.html
+  The root of the documentation tree.
+
+Frequently Asked Questions : faq.html
+Version History : whatsnew.html
+  The new features and the bug fixes, for each version.
+
+Installation Guide : INSTALL.html
+  Installing the binaries, and support files.
+Source Code and Compiling : source.html
+  Compiling requirements and source code rules.
+Compiling on Windows systems : Make_WIN32.txt
+  Special notes on the Windows Makefile and how to configure it.
+
+User Reference Manual : legacy.html
+  How to run DoomLegacy, the command line switches.
+Console Commands : console.html
+  Explanations of the console commands an variables.
+
+Editing Guide : editing.html
+Making a simple wad tutorial : tutorial.html
+Boom wad reference : boomref.html
+Fragglescript programming guide : fsbasic.html
+Fragglescript functions : fsfuncs.html
+
+License : LICENSE.txt

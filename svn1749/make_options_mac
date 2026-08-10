@@ -1,0 +1,84 @@
+# DoomLegacy Make options for MAC, MacIntosh
+# See README_compiling.txt
+# Edit for OS, SMIF, and other compile options.
+#
+MAKE_OPTIONS_PRESENT=1
+
+# Select an OS: MAC
+OS=MAC
+
+# Select a draw library:
+#  SDL: the SDL library is recommended and is the best maintained interface
+#    The MAC SDL port is currently under re-development.
+#  MACOS:
+#    The MACOS port is old, and has not been tried in ages.
+#    This is currently disabled, unless someone figures out how to compile it.
+SMIF=SDL
+#  Enable to use SDL2, otherwise will use SDL 1.2
+# SDL2=1
+#  If sdl-config is missing, then where the SDL/SDL2 library was installed.
+# SDL_DIR=/usr/local
+
+# SDL_Mixer library is a separate library from SDL
+HAVE_MIXER=1
+
+# The MacIntosh operating system has some unique options.
+# Mac compile using Linux SDL includes (MacPorts, Fink).
+# MAC_FRAMEWORK uses the native Mac SDL setup.
+# This needs work from someone who knows how to set this up properly.
+# MAC_FRAMEWORK=1
+
+# Put other options here, see the src/Makefile or README_compiling.
+# Compiler select: GCC MINGW WATCOM CLANG
+# CC_SELECT=GCC
+# Enable CC_ENVIRONMENT to use the environment CC var.
+# CC_ENVIRONMENT=1
+# CC_EXPLICIT=clang
+# To enable debug code, with no fullscreen.
+# DEBUG=1
+
+# Architecture custom compile will result in faster smaller code,
+# but will not execute on incompatible machines.
+# Any valid value for -march= on your compiler may be set here.
+# For more information, ask your compiler.
+# > gcc --target-help
+# The default for GCC may be generic.
+# 68010, 68020, 68030, 68040, 68060, cpu32
+# ARCH=-march=68040
+# For PowerPC: 401, 403, 630, 740, 7400, 7450, 8540, power7, etc.
+# ARCH=-march=630
+# ARCH=-mcpu=630 -m64
+# Let the compiler detect your hardware.
+# ARCH=-march=native
+
+# Might not have the CD music libraries.
+# CD_MUSIC=0
+
+# SDL has a separate mixer library.
+# HAVE_MIXER=1
+
+# If you have a slow computer you may want to try assembly, but the
+# assembly code is not often updated with the latest improvements.
+# USEASM=1
+
+# Other Make compile vars can be overridden too, see Makefile.
+
+# Install settings for install_sys
+# GROUP:=games
+# OWNER:=games
+# PREFIX:=/usr/local
+# INSTALL_SYS_DIR:=$(PREFIX)/bin
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_games
+# INSTALL_GAMES_DIR:=$(PREFIX)/games/doomlegacy
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_user
+# INSTALL_USER_DIR:=$(HOME)/games/doomlegacy
+
+# To override where the legacy.wad is installed.
+# INSTALL_LEGACYWAD_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install files from legacy_common.
+# COMMON_DIR:=..\legacy_common

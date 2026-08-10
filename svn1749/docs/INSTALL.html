@@ -1,0 +1,714 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom, Legacy, documentation, manual, docs"/>
+  <title>Doom Legacy Install Manual</title>
+</head>
+
+<h1 id="intro">INSTALL</h1>
+
+<h2>Environment variables</h2>
+<p>
+  You can set the following environment variables to
+  have additional control over Legacy behavior. None of them are
+  required.
+</p>
+<ul>
+  <li>
+    <b>DOOMWADDIR</b>: This environment variable defines a path where
+    wad files are located. This way you can easily share your wad
+    files between different programs.  It is searched before the
+    current directory, and the wad directory list are searched.
+  </li>
+  <li>
+    <b>USER</b>: This variable contains your username, is used as the
+    default value for your player name in multiplayer games.
+  </li>
+  <li>
+    <b>HOME</b>: This variable indicates your home directory.
+    In the home directory Doom Legacy will create a legacy directory to store
+    your config and savegame files.
+    If this variable is not defined, a default legacy home directory will be
+    checked for existing, or one created in the program directory.
+    Failure to have a consistent HOME will lead to losing your config,
+    and savegames will not be saved.
+  </li>
+  <li>
+    <b>UserProfile</b>: This variable is checked on Windows systems as
+    a substitute for HOME, if HOME is not defined.
+  </li>
+</ul>
+
+<h2>Install General Instructions</h2>
+
+<h3>Install Requires:</h3>
+<nl>
+<li>Doom Legacy executable.
+<p>This may be obtained as a package
+download, or may be compiled from source.
+The binary download package may have a script or batch file to install
+the binary.
+<p>The Doom Legacy source is in the source package. 
+The source package Makefile has an install for the compiled
+executables, docs, and legacy.wad.
+
+<li>The legacy.wad file.
+<p>The legacy.wad is in the legacy common download package package,
+along with these docs.
+The legacy common may have a script or batch file to install it.
+<p>The legacy.wad file contains fonts and graphics to run the Doom Legacy menu
+system.
+<p>The search for the legacy.wad file goes through the program directory,
+the program wads directory, and the list of wad directories.
+There is also a LEGACYWADDIR option that can be specified at compile
+time, which provides an additional directory to look in for the
+legacy.wad file.  This will be used for Mac Frameworks packaging.
+</p>
+<p>Do not hide the <b>legacy.wad</b> file in a subdirectory.
+Subdirectories will NOT be searched.
+</p>
+
+<li>SDL library.
+<p>The SDL library is required for the SDL build of Doom Legacy.  Linux
+users are expected to install the SDL library as a system resource.
+<p>Doom Legacy uses SDL 1.2.   The SDL 2 library is not compatible,
+and will not work.
+<p>The SDL binaries have an SDL library included, for those users who
+do not have SDL already installed.  If your system does not already
+have SDL libraries or have older SDL libraries, then these library
+files need to be installed with the Doom Legacy executable.
+<p>For Windows users who do not install such libraries system wide,
+the SDL libraries will need to be installed with the executable.
+<p>The install script may try to do this itself.  If it fails to detect
+the situation correctly, manual installation of the SDL libraries may
+be required.  They just need to be moved or copied to the Doom Legacy
+program directory.
+<p>There are other compile options that do not use SDL, such as
+DOS_NATIVE, WIN_NATIVE, and LINUX_X11.
+The SDL libraries are not needed for such Doom ports.
+Other special libraries may be required to be installed.
+See the make_options file for compiling your port.
+</p>
+
+<li>Dynamic loading library, dlopen.
+<p>The Linux binaries are able to use dlopen to dynamically load other
+libraries.  This is a system standard library for Linux.
+<p>Choosing to dynamically detect and load a library is an option
+that is available for some of the libraries, under Linux.
+Code is generated that uses dlopen to detect and load the library.
+This a more complicated way to use a library and involves extra overhead.
+The advantage is that a binary can be generated that will run, even when
+the user is missing some of those hardware devices, or their libraries.
+<p>The user compiling a binary for themselves does not need such
+capability.  They can simply choose to set hardware options as 1 or 0.
+<p>The same capability is probably possible using Windows, or a Windows
+compatible dlopen could be installed to MSYS.  We will need to find a Windows
+programmer willing to implement one or both of these in Doom Legacy.
+
+<li>The libzip library is used to read zip archives.  This allows
+loading zipped wads directly.
+<p>It is selected as a compile-time option using the make_options file.
+<p>When it normally optioned (1), the libzip library must be present, or else
+the system will refuse to run the Doom Legacy binary.  This will work
+fine for the user compiling a binary just for themselves.
+<p>When the dynamic loading (3) option is selected, then dlopen will
+be used to detect and load libzip. If libzip is not present then
+DoomLegacy will not be able to read zip archives.
+
+<li>The zlib library is used to read some compressed extended nodes.
+These are only used by one extended node format, and as it is an option,
+is probably only present in a few very large wads.
+<p>It is selected as a compile-time option using the make_options file.
+<p>When it normally optioned (1), the zlib library must be present, or else
+the system will refuse to run the Doom Legacy binary.  This will work
+fine for the user compiling a binary just for themselves.
+Zlib is used commonly enough that it may already be installed for another program.
+<p>When the dynamic loading (3) option is selected, then dlopen will
+be used to detect and load zlib.  When zlib is not present then
+DoomLegacy will still be able to run,
+but will not be able to uncompress the extended node map of some wads.
+
+<li>The Linux X11 version has a sound device selection
+mechanism that can select between several sound devices:
+OSS, ESD, ALSA, PulseAudio, and JACK.
+<p>The device could have been compiled in normally, or with dynamic loading.
+<p>If the normal option was used, the device library must be
+present or else the system will refuse to run the Doom Legacy binary.
+<p>If the dynamic loading option was used, then dlopen will
+be used to detect and load the sound device library.
+
+<li>The Linux X11 version has a music device selection mechanism that
+can select between several music devices:
+MIDI, TiMidity, FluidSynth, external MIDI, FM_Synth, and AWE32_Synth.
+<p>The device could have been compiled in normally, or with dynamic loading.
+<p>If the normal option was used, the device library must be
+present or else the system will refuse to run the Doom Legacy binary.
+<p>If the dynamic loading option was used, then dlopen will
+be used to detect and load the music device library.
+
+<li>A Doom IWAD.
+<p>The Doom IWAD can be one of the Id Games Doom wads (which are
+still under copyright) such as Doom, DoomII, Plutonia, TNT, or Heretic.
+A free IWAD such as FreeDoom can also be used.
+<p>These IWAD should be in one of the Doom Legacy wad search directories.
+Any or all of the directories can contain wad files.
+The IWAD can also be specified explicitly on the command line, or
+launcher, but that becomes cumbersome.
+<p>An IWAD search started from the "-game" switch,
+will search 3 subdirectories deep, looking for a known IWAD name.
+See GAME_SEARCH_DEPTH in doomdef.h.
+<p>An IWAD search started from the "-iwad" switch,
+will search 5 subdirectories deep.
+See IWAD_SEARCH_DEPTH in doomdef.h.
+The depth is limited to control disk rattling on mistyped names.
+</p>
+
+</nl>
+
+<h3>Types of Install:</h3>
+
+<h4>System Share Install</h4>
+<nl>
+<li>Install to a system executable directory.
+<li>The docs and wads are installed to a system share directory.
+<li>The file and directory ownership will be set to a privileged owner.
+<li>Access is for use by all system users.
+</nl>
+
+<h4>Games Share Install</h4>
+<nl>
+<li>Install the binary in the games directory.
+<li>The wads and docs are installed to a system share directory.
+<li>Access is for use by all system users.
+<li>The file and directory ownership will be set to a privileged owner.
+<li>To change the install directory the install script must be edited.
+</nl>
+
+<h4>Games Install</h4>
+<nl>
+<li>Install entirely in the games directory, for use by all system users.
+<li>The file and directory ownership will be set to a privileged owner.
+<li>To change the install directory the install script must be edited.
+</nl>
+
+<h4>User Install</h4>
+<nl>
+<li>Install for the use of the immediate user, owned by the immediate user.
+<li>The install directory must be within the user directory space, and
+will be owned by the user.
+<li>A directory may be specified.
+</nl>
+
+
+<h2>Linux</h2>
+
+<h4>System Share Install</h4>
+<div class="code">$ install_nix  sys
+$ install_nix  sys  GROUP=1234 OWNER=9876 PREFIX=/opt
+</div>
+<nl>
+<li>Specify PREFIX= to install to <b>"/usr"</b> or <b>"/opt"</b>,
+the default is <b>"/usr/local"</b>.
+<li>The default file and directory ownership will be "games:games".
+<li>Specify GROUP= and OWNER= to change the ownership.
+</nl>
+<pre>
+PREFIX = "/usr/local"
+INSTALL_BIN_DIR = "$PREFIX/bin"
+INSTALL_SHARE_DIR = "$PREFIX/share/games/doomlegacy"
+INSTALL_WADS_DIR = "$PREFIX/share/games/doomlegacy/wads"
+</pre>
+
+<h4>Games Share Install</h4>
+<div class="code">$ install_nix  sharegames 
+$ install_nix  sharegames  GROUP=1234 OWNER=9876 PREFIX=/opt
+</div>
+<nl>
+<li>The default file and directory ownership will be "games:games".
+</nl>
+<pre>
+PREFIX = "/usr/local"
+INSTALL_BIN_DIR = "$PREFIX/games"
+INSTALL_SHARE_DIR = "$PREFIX/share/games/doomlegacy"
+INSTALL_WADS_DIR = "$PREFIX/share/games/doomlegacy/wads"
+</pre>
+
+<h4>Games Install</h4>
+<div class="code">$ install_nix  games 
+$ install_nix  games  GROUP=1234 OWNER=9876 PREFIX=/opt
+</div>
+<nl>
+<li>The default file and directory ownership will be "games:games".
+<li>All files are installed to the games directory.
+</nl>
+<pre>
+PREFIX = "/usr/local"
+INSTALL_BIN_DIR = "$PREFIX/games/doomlegacy"
+INSTALL_WADS_DIR = "$PREFIX/games/doomlegacy/wads"
+</pre>
+
+<h4>User Install</h4>
+<div class="code">$ install_nix  user
+$ install_nix  user  doomgames
+</div>
+<nl>
+<li>The user directory may be specified.
+<li>Files are owned by the installer (user).
+<li>All files are installed to the user directory.
+<li>The user can still access wads in any other wad directory.
+</nl>
+<pre>
+INSTALL_BIN_DIR="$HOME/games/doomlegacy"
+</pre>
+
+<h4>Search directories in Linux</h4>
+<p>To change, edit source file doomdef.h, and re-compile.
+<br>Other directories can be added to doomdef.h, with up to 21 search directories.
+<br>The tilde is converted to $HOME by Doom Legacy.
+<br>Where PROGDIR is the program directory, and DEFDIR is the current directory.
+
+<h4>Search for legacy.wad:</h4>
+<nl>
+<li><b>"PROGDIR"</b>
+<li><b>LEGACYWADDIR</b>
+<li><b>"PROGDIR/wads"</b>
+<li><b>wad search directory list</b>
+</nl>
+
+<h4>Search order, IWAD:</h4>
+<nl>
+<li><b>DOOMWADDIR</b>
+<li><b>"DEFDIR"</b>
+<li><b>"PROGDIR/wads"</b>
+<li><b>"~/games/doomlegacy/wads"</b>
+<li><b>"~/games/doomwads"</b>
+<li><b>"~/games/doom"</b>
+<li><b>"/usr/local/share/games/doomlegacy/wads"</b>
+<li><b>"/usr/local/share/games/doomwads"</b>
+<li><b>"/usr/local/share/games/doom"</b>
+<li><b>"/usr/local/games/doomlegacy/wads"</b>
+<li><b>"/usr/local/games/doomwads"</b>
+<li><b>"/usr/share/games/doom"</b>
+<li><b>"/usr/share/games/doomlegacy/wads"</b>
+<li><b>"/usr/share/games/doomwads"</b>
+<li><b>"/usr/games/doomlegacy/wads"</b>
+<li><b>"/usr/games/doomwads"</b>
+<li><b>"~/games/doomlegacy"</b>
+<li><b>"/usr/local/share/games/doomlegacy"</b>
+<li><b>"/usr/local/games/doomlegacy"</b>
+<li><b>"/usr/share/games/doomlegacy"</b>
+<li><b>"/usr/games/doomlegacy"</b>
+<li><b>"PROGDIR"</b>
+</nl>
+
+
+<h3>Linux Install Notes</h3>
+<p>
+  The installation location is flexible, and can be moved.
+  The installation directory can be one that all players can use,
+  such as <b>/usr/local/games/doomlegacy</b>.
+</p>
+<p>
+  To manually install, unpack the tar file contents in the installation
+  directory.
+  The installation directory needs to include the
+  doomlegacy binary, and legacy.wad.
+  The tar file will also install the Doom Legacy docs there.
+  The installation directory can also contain an autoexec.cfg file,
+  that can execute Doom Legacy commands upon every Doom Legacy startup.
+</p>
+<p>
+  The IWAD files should go in a separate directory that can be shared
+  between all Doom source ports (such as
+  <b>/usr/local/share/games/doomwads</b>).
+  The list of directories will be searched for the IWAD file.
+  This list is specified for each operating system in the doomdef.h file.
+  Most of the directories searched are system directories, and some user
+  directories.
+  Wads that are specific to Doom Legacy can be put in one of the
+  directories that is unique to Doom Legacy.
+</p>
+<p>
+  The <b>DOOMWADDIR</b> environment variable can be set to point to another
+  directory, in a login script or a game starting script.
+  This environment variable was used by some other ports to specify
+  the Doom wads directory.  The DOOMWADDIR directory will be searched
+  before the list.
+  The current directory, and a wads directory of the
+  program directory are also searched before the list.
+</p>
+<p>
+  Specify the verbose flag on the command line, <b>"-v"</b>,
+  to see the search list, and other directories.  It is shown on the
+  console, and to stderr.
+</p>
+<p>
+  You can also make soft links in the above mentioned IWAD directory to
+  point to the actual IWAD files.
+  The valid IWAD file names for each games selection can be found in
+  docs/technical/wad_selection.txt.
+</p>
+<div class="code">$ ln -s wads/idgames/doom1.wad  doom1.wad
+$ ln -s wads/idgames/doom2.wad  doom2.wad
+$ ln -s wads/idgames/doomu.wad  doomu.wad
+$ ln -s wads/idgames/plutonia.wad  plutonia.wad
+$ ln -s wads/idgames/tnt.wad  tnt.wad
+$ ln -s wads/freedoom-iwad-0.7/doom2.wad  freedoom.wad
+$ ln -s wads/freedoom-iwad-0.9/freedoom2.wad  freedoom2.wad
+</div>
+<p>
+  Doom Legacy will use the <b>HOME</b> environment variable, which is
+  usually set by your Linux login, to find your home directory.
+  There it will make a hidden directory named <b>.doomlegacy</b> for
+  storing your configuration files and saved games.
+  If <b>HOME</b> is not set, Doom Legacy will try to find an alternate
+  home directory.
+  First it will try to find a user created
+  <b>"legacyhome"</b>
+  in the current directory.
+  If that fails it will try to create
+  <b>"legacyhome"</b>
+  in the program directory.
+</p>
+<p>
+  This behavior can be overridden by using the -home and -config switches:
+<div class="code">$ doomlegacy -home ~/doomstuff -game plutonia
+$ doomlegacy -home ~/doom -config ~/doom/plutconfig.cfg -game plutonia
+</div>
+<p>
+  PWAD and DeHackEd files can be included using the -file switch. Examples:
+</p>
+<div class="code">$ doomlegacy -game tnt
+$ doomlegacy -game plutonia -file pwad/pl2/PL2.WAD
+$ doomlegacy -iwad freedoom.wad -file new_map13.wad
+$ doomlegacy -file pwad/Twilight/TWILIGHT.DEH pwad/Twilight/TWILIGHT.WAD
+</div>
+<p>
+  Script files can also be used to start Doom Legacy:
+</p>
+<div class="code">#!/bin/sh
+cd /usr/local/games/legacy/
+USER="Shotgun-wizard"
+DOOMWADDIR=wads
+doomlegacy -iwad doom2.wad -file DM8.WAD
+</div>
+
+<h2>FreeBSD, Solaris</h2>
+
+<h3>FreeBSD Install Notes</h3>
+<p>
+FreeBSD, Solaris, and the other similar operating systems use the LINUX
+install and operating instructions.
+</p>
+
+<p>
+If there is some unique code for these operating systems.  Should some
+unique problem be discovered please notify the Doom Legacy team by way
+of the SourceForge DoomLegacy project bug and request system.
+These notes will then be updated appropriately.  If a solution is also
+submitted the problem may even get fixed.
+</p>
+
+
+<h2>Windows</h2>
+
+<p>There may be several install batch files present,
+because of the various flavors of DOS and WINDOWS.
+Choose one that fits your system the best.
+Help specifics for that batch file are obtained by running it with no
+parameters.
+
+<p>The instructions here most closely follow the install for Win98.
+Other flavors of Windows may have more options.
+
+<h4>System Share Install</h4>
+<div class="code">$ install_win  sys
+</div>
+<nl>
+<li>The executable, legacy.wad, and docs
+are installed in the Program Files directory.
+<li>The wads directory is outside that file structure. 
+</nl>
+<pre>
+INSTALL_DIR =  "\Program Files\doomlegacy"
+INSTALL_WADS = "\doomwads"
+</pre>
+
+<h4>Games Share Install</h4>
+<p>Games Share install is not available for Windows.  Use Games install.
+
+<h4>Games Install</h4>
+<div class="code">$ install_win  games
+$ INSTALL_WIN  games  d:
+</div>
+<nl>
+<li>A hard drive letter or other prefix may be specified as the second
+parameter.
+<li>The executable, legacy.wad, and docs
+are installed in the Program Files directory.
+<li>There is a wads subdirectory, mostly for legacy specific wads.
+<lib>Other, generic wads directories, will also be searched.
+</nl>
+<pre>
+INSTALL_DIR = \games\doomlegacy
+INSTALL_WADS = %INSTALL_DIR%\wads
+</pre>
+
+<h4>User Install</h4>
+<div class="code">$ install_win  user
+$ INSTALL_WIN  user  my_doom_directory
+</div>
+<nl>
+<li>The user directory may be specified.
+<li>The default user install directory is "games/doomlegacy" in the
+user directory.
+</nl>
+<pre>
+INSTALL_BIN_DIR="$HOME/games/doomlegacy"
+</pre>
+
+<h4>Search directories in Windows</h4>
+<p>To change, edit source file doomdef.h, and re-compile.
+<br>Other directories can be added to doomdef.h, with up to 21 search directories.
+<br>The tilde is converted to $HOME by Doom Legacy.
+<br>Where PROGDIR is the program directory, and DEFDIR is the current directory.
+
+<h4>Search for legacy.wad:</h4>
+<nl>
+<li><b>"PROGDIR"</b>
+<li><b>LEGACYWADDIR</b>
+<li><b>"PROGDIR\wads"</b>
+<li><b>wad search directory list</b>
+</nl>
+
+<h4>Search order, IWAD:</h4>
+<nl>
+<li><b>DOOMWADDIR</b>
+<li><b>"DEFDIR"</b>
+<li><b>"PROGDIR\wads"</b>
+<li><b>"~\games\doom"</b>
+<li><b>"~\games\doomwads"</b>
+<li><b>"~\games\doomlegacy\wads"</b>
+<li><b>"\doomwads"</b>
+<li><b>"\games\doomwads"</b>
+<li><b>"\games\doom"</b>
+<li><b>"\Program Files\doomlegacy\wads"</b>
+<li><b>"PROGDIR"</b>
+</nl>
+
+
+<h3>Windows Install Notes</h3>
+
+<p>
+  The search directories for Windows are not as extensive as other ports.
+  If the legacy.wad and IWAD are installed within these directories it
+  should be possible to execute Doom Legacy without having to switch to
+  the executable first.
+</p>
+<p>
+  If there is difficulty, it may be required to move files to a known
+  location, or edit the doomdef.h file to customize a search directory.
+  Support files, like wads, <b>legacy.wad</b>, <b>autoexec.cfg</b>,
+  and <b>config.cfg</b>,
+  need to be found by Doom Legacy
+  and it is not reliable to look in the current directory for these.
+  Users commonly would lose their config file because they had not set HOME,
+  did not know where their config went, or Doom Legacy could not find
+  a HOME to store config and savegames.
+</p>
+<p>
+  Put your wad files in directory <b>"\doomwads"</b>, or <b>"\games\doomwads"</b>,
+  or in the current directory.  Doom Legacy will search all doomwaddir 
+  for the wad file.
+  The environment variable <b>DOOMWADDIR</b> can be set in a batch file to
+  specify a different wad directory.  Other doom ports commonly used that
+  environment variable to point to the doom wad directory.
+</p>
+<p>
+  A <b>"legacy"</b> or <b>"doomlegacy"</b> directory will be created in your
+  home directory for savegames and saved config files.
+  This depends upon determining the HOME directory at run-time.
+  This is commonly done with a UserProfile or HOME environment variable set
+  at user login to the operating system.
+</p>
+<p>
+  For Windows, Doom Legacy first looks for the HOME directory in the
+  "<b>HOME</b>" environment variable, and then in the
+  "<b>UserProfile</b>" environment variable.
+</p>
+<p>
+  If HOME (or UserProfile), is not set by system login then it should be set
+  by the user.
+  Set the environment variable "<b>HOME</b>" in a batch file,
+  or use the -home switch when starting Doom Legacy.
+  If <b>HOME</b> is not set, Doom Legacy will try to find an alternate
+  home directory.
+  First it will try to find a user created
+  <b>"legacyhome"</b>
+  in the current directory.
+  If that fails it will try to create
+  <b>"legacyhome"</b>
+  in the program directory.
+</p>
+<p>
+  Overriding by using the -home and -config switches, examples:
+</p>
+<div class="code">> doomlegacy -home c:\games\doomsave -game plutonia
+> doomlegacy -home c:\games\doomsave -config c:\games\plutconfig.cfg -game plutonia
+</div>
+<p>
+  Use the verbose switch -v, and Doom Legacy will print to <b>stderr</b>
+  the directory names that it used.  On Win98 this becomes a file
+  named <b>stderr.txt</b>.
+  The use of directory names with spaces may fail.
+</p>
+<p>
+  It is difficult to start a program under windows and set command line switches.
+  Most of the settings that the launcher supported can now be set from menus and the console.
+  However the -game, -file, and -config must be set from command line switches.
+</p>
+<p>
+  Doomlegacy will invoke a Launcher window when it is started without
+  switches.  It will also invoke the Launcher window when the game
+  selection results or iwad selection are invalid.
+  The Launcher window provides input of the game switches, iwad,
+  config, home, and doomwad directories.
+</p>
+<p>
+  Another way to start Doom Legacy is to create shortcuts.
+  These can be executed using a mouse.
+  Specify in the shortcut the command line, and change the starting directory
+  to where the doomlegacy program resides.
+</p>
+<div class="code">Example shortcut for Doom Legacy with plutonia2 wad:
+Shortcut: dl_plut2
+  command: doomlegacy -game plutonia -file c:\games\pl2\PL2.WAD
+  current directory: c:\games\legacydir
+</div>
+<p>
+  Creating a batch file with the necessary commands is also an easy way
+  to record a combination of switches.  Run the batch file to start doomlegacy
+  with the particular game and PWAD.
+  In the following batch file examples, legacydir, homedir, configdir, and waddir stand for directories that you specify.
+</p>
+<div class="code">DOOM2.BAT
+  cd c:\legacydir\
+  doomlegacy -game doom2
+
+DM8.BAT
+  cd c:\legacydir\
+  doomlegacy -iwad waddir\doom2.wad -home c:\homedir\ -config c:\homedir\config8.cfg
+
+DM2MOD.BAT
+  SET HOME=c:\games\home
+  SET DOOMWADDIR=c:\games\wads
+  cd c:\games\legacydir
+  doomlegacy -game doom2 -file levl9.wad mod2.deh mod8.bex
+</div>
+
+
+
+<h2>DOS</h2>
+
+<p>The DOS install is not as capable as other ports.
+Because a binary download will not be available, it will have to be
+compiled from Doom Legacy Source.
+
+<p>This will require a compiler.<br>
+Development used MinGW, but Watcom, and Clang have been tested.
+The code does test for MS compilers, but their usage with a DOS
+compile is unknown.
+Only DOS_NATIVE compile is available.
+
+<h4>System Share Install</h4>
+<p>System Share install is not available for DOS.
+
+<h4>Games Share Install</h4>
+<p>Games Share install is not available for DOS.  Use Games install.
+
+<h4>Games Install</h4>
+<div class="code">$ INSTAL  games
+$ INSTAL  games  d:
+</div>
+<nl>
+<li>A hard drive letter or other prefix may be specified as the second
+parameter.  It is used as a prefix on the games install dir.
+<li>All executable, legacy.wad, and docs are installed to the games directory.
+<li>There is a wads subdirectory, mostly for legacy specific wads.
+<li>Other, generic wads directories, will also be searched.
+</nl>
+<pre>
+INSTALL_DIR = \games\legacy
+INSTALL_WADS = %INSTALL_DIR%\wads
+</pre>
+
+<h4>User Install</h4>
+<div class="code">$ INSTAL  user
+$ INSTAL  user  my_doom_directory
+</div>
+<nl>
+<li>The user directory may be specified.
+<li>The default user install directory is "games/legacy" in the
+user directory.
+</nl>
+<pre>
+INSTALL_DIR = \games\legacy
+INSTALL_WADS = %INSTALL_DIR%\wads
+</pre>
+
+<h4>Search directories in DOS</h4>
+<p>To change, edit source file doomdef.h, and re-compile.
+<br>Other directories can be added to doomdef.h, with up to 21 search directories.
+<br>The tilde is converted to $HOME by Doom Legacy.
+<br>Where PROGDIR is the program directory, and DEFDIR is the current directory.
+
+<h4>Search for legacy.wad:</h4>
+<nl>
+<li><b>"PROGDIR"</b>
+<li><b>LEGACYWADDIR</b>
+<li><b>"PROGDIR\wads"</b>
+<li><b>wad search directory list</b>
+</nl>
+
+<h4>Search order, IWAD:</h4>
+<nl>
+<li><b>DOOMWADDIR</b>
+<li><b>"DEFDIR"</b>
+<li><b>"PROGDIR\wads"</b>
+<li><b>"~\games\doom"</b>
+<li><b>"~\games\doomwads"</b>
+<li><b>"~\games\doomlegacy\wads"</b>
+<li><b>"\doomwads"</b>
+<li><b>"\games\doomwads"</b>
+<li><b>"\games\doom"</b>
+<li><b>"PROGDIR"</b>
+</nl>
+
+
+<h3>DOS Install Notes</h3>
+
+<p>Put IWAD files in some of the directories in the search list.
+<p>See the Windows install notes, as the situation is very much the same.
+
+<p>
+  A <b>"legacy"</b> directory will be created in your specified home directory
+  for savegames and saved config files.
+</p>
+<p>
+  Set the environment variable "<b>HOME</b>" in a batch file,
+  or use the -home switch when starting Doom Legacy.
+  If <b>HOME</b> is not set, Doom Legacy will try to find an alternate
+  home directory.
+  First it will try to find a user created
+  <b>"DL_HOME"</b>
+  in the current directory.
+  If that fails it will try to create
+  <b>"DL_HOME"</b>
+  in the program directory.
+  <br>
+  This behavior can be overridden by using the -home and -config switches.
+</p>
+
+

@@ -1,0 +1,241 @@
+:name: Chex3 adaptation doc
+:author: Wesley Johnson
+:date: 5/4/2010
+::END
+
+
+The chex3.wad continues with the theme of chexquest.
+
+there are some images and graphics from Doom that should
+be blocked when CHEX is played.  Most notable is the bunny picture.
+It is possible to get to these by using the console, or sometimes
+through the menu.  Some Doom maps are there too, but these are not
+offensive, just confused because Chex replaced textures with things
+unrelated in usage.
+These cannot be disabled because there is a Chexquest2 that does have
+more levels, and may have replaced the offending pictures with something
+that they use.
+Add-on levels, pwads, may redefine missing sprites that have been blanked.
+
+Most of the Chex3 graphics and sprites are identical to Chex1.
+
+Chexquest1: chex.wad
+
+Levels: E1M1 to E1M5		// Chex
+	E2M1 to E2M5		// Chex
+	E3M1 to E3M5		// Chex
+
+	E1M6 to E1M9		// from Doom
+	E2M1 to E2M9		// from Doom
+	E3M1 to E3M9		// from Doom
+	E4M1 to E4M9		// from Doom
+
+Music:  D_E1M1 to D_E1M5	// Chex
+	D_E2M1 to D_E2M5	// Chex
+	D_E3M4 to D_E3M5	// Chex
+
+
+Pictures:
+// Good Chex images
+  m_doom.ppm	// splash screen, Chexquest3
+  titlepic.ppm	// chex warrior attacked by flemoids, Chexquest3
+  credit.ppm    // chex warrior, heroic
+  end0.ppm to end6.ppm	// chex warrior, thumbs up, THE END
+  endpic.ppm	// chex warrior attacked by flemoids
+  interpic.ppm	// chex warrior fighting
+  pfub1.ppm	// chex warrior in slime
+  pfub2.ppm	// chex warrior raising flag
+  victory2.ppm  // chex warrior sitting, Chexquest2
+  help1.ppm	// chex help screen
+  stbar.ppm	// status bar
+
+// faces are replaced by a chex, with green ooze for damage
+  stfdead0.ppm	// green ooze
+
+
+Interpic map:
+// Good Chex map graphic
+wimap0.ppm	// E1, chex warrior cleaning goo off boots
+wimap1.ppm	// E2, chex warrior stepping in goo
+wimap2.ppm	// E3, chex, meteors and spaceship headed to earth
+
+Graphic interpic sequences:
+Most wia***** are missing.
+
+// Good Chex sequences
+// Chex graphic overlay of wimap0, for end of E1
+wia00900.ppm, wia00901.ppm, wia00902.ppm	// chex seq. of hand cleaning boot
+// Chex graphic overlay of wimap1, for end of E2
+wia10700.ppm, wia10701.ppm, wia10702.ppm	// chex seq. of boot steppin in goo
+// Chex graphic overlay of wimap1, for end of E3
+wia20000.ppm, wia20001.ppm, wia20002.ppm	// chex seq. of spaceship
+
+
+Graphic interpic titles and text:
+// Good Chex graphics
+wicolon.ppm	// colon
+wiminux.ppm	// minus sign
+wipcnt.ppm	// percent sign
+wimstar.ppm	// you
+wimstt.ppm	// total
+winum0 to winum9 // 0 to 9
+wiostf.ppm	// F.
+wiosti.ppm	// items found
+wiostk.ppm	// flemoids returned
+wiosts.ppm	// secret areas found
+wiscrt2.ppm	// secret areas found
+wisucks.ppm	// sucks
+witime.ppm	// time
+wipar.ppm	// par
+wisplat.ppm	// blank square (splat)
+wiurh0.ppm, wiurh1.ppm	// blank horz. bar  (you are here)
+wienter.ppm	// entering
+wif.ppm		// finished
+wifrgs.ppm	// flemoids returned
+
+wilv00.ppm	// landing zone
+wilv01.ppm	// storage facility
+wilv02.ppm	// laboratory
+wilv03.ppm	// arboretum
+wilv04.ppm	// caverns of bazoik
+wilv10.ppm	// spaceport
+wilv11.ppm	// cinema
+wilv12.ppm	// chex museum
+wilv13.ppm	// city streets
+wilv14.ppm	// sewer system
+wilv20.ppm	// central command
+wilv21.ppm	// united cereals
+wilv22.ppm	// vila chex
+wilv23.ppm	// provincial park
+wilv24.ppm	// meteor spaceship
+
+
+
+// Doom graphic texts
+wikilrs.ppm	// killers !
+wivctms.ppm	// victims !
+wip1.ppm, wip2.ppm, wip3.ppm, wip4.ppm		// P1 P2 P3 P4
+wibp1.ppm, wibp2.ppm, wibp3.ppm, wibp4.ppm	// P1 P2 P3 P4
+
+
+
+Text:
+// Good Chex text
+m_episod.ppm	// which episode
+m_epi1.ppm	// rescue on baziok
+m_epi2.ppm	// terror in chex city
+m_epi3.ppm	// invasion
+
+m_skill.ppm	// choose difficulty
+m_jkill.ppm	// easy does it
+m_rough.ppm	// not so sticky
+m_hurt.ppm	// gobs of goo
+m_nmare.ppm	// super slimey
+m_ultra.ppm	// extreme ooze
+
+m_lgtti.ppm	// load quest
+m_sgtii.ppm	// save quest
+m_loadg.ppm	// load game
+m_saveg.ppm	// save game
+m_quitg.ppm	// quit game
+m_newg.ppm	// new game
+m_ngame.ppm	// new game
+m_endgam.ppm	// end game
+
+m_pause.ppm	// pause
+m_rdthis.ppm	// read this
+
+m_option.ppm	// options
+m_optttl.ppm	// options
+m_detail.ppm	// graphic detail
+m_gdlow.ppm	// low
+m_gdhigh.ppm	// high
+m_disopt.ppm	// display options
+m_scrnsz.ppm	// screen size
+m_disp.ppm	// display
+m_messg.ppm	// messages
+m_msens.ppm	// mouse sensitivity
+m_msgoff.ppm	// off
+m_msgon.ppm	// on
+m_svol.ppm	// sound volume
+m_musvol.ppm	// music volume
+m_sfxvol.ppm	// sound effects volume
+
+m_lscntr.ppm	// green box center
+m_lsleft.ppm	// green box left
+m_lsrght.ppm	// green box right
+
+// Text missing, using Legacy red defaults
+m_single.ppm	// single player
+m_multi.ppm	// multiplayer
+m_2playr.ppm	// two player game
+m_setupa.ppm	// setup player one
+m_setupb.ppm	// setup player two
+m_connec.ppm	// connect server
+m_stserv.ppm	// start server
+m_cdvol.ppm	// CD volume
+m_contro.ppm	// setup controls
+m_setupm.ppm	// setup
+m_video.ppm	// video options
+rankings.ppm	// rankings
+
+
+
+             
+
+Sprites:
+Sprites have been replaced with Chex appropriate ones.
+Many sprites have been blanked, or replaced with food, plant, items.
+PWAD may add these and use them in a map.
+Blanked sprites:
+  apbx**
+  apls**
+  bosf**
+  ifog**
+  manf**
+  pins**
+  pinv**
+  puff**
+
+
+Good Chex animations:
+  bexc0, bexd0,  // barrels explode
+  bfg**
+  chg**
+  bon**
+  bsku**
+  csaw**
+  gorl**
+  fsku**
+  misf**
+  pisg**
+  pung**
+  pvis**
+  smbt**, smgt**, smrt**
+
+Good Chex monster sprites:
+  play**
+  poss**
+  spos**
+  troo**
+  sarg**
+  boss**
+  cybr**
+  cycl**
+  flmb**
+  head**
+  lrva**
+  quad**
+  skul**
+  spid**
+Dead sprite graphics are blank.
+
+There are no Doom sprites in the Chex wad.
+All textures and flats are Chex.
+
+
+Blood splats:
+The chex game as played on DOS does have splats appear when hitting the flemoids, but they do not appear on wall nor floor.
+All splats are green.
+  blud**	 (bluda0, bludb0, bludc0)   are from Chex wad, are green, and are used in DOS version of Chexquest.
+

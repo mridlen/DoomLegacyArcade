@@ -1,0 +1,24 @@
+--- console.html	2023-11-29 06:52:16.046929186 -0600
++++ console_drawfit.html	2023-11-29 06:44:01.870947252 -0600
+@@ -2194,8 +2194,21 @@
+ '10' is the full viewsize with the status bar.<br/>
+ '11' is the full viewsize without the status bar.
+ </td></tr>
+ 
++<tr><td>viewfit</td><td>enum</td>
++<td>
++Select the draw scaling to fit the screen size.<br/>
++<table class="def">
++<tr><td>Auto</td><td>0</td><td>Auto select according to video screen size.<td></tr>
++<tr><td>Stretch</td><td>1</td><td>Stretch to fit the screen.<td></tr>
++<tr><td>Fit Width</td><td>2</td><td>Fit the draw scale to the width, the
++vertical is scaled to preserve normal aspect ratio.<td></tr>
++<tr><td>Fit Height</td><td>3</td><td>Fit the draw scale to the height, the
++horizontal is scaled to preserve normal aspect ratio.<td></tr>
++</table>
++</td></tr>
++
+ <tr><td>viewheight<br>&lt;16 - 56&gt;</td><td>int</td>
+ <td>
+ Set the height of the viewpoint (the height of the eyes above the floor).
+ The normal value for the Doom marine is 41.

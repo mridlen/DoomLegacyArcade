@@ -1,0 +1,19 @@
+# DoomLegacy Make options for Win32 SDL
+MAKE_OPTIONS_PRESENT=1
+# Place your make file options here (see Makefile).
+# This is a comment line. Remove the # on any active line.
+# Compile on Win32 for SDL.
+WIN32=1
+# WIN98=1
+# WINNT=1
+
+# Compilers with special requirements.
+# CC_MINGW=1
+
+# SDL library
+SMIF=SDL
+# Have SDL mixer library
+HAVE_MIXER=1
+
+# Without CD-music
+#  NOCDMUS=1

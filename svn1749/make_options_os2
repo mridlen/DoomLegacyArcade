@@ -1,0 +1,75 @@
+# DoomLegacy Make options for OS2
+# See README_compiling.txt
+# Edit for OS, SMIF, and other compile options.
+#
+MAKE_OPTIONS_PRESENT=1
+
+# Select an OS: OS2
+OS=OS2
+
+# Select a draw library:
+#  SDL: the SDL library is recommended and is the best maintained interface
+#  OS2_NATIVE: OS2 native drawing
+SMIF=SDL
+#  Enable to use SDL2, otherwise will use SDL 1.2
+# SDL2=1
+#  If sdl-config is missing, then where the SDL/SDL2 library was installed.
+# SDL_DIR=C:/SDL
+
+# SDL_Mixer library is a separate library from SDL
+HAVE_MIXER=1
+
+# Put other options here, see the src/Makefile or README_compiling.
+# Compiler select: GCC MINGW WATCOM CLANG
+# CC_SELECT=GCC
+# Enable CC_ENVIRONMENT to use the environment CC var.
+# CC_ENVIRONMENT=1
+# CC_EXPLICIT=clang
+
+# Architecture custom compile will result in faster smaller code,
+# but will not execute on incompatible machines.
+# Any valid value for -march= on your compiler may be set here.
+# For more information, ask your compiler.
+# > gcc --target-help
+# The default for GCC may be generic or i386.
+# generic32, generic64, i386, i486, i586, i686
+# pentium4, prescott, core, core2, athlon, k6, k8, amdfam10, etc.
+# + mmx, sse, sse2, sse3, sse4, 3dnow
+# Examples:
+# ARCH=-march=i386
+# ARCH=-march=i486+mmx
+# ARCH=-march=i686 -mtune=pentiumiii -mmmx
+# Let the compiler detect your hardware.
+# ARCH=-march=native
+
+# To enable debug code, with no fullscreen.
+# DEBUG=1
+
+# Might not have the CD music libraries.
+# CD_MUSIC=0
+
+# If you have a slow computer you may want to try assembly, but the
+# assembly code is not often updated with the latest improvements.
+# USEASM=1
+
+# Other Make compile vars can be overridden too, see Makefile.
+
+# Install settings for install_sys
+# GROUP:=games
+# OWNER:=games
+# PREFIX:=/usr/local
+# INSTALL_SYS_DIR:=$(PREFIX)/bin
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_games
+# INSTALL_GAMES_DIR:=$(PREFIX)/games/doomlegacy
+# INSTALL_SHARE_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install settings for install_user
+# INSTALL_USER_DIR:=$(HOME)/games/doomlegacy
+
+# To override where the legacy.wad is installed.
+# INSTALL_LEGACYWAD_DIR:=$(PREFIX)/share/games/doomlegacy
+
+# Install from legacy_common.
+# COMMON_DIR:=..\legacy_common

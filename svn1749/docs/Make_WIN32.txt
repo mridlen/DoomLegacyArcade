@@ -1,0 +1,354 @@
+:Name: Make DoomLegacy under Windows.
+:Date: Oct 11, 2011
+:Update: Sept, 3, 2016
+:Author: Wesley Johnson
+
+Updated for DoomLegacy 1.46.
+Tested using Win98 and WinXP.
+Many procedures will be similar for the other versions of Windows.
+
+**** Configuration
+
+Copy  make_options_win  to  make_options,
+and edit the make_options copy to suit your situation.
+
+Most compilers, such as MinGW and WATCOM, require changes to switches
+or other Makefile lines.  They must be specified indirectly.
+Uncomment only one of the lines.
+   CC_SELECT=MINGW
+#   CC_SELECT=WATCOM
+#   CC_SELECT=CLANG
+
+I compile on Win98 and WinXP using MINGW.
+Another user uses CLANG.
+WATCOM has not been tested for a long time.
+Other compilers are untested.
+
+To use a gcc equivalent compiler, just specify the name directly.
+  CC_EXPLICIT_CMD=clang
+  
+If you have an environment CC variable that you wish to use for all uses
+of a C compiler, it must be enabled in make_options.  This is disabled by
+default because often there is something that does not work exactly the
+same as with gcc.
+   CC_ENVIRONMENT=1
+
+
+
+
+Edit  doomdef.h
+There are DoomLegacy program options, such as DEBUG defines,
+directories, enables for drawing, etc..  Do not go wild as you can
+easily make DoomLegacy unusable.
+
+
+**** Win98/WinXP using MinGW
+
+Install MinGW gcc compiler
+  Target  c:\mingw\
+
+Install SDL.
+  Target  c:\SDL\
+
+Install SDL-Mixer (which is a separate download from SDL libs)
+  Target c:\SDL\SDL-mixer
+  Move  SDL-mixer\include\*  to  \SDL\include\SDL
+  Move  SDL-mixer\lib\*      to  \SDL\lib
+
+
+The outermost Makefile sets some variables and invokes the inner
+Makefiles.  The tools have their own tools/Makefile.
+Most of the work for compiling DoomLegacy is done by the src/Makefile.
+
+You will be editing the DoomLegacy make_options file to configure the
+Make to your installed libraries.  Mostly, this means uncommenting
+the appropriate lines in the make_options file.
+  OS=WIN32
+  CC_SELECT=MINGW
+  SMIF=SDL
+  HAVE_MIXER=1
+
+Everything else in make_options is optional.
+Unless you have an unusual install, or want to play with something like
+FMOD (which I don't think actually works right now), leave everything
+else commented out.
+
+Depending on which include package you installed, the include files might
+not be where Make expects them.
+To fix this, uncomment the line, and specify the correct directory.
+  DDINC=-I<directory_name>
+Example:
+  DDINC=-IC:\MINGW\MX80\include
+
+To specify the link librarys, dlls, for Windows.
+  DDLIB=-L<directory_name>
+Example:
+  DDLIB=-L\MINGW\MX80\lib
+
+
+
+Whenever you edit make_options,
+you need to clean the dep, obj, and bin directories:
+   > mingw32-make  clean
+
+To compile DoomLegacy, issue make with no arguments.
+It will perform a default compile.  It will first make the tool, fixdep.
+   > mingw32-make
+
+
+Make will accept command line defines that override make_options:
+To build with debugging (to use the gdb debugger).
+   > mingw32-make  DEBUG=1
+
+To build a debug version in a different directory with separate
+bin, obj, and dep files.
+   > mingw32-make  BUILD=debug DEBUG=1
+
+It is also possible to override any define of make_options.
+   > mingw32-make  BUILD=tst2  OS=WIN7  CC_MINGW=1   SMIF=SDL  HAVE_MIXER=1
+
+If you are making edits, use a copy of the src in another directory
+(src3 for example), and compile it using a separate build directory (tst3).
+If you are editing the Makefile in directory src3, then you need to
+specify src3 in all the Make commands to being using it, because it is
+invoked indirectly for all these commands.
+   > mingw32-make  clean  BUILD=tst3  SRC=src3
+   > mingw32-make  BUILD=tst3  SRC=src3  DEBUG=1
+   > mingw32-make  install_user  BUILD=tst3  SRC=src3
+
+A batch file can be created with any of the above make commands.
+Put it one directory up.
+  > ..\make1
+
+* Error on SDL.h, or  SDL_stdinc:
+Then check the src/Makefile lines about where the SDL include reside.
+The src/Makefile expects it to be in "C:/SDL/include/SDL"
+      OPTINC+=-I/SDL/include/SDL
+#      OPTINC+=-I/mingw/include/SDL
+#      OPTINC+=-I/mingw/include
+
+* Error on alloca:
+You have a UNIX SDL, you need the one for Win32
+(which has a different SDL_config).
+
+* Error about missing SDL_mixer:
+Then you forgot to put SDL_mixer.h in with the other SDL include files.
+   > move SDL_mixer.h  C:/SDL/include/SDL
+
+* Error about missing include files:
+You have MSYS and have mistakenly tried to use MSYS make.
+Use "mingw32-make"  not  "make".
+
+* Make cycles, trying to compile dependency on the same file, over and
+over again:
+The time on one of the source files is ahead of the computer time.
+No matter how many times Make updates the dep file, the source file is
+always newer.
+
+This can happen when you move a file from another computer and preserve
+the time stamp, and that computer's clock is ahead of your computer's clock.
+
+Check the dates on the source files.  It may be one, or could be all
+of them.  Update the file date to the current time using MSYS touch or copy.
+  > touch  filename
+If it is all of them.
+  > touch -c src/*.c src/*/*.c src/*/*/*.c
+Make a copy of the directory, excluding timestamps.
+  > cp -a  src  src2  --no-preserve=timestamps
+Make recursive copy of the directory.
+  > xcopy src src2
+Open the file with an editor and save it.
+
+**** MSYS
+
+The DoomLegacy compilation does not need MSYS.
+It is nice to have for debugging.
+
+If MSYS is installed it does manage to interfere with some things.
+It also has its own idea of what is the root directory.
+It intercepts the commands issued by Make and tries to interpret them
+as MSYS commands.  For example, it does not recognize the DEL command.
+
+When MSYS is detected in the PATH, the Makefile will output a
+"HAVE MSYS" line, just to let you know.
+
+If MSYS is detected in the PATH, then the Makefile will substitute MSYS
+commands for the DOS commands.  If MSYS is not installed completely
+(if comes in many separate packages, many optional) then this may not
+work either.
+
+It was tested with MSYS 1.0, packages of msys-1.0.13 on Win98,
+and packages of msys-1.0.17 on WinXP, installed to "C:\MSYS\1.0\".
+
+To bypass the MSYS detection and force the use of DOS commands, put
+the HAVE_DOSCOMMAND=1 line in your make_options file.  The Makefile will
+then specify  SHELL=cmd.exe  to send the command lines directly to
+the DOS command processor.  This may not work either, depending on
+your Windows version.  It seems to work for Win98, and WinXP, when
+using mingw32-make.  It does not work for MSYS make, and other Make
+programs are a complete unknown.
+  HAVE_DOSCOMMAND=1
+
+If you need (or want) to modify this behavior, then search for the
+lines with "SHELL" in the src/Makefile.
+
+If you type "make" instead of "mingw32-make" you will get MSYS make instead.
+MSYS make will compile most of DoomLegacy, but fails to do it completely.
+It has failures such as not being able to find include files.
+It is just easier to use ming32-make, it is included with MINGW anyway.
+
+
+**** Windows Installation
+
+See the docs/INSTALL.html for the most complete install information.
+For Windows, there are several install options and several installers
+available.
+
+The following information concerns some of the compile options,
+and how they relate to the installation.  DoomLegacy is not compiled
+specifically for a particular installation, as it searches all the
+possible directories for its components, home files, and wad files.
+Installing two different versions with conflicting components will
+require that their components be in the program directory, not system-wide.
+
+The components:
+  legacy.wad  -- has a version number that is checked for compatibility
+  SDL.dll
+  SDL_mixer.dll
+  home/config.cfg
+
+Make a runtime directory, and put into it
+  bin/doomlegacy.exe  --  The doomlegacy binary from bin.
+  legacy.wad
+
+Install SDL dll files:
+* If there is a copy of a dll libs in the program directory,
+then that dll copy will be used instead of any other.
+
+* The usual for Windows is for every program to have a copy the SDL libs
+installed with the program.
+Copy the SDL to the program run-time directory or let the DoomLegacy installer
+do that.  Run the installer AFTER compiling.
+
+The Makefile installer expects to find the files in
+  "..\legacy_common", or specified by COMMON=dirname.
+  Files:
+   SDL\lib\SDL.dll
+   SDL\lib\SDL_mixer.dll
+
+Example Install using another directory
+   > mkdir ..\legacy_com146
+   > copy  legacy.wad  ..\legacy_com146
+   > copy  \SDL\lib\SDL*  ..\legacy_com146
+   > mingw32-make install_user  COMMON=legacy_com146
+
+* People used to Linux like to have one copy installed system wide,
+so all SDL programs get to use the latest libs.
+  Copy or move dll to Windows\System32:
+   SDL\lib\SDL.dll          to  \Windows\System32
+   SDL\lib\SDL_mixer.dll    to  \Windows\System32
+
+
+
+**** Wad directories
+
+For a simple test, you can also put into the program directory
+any wads that you want to play.  When there are many wad files, it is
+best to put them in one of the wad directories, and it makes it easier
+to use them with other versions of DoomLegacy, and other Doom programs.
+
+DoomLegacy now searches upto 24 directories for the specified wad files.
+Up to 21 fixed search directories are set in doomdef.h.
+For Windows, there are several free slots for adding your own special
+directories.  If you have only one wad directory this is not necessary,
+as it can be specified with the environment variable DOOMWADDIR, which
+DoomLegacy searches before the fixed directories.
+
+These defines in doomdef.h need "\\" for each backslash because of
+C-string backslash processing.
+#define DEFWADS1  "\\doomwads"
+#define DEFWADS2  "\\games\\doomwads"
+#define DEFHOME   "\\legacyhome"
+
+Put your wad files in directory "\doomwads", or "\games\doomwads", or
+in the current directory.
+
+Suggest using home directory "c:\legacyhome".
+
+A legacy directory will be created in your home directory so
+DoomLegacy can save the savegames and config files.
+
+This requires that DoomLegacy find the home directory first, which can be
+specified by the -home command line switch, by the HOME environment variable, 
+the environment variable "UserProfile" (which is defined on WinXP),
+or by the default directory specified by DEFHOME in the doomdef.h file.
+
+You can set the environment variable "HOME" in a batch file,
+or use the -home switch when starting DoomLegacy.
+Example: "doomlegacy -home c:\games\doomsavegames".
+Example: "doomlegacy -home .. -game doom2".
+Otherwise, if the default DEFHOME directory exists, "\legacyhome",
+it will be used as HOME.
+
+I prefer using directories under the root "C:\", to avoid Windows directory
+names with spaces that could cause problems (depending on how they are
+specified).
+I have tested this on WinXP using a home of "My Documents\Doom", and
+wad files under "C:\games\doomwads".
+
+Use the verbose switch -v2, and DoomLegacy will print to stderr the directory
+names that it used.  On Win98/WinXP this becomes a file named
+stderr.txt, that appears in your program directory.
+
+The actual DoomLegacy save directory name is specified by
+DEFAULTDIR1 and DEFAULTDIR2 of the doomdef.h file.
+It was previously "legacy", but now we prefer "doomlegacy" (which does
+not fit in the DOS standard 8 chars), so it looks for both.
+There is no good reason to change it as it is only used by DoomLegacy,
+but if you must, Windows uses the last two DEFAULTDIR.
+DEFAULTDIR1 is checked first.
+
+**** Executing under Windows
+
+Examples assume c:\doom\run is the doomlegacy runtime directory, but you
+should put your actual directory name.  Replace any directory names
+with your actual directory names.  Doomlegacy can handle very long
+command lines, and you must put all switches on one line.
+
+Example: Batch file for FreeDoom
+Create file dl_freedoom.bat
+  cd c:\doom\run
+  doomlegacy -v -game freedoom
+
+Example: Batch file for hth2.wad, using FreeDoom as default game:
+Demonstrates using -home switch.
+Create file dl_hth2.bat
+  cd c:\doom\run
+  doomlegacy -v -file hth2.wad -home c:\games\hth2_setup
+
+Example: Batch file for some pwads, where doom2.wad is in "c:\doomwads":
+Current directory is ignored by using DEFWADS1 and absolute path names.
+Create file dl_some.bat
+  c:\doom\run\doomlegacy -game doom2 -file c:\games\pwads\some.wad
+
+Example: Batch file for pwad, deh, and bex modifications.
+Directory c:\games\wads contains all the wad, deh, and bex files,
+with c8 in subdirectory pw.
+The order of files is important.  If, for example: c8.wad is a new level,
+and mod3 adds new sounds, the mod3 sounds will override those
+of the same name in c8.wad and doom2.wad.
+Create file dl_ex2.bat
+  cd c:\doom\run
+  SET DOOMWADDIR=c:\games\wads
+  SET HOME=c:\games\home
+  doomlegacy -game doom2 -file pw\c8.wad mod1.wad mod2.deh mod3.bex
+
+Example: Shortcut for DoomLegacy with plutonia wad:
+Create shortcut dl_plut
+  command: c:\doom\run\doomlegacy -v -game plutonia
+  current directory: c:\doom\run
+
+Example: Shortcut for DoomLegacy with plutonia2 wad:
+Create shortcut dl_plut2
+  command: c:\doom\run\doomlegacy -game plutonia -file c:\games\pl2\PL2.WAD
+  current directory: c:\doom\run

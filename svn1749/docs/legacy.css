@@ -1,0 +1,217 @@
+@media screen
+{
+  body
+  {
+    font-family: Helvetica, sans-serif;
+    line-height: 1.3;
+    background: #000000 /* url("images/background.png"); */
+  }
+}
+
+@media print 
+{
+  body
+  {
+    font-family: "Times New Roman", serif;
+    font-size: 11pt;
+  }
+  h1, h2, h3, h4, h5, h6 { page-break-after: avoid; }
+  p { widows: 2; orphans: 2; }
+}
+
+
+:link    { color: #80FF00; text-decoration: none; }
+:visited { color: #5EBB00; text-decoration: none; }
+:link:hover, :visited:hover { color: #FFFFFF; text-decoration: underline; }
+:link:active { color: #FFCCFF; }
+
+
+body
+{
+  font-size: 12pt;
+  color: #CCCCCC;
+  margin: 0 10% 0 5%;
+}
+
+
+h1 { text-align: center; }
+h1.tagline
+{
+  text-align: center;
+  color: #AAAAAA;
+  font-size: 150%;
+}
+h2 { color: #89d850; }
+
+hr { margin: 2em 0; }
+img { border: none; }
+
+
+/* span-like elements */
+
+b { color: #DDE0DD; }
+
+span.keyword
+{
+  color: #AAAAEE;
+  font-weight: bold;
+}
+
+span.example
+{
+  background: #203000;
+  padding: 0 1ex;
+}
+
+span.hilite
+{
+  color: #89d850;
+}
+
+span.warning
+{
+  color: #F04000;
+}
+
+
+
+/* division-like elements */
+
+p.new
+{
+  background: #303070;
+  margin: 0 5em 0 0;
+}
+
+div.caption
+{
+  font-style: italic;
+  font-size: 70%;
+}
+
+/* makes things readable on a wide screen */
+div.column
+{
+  width: 60em;
+}
+
+div.example
+{
+  background: #203000;
+  margin: 0 0 0 2em;
+  padding: 0.2em 0.5em;
+  display: inline-block;
+}
+
+div.code
+{
+  font-family: monospace;
+  white-space: pre;
+  color: #CCCCCC;
+  background: #305090;
+  margin: 0 0 0.5em 2em;
+  padding: 0.2em 0.5em;
+  display: inline-block;
+}
+
+
+ol > li > ol
+{
+  list-style: lower-roman;
+}
+
+/* Definition table */
+table.def
+{
+  margin: 0.5em 1em;
+  padding: 0em;
+  border-collapse: separate;
+  border-spacing: 3px;
+}
+
+table.def th
+{
+  background: #303000;
+  font-weight: bold;
+  padding: 0.3em 1em;
+  border: solid thin gray;
+  border-width: 2px;
+}
+
+table.def td
+{
+  vertical-align: top;
+  background: #0A2000;
+  padding: 0.3ex 1ex;
+}
+
+table.def td.note
+{
+  vertical-align: top;
+  background: #202000;
+  text-align: center;
+}
+
+table.def td.warning
+{
+  vertical-align: top;
+  background: #703000;
+  text-align: center;
+}
+
+
+/* definition list */
+dt
+{
+  margin: 0 0 1em 1em;
+  font-weight: bold;
+  color: #AAAAEE;
+}
+
+dd
+{
+  margin: 0 0 2em 2em;
+}
+
+dl.quote dd
+{
+  font-style: italic;
+}
+
+/* horizontal list */
+ul.horizontal li
+{
+  display: inline;
+  list-style: disc;
+  padding-right: 1em;
+}
+
+
+/* Floating box on the right for a table of contents / quick links */
+div.floatbox
+{
+  float:right;
+  border: 1px solid #007010;
+  padding: 1em;
+  margin: 1em;
+  font-size: 90%;
+  overflow: hidden;
+  height: 100%;
+}
+
+div.floatbox ul
+{
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+div.floatbox ul > li
+{
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  background: url("images/triangle.png") 10px no-repeat;
+  padding-left: 25px;
+}

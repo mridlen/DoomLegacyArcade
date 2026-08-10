@@ -1,0 +1,2428 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link rel="stylesheet" href="legacy.css" type="text/css"/>
+  <meta name="keywords" content="Doom, Legacy, documentation, manual, docs"/>
+  <meta name="description" content="Doom Legacy is your premiere source port engine for id Software's classic DOOM games and more!"/>
+  <title>Doom Legacy User Reference Manual</title>
+</head>
+
+<body>
+<div class="column">
+<h1>Doom Legacy 1.48 User Reference Manual</h1>
+
+
+<div class="floatbox">
+<ol>
+  <li><a href="#intro">Introduction</a></li>
+  <li><a href="#install">Install</a></li>
+  <li><a href="#setup">Setup</a></li>
+  <li><a href="#gameplay">Basic gameplay</a></li>
+  <li><a href="#console">Console</a></li>
+  <li><a href="#network">Network games</a></li>
+  <li><a href="#cmdline">Commandline options</a></li>
+  <li><a href="#dehacked">DeHackEd options</a></li>
+  <li><a href="#notes">Notes</a></li>
+</ol>
+</div>
+
+<h2 id="intro">INTRODUCTION</h2>
+<p>  
+  Hello all Doom fans of the world, welcome to the latest release of
+  Doom Legacy!
+</p>
+<p>
+  Since Doom was out we have been fans of deathmatching. Some of us
+  are fans of coop play. And, single play is popular too.
+  Don't ask us why, but we liked Doom more than Duke Nukem, Quake or other clones.
+  We simply enjoy the atmosphere, look and feel of Doom.
+</p>
+<p>
+  We always dreamed of Doom sources being released. How many days we
+  spent talking about the features we'd put in it!
+  In the middle of 1997 we heard a rumour that the Doom sources
+  would be released. Some months later the miracle happened: In
+  December 1997, id Software made the full source code of Doom public.
+  A great number of open source projects have started around the sources
+  since, and Doom Legacy is competing to be the best of the choices!
+</p>
+<p>
+  Doom Legacy can play Doom, Boom, Marine's Best Friend (MBF), and Heretic maps.
+  In addition to the original games by id Software and Raven Software,
+  there are hundreds of free, fan-made maps available on the Internet.
+  These maps are typically distributed as <b>PWAD</b> files, which are not
+  fully self-contained.
+  For each game you will also need the corresponding <b>IWAD</b> data file,
+  which contains all the graphics, wall and floor textures,
+  sounds, and music for that game. For example, if you want to play Doom II
+  maps, you'll need the IWAD file doom2.wad, or one of the free replacements.
+ </p>
+ <p>
+  Doom Legacy itself is free software, meaning that you can copy and
+  distribute it without charge.
+  The original Doom and Heretic IWAD files
+  (doom.wad from Doom, doomu.wad from Ultimate Doom,
+  doom2.wad from Doom2, tnt.wad or plutonia.wad from Final Doom,
+  heretic.wad from Heretic) are still
+  copyrighted products and available commercially.
+</p>
+<p>
+  There are also some free replacement IWADs which can be used instead.
+  <a href="http://www.nongnu.org/freedoom/">FreeDoom</a> (doom2.wad or freedoom.wad) is a free substitute for Doom2.
+  I recommend freedoom-0.8 rather than the later versions, which are a different style.
+  <a href="https://code.google.com/p/blasphemer/">Blasphemer</a>
+  (heretic.wad) is a free substitute for Heretic, but it does
+  not have monsters yet (it needs volunteers to work on it!).
+  The Legacy engine will recognize and play Chexquest (chex.wad),
+  Chexquest2, and Chexquest-Newmaps (newmaps.wad), but not Chexquest3.
+</p>
+<p>
+  Legacy has implemented the fundamental and de-facto-standard <a href="http://doom.wikia.com/wiki/Boom">Boom</a>
+  extensions, and the Marine's Best Friend (MBF) extensions.
+  With 1.48.16 we have added support for MBF21.
+  Legacy also has implemented 3D floors, swimmable water and other special effects using extended
+  linedef codes, and supports the FraggleScript scripting language.
+<p>
+  There are also considerable controls for modifying how the level map
+  is played.  These can override defects in a map, modify monsters, make
+  a coop game playable to new players.  For instance, you can do something about those
+  CyberDemons that show up so often in the Doom2 wad under coop mode,
+  or just play coop using the single player map.
+  See the console doc for the explanations of the extensive menu entries.
+</p>
+<p>
+  To get started with Legacy, we recommend trying some of the following PWADs.
+  These are a few selected examples that demonstrate some of the features that Doom Legacy provides.
+  There are many more in the repositories, such as at
+  <a href="http://www.doomworld.com">Doomworld</a>.
+  To play a PWAD you also need the IWAD that it was meant to work
+  with. This is selected on the command line, using the "-game" switch (such as Doom2),
+  or using the built-in launcher.
+</p>
+<ul>
+  <li>
+    Demonstrations of new editing features:
+    Legacy_3ddemo.wad and rainbowstar.wad
+  </li>
+  <li>
+    Wads that use Legacy 3D floors:
+    3DHorror.wad, phobiata.wad, hth2.wad, Compound.wad, GRAIL2.WAD,
+    nocturnus.wad, spone2.wad
+  </li>
+  <li>
+    Wads that use the Legacy features to implement different capabilities:
+    Twilight.wad (with Twilight.DEH), bspeek.wad (Blake Stone),
+    nimrod.wad, NEWBOXE.WAD (boxing match)
+  </li>
+  <li>
+    Wads (and DEH files) that alter the players, sounds, and attributes, to be something very different:
+    Delirium.deh (patch file) or Delirim.wad,
+    skinbots/Skins.wad (skins),
+    99PLAYER.WAD (skins)
+  </li>
+  <li>
+    Deathmatch wads:
+    andydm1.wad, toxdm1.wad, MRPD3D.wad, MRQ3DM17.wad,
+    sleeper.wad, shbullet.wad
+  </li>
+  <li>
+    Chexquest sequel:
+    Chexquest-newmaps.wad
+  </li>
+</ul>
+<p>
+  We hope that this new release brings you a lot of enjoyment.
+  Have fun!!
+</p>
+<p>-The Doom Legacy Team</p>
+
+<h3>What's new</h3>
+<p>
+  See <a href="whatsnew.html">here</a> for the latest changes.
+</p>
+
+<h3>What's coming</h3>
+<p>  
+  We have planned other features. See our <a href="http://doomlegacy.sourceforge.net">website</a>.
+</p>
+
+  
+<h2 id="install">INSTALL</h2>
+
+<p>
+Installing Doom Legacy depends upon the operating system and the
+user preferences:
+
+<p>
+DoomLegacy needs to be installed in its own directory, and not your
+HOME directory.
+DoomLegacy has protections against using your HOME directory,
+such as refusing to search it for support files.
+Support files in your HOME directory will be inaccessible.
+<p>
+A full explanation of the source packages install is in the
+<a href=INSTALL.html>INSTALL</a> manual.
+</p>
+<h3>Preferences</h3>
+Select one of install methods.  This will determine where the binary,
+wads, and docs are installed.  In some cases a directory may be specified.
+
+<h4>System Share Install</h4>
+Install to a System executable directory, like "/usr/local/bin" or
+"/Program Files".
+The docs and wads are installed to a user share directory, like
+"/usr/local/share/games/doomlegacy" or "c:/games".
+The owner of the files will be privileged.
+
+<h4>Games Share Install</h4>
+Install the binary in the games directory, but wads and docs in a
+system share directory, for use by all system users.
+The default games directory is games/doomlegacy and the default share
+directory .
+The owner of the files will be privileged.
+A directory may be specified.
+
+<h4>Games Install</h4>
+Install in the games directory, for use by all system users.
+All components will be installed into the same games directory, which by
+default is "/usr/local/games/doomlegacy" or "c:/games/doomlegacy".
+The owner of the files will be privileged.
+A specific directory may be specified.
+
+<h4>User Install</h4>
+Install for the use of the immediate user, owned by the immediate user.
+The install directory must be within the user directory space.
+The User may specify a directory.
+</p>
+
+
+<h3>Linux</h3>
+<p>
+  The installation can be system-wide or just for the user.  Some wad
+  files can also be installed system-wide.  These can be put into one of
+  the system wad directories.
+  The user can also keep private wad directories.
+  All will be searched, see the search directory list in the
+  <a href=INSTALL.html>INSTALL</a> manual.
+<p>
+  Doom Legacy will use the <b>HOME</b> environment variable, which is
+  usually set by your Linux login, to find your user home directory.
+  It will make a hidden directory named <b>.doomlegacy</b> there for
+  storing your configuration files and saved games.
+<p>
+  If <b>HOME</b> is not set, Doom Legacy will fall back on an old behavior,
+  and look for <b>legacyhome</b> in the current directory.
+  If necessary, it will create <b>legacyhome</b> in the program directory.
+  It will then use <b>legacyhome</b> as the legacy directory.
+</p>
+Use the -home and -config switches:
+<div class="code">$ doomlegacy -home ~/doomstuff -game plutonia
+$ doomlegacy -home ~/doom -config ~/doom/plutconfig.cfg -game plutonia
+</div>
+<p>
+  PWAD and DeHackEd files can be included using the -file switch.
+</p>
+Examples:<br>
+<div class="code">$ doomlegacy -game tnt
+$ doomlegacy -game plutonia -file wads/pl2/PL2.WAD
+$ doomlegacy -iwad freedoom.wad -file new_map13.wad
+$ doomlegacy -file wads/Twilight/TWILIGHT.DEH wads/Twilight/TWILIGHT.WAD
+</div>
+<p>
+  Script files can also be used to start Doom Legacy:
+</p>
+<div class="code">#!/bin/sh
+cd /usr/local/games/legacy/
+USER="Shotgun-wizard"
+DOOMWADDIR=wads
+doomlegacy -iwad doom2.wad -file DM8.WAD
+</div>
+
+<h3>Windows</h3>
+<p>
+  The installation can be system style, a games directory, or within the
+  user home directory.
+  Support files, like wads, legacy.wad, autoexec.cfg, and config.cfg,
+  need to be found by Doom Legacy.
+<p>
+  The installation should put all files in known directories, which
+  makes it easy to start Doom Legacy without needing to change to the
+  program directory.
+  The known directories are listed in the 
+  <a href=INSTALL.html>INSTALL</a> manual.
+<p>
+  If there is difficulty, it will be due to Doom Legacy not finding your
+  HOME directory, not finding where legacy.wad is stored, or not finding
+  the IWAD.  Ensure there is a consistent HOME directory, so it uses the same
+  config file each time you play.
+  Put the needed files in known directories, and check that that the HOME or
+  UserProfile environment variable is set to your home directory.
+  When started with the "-v" switch, Doom Legacy will print to
+  stderr.txt where it finds directories and the search list.
+<p>
+  A legacy directory will be created in your user home directory for savegames
+  and saved config files.
+  Set the environment variable "<b>HOME</b>" in a batch file, or use the -home switch
+  when starting Doom Legacy.
+  In Windows, "<b>UserProfile</b>" will be checked as an alternative to HOME.
+  <p>
+  Failing to find a user home directory, it will fall back on an old
+  behavior of using <b>"legacyhome"</b> for the legacy home directory.
+  If necessary, it will create <b>"legacyhome"</b> in the program directory.
+
+</p>
+Use the -home and -config switches:
+<div class="code">> doomlegacy -home c:\games\doomsave -game plutonia
+> doomlegacy -home c:\games\doomsave -config c:\games\plutconfig.cfg -game plutonia
+</div>
+<p>
+  Use the verbose switch -v, and Doom Legacy will print to stderr the directory
+  names that it used.  On Win98 this becomes a file named stderr.
+  The use of directory names with spaces may fail.
+</p>
+<p>
+  It is difficult to start a program under windows and set command line switches.
+  Most of the settings that the launcher supported can now be set from menus and the console.
+  However the -game, -file, and -config must be set from command line switches.
+</p>
+<p>
+  Doomlegacy will invoke a Launcher window when it is started without
+  switches.  It will also invoke the Launcher window when the game
+  selection results or iwad selection are invalid.
+  The Launcher window provides input of the game switches, iwad,
+  config, home, and doomwad directories.
+</p>
+<p>
+  Another way to start Doom Legacy is to create shortcuts.
+  These can be executed using a mouse.
+  Specify in the shortcut the command line, and change the starting directory
+  to where the doomlegacy program resides.
+</p>
+<div class="code">Example shortcut for Doom Legacy with plutonia2 wad:
+Shortcut: dl_plut2
+  command: doomlegacy -game plutonia -file c:\games\pl2\PL2.WAD
+  current directory: c:\games\legacydir
+</div>
+<p>
+  Creating a batch file with the necessary commands is also an easy way
+  to record a combination of switches.  Run the batch file to start doomlegacy
+  with the particular game and PWAD.
+  In the following batch file examples, legacydir, homedir, configdir, and waddir stand for directories that you specify.
+</p>
+<div class="code">DOOM2.BAT
+  cd c:\legacydir\
+  doomlegacy -game doom2
+
+DM8.BAT
+  cd c:\legacydir\
+  doomlegacy -iwad waddir\doom2.wad -home c:\homedir\ -config c:\homedir\config8.cfg
+
+DM2MOD.BAT
+  SET HOME=c:\games\home
+  SET DOOMWADDIR=c:\games\wads
+  cd c:\games\legacydir
+  doomlegacy -game doom2 -file levl9.wad mod2.deh mod8.bex
+</div>
+
+
+<h3>Windows with launcher</h3>
+<p>
+  Newer Launchers can be used with Doom Legacy, as most command line switches are somewhat standard.
+  Most of the settings that a launcher supports can now also be set from the
+  console also, or using an autoexec file.
+</p>
+<p>
+  The old Legacy Launcher is not supported, and I am trying to bury it; it is dead.
+  The source code is lost and we cannot fix it.
+<p>
+  The old launcher can misplace the doom settings file (doomargs.tmp),
+  putting it into the directory where the IWAD is found.
+  It then specifies a doomargs file to Legacy without using the directory name.
+  Legacy will start without seeing the file, or will use a stale file.
+<p>
+  The best solution is to never specify a directory name on the IWAD file
+  when using the old launcher.
+  Let Legacy search the known directories for the IWAD file.
+  If necessary, you can put in the Legacy executable directory a soft link to the directory
+  where you keep the IWAD files.  Legacy will search through it.
+</p>
+<p>
+  The launcher has some problems with setting home and config directories.
+  You will likely have to include
+  "-config mydir\config.cfg", and/or "-home homedir" in options.
+</p>
+<ul>
+  <li>Unpack the archive to a suitable program directory,
+      like <b>C:\games\doomlegacy</b></li>
+  <li>Start the Launcher</li>
+  <li>Fill in required information about WAD locations and hardware options</li>
+  <li>Give the IWAD filename without a directory, and let Legacy search for it.</li>
+  <li>Launch the game!</li>
+</ul>
+
+<h3>Environment variables</h3>
+<p>
+  The following environment variables alter Doom Legacy behavior.
+  None of them are required.
+</p>
+<ul>
+  <li>
+    <b>DOOMWADDIR</b>: This environment variable defines a path where
+    wad files are located. This way you can easily share your wad
+    files between different programs.
+  </li>
+  <li>
+    <b>USER</b>: This variable contains your username, is used as the
+    default value for your player name in multiplayer games.
+  </li>
+  <li>
+    <b>HOME</b>: This variable indicates your home directory.
+    In the home directory Doom Legacy will create a legacy directory to store
+    your config and savegame files.
+    If this variable is not defined, a default legacy home directory will be
+    checked for existing, or one created in the program directory.
+    Failure to have a consistent HOME will lead to losing your config,
+    and savegames will not be saved.
+  </li>
+  <li>
+    <b>UserProfile</b>: This variable is checked on Windows systems as
+    a substitute for HOME, if HOME is not defined.
+  </li>
+</ul>
+
+<h2 id="setup">SETUP</h2>
+
+<h3>Wad files</h3>
+<p>
+  Doom Legacy will look in all directories of the search directory list.
+  See the search directory list in the
+  <a href=INSTALL.html>INSTALL</a> manual.
+<p>
+  Some wad files can be put into one of the absolute path wad directories,
+  making them available to all users and all doom programs.
+  like "/doomwads", or "/games/doomwads".
+<p>
+  The IWAD files should go in a separate directory that can be shared
+  between all Doom source ports (such as
+<nobr><b>/usr/local/share/games/doomwads</b></nobr>).
+<p>
+  The user can also keep private wad directories relative to HOME.
+  Put your personal wad files into one of the relative path directories,
+  like "doomwads", or "games/doomwads".
+</p>
+<p>
+  Setting DOOMWADDIR environment variable specifies an additional wad directory
+  to be searched.  This can be set at login, or in a script file that starts Doom Legacy.
+<p>
+  Doom Legacy will also search the installation directory, but it is
+  not a recommended location for wad files. The wad files would not be shared, leading to duplicate copies.
+  Installing and deleting wad files from the installation directory will damage the installation eventually,
+  such as overwriting or deleting a required file by mistake.
+  The legacy.wad file should be in the installation directory because it is only used by Doom Legacy.
+<p>
+  You can also make soft links to one of the above mentioned
+  directories, or point to the actual IWAD files.
+  The valid file names for each game selection can be found in
+  docs/technical/wad_selection.txt.
+</p>
+<div class="code">$ ln -s wads/idgames/doom1.wad  doom1.wad
+$ ln -s wads/idgames/doom2.wad  doom2.wad
+$ ln -s wads/idgames/doomu.wad  doomu.wad
+$ ln -s wads/idgames/plutonia.wad  plutonia.wad
+$ ln -s wads/idgames/tnt.wad  tnt.wad
+$ ln -s wads/freedoom-iwad-0.7/doom2.wad  freedoom.wad
+$ ln -s wads/freedoom-iwad-0.9/freedoom2.wad  freedoom2.wad
+</div>
+<p>
+  Doom Legacy will search the current directory only if it is not the user home directory.
+  It will refuse to search a default directory containing a "Desktop", "Pictures", or "Music" directory.
+  This prevents long searches through directories that are not likely to contain wad files.
+</p>
+
+<h3>Setting up the game</h3>
+<p>
+  Legacy uses a configuration file (config.cfg) to setup the game.
+  Your personal control settings are saved in your config.cfg file.
+  They can be changed by menus in Legacy, and are saved when quitting
+  the game.
+</p>
+<p>
+  When config.cfg does not exist, Legacy will write one using a default config.
+</p>
+<p>
+  Each drawmode has an optional config file for drawmode dependent
+  settings.  These are typically the video mode, gamma settings,
+  fullscreen, and vert sync settings.
+  Any other config file setting can also be included.
+  The settings from the drawmode config file override the settings
+  from the main config file.
+</p>
+Drawmode config files, where two letters indicate the drawmode
+that loads it:
+<ul>
+<li>config8p.cfg (8 bit pal)</li>
+<li>config15.cfg (15 bit)</li>
+<li>config16.cfg (16 bit)</li>
+<li>config24.cfg (24 bit)</li>
+<li>config32.cfg (32 bit)</li>
+<li>configbp.cfg (explicit bpp)</li>
+<li>confign.cfg (native)</li>
+<li>configgl.cfg (OpenGL)</li>
+<li>configmg.cfg (MiniGL)</li>
+<li>configwg.cfg (Windows Glide)</li>
+<li>configwd.cfg (Windows D3D)</li>
+</ul>
+<p>
+Use the option menu controls to insert and delete config file
+settings.  First change to the drawmode that you want to modify.
+The drawmode config file will be loaded automatically.
+Change to the options menu page, press F3, move to
+the item to be inserted, and press INSERT.
+Press F1 to return to normal menu operation.
+<p>
+Config setting keys:
+<ul>
+<li>F1 = normal menu</li>
+<li>F2 = Main config values only</li>
+<li>F3 = Drawmode config values only</li>
+<li>F4 = normal menu</li>
+<li>INSERT = add the menu item to the config file</li>
+<li>DEL = delete the menu item from the config file</li>
+</ul>
+<p>
+Menu entries that are not relevant to the drawmode config, like the control
+key assignments, do not have support for insert to the drawmode config file.
+</p>
+<p>
+  OpenGL had a separate file, 'glconfig.cfg', which is no longer used.
+  It can be kept around if you ever run older versions of Doom Legacy.
+  The new OpenGL config file is configgl.cfg, but it will only contain
+  drawmode specific settings.
+</p>
+<p>
+  Develop mode (-devgame or -devparm), will use devdataconfig.cfg
+  as its config file.
+</p>
+
+
+<h3>Setting up the sound</h3>
+The binary downloads of Doom Legacy use SDL sound.
+The other options require downloading source code and compiling
+with your own selection of compile options.
+<p>
+Much of the following applies equally well to music, video, and other
+hardware interfaces that are handled by the SDL library.  These must
+be handled in other ways, if the SDL library is not used (such as in
+Windows Native, or DOS, etc.).
+<ul>
+<li>SDL
+<p>
+  The latest SDL 1 version is 1.2.15.
+  You can use a newer SDL 1 version than was used to compile Doom Legacy.
+  This may fix some issues, such as some Win32 issues.
+</p>
+<p>
+  Doom Legacy also can be compiled using SDL2.  The SDL 2 version currently used is 2.0.20.
+  It also supports MP3, and FluidSynth.
+  You can only use the SDL2 library, if Doom Legacy was compiled for SDL2.
+</p>
+<p>
+  The SDL library handles sound. If it is installed correctly then
+  Legacy SDL will play sound effects.
+</p>
+<p>
+  Music requires SDL_mixer version 1.2.7 or later. Earlier SDL_mixer
+  versions do not have a working RWOPS interface. Legacy can play music
+  using files instead, but this requires recompiling Legacy, allowing
+  the compile to detect the SDL_mixer version.
+</p>
+  Many SDL mixer libraries have been made with the MP3 support disabled.
+  If you want to play MP3 music (such as in phobiata.wad), then you
+  will have to get or compile the SDL mixer, with the MP3 support enabled.
+  This includes the basic SDL mixer library included with the
+  DoomLegacy Windows download binary package.  I have not yet found a
+  SDL 1 version for Windows with the MP3 working.
+<p>
+  SDL_mixer is a separate download and installation (from the SDL sources), and the latest is
+  version 1.2.12.
+</p>
+</li>
+
+<li>WINDOWS
+<p>
+  The Windows SDL version uses SDL for the sound.  The downloadable
+  Windows binaries will be for Windows SDL version.  The SDL library
+  handles the interaction with Windows OS, and the hardware. But this
+  is also limited by what has been provided by SDL.  A newer SDL
+  library version may provide more capability, and bug fixes.
+</p>
+<p>
+  The discussion that follows is for the Windows Native port, which
+  was extensively used to test enhancements.  Use this only if you want
+  to experiment with those enchancements, understand enough to select
+  the appropriate options, can supply the required libraries (dll), and can compile it yourself.
+<p>
+  The Windows native version normally uses DirectX to autodetect the sound,
+  so make sure your card works well with DirectX and then legacy will use it.
+</p>
+<p>
+  Additionally, Legacy could utilize hardware 3D sound drivers
+  for making a more realistic sound environment.  This requires that the
+  specified compile option be selected, and such options are only
+  valid for compiling the Windows native version.  Because these driver
+  options were developed before WinXP, they may have to be debugged for
+  newer Windows OS.
+</p>
+<p>
+  Specify -ds3d command line parameter to use generic 3D sound driver
+  (DirectSound 3D). This driver is suitable for most 3D sound chips.
+</p>
+<p>
+  FMOD is an alternative sound library.  To use FMOD, Legacy must be compiled
+  with the FMOD library and FMOD configuration selected.
+  FMOD support was incompletely developed, so compilation has not been
+  sucessfull. FMOD compilation is disabled by default.
+</p>
+</li>
+
+<li>DOS
+<p>
+DOS support is still present, but it has been years since it has been
+tested.  A more modern operating system provides better support.
+</p>
+<p>
+  The sound and music card is auto-detected at the game startup.
+</p>
+<p>
+  If you don't get any sound in Legacy, check that the BLASTER
+  variable is set. Type 'set' at the dos prompt (or dosbox under
+  Windows) : do you see a line like 'BLASTER=A220 I5 D1 ...' ?
+  If not, run the installation of your soundcard for DOS mode,
+  it will usually modify your autoexec.bat so that the BLASTER
+  variable will be set. See the FAQ.TXT for more.
+</p>
+<p>
+  If the BLASTER variable is set, but you still don't hear any
+  sounds, or the sounds are not right, then edit the SOUND.CFG
+  file, and manually set your type of soundcard, see there for
+  more.
+</p>
+</li>
+</ul>  
+
+  
+<h3>Setting up the controls</h3>
+<p>
+  Setting up the controls, mouse and joystick, video mode etc. is done
+  while in the game, using the main game menus: Setup Controls,
+  Video Options, Game Options. You can change all game settings
+  at any time during the game.
+</p>
+<p>
+  The mouse will be activated by default, to disable it, change
+  the 'use_mouse' variable in the console.
+  The joystick will not be used as default, set the 'use_joystick'
+  variable at the console.
+</p>
+<p>
+  The mouse and joystick sensitivities can be set
+  using the console variables, and there is some menu support.
+</p>
+<p>
+  There are double click control variables for mouse and joystick,
+  that adjust the double click detection time.
+  A normal double click time is about 6.
+</p>
+<p>
+  If your button assignments have made it impossible to access the menu.
+  and you do not have a keyboard, you have a problem.
+  You won't be able to change those menu assignments either.
+  In this case you must find the config.cfg file in your legacy
+  directory, and edit it.  You can delete any offending "setcontrol" lines
+  (must delete the entire line), and let Doom Legacy revert to default settings.
+</p>
+<ul>
+<li>Mouse : 2 per machine</li>
+<li>Mouse Buttons : 8 per mouse</li>
+<li>Mouse Wheel : 1 per mouse  (UP, DOWN)</li>
+<li>Joysticks : 4 per machine</li>
+<li>Joystick Buttons : 16 per joystick</li>
+<li>Joystick Triggers : 2 per joystick/controller</li>
+<li>Joystick Hat : 1 per joystick/controller (UP, RIGHT, DOWN, LEFT)</li>
+</ul>
+
+<h3>Controller</h3>
+<p>
+  Support for an xbox-style gamepad has been added.
+  It appears to be a joystick with many buttons, triggers, and a hat.
+  Button assignments have been made for menuesc, pause, and automap,
+  so it is possible to play without a keyboard.
+</p>
+<ul>
+<li>Pause: Joystick 0, Button 6, Controller BACK button.</li>
+<li>MenuEsc: Joystick 0, Button 7, Controller START button.</li>
+<li>Automap: Joystick 0, Button 8.</li>
+<li>During the wait for players, when it asks for 's' to start,
+it will also accept joystick button 2,3,4, or 5, as start.</li>
+<li>All joystick buttons have double-click sensing.</li>
+<li>Accidentally activating double-click button in the menus happens,
+and that setting ignores normal button presses.
+Delete that button assignment and start over.</li>
+</ul>
+
+
+
+<h3>Setup Controls menu</h3>
+<p>
+  You can bind actions to one or two keys, like in all decent games.
+  Select an action, press ENTER, and then press the desired key,
+  mouse button, or joystick button.
+
+  To CLEAR the keys attached to a control, use the BACKSPACE key.
+</p>
+<table class="def">
+<tr><td>mouse b1</td><td>First mouse, button 1.</td></tr>
+<tr><td>mouse2 b3</td><td>Second mouse, usually for second player. Button 3.</td></tr>
+<tr><td>mouse2 b3 d&nbsp</td><td>Second mouse. Button 3 double click.</td></tr>
+<tr><td>joy0 b0</td><td>First joystick, button 0.</td></tr>
+<tr><td>joy3 b15</td><td>There can be 4 joysticks, buttons 0 to 15.</td></tr>
+<tr><td>joy0 hu</td><td>The 4 hat directions, 'hu', 'hd', 'hl', 'hr'.</td></tr>
+<tr><td>joy0 lt</td><td>'lt', 'rt' are left and right trigger.</td></tr>
+</table>
+<p>
+  To setup the DOUBLE CLICK for mouse/joystick buttons: enter the
+  click one time, so that it displays, e.g. 'mouse b1'. Then
+  re-enter the click a second time, and it will transform into a
+  dbl-click, e.g. 'mouse b1' will become 'mouse b1 d'.
+
+  You can use double-clicks for any joystick/mouse button, and you
+  can attach any action to it.
+</p>
+<p>
+  When controlperkey is "Several", a single key can be set to 
+  multiple actions, e.g. go backward and 'use' at the same time.
+  Normally when a key is set for an action, other uses of the
+  same key are cleared.
+</p>
+
+
+<h3 id="gamma">Gamma controls</h3>
+<p>
+  The control of gamma is much finer than before. The gamma table is
+  now generated from the control settings, instead of using
+  four preset gamma tables.
+</p>
+<p>
+  The gamma control functions:
+</p>
+<ul>
+  <li>Gamma: Only has a gamma slider</li>
+  <li>Gamma_black: Gamma control and black level control.</li>
+  <li>Gamma_bright_black: Gamma control, bright control, and black
+    level control.</li>
+  <li>Linear: Has bright and black level controls, as two set-points
+    of piecewise linear brightness correction. It is included
+    for use with LCD displays.</li>
+</ul>
+<p>
+  Controls for gamma function, black level, bright level, and gamma
+  are on an options page. The values can also be changed by a
+  console set command, or in your personal config.cfg file.
+</p>
+<div class="code">gammafunc Gamma_bright_black
+black -2
+gamma 2
+bright -1</div>
+<p>
+  To see the current setting on the console, just type the name, without a value.
+  Normal levels are black 0, gamma 0.
+</p>
+<p>
+  To set the gamma correction to your preference,
+  find a dark area in a wad or use the gamma.wad file
+  (i.e. -file gamma.wad).
+  Set the black level to give a good looking even gray scale in the
+  darkest areas (little gray room in gamma.wad).
+  White textures will not go completely to black, but will instead stay
+  gray. The software renderer is limited to 32 light levels, so do not try to
+  get it perfect in the darkest three gray test strips as it is not
+  possible. Instead try to get the gray intervals even. You should be
+  able to just barely see an object right in front of you in the darkest
+  room, and see white textures across the room as a dark gray patch.
+</p>
+<p>
+  Then go to a normally lit area and adjust gamma to give the
+  brightness and evenness of tone that you would expect.
+</p>
+<p>
+  Use the bright control to adjust the brightest outdoor scenes
+  after the gamma and black levels are set. Unlike most monitors,
+  this bright control actually controls the brightest light levels.
+</p>
+<p>
+  Your preferences may be different. From experiments, trying too
+  hard to set a perfect black leads to extreme gamma settings to correct
+  for the side effects. It is a compromise, as actual hardware varies,
+  and the gamma table equations represent ideal CRT behavior.
+  LCD monitor gamma response is even less ideal.
+</p>
+<p>
+  Evenness is usually more important than absolute brightness. The brightness
+  appearance is affected greatly by the amount of light over your monitor.
+  If the wall textures look harsh, then the gamma is set too high, or
+  the black level is set too low.
+</p>
+
+<div class="code">
+Original Doom gamma settings are at (0, -3, -6, -9, -12).
+gamma index : GAMMA value
+
+ 12: 1.48
+ 11: 1.44
+ 10: 1.4
+  9: 1.36
+  8: 1.32
+  7: 1.28
+  6: 1.24
+  5: 1.2
+  4: 1.16
+  3: 1.12
+  2: 1.08
+  1: 1.04
+  0: 1.0
+ -1: 0.96
+ -2: 0.92
+ -3: 0.88
+ -4: 0.836
+ -5: 0.793
+ -6: 0.75
+ -7: 0.706
+ -8: 0.663 
+ -9: 0.62
+-10: 0.58
+-11: 0.54
+-12: 0.50
+</div>
+
+<h2 id="gameplay">BASIC GAMEPLAY</h2>
+
+<h3>Shooting up and down</h3>
+<p>
+  There's nothing changed, except of course a totally new
+  deathmatch experience.
+</p>
+<p>
+  About the BFG: the BFG ball can be fired up or down, but
+  the invisible rays that spray from you have always 'autoaim', they're
+  not dependent of your up and down aim.
+  Let's be clear: apart from being able
+  to shoot the BIG BFG BALL up or down, the side-effect of the BFG
+  is as before.
+</p>
+  
+<h3>Autoaim toggle</h3>
+<p>
+The original Doom games had autoaim, which allowed them to use the
+mouse for player movement (forwards and back).  Side to side motion
+turned the player.  This left the user without any way to move the view
+up and down, so autoaim would aim the shots at monsters that were
+above or below the aiming point.
+</p>
+<p>
+Doom Legacy has mouselook, which uses the mouse to look left, right, up,
+and down.  Shots go where the player is looking.  If you have the
+crosshairs enabled, then it shows where shots are going.  With
+mouselook, autoaim is not needed, so autoaim can be disabled.
+</p>
+<p>
+  Since Legacy v1.2, there are controls for what is allowed in a network game.
+  We wanted to keep the compatibility with the traditional Doom gameplay,
+  but we also needed to go forward with improvements with controls,
+  which brings more depth to the deathmatches.
+</p>
+<p>
+  In network play, you may feel like it's unbalanced if some people use the autoaim,
+  as they don't have to make the effort of aiming properly, and others
+  manually aim, and thus may miss above or below the opposing player.
+  Turning allowautoaim to OFF will impose manual aim to all players
+  in a network game.  Use with caution as you may offend!!
+</p>
+
+<h3>Weapon changes</h3>
+<p>
+  We didn't dare of course change the existing weapons functionality!
+  You may appreciate however, the fact that you can remap every
+  weapon to any key, in the Setup Controls menu. Since you can map two
+  keys per 'control', you can keep the original keys '1'-'8' for the
+  weapons, and add a shortcut to your preferred ones. eg: '5' and 'r'
+  for rockets.
+</p>
+  
+<h3>New cheats</h3>
+
+<dl>
+  <dt>idcd##</dt>
+  <dd>
+    Similar to the 'idcmus##', but for CD Audio tracks.
+    Example: 'idcd02' starts cd track 2.
+  </dd>
+  <dt>idfly</dt>
+  <dd>Fly around levels, using the jump key to gain altitude.</dd>
+</dl>
+
+  
+<h3>Savegame directories</h3>
+<p>
+  Legacy allows savegame directories, with up to 99 savegames in each
+  directory. This feature can be enabled/disabled by a compile time
+  option.
+</p>
+<p>
+  The savegame file names include the level name and play time.
+  The savegames also have a human-readable header with this and more
+  information, including the command line switches used.
+</p>
+<p>
+  The cursor movement keys are up-arrow, down-arrow, page-up, and page-down.<br/>
+  The delete key will delete the selected savegame or directory.<br/>
+</p>
+<p>
+  The savegame menus now include a directory name.
+  The directory is selected by moving the cursor up to the directory name,
+  and pressing ENTER. The menu will present all the existing directory
+  names. The blank directory line is the legacy default directory
+  which contains all the directories and savegames.
+</p>
+<p>
+  To create a new directory, move to the directory line, press ENTER,
+  type in a new directory name, and press ENTER.
+</p>
+
+
+<h3>OpenGL renderer</h3>
+<p>
+  Legacy includes two different graphics engines, the old Doom software
+  renderer (with many improvements) and an OpenGL-based hardware renderer.
+</p>
+<p>
+  The OpenGL renderer is shinier and has fancier effects than the software one,
+  but it does not do everything that the software renderer does.
+  The OpenGL renderer does draw explosion light, and other light effects
+  that the software renderer does not do.
+</p>
+<p>
+  The coronas that previously were OpenGL only, are now available with software
+  rendering too.  The native drawmode can also look very nice, and often
+  renders much faster than OpenGL in large maps.
+</p>
+<p>
+  Some wads rely upon violating wad rules to get trick effects.
+  Most rely upon tricking the software renderer into not drawing something.
+  Using those wads with the OpenGL renderer you will see holes in the floor
+  and ceiling, and warning messges about polygons.
+</p>
+<p>
+  OpenGL relies upon having video card hardware acceleration.
+  This requires that your video card drivers support OpenGL operations.
+  Without OpenGL hardware acceleration, SDL will emulate the OpenGL operations
+  using software run on your CPU, which is very very slow.
+  How well a video card works with OpenGL is dependent upon the drivers.
+  The SDL library interfaces with the video card drivers.  Updating
+  your SDL library may improve the drawing, and fix broken features.
+</p>
+<p>
+  Video cards have different levels of hardware acceleration,
+  and rendering speed.
+  Activate only as many fancy rendering options as your video card can
+  draw fast.
+  Turning off Trilinear and Bilinear filtering usually will gain speed.
+</p>
+
+
+<h2 id="console">CONSOLE</h2>
+<p> 
+See <a href="console.html">here</a> for more about the console.
+</p>
+
+  
+<h2 id="network">NETWORK GAMES (MULTIPLAYER)</h2>
+<p>  
+  Since Legacy 1.2, the network part of Doom has been totally
+  rewritten. It now uses a better transfer method for the packets,
+  (which is usually faster), and also implements a basic
+  Client/Server model, where some critical game options are
+  changeable only by the server in multiplayer games.
+</p>
+<p>
+  Since the network communication is faster, we have upped
+  the maximum number of players to 32!
+</p>
+
+
+<h3>Client/server model features</h3>
+<p>
+  The network code has been totally rewritten, here are the
+  main features:
+</p>
+<ul>
+  <li>Players can join in while a game is in progress.
+    No need to restart the game to add a new player.</li>
+  <li>Up to 32 players in a game.</li>
+  <li>
+    The speed now depends on the server. If the server loses
+    frames, all the other players will experience the slow down.
+    Thus, make sure that the server has a good internet connection and
+    runs smooth.
+    You may want to run the server with a lower resolution graphics
+    mode, to reduce its load.
+  </li>
+  <li>
+    The server can kick any player out of the game. The player will
+    be returned to the title screen.
+  </li>
+  <li>
+    Consistency failure now only kicks out the player who was not
+    consistent with the server.  The other players are not affected.
+  </li>
+  <li>
+    <a href="console.html#game_options">Critical game variables</a>
+    are sent to all the players when they
+    are changed on the server, and only the server can change them.
+    Examples are 'allowjump', 'respawnitemtime', 'deathmatch', ...
+  </li>
+  <li>
+    The multiplayer menu allows bots to be in a game.  In Network play,
+    they seem to work in Coop, but not in deathmatch.
+    Bots are a work-in-progress.
+    The bots are a substitute for real players.
+    Insert your own joke here, but wait until you have tried playing
+    COOP with them.
+    <br>Note: Bot cooperation was improved with 1.48.16.
+  </li>
+</ul>
+
+
+<h3>Setting up a network game</h3>
+<p>
+  A network game can be started either using the commandline
+  parameters <a href="#cmd_network">-server</a>
+  and <a href="#cmd_network">-connect</a>,
+  or from the multiplayer menu that
+  allows you to connect to a server or create one yourself.
+</p>
+<p>
+  The Legacy server uses only one port (usually the UDP port 5029) and can accept messages from any
+  port so it works perfectly with NAT (Network Address Translation).
+<p>
+  A firewall often interferes with connecting.
+  Most of the IP ports of a computer behind a firewall are not
+  visible to the network.
+  You may have to use the firewall controls to make
+  the DoomLegacy server and client ports visible on the networks.
+  If you are playing network games with machines external to your
+  network, then you will need to make your IP address, and Doom Legacy
+  ports, visible to the external network.
+  There may be multiple
+  firewalls involved, such as one on your desktop, one on the wifi-router, and
+  one in the broadband router.
+  In some cases, the server might get an un-usable IP address during player join-game.
+  If you are familiar with the IpAutoforward funtionality of Linux,
+  you can make a usable IP appear.
+</p>
+<p>
+  The server port can be specified using a command line switch "-udpport 5102".
+  You must avoid any existing port your ISP may be using for services.
+  Multiple Doom Legacy servers can coexist on the same network, playing
+  separate games, as long as they use different server port numbers.
+  If the server uses a different server port, then all clients that
+  want to connect to that server, must also specify the same server port address (using -udpport).
+  All the connect commands assume that the server and client have
+  specified the same server port.
+<p>The UDP ports, user reserved, start at 5000.
+  For Doom Legacy, I recommend using a server port number greater than 5029,
+  such as 5100 .. 5199,
+  to avoid conflicts with other programs.
+</p>
+
+<h4>The server</h4>
+<p>
+  Start a server from the Multiplayer menu or from the command line.
+  One player can play on the server itself.
+</p>
+<h4>Server command line switches</h4>
+<p>
+  Doom Legacy can start as a server from the command line with
+  one of the following commands.  Other switches can also be
+  included to select the game and wad.
+</p>
+<div class="code">$ doomlegacy -server &lt;num-of-players&gt;
+</div>
+<p>
+  The server will wait until the specified number of players have
+  connected and then will start the game. This is like the old way to
+  start a game. It is more fair because all players start at the same
+  time and with the same weapons. Of course other clients can also
+  join later.
+</p>
+<div class="code">$ doomlegacy -server
+</div>
+<p>
+  This starts the server immediately.  It does not wait for any other clients.
+  It also starts the game immediately.  Other players can join later.
+</p>
+<h4>Clients</h4>
+<p>
+  Clients are the other players who join the game by connecting to the server.
+  Each additional player connects to the server with one of the connect commands.
+  If there is more than one server, the client must choose which server before connecting.
+</p>
+<p>
+  The client can specify a client port address, such as "-clientport 7303".
+  Clients can use any port number that is unused on their IP address.
+  If that port is in use then Doom Legacy will try ports in the
+  7000 to 7099 range, until it finds an unused one.
+  This allows multiple clients on the same computer, assuming it has
+  enough speed, controls, and displays.
+  Players on separate computers can use the same client port addresses,
+  as they will have different IP addresses.
+  In most cases the default client port works fine.
+</p>
+<p>
+  The server does not use the client port number setup.
+  The server will get the IP address and client port number
+  for each player from the client connect message.
+</p>
+<p>
+  To detect servers on the local network, the local network search
+  address must be specified in one of the server config vars, server1,
+  server2, or server3.  These can be set using the console.
+  Your computer might have an IP address such as "192.168.1.14".
+  That network would be "192.168.1".
+  The network broadcast address is the network address with last number as 255.
+  Doom Legacy servers on the network will answer the broadcast.
+</p>
+<div class="code"> >server2 "192.168.1.255"
+</div>
+
+<p>
+  Servers can be specified by any of the config vars, server1, server2, or
+  server3.  The address is checked for a running server.
+</p>
+<div class="code"> >server1 "10.42.22.63"
+</div>
+  
+<h4>Client command line switches</h4>
+<p>
+  Doom Legacy can connect to the server from the command line with
+  one of the following connect commands.
+</p>
+<p>
+  To connect to a specific server computer using their ip address.
+</p>
+<div class="code">$ doomlegacy -connect &lt;ip address of server&gt;
+</div>
+<p>
+  Without the ip address, it will auto-detect the server on the LAN.
+  This only works when computers are directly connected on a LAN where
+  the client can broadcast an ASKINFO message to the server port.
+  If you play through
+  internet, only the servers on a local internet can be auto-detected.
+</p>
+<div class="code">$ doomlegacy -connect
+</div>
+<br>
+<div class="code">Example A, 3 players on a LAN:
+  player 1 (the server)
+  $ doomlegacy -server 3
+
+  player 2 (client)
+  $ doomlegacy -connect
+
+  player 3 (client)
+  $ doomlegacy -connect
+
+Example B, 2 players, through internet:
+
+  player 1 (the server)
+  $ doomlegacy -server 2
+
+  player 2 (client)
+  $ doomlegacy -connect xxx.xxx.xxx.xxx
+
+Example C, a 3 player game, with _TWO_ computers, one is split-screen:
+
+  player 1 (the server)
+  $ doomlegacy -server 3
+
+  player 2 and 3 (2 clients on the same computer)
+  $ doomlegacy -splitscreen -connect
+</div>
+  
+<p>
+  The server will send the clients all relevant game parameters, they
+  do not need to be specified on the commandline (and in fact would be overridden).
+  Also the <b>-file</b> parameter is not needed on the clients
+  anymore. The clients will automatically download any necessary PWAD files
+  from the server if they cannot be found locally.
+</p>
+
+<p>
+  Use '-notime' to disable file date check on clients. Normally
+  the game will warn you if a client has a file loaded by the
+  server, but with a different date. Clients should have the exact
+  same version of the files added by the server.
+</p>
+
+<p>
+  To make a network game enjoyable you will need a good ping value,
+  ideally less than 30, more than this may be unplayable because
+  there is not, for the moment, code to reduce the latency between
+  command entered at keyboard and command execution.
+  In other words, Doom Legacy doesn't use interpolation to make
+  the game smooth when it is not in reality.
+</p>
+
+
+<h4>Consistency</h4>
+
+<p>The Doom Legacy server performs a consistency check on the player
+positions.  If it detects a consistency failure, it will kick out the
+player.
+</p>
+<p>Doom Legacy 1.46.2 introduced consistency repair.
+The server now keeps a consistency error count for each node.
+Upon detecting a consistency error with a node, the server will try a
+series of escalating repair attempts before it kicks the node out of the game.
+<ul>
+<li>Server sends a repair message with the player current position, momentum,
+the random number index, and the current tick.  This is usually
+adequate to repair a minor anomoly, or math difference.
+</li>
+<li>At 3 consistency errors, the server repair message suggests a savegame.
+The client requests a savegame download from the server,
+and then a position update.  The client screen will briefly go black
+duing the download.  Because the game does not pause during this, the
+player may find they have been mobbed and even killed.
+</li>
+<li>When the consistency errors exceed 7, the server kicks the player node.
+</li>
+<li>The server reduces the consistency error count when there are no errors.
+</li>
+</ul>
+<p>
+Due to new network messages, and messages that changed codes, new
+network versions are network incompatible with previous versions of
+Doom Legacy.
+<br>DoomLegacy 1.46.1, network version 22.
+<br>DoomLegacy 1.46.2, network version 23.
+<br>DoomLegacy 1.47.1, network version 24.
+<br>DoomLegacy 1.48.1, network version 25.
+</p>
+
+
+
+<h3>Multiplayer intermission screen</h3>
+
+<ul>
+  <li>FRAGS: the usual frags rankings</li>
+  <li>
+  BUCHHOLZ: a chess scoring system. You earn more points
+  when you frag a good player (one that has a lot of frags at the end
+  of the game).
+  This is more balanced that the original frags system, because
+  you can't get a good score simply by slaughtering clueless newbies.
+<p>
+  It defines F[i][j] as the number of times player i has fragged player j.<br>
+  The total frags of player i are given by<br>
+  T[i] = sum( F[i][j], where j = 0..num_players).<br>
+  The Buchholz score of player i is:<br>
+  sum( F[i][j] * T[j], where j = 0..num_players).
+</p>
+  </li>
+  <li>
+  INDIVIDUAL: the players are all compared 1 to 1, when a
+  player wins he earns 3 points, if they draw they each
+  get 1 point. Then all the points are added and the
+  winner is the one with the most points. This was
+  suggested by Cristian Romero (romero-c@usa.net).
+  It is not perfect, but is already interesting enough:
+  think of it more 'individual'. You have to make more frags
+  compared to each other player to earn points. So you will
+  want to go after players that are close to you in their number of frags,
+  and forget about the ones which have already have more frags than you.
+  Go for the victories, more than the frags.
+  </li>
+  <li>DEATHS: this ranking shows the players who have died the most!</li>
+</ul>
+
+<h2 id="launcher">LAUNCHER</h2>
+
+<p>
+  The Launcher window is invoked when there is an error with the game
+  selection, the iwad specified cannot be loaded, there is a fatal error
+  in the startup, or if the command line is empty.
+</p>
+<p>
+  If there is an error, the console window will display first with
+  the errors.  Pressing escape will proceed to the Launcher window.
+</p>
+<p>
+  The Launcher window has input lines like a menu.  Use the up and
+  down arrow to move between items.  Type in names for the directories,
+  or use backspace to erase names.  On the switches line the entire switch
+  syntax must be input, on the others only the name is input.
+  The left and right arrows will cycle through the game selections.
+  When you are satisfied, the continue entry will
+  restart Doom Legacy with your new command line input submitted.
+  The QUIT entry will exit Doom Legacy entirely.
+</p>
+<ul>
+  <li>HOME: Set your home directory location, where your config files and
+    savegames are kept.
+    This will be submitted by the launcher using the "-home" switch.
+    <br>Example: "myhome", which will be submitted as "-home myhome".
+  </li>
+  <li>DOOMWADDIR: A directory to search for legacy.wad, IWAD, and PWAD files.
+  </li>
+  <li>CONFIG: The main config file to use.
+  This will be submitted by the launcher using the "-config" switch.
+  <br>Example: "myconfig", which will be submitted as "-config myconfig".
+  </li>
+  <li>SWITCH: Any of the switches allowed on the command line, specified in
+  the same format.
+  This line will be simply copied to the command line by the launcher.
+  <br>Example: "-opengl -nomusic -file map01.wad -deh fix2.deh".
+  </li>
+  <li>IWAD: A specific IWAD specified in place of the game IWAD.
+  This will be submitted by the launcher using the "-iwad" switch.
+  <br>Example: "myiwad", which will be submitted as "-iwad myiwad".
+  </li>
+  <li>GAME: The possible games, selected using the left and right arrow keys.
+  This will be submitted by the launcher using the "-game" switch.
+  <br>Example: "doom2", which will be submitted as "-game doom2".
+  </li>
+  <li>CONTINUE: Present the command line switches, wads, and config,
+  to DoomLegacy, and start the game.  This commits these selections to
+  alter the internal tables accordingly.
+  </li>
+  <li>QUIT: Quit DoomLegacy entirely.
+  </li>
+</ul>
+
+<p>
+  If you have selected a game mode and pressed CONTINUE, then that
+  game mode and the dehacked of the wads presented will have altered
+  the internal tables of DoomLegacy.  Most of this is irreversible, so
+  changing to different game mode, or wads, would not work as expected.
+</p>
+<p>
+  It will be best if you restart DoomLegacy entirely to make such changes.
+  We have tried to make alterations reversible, but we know that
+  there are many, such as dehacked, that are not.
+</p>
+<p>
+  For many errors, DoomLegacy will abort with error messages, instead of
+  returning to the launcher, so these irreversible actions can be cleared.
+  You may manage to get the launcher into the same situation, and are
+  warned that once you have seen Detect messages and Dehacked messages,
+  that you are committed.
+</p>
+<p>
+  Messages about file not found often can be corrected in the launcher.
+  However, if you have submitted more than one file
+  with dehacked, and it was a later file that was not found, then the
+  dehacked from the preceding files will already have been committed.
+  Continuing from that situation will depend upon exactly what was
+  altered already.
+</p>
+<p>
+  Bad switches, such as "-junk", will be ignored.  Unrecognized switches
+  do not have error messages.
+</p>
+
+
+<h2 id="cmdline">COMMANDLINE OPTIONS</h2>
+
+<p>Dehacked command line options are found in the Dehacked section.</p>
+<p>These are command-line options that Legacy recognizes:</p>
+
+<table class="def">
+<tr><th width=120>option &lt;arg&gt;</th><th>description</th></tr>
+
+<tr><td class="note" colspan="2">
+Config options
+</td></tr>
+
+<tr>
+<td>+&lt;console expression&gt;</td>
+<td>You can enter any number of <a href="console.html">console expressions</a>
+at the command line.<br/>
+They will be executed right after the configfile, but before autoexec.cfg.</td>
+</tr>
+
+<tr>
+<td>-home &lt;dirname&gt;</td>
+<td>Set your home directory location, where your configfiles and
+savegames are kept.</td>
+</tr>
+
+<tr>
+<td id="config">-config &lt;filename&gt;</td>
+<td>Set the main config file to use. Default: config.cfg.</td>
+</tr>
+
+<tr>
+<td id="mb">-mb &lt;number&gt;</td>
+<td>The amount (in MiB) of memory that Legacy allocates for ZALLOC.
+<p>
+  Otherwise the default of 24 to 80 MiB is used.
+  This and the MIN and MAX limits are set by compile time options.
+</p>
+<p>
+  This sets the number of megabytes of memory to allocate to ZALLOC at
+  Doom startup. ZALLOC is used for saving the directories, textures,
+  and other lumps of the wad files. Executable and stack use other
+  memory.
+</p>
+<p>
+  If the amount of requested memory is not available, then it will try for
+  half of what is free.
+  There are several compile time options for ZALLOC memory allocation,
+  the updated Zone allocation, automatic growing Zone allocation,
+  and simple and tagged malloc allocations.
+</p>
+<p>
+  The default memory allocator, GROW_ZONE, will grow the memory allocation
+  when needed.
+  It is no longer critical to set enough memory on the command line,
+  although it may make loading smoother.
+</p>
+<p>
+  Using this switch on the SWITCH line of the Doom Legacy Launcher is
+  ineffective because the memory system has already started by then.
+  However, Doom Legacy is compiled by default with the GROW_ZONE memory system,
+  that automatically increases the memory allocation as needed, so it
+  is not needed.  If you were to compile Doom Legacy with the old ZONE_ZALLOC
+  memory system selected, then this switch would be necessary to control it.
+</p>
+</td>
+</tr>
+
+<tr>
+<td>-noversioncheck</td>
+<td>Do not check that legacy.wad version matches the executable version.
+This is mostly used for program development.</td>
+</tr>
+
+<tr>
+<td>-cdrom</td>
+<td>Execute from CDROM.  Overrides DOOMWADDIR, and the legacy home
+directory settings.</td>
+</tr>
+
+<tr>
+<td>-lang &lt;name&gt;</td>
+<td>Load the BEX language file name.  If the name is not specified, then
+the file "lang" will be tried.  The language file uses BEX to change
+some game text.  An example french.bex is available.
+</td>
+
+<tr>
+<td>-cdrom</td>
+<td>Execute from CDROM.  Overrides DOOMWADDIR, and the legacy home
+directory settings.</td>
+</tr>
+
+</tr>
+
+<tr><td class="note" colspan="2">
+Game options
+</td></tr>
+
+<tr>
+  <td>-game &lt;game-name&gt;</td>
+<td>
+  <p>
+  Forces a particular game mode to be used. This replaces renaming
+  the wad file. If an IWAD is not explicitly given, the appropriate
+  IWAD will be automatically loaded.
+  </p>
+  <p>
+  Savegames are now marked with the game name, and will not load
+  with a different game name.
+  </p>
+  <p>
+  The particulars about a particular game-name are in
+  docs/technical/wad_selection.txt.
+  </p>
+  <p>
+  The valid game-name at this time, and the file names accepted are:
+  </p>
+<table class="def">
+<tr><th>game-name</th><th>mode</th><th>file name</th></tr>
+<tr><td>doom1</td><td>Doom shareware</td><td>doom1.wad, doom.wad</td></tr>
+<tr><td>doom</td><td>Doom1</td><td>doom.wad</td></tr>
+<tr><td>doomu</td><td>Ultimate Doom</td>
+   <td>doomu.wad, doom_se.wad, doom.wad</td></tr>
+<tr><td>doom2</td><td>Doom2</td><td>doom2.wad</td></tr>
+<tr><td>plutonia</td><td>Doom2</td><td>plutonia.wad</td></tr>
+<tr><td>tnt</td><td>Doom2</td><td>tnt.wad</td></tr>
+<tr><td>freedu</td><td>Ultimate Doom</td>
+   <td>freedoom1.wad, freedu.wad, doomu.wad</td></tr>
+<tr><td>freedoom</td><td>Doom2</td>
+   <td>freedoom2.wad, freedoom.wad, doom2.wad</td></tr>
+<tr><td>freedm</td><td>Doom2</td><td>freedm.wad, doom.wad</td></tr>
+<tr><td>heretic1</td><td>Heretic shareware</td>
+   <td>heretic1.wad, heretic.wad</td></tr>
+<tr><td>heretic</td><td>Heretic</td><td>heretic.wad</td></tr>
+<tr><td>blasphem</td><td>Heretic</td>
+   <td>BLASPHEM.WAD, blasphem.wad, heretic.wad</td></tr>
+<tr><td>chex1</td><td>Chexquest</td>
+   <td>chex1.wad, chex.wad</td></tr>
+<tr><td>doommode</td><td>Doom1</td>
+   <td>doom1.wad, doom.wad</td></tr>
+<tr><td>ultimode</td><td>Ultimate Doom</td>
+   <td>doomu.wad, doom.wad</td></tr>
+<tr><td>heremode</td><td>Heretic</td><td>heretic.wad</td></tr>
+<tr><td class="note" colspan="3">
+The following are valid game-names, but the mode is not supported yet.
+</td></tr>
+<tr><td>hexen1</td><td>Hexen shareware</td>
+   <td>hexen1.wad, hexen.wad</td></tr>
+<tr><td>hexen</td><td>Hexen</td><td>hexen.wad</td></tr>
+<tr><td>hexemode</td><td>Hexen</td><td>hexen.wad</td></tr>
+<tr><td>strife</td><td>Strife</td><td>strife.wad</td></tr>
+<tr><td>strife0</td><td>Strife shareware</td>
+   <td>strife0.wad, strife.wad</td></tr>
+</table>
+</td>
+</tr>
+
+
+<tr>
+<td>-iwad &lt;filename&gt;</td>
+<td>Set the main IWAD file to use. This also determines the game mode when
+-game is not used.
+</td>
+</tr>
+
+<tr>
+<td id="file">-file &lt;filename1&gt; [&lt;filename2&gt;...]</td>
+<td>Load one or more additional PWAD or DeHackEd files, possibly
+  replacing some of the IWAD data.
+<br>Zip archives can be loaded (Linux Only, with ZIPWAD compile option).
+When a zip archive is loaded, all the wad, deh, and bex files within
+the archive are loaded.
+<br>The -file can only appear once, but it can have multiple files
+after it.  A second -file will be ignored.
+</td>
+</tr>
+
+<tr>
+<td id="deh">-deh &lt;filename1&gt; [&lt;filename2&gt;...]</td>
+<td>Load one or more DEH (DeHackEd) files or BEX files, which can change
+  monster abilities and game text.  Also accepts -dehacked.
+<br>The -deh can only appear once, but it can have multiple files
+after it.  A second -deh will be ignored.
+</td>
+</tr>
+
+<tr>
+<td id="file">-noloadfail</td>
+<td>Doom Legacy will now fail with an error message when a file fails to load,
+like many other ports.  This will start the Launcher.
+The -noloadfail switch will cause it to ignore the load failure,
+as in previous versions of Doom Legacy.
+</td>
+</tr>
+
+<tr>
+<td>-loadgame &lt;num&gt;</td>
+<td>Load savegame by number.  This can only access the main savegame directory.
+Other command line options must set up the correct game and files.</td>
+</tr>
+
+<tr>
+<td>-skill &lt;1-5&gt;</td>
+<td>Select the skill level, start game immediately.</td>
+</tr>
+
+<tr>
+<td>-episode &lt;number&gt;</td>
+<td>Select the episode, start game immediately.</td>
+</tr>
+
+<tr>
+<td>-warp &lt;number&gt; [&lt;number&gt;]</td>
+<td>Select the map, start game immediately.  In DoomII, -warp 13 will
+goto map13.
+In Ultimate Doom, -warp 1 3 will goto Episode 1, level 3.</td>
+</tr>
+
+<tr>
+<td>-nomonsters</td>
+<td>No monsters in the game started from the command line.
+Does not affect games started from the menus.</td>
+</tr>
+
+<tr>
+<td>-respawn</td>
+<td>Respawn monsters when they are killed, in the game started from the
+command line.
+Does not affect games started from the menus.</td>
+</tr>
+
+<tr>
+<td>-coopmonsters</td>
+<td>Monsters cooperate in the game started from the command line.
+Does not affect games started from the menus.  Monsters do not damage
+each other.  Conflict with monster infight.</td>
+</tr>
+
+<tr>
+<td>-infight</td>
+<td>Monsters fight each other in the game started from the command line.
+Does not affect games started from the menus.  Monsters will retaliate
+and damage each other.  Conflict with coopmonsters.</td>
+</tr>
+
+<tr>
+<td>-fast</td>
+<td>Monsters move faster and shoot quicker in the game started by
+Warp or Episode.
+Does not affect games started from the menus.
+</td>
+</tr>
+
+<tr>
+<td>-predicting</td>
+<td>Monsters aim at moving players better in the game started by
+Warp or Episode.
+Does not affect games started from the menus.
+</td>
+</tr>
+
+<tr>
+<td>-turbo &lt;10-255&gt;</td>
+<td>Altered player speed in percent (slower or faster).  Add or
+decrease difficulty, or compensate for system controls.</td>
+</tr>
+
+<tr>
+<td>-noresetplayers</td>
+<td>Do not reset players, same as the transition to the next map.
+This keeps the existing player stats.
+</td>
+</tr>
+
+
+<tr><td class="note" colspan="2">
+Video options
+</td></tr>
+
+<tr>
+<td>-width &lt;xxx&gt;<br/>
+  -height &lt;yyy&gt;
+</td>
+<td>
+  If you like pain, you can set the screen size at the
+  command line instead of using the 'Video Mode' menu.
+  Legacy will switch to 320x200 if it can't find a
+  corresponding mode.
+</td>
+</tr>
+
+<tr>
+<td>-highcolor</td>
+<td>Request a 15 bpp or 16 bpp video mode.
+If that fails, it will try 8 bpp modes.</td>
+</tr>
+
+<tr>
+<td>-truecolor</td>
+<td>Request a 24 bpp or 32 bpp video mode.
+If that fails, it will try 8 bpp modes.</td>
+</tr>
+
+<tr>
+<td>-native</td>
+<td>Request use of a native bpp video mode, based on what video
+mode is being used when the program starts.
+If that fails, it will try 8 bpp modes.
+On most modern systems, native is 24 or 32 bpp.
+<br>
+This can now be selected using the options menu drawmode.
+</td>
+</tr>
+
+<tr>
+<td>-bpp &lt;number&gt;</td>
+<td>Select video mode bpp (8,15,16,24,32) explicitly.
+If that fails, the program will exit.</td>
+</tr>
+
+<tr>
+<td>-win</td>
+<td>Only allow windows video modes, ignoring DirectDraw video modes.
+For WIN32 port.</td>
+</tr>
+
+<tr>
+<td>-opengl</td>
+<td>Hardware accelerated rendering using the OpenGL library.
+Will use hardware acceleration for OpenGL if available.
+If the video card does not have OpenGL hardware acceleration then it will
+use the OpenGL emulation in software, which is very slow.
+OpenGL is the most actively supported hardware acceleration.
+For SDL, Linux-X11-XSHM, MACOS, and WIN32 ports.
+MiniGL is a subset library of the OpenGL standard for WIN32 and will use the
+minigl.dll instead.
+Requires compiling with the OpenGL library and configuration.
+Default: use the software renderer.
+<br>
+This can now be selected using the options menu drawmode.
+</td>
+</tr>
+
+<tr>
+<td>-minigl</td>
+<td>Hardware accelerated rendering using the MiniGL library.
+MiniGL is a library of the OpenGL standard for WIN32 and will use the
+minigl.dll instead.
+For WIN32 port.
+Requires compiling with the MiniGL library and configuration.
+</td>
+</tr>
+
+<tr>
+<td>-3dfx<br/>-glide</td>
+<td>Hardware accelerated rendering using the Glide library for the Voodoo card.
+For Linux-X11-XSHM, Linux-X11-GGI, and WIN32 ports.
+Requires compiling with the Glide library and configuration.
+Voodoo card support is now a compile-time option.
+</td>
+</tr>
+
+<tr>
+<td>-winvoodoo</td>
+<td>OpenGL parameter for voodoo card on Linux-X11-XSHM.
+If MESA_GLX_FX is not set as an environment variable,
+it selects window video modes with "MESA_GLX_FX=window",
+(default is fullscreen).
+It also prevents grabbing the mouse.
+For Linux-X11-XSHM port.
+Requires compiling with the XSHM library, MESA library, and configuration.
+Voodoo card support is now a compile-time option.
+</td>
+</tr>
+
+<tr>
+<td>-d3d</td>
+<td>Hardware accelerated rendering using Direct3d library for Windows.
+Requires compiling with the Direct3d library and configuration.
+For WIN32 port.</td>
+</tr>
+
+<tr>
+<td>-left</td>
+<td>Start a drone client that displays the left view of three screens.</td>
+</tr>
+
+<tr>
+<td>-right</td>
+<td>Start a drone client that displays the right view of three screens.</td>
+</tr>
+
+<tr>
+<td>-screendeg &lt;angle&gt;</td>
+<td>Start a drone client that displays with an angle offset.  Useful for
+setting up left and right screens.  The angle is in degees, but cannot
+be negative (command line limitation).
+For left angles input the value of (360-num) instead,
+such as 270 for -90 degrees, 315 for -45 degrees, 340 for -20 degrees.
+Limited to range 270 to 0 to 90 degrees.
+</td>
+</tr>
+
+<tr>
+<td>-polypoolsize &lt;num&gt;</td>
+<td>Specify the size of the polygon pool for hardware rendering, in KiB.
+The default is 1000 KiB.
+Requires compilation without the ZPLANALLOC compile option.
+The ZPLANALLOC option allocates such poly without using a pool, and is
+the default in the compilation.
+</td>
+</tr>
+
+<tr>
+<td>-display &lt;name&gt;</td>
+<td>Specify the X11 display to use for the game, by name.
+The default is the current display device.
+For Linux-X11-XSHM port.
+</td>
+</tr>
+
+<tr>
+<td>-noendtext</td>
+<td>Suppress the game EndText screen, which could disrupt some terminal
+emulations because of the special character attributes used.  Much of this
+problem has been eliminated by interpreting those attributes for each port.
+For SDL, MACOS, and Linux-X11 ports.
+</td>
+</tr>
+
+<tr><td class="note" colspan="2">
+Sound and music options
+</td></tr>
+
+<tr>
+<td>-nosound</td>
+<td>Disable all sound effects (including music). The sound effects
+volume config var also affects sound.</td>
+</tr>
+
+<tr>
+<td>-nomusic</td>
+<td>Disable music.  The music volume config var also affects music.</td>
+</tr>
+
+<tr>
+<td>-nocd</td>
+<td>Disable CD music.</td>
+</tr>
+
+<tr>
+<td>-precachesound</td>
+<td>Preload sound effects.  Also enabled by the precachesound config var.</td>
+</tr>
+
+<tr>
+<td>-freq</td>
+<td>To set the frequency used by the DirectSound sound buffer.
+The default is 22050 Hz.
+For WIN32 port.
+</td>
+</tr>
+
+<tr>
+<td>-coopsound</td>
+<td>To set DirectSound to be cooperative with other windows applications.
+For WIN32 port.
+</td>
+</tr>
+
+<tr>
+<td>-ds3d</td>
+<td>Use the DirectSound 3D generic sound driver.
+This driver is suitable for most 3D sound chips.
+For WIN32 port.
+Requires compiling with the HW3SOUND compile option.
+</td>
+</tr>
+
+<tr>
+<td>-sounddriver &lt;driver&gt;</td>
+<td>Specify an external hardware sound driver (dll).
+For WIN32 port.
+Requires compiling with the HW3SOUND compile option.
+</td>
+</tr>
+
+<tr>
+<td>-winmidi &lt;num&gt;</td>
+<td>Specify an external midi hardware port device ID.  How to discover
+the device IDs is unknown.  The default is -1.
+For WIN32 port.
+</td>
+</tr>
+
+
+<tr><td class="note" colspan="2">
+Input Controller options
+</td></tr>
+
+<tr>
+<td>-nomouse</td>
+<td>Do not use the mouse and skip mouse detection.
+For Linux-X11-XSHM, and WIN32 port.
+</td>
+</tr>
+
+<tr>
+<td>-nojoy</td>
+<td>Do not use the joysticks and skip joystick detection.
+For DOS, and WIN32 port.
+</td>
+</tr>
+
+<tr>
+<td>-nodinput</td>
+<td>Get mouse movement from window events instead of
+DirectInput polling interface.
+For WIN32 port.
+</td>
+</tr>
+
+<tr>
+<td>-gettickcount</td>
+<td>Do not use the high precision timer, to avoid a win2k timer bug.
+For WIN32 port.
+</td>
+</tr>
+
+
+<tr><td class="note" colspan="2" id="cmd_network">
+Networking
+</td></tr>
+
+<tr>
+<td>-server</td>
+<td>Spawn a server.  Allows a player on the server.
+</td>
+</tr>
+
+<tr>
+<td>-dedicated</td>
+<td>Spawn a dedicated server, without player.  A dedicated server only
+has console commands for setting up the network and games, not those for
+the player settings.</td>
+</tr>
+
+<tr>
+<td>-connect [&lt;IP&gt; | &lt;address&gt;]</td>
+<td>Connect to a server at the specified address. If no address is
+given, search for servers in LAN.</td>
+</tr>
+
+<tr>
+<td>-ipx</td>
+<td>Use IPX network protocol instead of IP.  Must be compiled with
+USE_IPX compile option enabled.</td>
+</tr>
+
+<tr>
+<td>-udpport</td>
+<td>Specify the server port to use on the IP network, or IPX network.
+This allows multiple servers to be on the same machine.  Clients need
+to specify the same server port.
+The default should be 5029.</td>
+</tr>
+
+<tr>
+<td>-clientport</td>
+<td>Specify the port that the client uses on the IP network, or IPX
+network.
+The default is to use the udpport.
+Specifying a clientport allows running the server and client
+using different ports, and to have more than one client on a machine.
+The server does not need this, as the client address and
+client port is gotten from the connect message for each player.</td>
+</tr>
+
+<tr>
+<td>-net</td>
+<td>Specify network play in DOS port version.
+For DOS port.
+</td>
+</tr>
+
+<tr>
+<td>-doomatic</td>
+<td>Specify doomatic network play in DOS port version.
+Introduced in version 1.29, it appears to have more advanced network
+communications than the vanilla network play.
+For DOS port.
+Requires doomatic network software.
+</td>
+</tr>
+
+<tr>
+<td>-nodownload</td>
+<td>Do not download any files from servers.</td>
+</tr>
+
+<tr>
+<td>-nofiles</td>
+<td>Do not check for having any files, download all from servers.</td>
+</tr>
+
+<tr>
+<td>-extratic &lt;num&gt;</td>
+<td>Send extra copies of player movement over the network, to prevent
+retransmission.  Normally 1.</td>
+</tr>
+
+<tr>
+<td>-bandwidth &lt;num&gt;</td>
+<td>Set the usable bandwidth of the network, in bytes per second
+(1000 to 100000). The default is 3000.
+</td>
+</tr>
+
+<tr>
+<td>-packetsize &lt;num&gt;</td>
+<td>Set the usable packetsize for transmissions over the network, in bytes
+(75 to the hardware limit). The default is the hardware max packetlength.
+</td>
+</tr>
+
+<tr>
+<td>-debugfile &lt;num&gt;</td>
+<td>Writes network debugging information to a file named debug1.txt,
+where the 1 is the specified num.
+If the num is not specified, the default is the player number.
+Will try higher num until it succeeds in opening a file.
+Must be compiled with the DEBUGFILE compile option enabled.
+</td>
+</tr>
+
+<tr>
+<td class="note" colspan="2">
+Multiplayer options
+</td>
+</tr>
+
+<tr>
+<td>-deathmatch<br/>-altdeath</td>
+<td>
+Play deathmatch where multiple players fight each other to score kills.
+Normal deathmatch has weapons and a few special items respawn,
+but altdeath has all items and weapons respawn.
+Without -deathmatch or -altdeath, the game will start cooperative where
+the players cooperate to fight the monsters.
+This can also be selected and customized from the menus, with more choices.
+</td>
+</tr>
+
+<tr>
+<td>-teamplay<br/>
+  -teamskin
+</td>
+<td>
+A variation of -deathmatch that activates team play where teams are
+identified by color (-teamplay) or skin (-teamskin).
+The color is applied to the player armor using color translation.
+A skin is an alternative player sprite, like an orc or mercenary.
+The skins must be provided in one or more PWAD.
+</td>
+</tr>
+
+<tr>
+<td>-timer &lt;num&gt;</td>
+<td>Timelimit in minutes.</td>
+</tr>
+
+<tr>
+<td>-avg</td>
+<td>Austin Virtual Gaming, 20 min. rounds.</td>
+</tr>
+
+<tr>
+<td>-splitscreen</td>
+<td>Two players on this screen.  One player is the top half and the
+other is the lower half of the screen.  The controls are selected for
+each player from the keyboard, one or two mice, and multiple joysticks.
+This may be used alone or with network play.
+</td>
+</tr>
+
+
+<tr>
+<td class="note" colspan="2">
+Demo options
+</td>
+</tr>
+
+<tr>
+<td>-playdemo &lt;file&gt;</td>
+<td>Play the demo from the specified file.</td>
+</tr>
+
+<tr>
+<td>-record &lt;file&gt;</td>
+<td>Record a demo to the specified file.</td>
+</tr>
+
+<tr>
+<td>-maxdemo &lt;size&gt;</td>
+<td>Set the -record demo buffer to the specified size (in KiB).
+The default is 20.
+Use with -record.</td>
+</tr>
+
+
+<tr>
+<td class="note" colspan="2">
+Development options
+</td>
+</tr>
+
+<tr>
+<td>-devparm</td>
+<td>Development/debugging mode. Prints out some extra information
+  mainly useful for developers, does not grab the mouse.</td>
+</tr>
+
+<tr>
+  <td>-devgame &lt;game-name&gt;</td>
+<td>Development mode using devparm for the specified game,
+in the same format as -game.
+User can include development files from working directories using -file.</td>
+</tr>
+
+<tr>
+<td>-wart &lt;number&gt; [&lt;number&gt;]</td>
+<td>Development modification of warp.  Load the selected map from the
+devmaps directory, and warp to it.
+In DoomII mode, -wart 13 will load devmaps/cdata/map13.
+In Ultimate Doom mode -wart 3 1 will load devmaps/E3M1.</td>
+</tr>
+
+<tr>
+<td>-timedemo &lt;file&gt;</td>
+<td>Play the demo from the specified file while timing it.
+</td>
+</tr>
+
+<tr>
+<td>-nodraw<br/></td>
+<td>Timedemo option, to get execution time without drawing.
+Caution: there is no visible display so you must exit the game from memory
+of the commands (ESC, Q, RETURN, Y).
+</td>
+</tr>
+
+<tr>
+<td>-noblit</td>
+<td>TimeDemo option, to get execution time without blit.  Currently,
+none of the draw ports honor this test.
+</td>
+</tr>
+
+<tr>
+<td>+connect<br/>+map</td>
+<td>Options on -server.
+The actual usages of these have been lost.
+The "+connect" option will enable some server code,
+but is not same as -connect.
+The "+map" option will issue a map command to change to the start map.
+Example: -server+connect+map
+</td>
+</tr>
+
+
+<tr><td class="note" colspan="2">
+Information
+</td></tr>
+<tr>
+
+<td>--help</td>
+<td>Help menu giving help sections.</td>
+</tr>
+
+<tr>
+<td>-h &lt;section&gt;</td>
+<td>Display one of the Help sections:<br/>
+<table class="def">
+<tr><th>section</th><th>content</th></tr>
+<tr><td>g</td><td>Help on game and wads</td></tr>
+<tr><td>m</td><td>Help on multiplayer</td></tr>
+<tr><td>c</td><td>Help on config</td></tr>
+<tr><td>s</td><td>Help on server</td></tr>
+<tr><td>d</td><td>Help on demo</td></tr>
+<tr><td>D</td><td>Help on Devmode</td></tr>
+</table>
+</td>
+</tr>
+
+<tr>
+<td>-v</td>
+<td>Verbose.  Print more information about warnings, wad errors, and the
+progression of startup and shutdown.</td>
+</tr>
+
+<tr>
+<td>-v2</td>
+<td>Very verbose.  Print detailed information about the video system,
+modes available and how the mode selection is handled.</td>
+</tr>
+</table>
+
+
+<h2 id="dehacked">DeHackEd</h2>
+
+<h3>DeHackEd patches</h3>
+<p>  
+  Doom Legacy supports dehacked patches directly, without having to
+  patch the executable.  The original DeHackEd was an editor that would
+  patch the Doom executable to change strings and monster behaviors.
+  Doom Legacy will alter its own strings and monster behaviors to get
+  similar, or better results.
+</p>
+<p>
+  You can specify multiple .deh files using the -file option, and they
+  will all be executed, in the order you have given them.
+  Also, since version 1.30, Legacy will look for a lump named DEHACKED
+  in each wad file and treat the contents as a dehacked patch.
+</p>
+<p>
+  There is limited checking on the dehacked patch version.
+  We support dehacked versions 6, 19, 21.
+  It will warn about dehacked versions greater than 21 (we do not know of any yet),
+  but should still run ok due to backward compatibility of the format.
+</p>
+<p>
+  The dehacked version appears as "Doom Version = 21".
+  Dehacked version 19 is used by HTH2.wad, and pl2_lev.
+  Dehacked version 21 is accepted, being used by
+  phobiata.wad, DSDA wads, and others.
+</p>
+<p>
+  If you have a problem with a dehacked patch, you can try to convert it.
+  Load the .deh file into a recent version of Dehacked (3.0),
+  and then save it again. It will then be saved as a text-file that
+  Legacy will be able to use.
+</p>
+<p>
+  As of version 1.44, Legacy allows multiple changes to the same string.
+  Later changes to a string will work, even when Legacy changes,
+  language changes, Chex mode changes, or other deh files,
+  have already changed the string.
+</p>
+<p>
+  You can edit a .deh file manually and replace strings by larger strings than
+  the original Doom strings, and it works.  The original Dehacked
+  could not increase the length of a string, but Legacy can.
+  Sprite renaming works too, well, pretty much anything works :)
+</p>
+<p>
+  Much of dehacked has become port dependent.  This is in spite of
+  attempted standards like MBF21, which actually is highly dependent upon DSDA'isms.
+  DoomLegacy has detection of several wad characteristics that
+  indicate port dependencies.
+  These enable the various dehacked interpretations like DEHEXTRA,
+  prboom items, and DSDA interpretations.
+</p>
+<p>
+  Some dehacked lumps were written using thing numbers and frame numbers
+  that were added in Boom, and PrBoom.
+  Thing numbers in the range 138 to 150 in Doom Legacy differ from PrBoom.
+  These things will be mapped to the slots that Legacy uses internally.
+</p>
+<p>
+  Thing mapping has the command line option "-dehthing name", where name can be legacy,
+  boom, prboom, ee, mbf, heretic.  This tells DoomLegacy which other
+  port the wad expects, and affects thing number assignments appropriately.
+</p>
+<p>
+  There is Automatic detection that can correct the thing
+  numbering in some wads.  This relies upon comments in the dehacked
+  lump, and upon detecting port specific linedefs.
+  For some wads the user will have to override the Automatic
+  detection, and specify the dehacked thing coding directly.
+</p>
+<p>
+  Note that the thing numbers used in dehacked lumps, are always
+  the internal thing numbers + 1.
+</p>
+<p>
+  MT_DOGS has dog specific code that provides dog behaviors.
+  Using MT_DOGS for something other than a dog, will make it
+  behave like a dog, such as running around and barking.
+</p>
+<p>
+  Currently, Doom Legacy does not provide the dog sprites and sounds.
+  The user must provide a wad that has dog sprites and sounds.
+  The DoomLegacy common download provides a dogs.wad for this purpose.
+<br>
+  For instance:<br>
+<code>  
+  >> legacy -game doom2 -file prboom.wad antaxyz.wad <br>
+  >> legacy -game doom2 -file dogs.wad antaxyz.wad <br>
+</code>
+</p>
+
+<br>
+The sprite and state remapping are controlled by the following command
+line options.
+
+<table class="def">
+<tr><th width=120>option &lt;arg&gt;</th><th>description</th></tr>
+<tr>
+<td>-dehthing &lt;select&gt;<br/></td>
+<td>Select dehacked thing coding for the range 138 to 150.<br>
+<table>
+<tr><td>legacy</td><td>DoomLegacy untranslated</td></tr>
+<tr><td>boom</td><td>translate things according to Boom.</td></tr>
+<tr><td>prboom</td><td>Boom and Beta things</td></tr>
+<tr><td>ee</td><td>Eternity Engine things</td></tr>
+<tr><td>mbf</td><td>MBF things</td></tr>
+<tr><td>heretic</td><td>Heretic things</td></tr>
+</table>
+</td>
+</tr>
+<tr>
+</tr>
+<tr>
+<td>-remap &ltlev&gt<br/></td>
+<td>Combined control of all the remapping to free areas.  This is applied, then the
+individual remap switches are applied.  The order on the command line
+has no effect.  See remap table below.</td>
+</tr>
+<tr>
+<td>-sprite_remap &ltlev&gt<br/></td>
+<td>Individual control of the sprite remapping.  See remap table below.</td>
+</tr>
+<tr>
+<td>-state_remap &ltlev&gt<br/></td>
+<td>Individual control of the state remapping.   See remap table below.</td>
+</tr>
+<tr>
+<td>-sfx_remap &ltlev&gt<br/></td>
+<td>Individual control of the sfx remapping.   See remap table below.</td>
+</tr>
+<tr>
+<td></td>
+<td>
+<table>
+<tr><td>0</td><td>
+Off, no mapping to free.
+<br>DEHEXTRA entries will attempt to use fixed mapping, which will likely fail.
+<br>Chexquest auto defaults this to off because they were developed for plain DoomU
+or Legacy.
+</td></tr>
+<tr><td>1</td><td>
+All of the predef table, Legacy extensions, and 128 beyond, are fixed mapping.
+Entries beyond that are remaped to free slots.
+Any slots not in that area are used for free.
+<br>This supports older wads.
+</td></tr>
+<tr><td>2</td><td>
+All of the predef table, Legacy extensions, and a
+few spare after those, are fixed mapping.
+Entries beyond that are remapped.
+Any slots not in that area are used for free.
+DEHEXTRA entries that conflict with fixed mapped slots will fail.
+<br>This is a reasonable setting for debugging dehacked lumps.
+</td></tr>
+<tr><td>3</td><td>
+All of the predef table for the gamemode, plus some extra,
+are fixed mapping.
+Entries beyond that are remapped.
+Any slots not in that area are used for free.
+</td></tr>
+<tr><td>4</td><td>
+Only the minimum vanilla tables and extensions are fixed mapping.
+Everything else is remapped to available free space.
+</td></tr>
+<tr><td>5</td><td>Auto.  Default.
+</td></tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>-state_zero &ltlev&gt<br/></td>
+<td>Control of the state blanking, setting to zero.
+  <table>
+  <tr><td>0</td><td>
+  Zero state default, nextstate=0 (destroy).
+  <br>For compatibility with older wads, and older Legacy.
+  </td></tr>
+  <tr><td>1</td><td>
+  DSDA state default, sprite=TNT1, nextstate=self (freeze).
+  </td></tr>
+  <tr><td>2</td><td>
+  Automatic detection.
+  </td></tr>
+  </table>
+</td>
+</tr>
+<tr>
+<td>-dsda<br/></td>
+<td>Enable DSDA adaptations, DSDA interpretations, and DSDA state
+blanking. This is also auto detected, but this forces the enabling.
+<br>For compatibility with DSDA developed wads (as much as is practical).
+</td>
+</table>
+
+<br>
+Thing codes in the following lists are as they appear in dehacked.
+<ul>
+<li>legacy:
+<br>DoomLegacy untranslated.
+<ul>
+<li>138: MT_CHASECAM</li>
+<li>139: MT_SPIRIT</li>
+<li>140: MT_SMOK</li>
+<li>141: MT_SPLASH</li>
+<li>142: MT_PUSH</li>
+<li>143: MT_PULL</li>
+<li>144: MT_DOGS</li>
+<li>145: MT_PLASMA1</li>
+<li>146: MT_PLASMA2</li>
+<li>147: MT_CAMERA</li>
+<li>148: MT_NODE</li>
+</ul>
+<br>
+<li>boom:
+<br>Translate things according to Boom.
+<ul>
+<li>139: MT_PUSH</li>
+<li>140: MT_PULL</li>
+</ul>
+<br>
+<li>prboom:
+<br>Boom and Beta things.
+<ul>
+<li>139: MT_PUSH</li>
+<li>140: MT_PULL</li>
+<li>141: MT_DOGS</li>
+<li>142: MT_PLASMA1</li>
+<li>143: MT_PLASMA2</li>
+<li>144: MT_CAMERA</li>
+<li>145: MT_PLASMA3</li>
+</ul>
+<br>
+<li>ee:
+<br>Eternity Engine things.
+<ul>
+<li>138: MT_PUSH</li>
+<li>139: MT_PULL</li>
+<li>140: MT_DOGS</li>
+</ul>
+</ul>
+
+
+<h3>BEX patches</h3>
+<p>  
+  Doom Legacy supports BEX, which is similar to dehacked but
+  changable attributes have a BEX name.  This is easier to develop and
+  maintain than using raw numbers.
+  BEX has more functionality and is more consise than DeHackEd.
+  <br>A BEX file can be provided using -file or -deh, and BEX can be in
+  the DEHACKED lump.
+  <br>
+  BEX is processed when BEX section names are encountered
+  ("[STRINGS]", "[PARS]", "[CODEPTR]"), and will also handle INCLUDE.
+</p>
+
+<h3>DoomLegacy dehacked extensions</h3>
+
+<p>
+A Frame section can have an action line.
+This replaces needing to use a [CODEPTR] section.
+<pre>
+  action = functionname
+</pre>
+</p>
+
+
+<h2 id="notes">NOTES</h2>
+
+<br>This section is currently blank.
+<br>
+
+</div>
+</body>
+</html>

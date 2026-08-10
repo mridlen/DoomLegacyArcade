@@ -1,0 +1,92 @@
+# DoomLegacy Make options for Windows
+# Copy this file to  make_options  and edit it to suit your preferences.
+# See README_compiling.txt
+# Edit for OS, SMIF, and other compile options.
+#
+MAKE_OPTIONS_PRESENT=1
+
+# Select an OS:
+#  WIN32: generic WIN32
+#  WIN98: specific to WIN98 and such older Windows
+#  WIN7:  specific to modern Windows.  Untested on modern systems.
+#         This does  NOT YET  make a version customized to Win7/8.
+OS=WIN32
+
+# Select a draw library.
+#  SDL: the SDL library is recommended and is the best maintained interface
+#  WIN_NATIVE: Native windows (direct draw)
+SMIF=SDL
+#  Enable to use SDL2, otherwise will use SDL 1.2
+# SDL2=1
+#  If sdl-config is missing, then where the SDL/SDL2 library was installed.
+# SDL_DIR=C:/SDL
+
+# SDL_Mixer library is a separate library from SDL
+HAVE_MIXER=1
+
+# Put other options here, see the src/Makefile or README_compiling.
+# Compiler select: GCC MINGW WATCOM CLANG
+# CC_SELECT=GCC
+# Enable CC_ENVIRONMENT to use the environment CC var.
+# CC_ENVIRONMENT=1
+# CC_EXPLICIT=clang
+
+# Architecture custom compile will result in faster smaller code,
+# but will not execute on incompatible machines.
+# Any valid value for -march= on your compiler may be set here.
+# For more information, ask your compiler.
+# > gcc --target-help
+# The default for GCC may be generic or i386.
+# generic32, generic64, i386, i486, i586, i686
+# pentium4, prescott, core, core2, athlon, k6, k8, amdfam10
+# + mmx, sse, sse2, sse3, sse4, 3dnow
+# Examples:
+# ARCH=-march=i386
+# ARCH=-march=i486+sse2
+# ARCH=-march=athlon
+# Multiple switches
+# ARCH=-march=i686 -mtune=athlon -msse
+# Let the compiler detect your hardware.
+# ARCH=-march=native
+
+# To enable debug code, with no fullscreen.
+# DEBUG=1
+
+# Might not have the CD music libraries.
+# CD_MUSIC=0
+
+# MINGW and WATCOM can have separate DD libraries
+# Alternative directory to find ddraw.h and other includes.
+# DDINC=-I\MINGW\MX80\include
+# Alternative directory to find ddraw and other libs.
+# DDLIB=-L\MINGW\MX80\lib
+
+# For FMOD sound.  Can compile without FMOD.
+# The code that uses FMOD seems incomplete, consider it a work in progress.
+# HAVE_FMOD=1
+# FMODINC="" alternative directory to find fmod.h and other includes
+# FMODLIB="" alternative directory to find fmod libs
+
+# If you have a slow computer you may want to try assembly, but the
+# assembly code is not often updated with the latest improvements.
+# USEASM=1
+
+# Other Make compile vars can be overridden too, see Makefile.
+
+# Install settings for install_sys
+# PREFIX:=c:\Program Files
+# INSTALL_SYS_DIR:=c:\Program Files\doomlegacy
+# INSTALL_SHARE_DIR:=c:\Program Files\doomlegacy
+
+# Install settings for install_games
+# INSTALL_GAMES_DIR:=\games\doomlegacy
+
+# Install settings for install_user
+# HOME:=
+# INSTALL_USER_DIR:=$(HOME)\games\doomlegacy
+
+# To override where the legacy.wad is installed.
+# INSTALL_LEGACYWAD_DIR:=c:\games\doomlegacy
+
+# Install files from legacy_common.
+# COMMON_DIR:=..\legacy_common

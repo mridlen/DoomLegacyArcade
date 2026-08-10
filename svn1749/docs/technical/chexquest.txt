@@ -1,0 +1,241 @@
+:name: Chex1 adaptation doc
+:author: Wesley Johnson
+:date: 5/2/2010
+::END
+
+
+In the chex.wad there are some images and graphics from Doom that should
+be blocked when CHEX is played.  Most notable is the bunny picture.
+It is possible to get to these by using the console, or sometimes
+through the menu.  Some Doom maps are there too, but these are not
+offensive, just confused because Chex replaced textures with things
+unrelated in usage.
+These cannot be disabled because there is a Chexquest2 that does have
+more levels, and may have replaced the offending pictures with something
+that they use.
+Add-on levels, pwads, may redefine missing sprites that have been blanked.
+
+Chexquest1: chex.wad
+Levels: E1M1 to E1M5		// Chex
+
+	E1M6 to E1M9		// from Doom
+	E2M1 to E2M9		// from Doom
+	E3M1 to E3M9		// from Doom
+	E4M1 to E4M9		// from Doom
+
+Music:  D_E1M1 to D_E1M5	// Chex
+
+	D_E1M6 to D_E1M9	// from Doom
+	D_E2M1 to D_E2M9	// from Doom
+	D_E3M1 to D_E3M9	// from Doom
+
+
+Pictures:
+// Good Chex images
+  m_doom.ppm	// splash screen
+  titlepic.ppm	// chex warrior attacked by flemoids
+  credit.ppm    // chex warrior, heroic
+  help1.ppm	// chex help screen
+  stbar.ppm	// status bar
+
+// faces are replaced by a chex, with green ooze for damage
+  stfdead0.ppm	// green ooze
+
+// Doom images
+victory2.ppm	->  credit.ppm  // spikes !!
+endpic.ppm	->  credit.ppm	// bloody marine !!!
+interpic.ppm	->  m_doom.ppm	// wall !!
+pfub1.ppm	->  credit.ppm	// bunny
+pfub2.ppm	->  credit.ppm	// bunny !!!!!
+
+end0.ppm  is Doom end screen being shotup.
+  end*.ppm  -> end0.ppm
+
+
+
+Interpic map:
+// Good Chex map graphic
+wimap0.ppm	// E1, chex warrior cleaning goo off boots
+
+
+// Doom map graphic
+wimap1.ppm	// E2, Doom !
+wimap2.ppm	// E3, Doom !
+
+
+Graphic interpic sequences:
+// Chex graphic overlay of wimap0, for each level
+wia00000.ppm, wia00001.ppm, wia00002.ppm	// blanked square
+wia00100.ppm, wia00101.ppm, wia00102.ppm	// blanked horz. bar
+wia00200.ppm, wia00201.ppm, wia00202.ppm	// blanked vert. bar
+wia00300.ppm, wia00301.ppm, wia00302.ppm	// blanked vert. bar
+wia00400.ppm, wia00401.ppm, wia00402.ppm	// blanked square
+wia00500.ppm, wia00501.ppm, wia00502.ppm	// blanked square
+wia00600.ppm, wia00601.ppm, wia00602.ppm	// blanked square
+wia00700.ppm, wia00701.ppm, wia00702.ppm	// blanked vert. bar
+wia00800.ppm, wia00801.ppm, wia00802.ppm	// blanked vert. bar
+// Chex graphic overlay of wimap0, for end of episode
+wia00900.ppm, wia00901.ppm, wia00902.ppm	// chex seq. of hand cleaning boot
+
+
+// Doom graphic overlay of wimap1, for each level
+wia10000.ppm, wia10010.ppm, wia10020.ppm,
+wia10030.ppm, wia10040.ppm, wia10050.ppm, wia10060.ppm
+wia10701.ppm, wia10702.ppm
+// Doom graphic overlay of wimap2, for each level
+wia20000.ppm, wia20001.ppm, wia20002.ppm
+wia20100.ppm, wia20101.ppm, wia20102.ppm
+wia20200.ppm, wia20201.ppm, wia20202.ppm
+wia20300.ppm, wia20301.ppm, wia20302.ppm
+wia20400.ppm, wia20401.ppm, wia20402.ppm
+wia20500.ppm, wia20501.ppm, wia20502.ppm
+
+
+Graphic interpic titles and text:
+// Good Chex graphics
+wicolon.ppm	// colon
+wiminux.ppm	// minus sign
+wipcnt.ppm	// percent sign
+wimstar.ppm	// you
+wimstt.ppm	// total
+winum0 to winum9 // 0 to 9
+wiostf.ppm	// F.
+wiosti.ppm	// items found
+wiostk.ppm	// flemoids returned
+wiosts.ppm	// secret areas found
+wiscrt2.ppm	// secret areas found
+wisucks.ppm	// sucks
+witime.ppm	// time
+wipar.ppm	// par
+wisplat.ppm	// blank square (splat)
+wiurh0.ppm, wiurh1.ppm	// blank horz. bar  (you are here)
+wienter.ppm	// entering
+wif.ppm		// finished
+wifrgs.ppm	// flemoids returned
+wilv00.ppm	// landing zone
+wilv01.ppm	// storage facility
+wilv02.ppm	// laboratory
+wilv03.ppm	// arboretum
+wilvo4.ppm	// caverns of bazoik
+wilv05.ppm	// the flembrane
+
+// Doom graphic texts
+wikilrs.ppm	// killers !
+wivctms.ppm	// victims !
+wilv06.ppm to wilv38.ppm	// Doom level names !!
+wip1.ppm, wip2.ppm, wip3.ppm, wip4.ppm		// P1 P2 P3 P4
+wibp1.ppm, wibp2.ppm, wibp3.ppm, wibp4.ppm	// P1 P2 P3 P4
+
+
+
+Text:
+// Good Chex text
+m_skill.ppm	// choose difficulty
+m_jkill.ppm	// easy does it
+m_rough.ppm	// not so sticky
+m_hurt.ppm	// gobs of goo
+m_nmare.ppm	// super slimey
+m_ultra.ppm	// extreme ooze
+
+m_lgtti.ppm	// load quest
+m_sgtii.ppm	// save quest
+m_loadg.ppm	// load game
+m_saveg.ppm	// save game
+m_quitg.ppm	// quit game
+m_newg.ppm	// new game
+
+m_pause.ppm	// pause
+m_rdthis.ppm	// read this
+
+m_option.ppm	// options
+m_detail.ppm	// graphic detail
+m_gdlow.ppm	// low
+m_gdhigh.ppm	// high
+m_disopt.ppm	// display options
+m_scrnsz.ppm	// screen size
+m_disp.ppm	// display
+m_endgam.ppm	// end game
+m_messg.ppm	// messages
+m_msens.ppm	// mouse sensitivity
+m_msgoff.ppm	// off
+m_msgon.ppm	// on
+m_svol.ppm	// sound volume
+m_musvol.ppm	// music volume
+m_sfxvol.ppm	// sound effects volume
+
+m_lscntr.ppm	// green box center
+m_lsleft.ppm	// green box left
+m_lsrght.ppm	// green box right
+
+// Doom text, blood red
+m_epi1.ppm, m_epi2.ppm, m_epi3.ppm, m_epi4.ppm	// Doom episode names !!
+m_episod.ppm
+
+// Text missing, using Legacy red defaults
+m_single.ppm	// single player
+m_multi.ppm	// multiplayer
+m_2playr.ppm	// two player game
+m_setupa.ppm	// setup player one
+m_setupb.ppm	// setup player two
+m_connec.ppm	// connect server
+m_stserv.ppm	// start server
+m_cdvol.ppm	// CD volume
+m_contro.ppm	// setup controls
+m_setupm.ppm	// setup
+m_video.ppm	// video options
+rankings.ppm	// rankings
+
+
+
+             
+
+Sprites:
+Sprites have been replaced with Chex appropriate ones.
+Many sprites have been blanked, or replaced with food, plant, items.
+PWAD may add these and use them in a map.
+Blanked sprites:
+  apbx**
+  apls**
+  bal2**
+  bexc0, bexd0,  // barrels do not explode
+  bosf**
+  bsku**
+  col5**
+  fsku**
+  gor4**
+  ifog**
+  pins**
+  pinv**
+  pol3**
+  pol6**
+  puff**
+  pvis**
+  rsku**
+  tred**
+  ysku**
+
+
+Good Chex monster sprites:
+  play**
+  poss**
+  spos**
+  troo**
+  sarg**
+  boss**
+Monster sprites that have been replaced with blank graphics:
+  cybr**
+  skul**
+  spid**
+  head**
+  manf**
+Dead sprite graphics are blank.
+
+There are no Doom sprites in the Chex wad.
+All textures and flats are Chex.
+
+
+Blood splats:
+The chex game as played on DOS does have splats appear when hitting the flemoids, but they do not appear on wall nor floor.
+All splats are green.
+  blud**	 (bluda0, bludb0, bludc0)   are from Chex wad, are green, and are used in DOS version of Chexquest.
+

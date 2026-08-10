@@ -1,0 +1,12 @@
+# Build output (Makefile drops these under svn1749/ and top-level build dirs)
+bin/
+dep/
+objs/
+*.o
+*.obj
+*.d
+*.exe
+
+# make_options is a local, machine-specific build config (copied from make_options_*)
+/make_options
+/svn1749/make_options

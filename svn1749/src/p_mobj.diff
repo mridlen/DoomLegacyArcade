@@ -1,0 +1,40 @@
+--- p_mobj.c	2024-11-26 23:48:22.632430622 -0600
++++ /home/wes/gaming/src/legacy145/w110/d063_telecontrol/p_mobj.c	2024-09-29 07:18:49.652819986 -0500
+@@ -1,8 +1,8 @@
+ // Emacs style mode select   -*- C++ -*-
+ //-----------------------------------------------------------------------------
+ //
+-// $Id: p_mobj.c 1692 2024-11-27 06:37:03Z wesleyjohnson $
++// $Id: p_mobj.c 1606 2021-12-09 23:03:08Z wesleyjohnson $
+ //
+ // Copyright (C) 1993-1996 by id Software, Inc.
+ // Portions Copyright (C) 1998-2000 by DooM Legacy Team.
+ //
+@@ -3472,8 +3472,13 @@
+     mobj_t * th;
+ 
+     z += PP_SignedRandom(pr_spawnblood) << 10;
+     th = P_SpawnMobj(x, y, z, MT_BLOOD);
++#ifdef DSDA_EE_BLOODCOLOR
++    // [WDJ] This may be wrong.  Is this blood from the weapon ??
++    th->b_color = bleeder->info->bloodcolor;
++#endif
++
+     if( EV_legacy >= 128 )
+     {
+         // Legacy use of P_Random, not in Doom, enabled by EV_legacy
+         th->momx = PP_SignedRandom(pL_spawnbloodxy) << 12;      //faB:19jan99
+@@ -3542,11 +3547,11 @@
+     
+         splat->momx = ripper->momx >> 1;
+         splat->momy = ripper->momy >> 1;
+         splat->tics += (tics_random & 0x03);
+-#ifdef DSDA
++#ifdef DSDA_EE_BLOODCOLOR
+         // [WDJ] This may be wrong.  Is this blood from the weapon ??
+-        splat->re_color = bleeder->info->bloodcolor;
++        splat->b_color = bleeder->info->bloodcolor;
+ #endif
+     }
+ }
+ 
