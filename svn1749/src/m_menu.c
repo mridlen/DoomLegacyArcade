@@ -1428,7 +1428,7 @@ menuitem_t  ServerMenu_EpisodeMap =
 menu_t  ServerDef =
 {
     "M_STSERV", // in legacy.wad
-    "Start Server",
+    "Start Game",
     ServerMenu,
     M_DrawGenericMenu,
     NULL,
@@ -6339,10 +6339,29 @@ void M_Init (void)
     skullAnimCounter = 10;
 
     quicksave_slotid = -1;
-   
+
 #ifdef CONFIG_MENU_PAGE
     temp_cvar.string = NULL;
 #endif
+
+    if( ! devmode )
+    {
+        // Locked-down (e.g. arcade cabinet) build: no multiplayer server,
+        // no save/load or options tampering.
+        SingleMulti_Menu[2].status = IT_DISABLED;  // Multiplayer
+        if( SingleMultiDef.lastOn == 2 )
+            SingleMultiDef.lastOn = 0;
+
+        TwoPlayerMenu[4].status = IT_DISABLED;  // Multiplayer (reached via Two Player Game)
+        if( TwoPlayerDef.lastOn == 4 )
+            TwoPlayerDef.lastOn = 0;
+
+        MainMenu[1].status = IT_DISABLED;  // Load Game
+        MainMenu[2].status = IT_DISABLED;  // Save Game
+        MainMenu[3].status = IT_DISABLED;  // Options
+        if( MainDef.lastOn >= 1 && MainDef.lastOn <= 3 )
+            MainDef.lastOn = 0;
+    }
 
     CV_RegisterVar_list( menu_init_cvar_list );
 }

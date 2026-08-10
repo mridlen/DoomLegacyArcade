@@ -115,6 +115,7 @@ extern  boolean  dedicated;  // dedicated server
 // g_game.h
 extern  byte    verbose;   // 1, 2
 extern  byte    devparm;   // 1, 2, 3  // development mode (-devparm)
+extern  byte    devmode;   // 0, 1  // unlock full menu, e.g. Multiplayer (-devmode)
 
 // demo version when playback demo, or the current VERSION
 // used to enable/disable selected features for backward compatibility

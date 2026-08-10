@@ -468,6 +468,10 @@ byte    devparm = 0;
     // set by -devparm, plus verbose level.
     // devparm enables development mode, with CONS messages reporting
     // on memory usage and other significant events.
+byte    devmode = 0;
+    // set by -devmode.
+    // devmode unlocks menu entries that are hidden in a locked-down
+    // (e.g. arcade cabinet) build, such as Multiplayer.
 
 byte    demo_ctrl;
 byte    init_sequence = 0;
@@ -2590,6 +2594,8 @@ restart_command:
       CONS_Printf(D_DEVSTR);
     }
 
+    devmode = M_CheckParm("-devmode");  // -devmode : unlock full menu
+
     if( verbose > 1 )
         CONS_Printf("Find HOME\n");
     // userhome section
@@ -3855,6 +3861,7 @@ static void Help( void )
      printf
        (
         "-devparm        Develop mode\n"
+        "-devmode        Unlock full menu (e.g. Multiplayer)\n"
 #ifdef DEVPARM_LOADING
         "-devgame gamename  Develop mode, and specify game\n"
         "-wart 3 1       Load file devmaps/E3M1.wad, then warp to it\n"
