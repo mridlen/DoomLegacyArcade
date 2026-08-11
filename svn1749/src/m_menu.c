@@ -6366,6 +6366,31 @@ void M_Init (void)
         if( (ServerDef.lastOn >= 5 && ServerDef.lastOn <= 8)
             || ServerDef.lastOn == 10 )
             ServerDef.lastOn = 0;
+
+        // Setup Player 1/2 (shared array for both players): fixed
+        // name/skin, no per-player mouse config or control rebinding.
+        SetupMultiPlayerMenu[setupmultiplayer_name].status     = IT_DISABLED;  // Your name
+        SetupMultiPlayerMenu[setupmultiplayer_skin].status     = IT_DISABLED;  // Your skin
+        SetupMultiPlayerMenu[setupmultiplayer_controls].status = IT_DISABLED;  // Player2 Controls >>
+        SetupMultiPlayerMenu[setupmultiplayer_mouse2].status   = IT_DISABLED;  // Second Mouse config >>
+        if( SetupMultiPlayerDef.lastOn == setupmultiplayer_name
+            || SetupMultiPlayerDef.lastOn == setupmultiplayer_skin
+            || SetupMultiPlayerDef.lastOn == setupmultiplayer_controls
+            || SetupMultiPlayerDef.lastOn == setupmultiplayer_mouse2 )
+            SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
+
+        // Player config screen (also shared for both players).
+        PlayerOptionsMenu[playeroption_usemouse].status     = IT_DISABLED;  // Use Mouse
+        PlayerOptionsMenu[playeroption_mousemove].status    = IT_DISABLED;  // Mouse Move
+        PlayerOptionsMenu[playeroption_mouselook].status    = IT_DISABLED;  // Always MouseLook
+        PlayerOptionsMenu[playeroption_weaponpref].status   = IT_DISABLED;  // WeaponPref
+        PlayerOptionsMenu[playeroption_setupcontrol].status = IT_DISABLED;  // Player1/2 controls >>
+        if( PlayerOptionsDef.lastOn == playeroption_usemouse
+            || PlayerOptionsDef.lastOn == playeroption_mousemove
+            || PlayerOptionsDef.lastOn == playeroption_mouselook
+            || PlayerOptionsDef.lastOn == playeroption_weaponpref
+            || PlayerOptionsDef.lastOn == playeroption_setupcontrol )
+            PlayerOptionsDef.lastOn = playeroption_alwaysrun;
     }
 
     CV_RegisterVar_list( menu_init_cvar_list );
