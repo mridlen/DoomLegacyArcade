@@ -7013,6 +7013,8 @@ consvar_t * menu_command_cvar_list[] =
   &cv_allowturbo,
   &cv_allowmlook,
   &cv_allowexitlevel,
+  &cv_idletimeout,
+  &cv_idlewarntime,
 
     // g_input.c
   &cv_grabinput,

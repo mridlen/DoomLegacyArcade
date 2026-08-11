@@ -145,7 +145,9 @@ extern  boolean   timingdemo;
 extern  boolean   singledemo;
 
 // gametic at level start
-extern  tic_t     levelstarttic;  
+extern  tic_t     levelstarttic;
+// [Arcade lockdown] gametic of last player input event (see D_PostEvent)
+extern  tic_t     last_input_tic;
 
 extern consvar_t  cv_showmessages;
 extern consvar_t  cv_pickupflash;
@@ -184,6 +186,8 @@ extern consvar_t  cv_allowautoaim;
 extern consvar_t  cv_allowmlook;
 extern consvar_t  cv_allowturbo ;
 extern consvar_t  cv_allowexitlevel;
+extern consvar_t  cv_idletimeout;
+extern consvar_t  cv_idlewarntime;
 
 
 

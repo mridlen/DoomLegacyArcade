@@ -506,6 +506,7 @@ player_t *      displayplayer2_ptr = NULL;  // NULL when not in use
 
 tic_t           gametic;
 tic_t           levelstarttic;          // gametic at level start
+tic_t           last_input_tic;         // gametic of last player input event
 // [WDJ] Derived from PrBoom basetic.
 // A tic that always starts at 0, and only runs while the demo runs.
 tic_t           game_comp_tic;  // gametic - basetic
@@ -568,6 +569,17 @@ consvar_t cv_mouse2_invert    = {"invertmouse2","0",CV_SAVE,CV_OnOff};
 
 CV_PossibleValue_t joy_deadzone_cons_t[]={{0,"MIN"},{20,"INC"},{2000,"MAX"},{0,NULL}};
 consvar_t cv_joy_deadzone     = {"joydeadzone" ,"800",CV_SAVE,joy_deadzone_cons_t};
+
+// [Arcade lockdown] Idle-to-title timeout: if the player gives no input for
+// this many seconds during gameplay, the game ends and returns to the title
+// screen.  0 disables.  Skipped when launched with -devmode or in a netgame.
+CV_PossibleValue_t idletimeout_cons_t[]  = { {0,"MIN"}, {3600,"MAX"}, {0,NULL} };
+consvar_t cv_idletimeout  = { "idletimeout", "60", CV_SAVE, idletimeout_cons_t };
+
+// Lead time (seconds) before idletimeout fires during which an on-screen
+// "Returning to title in Ns..." countdown is shown.
+CV_PossibleValue_t idlewarntime_cons_t[] = { {0,"MIN"}, {60,"MAX"}, {0,NULL} };
+consvar_t cv_idlewarntime = { "idlewarntime", "15", CV_SAVE, idlewarntime_cons_t };
 
 consvar_t cv_showmessages     = {"showmessages","2",CV_SAVE | CV_CALL | CV_NOINIT,showmessages_cons_t,ShowMessage_OnChange};
 consvar_t cv_pickupflash      = {"pickupflash" ,"1",CV_SAVE, pickupflash_cons_t};
@@ -1459,6 +1471,7 @@ void G_DoLoadLevel (boolean resetplayer)
     int             i;
 
     levelstarttic = gametic;        // for time calculation
+    last_input_tic = gametic;       // re-arm idle timer for new level
     // [WDJ] Derived from PrBoom, gametic demosync.
     if( EN_boom && !EN_mbf )
         game_comp_tic = 0;  // Boom demos start at tic 0
@@ -1804,6 +1817,38 @@ main_actions:
         ST_Ticker ();
         AM_Ticker ();
         HU_Ticker ();
+
+        // [Arcade lockdown] Idle-to-title timeout.
+        if( !devmode && !netgame && cv_idletimeout.value > 0 )
+        {
+            static int last_warn_secs_shown = -1;
+            tic_t idle_tics    = gametic - last_input_tic;
+            tic_t timeout_tics = (tic_t)cv_idletimeout.value * TICRATE;
+            tic_t warn_tics    = (cv_idletimeout.value > cv_idlewarntime.value)
+                                  ? (tic_t)(cv_idletimeout.value - cv_idlewarntime.value) * TICRATE
+                                  : 0;
+
+            if( idle_tics >= timeout_tics )
+            {
+                Command_ExitGame_f();
+                break;
+            }
+            else if( idle_tics >= warn_tics )
+            {
+                int remain_secs = cv_idletimeout.value - (int)(idle_tics / TICRATE);
+                if( remain_secs != last_warn_secs_shown )
+                {
+                    char idlemsg[64];
+                    snprintf(idlemsg, sizeof(idlemsg), "Returning to title in %ds...", remain_secs);
+                    HU_SetTip(idlemsg, 3*TICRATE);
+                    last_warn_secs_shown = remain_secs;
+                }
+            }
+            else
+            {
+                last_warn_secs_shown = -1;
+            }
+        }
         break;
 
       case GS_INTERMISSION:

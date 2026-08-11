@@ -641,6 +641,7 @@ void D_PostEvent(const event_t * ev)
 {
     events[eventhead] = *ev;
     eventhead = (eventhead + 1) & (MAXEVENTS - 1);
+    last_input_tic = gametic;  // [Arcade lockdown] any raw input counts as activity
 }
 
 // just for lock this function
