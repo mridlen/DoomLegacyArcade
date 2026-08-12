@@ -1077,16 +1077,17 @@ boolean  M_already_playing( boolean check_netgame )
 {
     if( Game_Playing() )
     {
-        M_StartMessage(ALLREADYPLAYING, M_Choose_to_quit_Response, MM_YESNO);
+        // [Arcade] Do not ask; abandon the game in progress and continue.
+        // This ends the current game and posts reenter_event, which
+        // re-presses the menu item that got us here.
+        M_Choose_to_quit_Response('y');
         return 1;
     }
     if (check_netgame && netgame)
     {
-        // cannot start a new game while in a network game
-        M_SimpleMessage( text[NEWGAME_NUM] );
-        snprintf(msgtmp, MSGTMP_LEN, "%s\n%s", text[NEWGAME_NUM], ABORTGAME );
-        msgtmp[MSGTMP_LEN-1] = '\0';
-        M_StartMessage(msgtmp, M_Choose_to_quit_Response, MM_YESNO);
+        // [Arcade] Cannot start a new game while in a network game;
+        // leave it and continue, without asking.
+        M_Choose_to_quit_Response('y');
         return 1;
     }
     return 0;
@@ -2124,16 +2125,10 @@ void M_SingleNewGame(int choice)
         Push_Setup_Menu(&EpiDef);
 }
 
-static void M_VerifyNightmare(int ch);
-
 static
 void M_ChooseSkill(int choice)
 {
-    if (choice == NG_nightmare)
-    {
-        M_StartMessage( text[NIGHTMARE_NUM], M_VerifyNightmare, MM_YESNO);
-        return;
-    }
+    // [Arcade] Nightmare starts without the "are you sure" confirmation.
 
     // [Arcade] Reset cumulative timer and begin background recording.
     // Must precede G_DeferedInitNew so the player-create and map netxcmds
@@ -2141,18 +2136,6 @@ void M_ChooseSkill(int choice)
     if( ! StartSplitScreenGame )
         HS_NewGame();
     G_DeferedInitNew(choice, G_BuildMapName(epi+1,1), StartSplitScreenGame);
-    M_Clear_Menus (true);
-}
-
-static
-void M_VerifyNightmare(int ch)
-{
-    if (ch != 'y')
-        return;
-
-    if( ! StartSplitScreenGame )   // [Arcade] see M_ChooseSkill
-        HS_NewGame();
-    G_DeferedInitNew(NG_nightmare, G_BuildMapName(epi+1,1), StartSplitScreenGame);
     M_Clear_Menus (true);
 }
 
@@ -4828,10 +4811,7 @@ void M_QuickSave(void)
         return;
 
     if (quicksave_slotid < 0)   goto pick_slot; // No slot yet.
-    // Show save name, ask for quick save ack.
-    snprintf(msgtmp, MSGTMP_LEN, text[QSPROMPT_NUM], savegamedisp[QUICKSAVE_INDEX].desc);
-    msgtmp[MSGTMP_LEN-1] = '\0';
-    M_StartMessage(msgtmp, M_QuickSaveResponse, MM_YESNO);
+    M_QuickSaveResponse('y');   // [Arcade] save immediately, no confirmation
     return;
 
 pick_slot:   
@@ -4876,10 +4856,7 @@ void M_QuickLoad(void)
         M_SimpleMessage( text[QSAVESPOT_NUM] );
         return;
     }
-    // Show load name, ask for quick load ack.
-    snprintf(msgtmp, MSGTMP_LEN, text[QLPROMPT_NUM], savegamedisp[QUICKSAVE_INDEX].desc);
-    msgtmp[MSGTMP_LEN-1] = '\0';
-    M_StartMessage(msgtmp, M_QuickLoadResponse, MM_YESNO);
+    M_QuickLoadResponse('y');   // [Arcade] load immediately, no confirmation
 }
 
 
@@ -4917,7 +4894,7 @@ void M_EndGame(int choice)
         return;
     }
 */
-    M_StartMessage( text[ENDGAME_NUM], M_EndGameResponse, MM_YESNO);
+    M_EndGameResponse('y');   // [Arcade] end immediately, no confirmation
 }
 
 //===========================================================================
