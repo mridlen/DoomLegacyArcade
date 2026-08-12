@@ -69,8 +69,9 @@ static hs_maprecord_t * HS_FindOrAddRecord( const char * mapname )
 
 static void HS_BuildDemoPath( char * dest, const char * mapname, skill_e skill )
 {
-    char relname[24];
-    snprintf(relname, sizeof(relname), "%s_sk%d.lmp", mapname, (int)skill);
+    char relname[32];
+    // Bound the map name explicitly; it is at most 8 chars ("MAPxx"/"ExMy").
+    snprintf(relname, sizeof(relname), "%.8s_sk%d.lmp", mapname, (int)skill);
     cat_filename(dest, hs_demodir, relname);
 }
 
@@ -154,6 +155,45 @@ void HS_Init( void )
 // segfaults in P_SetupPsprites on a NULL player->weaponinfo.
 // This mirrors how the -record command-line option begins recording
 // before any game has started.
+// Console command: clear all recorded times and their record-holder demos.
+// Clears the in-memory table too, so a later record cannot write the old
+// entries back out -- which is why deleting highscores.dat by hand while
+// the game is running does not work.
+void Command_ClearHighScores_f( void )
+{
+    int  i, sk;
+    int  removed = 0;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        {
+            if( ! hs_table[i].has_record[sk] )  continue;
+
+            char demopath[MAX_WADPATH];
+            HS_BuildDemoPath(demopath, hs_table[i].mapname, (skill_e)sk);
+            if( remove(demopath) == 0 )  removed++;
+        }
+    }
+
+    hs_table_count = 0;
+    memset(hs_table, 0, sizeof(hs_table));
+    hs_cumulative_time = 0;
+    hs_last_exit_mapname[0] = 0;
+
+    if( remove(hs_scorefile) != 0 )
+    {
+        // Not an error when nothing has been recorded yet.
+        GenPrintf(EMSG_info, "High scores cleared (no score file present).\n");
+    }
+    else
+    {
+        GenPrintf(EMSG_info, "High scores cleared.\n");
+    }
+    GenPrintf(EMSG_info, "Removed %d record demo(s).\n", removed);
+}
+
+
 void HS_NewGame( void )
 {
     hs_cumulative_time = 0;

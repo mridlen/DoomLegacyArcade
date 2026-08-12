@@ -17,6 +17,7 @@
 #define HS_DEMOBUFFER_SIZE  (8*1024*1024)
 
 void  HS_Init(void);
+void  Command_ClearHighScores_f(void);   // console: clearhighscores
 void  HS_NewGame(void);
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime);
 void  HS_Draw_IntermissionTable(int x, int y);

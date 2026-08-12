@@ -122,6 +122,7 @@
   // D_ functions
 #include "g_game.h"
   // G_ functions
+#include "hs_stuff.h"
 #include "byteptr.h"
   // WRITEBYTE, READBYTE
 
@@ -287,6 +288,7 @@ void D_Register_ClientCommands(void)
     COM_AddCommand("quit", Command_Quit_f, CC_command);
     COM_AddCommand("screenshot", M_ScreenShot, CC_command);
     COM_AddCommand("kill", Command_Kill, CC_command);
+    COM_AddCommand("clearhighscores", Command_ClearHighScores_f, CC_command);  // [Arcade]
 
     COM_AddCommand("chatmacro", Command_Chatmacro_f, CC_chat);   // hu_stuff.c
     COM_AddCommand("setcontrol", Command_Setcontrol_f, CC_control);
