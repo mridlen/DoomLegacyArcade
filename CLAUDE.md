@@ -5,15 +5,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 DoomLegacy 1.48.18, a source port of Doom/Heretic descended from id Software's original engine, at
-SVN revision r1749 of the `legacy_one/trunk` repository. This is a plain source dump (no `.git`
-directory) — there is no git history to inspect, and no test suite; it is a C99 game engine built
-with GNU Make (a CMake file also exists but is secondary/less maintained, SDL-only, and not kept in
-sync with all Makefile options).
+SVN revision r1749 of the `legacy_one/trunk` repository. It is a C99 game engine built with GNU Make
+(a CMake file also exists but is secondary/less maintained, SDL-only, and not kept in sync with all
+Makefile options). There is no test suite.
+
+This started as a plain source dump and is now tracked in git, with the upstream import as the first
+commit — so `git log`/`git diff 8a2f980` shows exactly what has been changed locally. **It is being
+customized into a locked-down arcade cabinet build**; see "Arcade cabinet customizations" below,
+which is where most local divergence from upstream lives.
 
 The actual source tree is under `svn1749/`. The top-level `bin/`, `dep/`, `objs/`, `make_options`,
 and the `srcdir` symlink are leftover build-output scaffolding from the original packager's machine;
 `srcdir` is a **dangling symlink** (points to a path on the original author's machine) and is not
-usable as-is. Always work under `svn1749/`.
+usable as-is. Always work under `svn1749/`. The top-level `common/` holds the runtime asset package
+(`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified** (the `M_STSERV` menu graphic
+now reads "Start Game" instead of "Start Server").
 
 ## Build
 
@@ -26,13 +32,32 @@ cp ../make_options_nix ../make_options   # first time only; pick _win/_mac/_os2/
 make                                      # builds using ../make_options
 ```
 
-Key `make_options` variables (set in the copied file, not on the CLI, to avoid repeating them every
-invocation):
+`make_options` is **gitignored** (it is machine-local), so the settings below are not recoverable
+from the repo — on a fresh checkout the stock `make_options_nix` needs three edits before it will
+build on a modern Linux toolchain (each of these is a hard build failure, not a warning):
+
+- `SDL2=1` — uncomment. The stock file targets SDL 1.2, which modern distros no longer ship; with
+  it enabled the Makefile finds `sdl2-config` (via sdl2-compat) and links `-lSDL2 -lSDL2_mixer`.
+- `ARCH=-march=native` — replace the stock `ARCH=-march=i686`, which is 32-bit-only and fails with
+  "CPU you selected does not support x86-64 instruction set".
+- `ENV_CFLAGS=-std=gnu17` — add. GCC 15 defaults to `-std=gnu23`, where `true`/`false` are reserved
+  keywords, which breaks this codebase's own `typedef enum {false, true} boolean;` in `doomtype.h`.
+  (`ENV_CFLAGS` is appended to `CFLAGS` unconditionally; the Makefile's `STD` variable is dead code.)
+
+Other key `make_options` variables (set in the copied file, not on the CLI, to avoid repeating them
+every invocation):
 - `SMIF` — system media interface: `SDL` (default), `LINUX_X11`, `FREEBSD_X11`, `OS2_NATIVE`, `DOS_NATIVE`.
 - `OS` — defaults based on `SMIF` (e.g. `LINUX_X11` implies `OS=LINUX`).
 - `HAVE_MIXER=1` — enable SDL_mixer music.
 - `DEBUG=1` — debug build (can also target a separate `BUILD=debug` output directory).
 - `ARCH=-march=...` — CPU-specific optimization.
+
+Build output directories (`svn1749/bin`, `objs`, `dep`) must exist first; if they don't, `make` fails
+with "No such file or directory" on a `.dep` file. Create them with `make dirs` run from `svn1749/`
+(**not** from `src/`, where `dirs` is an empty placeholder target).
+
+Adding a new `.c` file requires manually adding its `.o` to the hand-maintained `MOBJS:=` list in
+`svn1749/src/Makefile` — there is no wildcard or auto-discovery, and omitting it fails at link time.
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
 `make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`.
@@ -50,6 +75,72 @@ Most engine features are toggled in `svn1749/src/doomdef.h` via `#define`, indep
 options (e.g. `SPLITSCREEN`, `FRAGGLESCRIPT`, `VOODOO_DOLL`, `BOOM_GLOBAL_COLORMAP`, `SAVEGAME99`).
 Comment/uncomment there for engine behavior changes; use `make_options`/Makefile only for
 platform/toolchain/library selection.
+
+## Arcade cabinet customizations
+
+Local additions on top of upstream r1749, all aimed at an unattended cabinet. Most are gated on the
+`devmode` global (`extern byte devmode` in `doomincl.h`, defined in `d_main.c`), set by the
+**`-devmode`** command-line flag, which unlocks everything back to stock behavior for development.
+
+**`-devmode` must be parsed before `M_Init()`** (`d_main.c`, just above the `M_Init()` call), because
+`M_Init` is what applies the menu lockdown. It was originally parsed later alongside `-devparm`, which
+silently made the flag do nothing at all.
+
+- **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). Hides Multiplayer (both entry
+  points), Load/Save/Options on the main menu, several Start Game server options, and the name/skin/
+  mouse/rebinding entries on the Setup Player screens. Uses **`IT_HIDDEN`**, a locally added
+  `IT_DISPLAY` value — unlike stock `IT_DISABLED` (grayed but still occupying a row) the generic
+  drawer skips it without advancing `y`, so entries vanish and the list closes up. Items are hidden
+  *in place*, never removed from the arrays, because several menus are indexed by hardcoded position
+  elsewhere. `M_DrawSetupMultiPlayerMenu` paints the name box and skin string outside the item loop,
+  so those are suppressed separately.
+- **Launcher bypass** (`d_main.c`, `#ifdef LAUNCHER` block in `D_DoomMain`). Upstream shows its
+  built-in Launcher menu whenever `myargc < 2`; that condition is removed so it only appears after a
+  genuine startup error.
+- **No confirmation prompts** (`m_menu.c`). Quit, End Game, Nightmare skill, "already playing", and
+  quicksave/quickload all take the "yes" path immediately. Only the savegame-slot `Delete Y/N?`
+  survives, as it guards irreversible data loss.
+- **Idle-to-title timeout** (`g_game.c`). `last_input_tic` is stamped in `D_PostEvent`, checked once
+  per tic in `G_Ticker`'s `GS_LEVEL` case, and re-armed in `G_DoLoadLevel` so intermission time does
+  not carry over. Ends the game via `Command_ExitGame_f()` and warns beforehand through the existing
+  `HU_SetTip` centered-text mechanism. Tunable via `cv_idletimeout` / `cv_idlewarntime` (default
+  60s/15s, `0` disables). Skipped in devmode, netgames, and demo playback.
+- **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
+  selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
+  player (move/turn/strafe/fire/use/weapon cycling) and rewrites them on change and on config load,
+  so hand-editing those `setcontrol` lines in `config.cfg` will not stick; everything else is left
+  alone. Keys are the characters the user's **Dvorak** layout produces — the engine captures
+  layout-aware SDL keycodes, not physical scancodes (`sdl/i_system.c`).
+- **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
+  (map, skill) for single player, shown on the intermission screen and as a page in the attract
+  cycle. Records demos in the background and saves the run that set each record. Hooks:
+  `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),
+  `HS_NewGame` from the menu skill-select handlers (**must** precede `G_DeferedInitNew`, see below),
+  `HS_LevelExit` from `WI_Init_Stats` (already the single-player-only branch of `WI_Start`), and new
+  cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
+  without closing it, so live recording continues after a record is saved.
+
+Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text, `map skill tics`),
+and `demos/<map>_sk<N>.lmp`. Deleting them is a clean reset.
+
+### Gotchas found the hard way
+
+- **Demo recording must start before the game-start commands are issued.** `G_Ticker` writes demo
+  data *before* `ExtraDataTicker` executes queued netxcmds, so recording started from inside
+  `G_InitNew` misses the commands that create the player and load the first map. Such demos then
+  segfault on playback in `P_SetupPsprites` (NULL `player->weaponinfo`). This mirrors how `-record`
+  works: it begins recording before any game exists.
+- **`demoname` is only 32 chars** (`DEMONAME_LEN`). `G_DoPlayDemo` used to copy full external demo
+  paths into it and silently truncate them; the failure path does not advance the attract cycle, so
+  the title screen froze forever. It now uses a `MAX_WADPATH` buffer for the file read.
+- **Demo playback desyncs.** Reproducible with stock `-record`/`-playdemo` and therefore upstream,
+  not caused by the local work. Ruled out: complevel (no such system here — `compatibility_level`
+  only appears in dead `#if 0` code), compatibility flags (both paths run `G_Downgrade(VERSION)`),
+  ticcmd read/write symmetry, and the `oldcmd[]` delta baseline (zeroed on both sides). Consequence:
+  record-holder demos in the attract cycle replay incorrectly.
+- **`G_StopDemo`/`G_CheckDemoStatus` used to free `demobuffer` without clearing it**, leaving a
+  dangling pointer for any later recording to re-free. They now NULL it.
+- The background recorder writes a stray `hs_background.lmp` into the current directory on exit.
 
 ## Architecture
 
