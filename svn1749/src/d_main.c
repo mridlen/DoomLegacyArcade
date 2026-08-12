@@ -2521,6 +2521,10 @@ void D_DoomMain()
     DEH_Init();  // Init DEH before files and lumps loaded
     cht_Init();	 // init iwad independent cheats info, needed by Responder
 
+    // [Arcade] Must precede M_Init, which applies the menu lockdown
+    // according to devmode.
+    devmode = M_CheckParm("-devmode");  // -devmode : unlock full menu
+
     M_Init();    // init menu
     R_Init_rdata();
 
@@ -2609,8 +2613,6 @@ restart_command:
       devparm += verbose;  // levels of devparm
       CONS_Printf(D_DEVSTR);
     }
-
-    devmode = M_CheckParm("-devmode");  // -devmode : unlock full menu
 
     if( verbose > 1 )
         CONS_Printf("Find HOME\n");
