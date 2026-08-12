@@ -126,7 +126,12 @@ silently made the flag do nothing at all.
   single-player behavior too.
 
 Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text, `map skill tics`),
-and `demos/<map>_sk<N>.lmp`. Deleting them is a clean reset.
+and `demos/<map>_sk<N>.lmp`.
+
+To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
+command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory table
+as well as the files. Prefer them over deleting `highscores.dat` by hand: the table is cached in
+memory while the game runs, so a later record writes the old entries straight back out.
 
 ### Gotchas found the hard way
 
