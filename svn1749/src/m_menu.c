@@ -177,6 +177,7 @@
 #include "r_local.h"
 #include "hu_stuff.h"
 #include "g_game.h"
+#include "hs_stuff.h"
 #include "g_input.h"
 
 #include "m_argv.h"
@@ -1685,10 +1686,12 @@ menuitem_t SetupMultiPlayerMenu[] =
     {IT_KEYHANDLER | IT_STRING          ,0,"Your name" ,M_MultiPlayer_Responder,0},
     {IT_CVAR | IT_STRING | IT_CV_NOPRINT | IT_YOFFSET, 0,"Your color",&cv_playercolor[0], 16},
     {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
-    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+14},
+    // [Arcade] Per-player control scheme, cvar repointed by M_SetupMultiPlayer_pind.
+    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+14},
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+24},
  // Player2 only
-    {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+24},
-    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Second Mouse config >>", &SecondMouseCfgdef, PLSKINNAMEY+34}
+    {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+34},
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Second Mouse config >>", &SecondMouseCfgdef, PLSKINNAMEY+44}
 };
 
 // index to above menu lines
@@ -1696,6 +1699,7 @@ enum {
     setupmultiplayer_name = 0,
     setupmultiplayer_color,
     setupmultiplayer_skin,
+    setupmultiplayer_scheme,
     setupmultiplayer_options,
     setupmultiplayer_controls,
     setupmultiplayer_mouse2,
@@ -1741,6 +1745,7 @@ void M_SetupMultiPlayer_pind( byte pind )
     setupm_cvcolor = &cv_playercolor[pind];
 
     SetupMultiPlayerMenu[setupmultiplayer_color].itemaction = setupm_cvcolor;
+    SetupMultiPlayerMenu[setupmultiplayer_scheme].itemaction = &cv_controlscheme[pind];  // [Arcade]
 
     // PlayerOptionsMenu
     PlayerOptionsDef.menutitle = player_pind_str[pind];
@@ -2130,6 +2135,11 @@ void M_ChooseSkill(int choice)
         return;
     }
 
+    // [Arcade] Reset cumulative timer and begin background recording.
+    // Must precede G_DeferedInitNew so the player-create and map netxcmds
+    // land in the demo stream (see HS_NewGame).
+    if( ! StartSplitScreenGame )
+        HS_NewGame();
     G_DeferedInitNew(choice, G_BuildMapName(epi+1,1), StartSplitScreenGame);
     M_Clear_Menus (true);
 }
@@ -2140,6 +2150,8 @@ void M_VerifyNightmare(int ch)
     if (ch != 'y')
         return;
 
+    if( ! StartSplitScreenGame )   // [Arcade] see M_ChooseSkill
+        HS_NewGame();
     G_DeferedInitNew(NG_nightmare, G_BuildMapName(epi+1,1), StartSplitScreenGame);
     M_Clear_Menus (true);
 }
@@ -7064,6 +7076,8 @@ consvar_t * menu_command_cvar_list[] =
 #endif
 
   &cv_controlperkey,
+  &cv_controlscheme[0],   // [Arcade]
+  &cv_controlscheme[1],
 
     // s_sound.c
   &cv_soundvolume,

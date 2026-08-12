@@ -1,0 +1,317 @@
+// [Arcade] Persistent per-map, per-skill best cumulative-time high scores,
+// plus the always-on background demo recording tied to new records.
+// Single-player only.
+
+#include <unistd.h>     // access()
+
+#include "doomincl.h"
+#include "doomdef.h"
+#include "doomstat.h"
+#include "d_main.h"
+#include "g_game.h"
+#include "m_misc.h"
+#include "m_argv.h"
+#include "i_system.h"
+#include "v_video.h"
+#include "screen.h"
+#include "hs_stuff.h"
+
+#define HS_MAX_MAPS      64
+
+typedef struct
+{
+    char     mapname[9];
+    boolean  has_record[HS_NUMSKILLS];
+    tic_t    besttime[HS_NUMSKILLS];
+} hs_maprecord_t;
+
+static hs_maprecord_t  hs_table[HS_MAX_MAPS];
+static int              hs_table_count = 0;
+
+static tic_t   hs_cumulative_time = 0;
+static char    hs_last_exit_mapname[9] = "";
+static skill_e hs_last_exit_skill = sk_baby;
+
+static char    hs_scorefile[MAX_WADPATH];
+static char    hs_demodir[MAX_WADPATH];
+
+static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV", "NM" };
+
+
+static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
+{
+    int seconds = tics / TICRATE;
+    int minutes = seconds / 60;
+    int secs    = seconds % 60;
+    snprintf(buf, bufsize, "%d:%02d", minutes, secs);
+}
+
+
+static hs_maprecord_t * HS_FindOrAddRecord( const char * mapname )
+{
+    int  i;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].mapname, mapname, 8) == 0 )
+            return &hs_table[i];
+    }
+
+    if( hs_table_count >= HS_MAX_MAPS )
+        return NULL;
+
+    hs_maprecord_t * rec = &hs_table[hs_table_count++];
+    memset(rec, 0, sizeof(*rec));
+    dl_strncpy(rec->mapname, mapname, 8);
+    return rec;
+}
+
+
+static void HS_BuildDemoPath( char * dest, const char * mapname, skill_e skill )
+{
+    char relname[24];
+    snprintf(relname, sizeof(relname), "%s_sk%d.lmp", mapname, (int)skill);
+    cat_filename(dest, hs_demodir, relname);
+}
+
+
+static void HS_Load( void )
+{
+    FILE * fr;
+    char   line[64];
+    char   mapname[16];
+    int    skillnum;
+    unsigned int  tics;
+
+    hs_table_count = 0;
+
+    fr = fopen(hs_scorefile, "r");
+    if( ! fr )  return;
+
+    while( fgets(line, sizeof(line), fr) )
+    {
+        if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
+            continue;
+        if( sscanf(line, "%15s %d %u", mapname, &skillnum, &tics) != 3 )
+            continue;
+        if( skillnum < 0 || skillnum >= HS_NUMSKILLS )
+            continue;
+
+        hs_maprecord_t * rec = HS_FindOrAddRecord(mapname);
+        if( ! rec )  continue;
+        rec->has_record[skillnum] = true;
+        rec->besttime[skillnum]   = (tic_t) tics;
+    }
+
+    fclose(fr);
+}
+
+
+static void HS_Save( void )
+{
+    FILE * fw;
+    int    i, sk;
+
+    fw = fopen(hs_scorefile, "w");
+    if( ! fw )
+    {
+        GenPrintf(EMSG_warn, "HS_Save: could not write %s\n", hs_scorefile);
+        return;
+    }
+
+    fprintf(fw, "# DoomLegacy arcade high scores: mapname skill cumulative_tics\n");
+    for( i=0; i<hs_table_count; i++ )
+    {
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        {
+            if( hs_table[i].has_record[sk] )
+                fprintf(fw, "%s %d %u\n", hs_table[i].mapname, sk,
+                        (unsigned int) hs_table[i].besttime[sk]);
+        }
+    }
+
+    fclose(fw);
+}
+
+
+void HS_Init( void )
+{
+    cat_filename( hs_scorefile, legacyhome, "highscores.dat" );
+    cat_filename( hs_demodir,   legacyhome, "demos" );
+
+    if( access(hs_demodir, R_OK) < 0 )
+        I_mkdir( hs_demodir, 0700 );
+
+    HS_Load();
+}
+
+
+// Must be called BEFORE G_DeferedInitNew, so that the netxcmds which
+// create the player and load the first map are captured into the demo
+// stream.  A DoomLegacy-native demo replays by executing those embedded
+// commands (see G_DoPlayDemo: demoversion>=127 waits for the map cmd),
+// so a recording started any later plays back with no player set up and
+// segfaults in P_SetupPsprites on a NULL player->weaponinfo.
+// This mirrors how the -record command-line option begins recording
+// before any game has started.
+void HS_NewGame( void )
+{
+    hs_cumulative_time = 0;
+
+    // Do not fight an explicit -record: there is only one global demo
+    // buffer, and that recording was asked for deliberately.
+    if( M_CheckParm("-record") )  return;
+
+    // Attract-mode playback shares demobuffer with recording, so stop it
+    // before claiming that buffer.  D_DisableDemo (called soon after by
+    // G_DeferedInitNew) then finds demoplayback already false.
+    if( demoplayback )
+        G_StopDemo();
+
+    // Flush/close any previous background recording.
+    if( demorecording )
+        G_CheckDemoStatus();
+
+    G_RecordDemo_maxsize( "hs_background", HS_DEMOBUFFER_SIZE );
+    G_BeginRecording();
+}
+
+
+void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime )
+{
+    if( netgame || multiplayer || deathmatch )  return;
+    // Never score a replay: attract-mode demo playback re-runs level exits.
+    if( demoplayback )  return;
+    if( skill < 0 || skill >= HS_NUMSKILLS )  return;
+
+    hs_cumulative_time += leveltime;
+
+    const char * mapname = G_BuildMapName(episode, map);
+    hs_maprecord_t * rec = HS_FindOrAddRecord(mapname);
+    if( rec == NULL )  return;   // table full
+
+    dl_strncpy(hs_last_exit_mapname, mapname, 8);
+    hs_last_exit_skill = skill;
+
+    if( (! rec->has_record[skill]) || (hs_cumulative_time < rec->besttime[skill]) )
+    {
+        rec->has_record[skill] = true;
+        rec->besttime[skill]   = hs_cumulative_time;
+        HS_Save();
+
+        if( demorecording )
+        {
+            char demopath[MAX_WADPATH];
+            HS_BuildDemoPath(demopath, mapname, skill);
+            G_SnapshotDemo(demopath);
+        }
+    }
+}
+
+
+void HS_Draw_IntermissionTable( int x, int y )
+{
+    hs_maprecord_t * rec;
+    char   timebuf[16];
+    int    i, sk;
+    int    row_y = y;
+
+    if( hs_last_exit_mapname[0] == 0 )  return;
+
+    rec = NULL;
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].mapname, hs_last_exit_mapname, 8) == 0 )
+        {
+            rec = &hs_table[i];
+            break;
+        }
+    }
+    if( rec == NULL )  return;
+
+    V_DrawString(x, row_y-14, 0, "Best Times");
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        int option = (sk == hs_last_exit_skill) ? V_WHITEMAP : 0;
+
+        V_DrawString(x, row_y, option, hs_skillnames[sk]);
+
+        if( rec->has_record[sk] )
+            HS_FormatTime(rec->besttime[sk], timebuf, sizeof(timebuf));
+        else
+            snprintf(timebuf, sizeof(timebuf), "--:--");
+
+        V_DrawString(x+90-V_StringWidth(timebuf), row_y, option, timebuf);
+
+        row_y += 10;
+        if( row_y >= BASEVIDHEIGHT )
+            break;
+    }
+}
+
+
+void HS_Draw_AttractTable( void )
+{
+    char   timebuf[16];
+    int    i, sk;
+    int    x = 40;
+    int    y = 20;
+
+    V_DrawString(x, y, V_WHITEMAP, "HIGH SCORES - BEST TIME TO EXIT");
+    y += 14;
+
+    if( hs_table_count == 0 )
+    {
+        V_DrawString(x, y, 0, "No times recorded yet");
+        return;
+    }
+
+    for( i=0; i<hs_table_count && y < BASEVIDHEIGHT-10; i++ )
+    {
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        {
+            if( ! hs_table[i].has_record[sk] )  continue;
+
+            V_DrawString(x, y, 0, hs_table[i].mapname);
+            V_DrawString(x+40, y, 0, hs_skillnames[sk]);
+
+            HS_FormatTime(hs_table[i].besttime[sk], timebuf, sizeof(timebuf));
+            V_DrawString(x+90-V_StringWidth(timebuf), y, 0, timebuf);
+
+            y += 10;
+            if( y >= BASEVIDHEIGHT-10 )  break;
+        }
+    }
+}
+
+
+const char * HS_NextRecordDemoPath( void )
+{
+    static char path[MAX_WADPATH];
+    static int  cursor = 0;
+    int  total;
+    int  tries;
+    int  mi, sk;
+
+    if( hs_table_count == 0 )  return NULL;
+
+    total = hs_table_count * HS_NUMSKILLS;
+
+    for( tries=0; tries<total; tries++, cursor=(cursor+1)%total )
+    {
+        mi = cursor / HS_NUMSKILLS;
+        sk = cursor % HS_NUMSKILLS;
+        if( hs_table[mi].has_record[sk] )
+        {
+            HS_BuildDemoPath(path, hs_table[mi].mapname, (skill_e)sk);
+            if( access(path, R_OK) == 0 )
+            {
+                cursor = (cursor+1) % total;
+                return path;
+            }
+        }
+    }
+
+    return NULL;
+}

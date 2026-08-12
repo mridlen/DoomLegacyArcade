@@ -223,6 +223,7 @@
 #include "f_finale.h"
 
 #include "g_game.h"
+#include "hs_stuff.h"
 #include "g_input.h"
 
 #include "hu_stuff.h"
@@ -445,6 +446,7 @@ const char DL_OPTS_STR[] = "Build opts: "
 int demosequence;
 int pagetic;
 static const char * pagename = "TITLEPIC";
+static boolean hs_attract_page = false;   // [Arcade] high-score table page active
 
 //  PROTOS
 static void Help(void);
@@ -802,7 +804,10 @@ void D_Display(void)
 
         case GS_DEDICATEDSERVER:
         case GS_DEMOSCREEN:
-            D_PageDrawer(pagename);
+            if( hs_attract_page )      // [Arcade]
+                HS_Draw_AttractTable();
+            else
+                D_PageDrawer(pagename);
             break;
 
         case GS_WAITINGPLAYERS:
@@ -1260,9 +1265,11 @@ void D_DoAdvanceDemo(void)
     gameaction = ga_nothing;
 
     if (gamemode == ultdoom_retail)
-        demosequence = (demosequence + 1) % 7;
+        demosequence = (demosequence + 1) % 8;   // was % 7
     else
-        demosequence = (demosequence + 1) % 6;
+        demosequence = (demosequence + 1) % 7;   // was % 6
+
+    hs_attract_page = false;   // [Arcade] reset each cycle; only case 6 sets it
 
     switch (demosequence)
     {
@@ -1288,7 +1295,8 @@ void D_DoAdvanceDemo(void)
             gamestate = GS_DEMOSCREEN;
             break;
         case 1:
-            demo_name = "demo1";
+            demo_name = HS_NextRecordDemoPath();   // [Arcade]
+            if( demo_name == NULL )  demo_name = "demo1";
             goto playdemo;
         case 2:
             pagetic = 200;
@@ -1296,7 +1304,8 @@ void D_DoAdvanceDemo(void)
             pagename = "CREDIT";
             break;
         case 3:
-            demo_name = "demo2";
+            demo_name = HS_NextRecordDemoPath();   // [Arcade]
+            if( demo_name == NULL )  demo_name = "demo2";
             goto playdemo;
         case 4:
             gamestate = GS_DEMOSCREEN;
@@ -1325,10 +1334,16 @@ void D_DoAdvanceDemo(void)
             }
             break;
         case 5:
-            demo_name = "demo3";
+            demo_name = HS_NextRecordDemoPath();   // [Arcade]
+            if( demo_name == NULL )  demo_name = "demo3";
             goto playdemo;
+        case 6:                       // [Arcade] combined high-score table page
+            pagetic = TICRATE * 8;
+            hs_attract_page = true;
+            gamestate = GS_DEMOSCREEN;
+            break;
             // THE DEFINITIVE DOOM Special Edition demo
-        case 6:
+        case 7:
             demo_name = "demo4";
             goto playdemo;
     }
@@ -2808,6 +2823,8 @@ restart_command:
             }
         }
     }
+
+    HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
 
 #if 0
     Print_search_directories( EMSG_debug, 0x0F );

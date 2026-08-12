@@ -72,6 +72,18 @@ joybinding_t joybindings[MAX_JOYBINDINGS];
 CV_PossibleValue_t mousesens_cons_t[]={{1,"MIN"},{MAXMOUSESENSITIVITY,"MAXCURSOR"},{INT_MAX,"MAX"},{0,NULL}};
 CV_PossibleValue_t onecontrolperkey_cons_t[]={{1,"One"},{2,"Several"},{0,NULL}};
 
+// [Arcade] Selectable control scheme, for a fixed cabinet key layout.
+// Each player chooses independently; the two schemes differ only in which
+// key pair turns and which strafes.
+void ControlScheme1_OnChange(void);
+void ControlScheme2_OnChange(void);
+CV_PossibleValue_t controlscheme_cons_t[] =
+  { {0,"Look and Move"}, {1,"WASD"}, {0,NULL} };
+consvar_t  cv_controlscheme[2] = {
+  { "controlscheme",  "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme1_OnChange },
+  { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange }
+};
+
 // mouse values are used once
 consvar_t  cv_mouse_sens_x    = {"mousesensx","10",CV_SAVE,mousesens_cons_t};
 consvar_t  cv_mouse_sens_y    = {"mousesensy","10",CV_SAVE,mousesens_cons_t};
@@ -632,6 +644,55 @@ int G_KeyStringtoNum(char *keystr)
 
     return 0;
 }
+
+
+// [Arcade] Fixed cabinet key layout, per player.
+// Keys are the characters the Dvorak layout produces, which is what the
+// engine captures (SDL keycodes are layout-aware, see sdl/i_system.c).
+// Player 1 uses the left-hand ,aoe cluster (physical WASD), player 2 the
+// right-hand yuid cluster (physical TFGH).
+//   pair_a = the A/D-position pair: turns in "Look and Move", strafes in "WASD"
+//   pair_b = the complementary pair, doing whichever job pair_a is not
+typedef struct {
+    int  forward, backward, fire, use, nextweapon, prevweapon;
+    int  pair_a_left, pair_a_right;
+    int  pair_b_left, pair_b_right;
+} controlkeys_t;
+
+static const controlkeys_t  scheme_keys[2] =
+{
+    { ',', 'o', 'h', KEY_SPACE, 'w', 'v',   'a','e',   't','n' },  // player 1
+    { 'y', 'i', 'g', 'l',       '/', '=',   'u','d',   'c','r' }   // player 2
+};
+
+//  pind : 0 = player 1, 1 = player 2 (splitscreen)
+static void ControlScheme_Apply( int pind )
+{
+    const controlkeys_t * k = & scheme_keys[pind];
+    int (* gc)[2] = (pind == 0) ? gamecontrol : gamecontrol2;
+    boolean wasd = (cv_controlscheme[pind].value != 0);
+
+    // Only the actions the scheme defines are touched; weapon keys, run,
+    // jump, console, menu keys etc. are left as configured.
+#define HS_BIND(act,key)   { gc[act][0] = (key);  gc[act][1] = KEY_NULL; }
+
+    HS_BIND( gc_forward,    k->forward );
+    HS_BIND( gc_backward,   k->backward );
+    HS_BIND( gc_fire,       k->fire );
+    HS_BIND( gc_use,        k->use );
+    HS_BIND( gc_nextweapon, k->nextweapon );
+    HS_BIND( gc_prevweapon, k->prevweapon );
+
+    HS_BIND( wasd ? gc_strafeleft  : gc_turnleft,     k->pair_a_left );
+    HS_BIND( wasd ? gc_straferight : gc_turnright,    k->pair_a_right );
+    HS_BIND( wasd ? gc_turnleft    : gc_strafeleft,   k->pair_b_left );
+    HS_BIND( wasd ? gc_turnright   : gc_straferight,  k->pair_b_right );
+
+#undef HS_BIND
+}
+
+void ControlScheme1_OnChange(void)  { ControlScheme_Apply(0); }
+void ControlScheme2_OnChange(void)  { ControlScheme_Apply(1); }
 
 
 void G_Controldefault(void)

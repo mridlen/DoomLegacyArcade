@@ -175,6 +175,7 @@
 
 #include "g_game.h"
 #include "g_input.h"
+#include "hs_stuff.h"
 
 //added:16-01-98:quick hack test of rocket trails
 #include "p_fab.h"
@@ -1819,7 +1820,9 @@ main_actions:
         HU_Ticker ();
 
         // [Arcade lockdown] Idle-to-title timeout.
-        if( !devmode && !netgame && cv_idletimeout.value > 0 )
+        // Not during demo playback: the attract-mode demos generate no real
+        // input, so the timer would always expire and kick back to the title.
+        if( !devmode && !netgame && !demoplayback && cv_idletimeout.value > 0 )
         {
             static int last_warn_secs_shown = -1;
             tic_t idle_tics    = gametic - last_input_tic;
@@ -3785,22 +3788,36 @@ void G_WriteDemoTiccmd (ticcmd_t* cmd,int playernum)
 //
 // G_RecordDemo
 //
-void G_RecordDemo (const char* name)
+// [Arcade] Factored out of G_RecordDemo so the background high-score
+// recorder (hs_stuff.c) can (re)start recording once per game, not just
+// once per process run -- frees any stale buffer first to avoid a leak.
+void G_RecordDemo_maxsize (const char* name, int maxsize)
 {
-    int             i;
-    int             maxsize;
-
     // demoname is DEMONAME_LEN+5
     dl_strncpy(demoname, name, DEMONAME_LEN);
     strcat (demoname, ".lmp");
-    maxsize = 0x20000;
-    i = M_CheckParm ("-maxdemo");
-    if (i && i<myargc-1)
-        maxsize = atoi(myargv[i+1])*1024;
+
+    if( demobuffer )
+    {
+        Z_Free (demobuffer);
+        demobuffer = NULL;
+    }
     demobuffer = Z_Malloc (maxsize,PU_STATIC,NULL);
     demoend = demobuffer + maxsize;
 
     demorecording = true;
+}
+
+void G_RecordDemo (const char* name)
+{
+    int             i;
+    int             maxsize = 0x20000;
+
+    i = M_CheckParm ("-maxdemo");
+    if (i && i<myargc-1)
+        maxsize = atoi(myargv[i+1])*1024;
+
+    G_RecordDemo_maxsize(name, maxsize);
 }
 
 
@@ -4035,14 +4052,20 @@ void G_DoPlayDemo (const char *defdemoname)
     else
     {
         // external file
-        FIL_DefaultExtension(demoname,".lmp");
-        demo_size = FIL_ReadFile (demoname, &demobuffer);
+        // [Arcade] Use a full-length local buffer here, not the DEMONAME_LEN
+        // (32 char) 'demoname' above -- that truncates long paths like the
+        // legacyhome/demos/... record-holder demo files, silently feeding
+        // FIL_ReadFile a mangled path.
+        char  demopath[MAX_WADPATH];
+        dl_strncpy(demopath, defdemoname, MAX_WADPATH);
+        FIL_DefaultExtension(demopath,".lmp");
+        demo_size = FIL_ReadFile (demopath, &demobuffer);
         demo_p = demobuffer;
     }
-    
+
     if ( demo_size <= 0 )
     {
-        GenPrintf(EMSG_warn, "\2ERROR: couldn't open lump/file '%s'.\n", demoname);
+        GenPrintf(EMSG_warn, "\2ERROR: couldn't open lump/file '%s'.\n", defdemoname);
         goto no_demo;
     }
 
@@ -4599,6 +4622,7 @@ void G_DoneLevelLoad(void)
 void G_StopDemo(void)
 {
     Z_Free (demobuffer);
+    demobuffer = NULL;  // [Arcade] was left dangling; G_RecordDemo_maxsize frees it
     demoplayback  = false;
     timingdemo = false;
     singletics = false;
@@ -4618,6 +4642,30 @@ void G_StopDemo(void)
         free(playdemo_name);
         playdemo_name = NULL;
     }
+}
+
+// [Arcade] Write a copy of the demo recorded so far (from game start
+// through the current point) to filename, WITHOUT touching demo_p or
+// demobuffer -- the live recording continues uninterrupted after this
+// call, so later levels in the same run can still set their own records.
+// Called by: HS_LevelExit (hs_stuff.c), when a new best time is set.
+boolean G_SnapshotDemo (const char * filename)
+{
+    int    len;
+    byte * tempbuf;
+    boolean ok;
+
+    if( ! demorecording )  return false;
+
+    len = demo_p - demobuffer;
+    tempbuf = (byte*) malloc(len + 1);
+    if( ! tempbuf )  return false;
+
+    memcpy(tempbuf, demobuffer, len);
+    tempbuf[len] = DEMOMARKER;
+    ok = FIL_WriteFile (filename, tempbuf, len+1);
+    free(tempbuf);
+    return ok;
 }
 
 // Called by G_DeferedInitNew, G_ReadDemoTiccmd, G_WriteDemoTiccmd
@@ -4657,6 +4705,7 @@ boolean G_CheckDemoStatus (void)
         *demo_p++ = DEMOMARKER;
         FIL_WriteFile (demoname, demobuffer, demo_p - demobuffer);
         Z_Free (demobuffer);
+        demobuffer = NULL;  // [Arcade] was left dangling
         demorecording = false;
 
         GenPrintf(EMSG_hud, "\2Demo %s recorded\n", demoname);

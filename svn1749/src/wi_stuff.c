@@ -63,6 +63,7 @@
 #include "doomincl.h"
 #include "wi_stuff.h"
 #include "g_game.h"
+#include "hs_stuff.h"
 #include "hu_stuff.h"
 #include "m_random.h"
 #include "r_local.h"
@@ -1986,6 +1987,10 @@ static void WI_Init_Stats(void)
     cnt_time = cnt_par = -1;
     effect_timer = TICRATE;
 
+    // [Arcade] Single-player only (this is WI_Start's non-deathmatch,
+    // non-coop branch). wb_plyr[me].stime is this level's leveltime.
+    HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime );
+
     WI_Init_AnimatedBack();
 }
 
@@ -2158,6 +2163,9 @@ static void WI_Draw_Stats(void)
     if (draw_pars)
         WI_Draw_Time(BASEVIDWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
 
+    // [Arcade] Best-time-per-skill table for the map just exited.
+    // Placed below the Kills/Items/Secrets block, above the Time row.
+    HS_Draw_IntermissionTable( 156, SP_STATSY + 3*lh );
 }
 
 // Called by WI_Ticker

@@ -281,6 +281,7 @@ void CheckSaveGame(size_t size);
 // --- Demo
 // Only called by startup code.
 void G_RecordDemo (const char* name);
+void G_RecordDemo_maxsize (const char* name, int maxsize);
 
 void G_BeginRecording (void);
 
@@ -289,6 +290,7 @@ void G_TimeDemo (const char* name);
 void G_DoneLevelLoad(void);
 void G_StopDemo(void);
 boolean G_CheckDemoStatus (void);
+boolean G_SnapshotDemo (const char * filename);
 
 // --- Level Func
 void G_ExitLevel (void);

@@ -120,6 +120,9 @@ extern consvar_t   cv_usemouse[2];
 extern consvar_t   cv_mouse_move[2];
 extern consvar_t   cv_alwaysfreelook[2];
 
+// [Arcade] Selectable control scheme, per player (see ControlScheme_Apply)
+extern consvar_t   cv_controlscheme[2];
+
 // mouse1
 extern consvar_t   cv_mouse_invert;
 extern consvar_t   cv_mouse_sens_x;
