@@ -346,6 +346,7 @@ typedef enum {
   IT_STRING2 =     0x0060,  // a simple string
   IT_GRAYPATCH =   0x0070,  // grayed patch or big font string
   IT_BIGSLIDER =   0x0080,  // volume sound use this
+  IT_NODRAW =      0x0090,  // [Arcade] not drawn, and does not occupy a line
   IT_EXTERNAL  =   0x00F0,  // nothing, not even a skull
 
 //consvar specific
@@ -368,6 +369,9 @@ typedef enum {
   IT_CONTROL =    (IT_STRING2| IT_CALL | IT_KEYID),
   IT_CVARMAX =    (IT_CVAR   | IT_CV_NOMOD),
   IT_DISABLED =   (IT_SPACE  | IT_GRAYPATCH),
+  // [Arcade] Like IT_DISABLED, but the line vanishes entirely instead of
+  // being drawn grayed.  IT_SPACE type means the cursor already skips it.
+  IT_HIDDEN =     (IT_SPACE  | IT_NODRAW),
 } menu_control_e;
 
 
@@ -671,6 +675,9 @@ void M_DrawGenericMenu(void)
 
         switch (mip->status & IT_DISPLAY)
         {
+           case IT_NODRAW:
+               // [Arcade] hidden: draw nothing, and do not advance y
+               break;
            case IT_PATCH  :
                if( FontBBaseLump && mip->text )
                {
@@ -1834,11 +1841,17 @@ void M_DrawSetupMultiPlayerMenu(void)
     M_DrawGenericMenu();
 
     // draw name string
-    M_DrawTextBox(mx+PLBOXX, my-8, MAXPLAYERNAME, 1);
-    V_DrawString (mx+PLBOXX+8 ,my, 0, setupm_name);
+    // [Arcade] These are drawn outside the item loop, so they must be
+    // suppressed separately when their menu lines are hidden.
+    if( SetupMultiPlayerMenu[setupmultiplayer_name].status != IT_HIDDEN )
+    {
+        M_DrawTextBox(mx+PLBOXX, my-8, MAXPLAYERNAME, 1);
+        V_DrawString (mx+PLBOXX+8 ,my, 0, setupm_name);
+    }
 
     // draw skin string
-    V_DrawString (mx+PLBOXX, my+PLSKINNAMEY, 0, setupm_cvskin->string);
+    if( SetupMultiPlayerMenu[setupmultiplayer_skin].status != IT_HIDDEN )
+        V_DrawString (mx+PLBOXX, my+PLSKINNAMEY, 0, setupm_cvskin->string);
 
     // draw text cursor for name
     if (itemOn==0
@@ -6184,7 +6197,8 @@ void M_SetupMenu(menu_t *menudef)
 
     // the curent item can be disabled,
     // this code go up until a enabled item found
-    while(currentMenu->menuitems[itemOn].status==IT_DISABLED && itemOn)
+    while( (currentMenu->menuitems[itemOn].status==IT_DISABLED
+            || currentMenu->menuitems[itemOn].status==IT_HIDDEN) && itemOn )
         itemOn--;
 
     delete_callback = NULL;
@@ -6333,35 +6347,35 @@ void M_Init (void)
     {
         // Locked-down (e.g. arcade cabinet) build: no multiplayer server,
         // no save/load or options tampering.
-        SingleMulti_Menu[2].status = IT_DISABLED;  // Multiplayer
+        SingleMulti_Menu[2].status = IT_HIDDEN;  // Multiplayer
         if( SingleMultiDef.lastOn == 2 )
             SingleMultiDef.lastOn = 0;
 
-        TwoPlayerMenu[4].status = IT_DISABLED;  // Multiplayer (reached via Two Player Game)
+        TwoPlayerMenu[4].status = IT_HIDDEN;  // Multiplayer (reached via Two Player Game)
         if( TwoPlayerDef.lastOn == 4 )
             TwoPlayerDef.lastOn = 0;
 
-        MainMenu[1].status = IT_DISABLED;  // Load Game
-        MainMenu[2].status = IT_DISABLED;  // Save Game
-        MainMenu[3].status = IT_DISABLED;  // Options
+        MainMenu[1].status = IT_HIDDEN;  // Load Game
+        MainMenu[2].status = IT_HIDDEN;  // Save Game
+        MainMenu[3].status = IT_HIDDEN;  // Options
         if( MainDef.lastOn >= 1 && MainDef.lastOn <= 3 )
             MainDef.lastOn = 0;
 
-        ServerMenu[5].status = IT_DISABLED;  // Wait Players
-        ServerMenu[6].status = IT_DISABLED;  // Wait Timeout
-        ServerMenu[7].status = IT_DISABLED;  // Internet Server
-        ServerMenu[8].status = IT_DISABLED;  // Server Name
-        ServerMenu[10].status = IT_DISABLED; // Dedicated
+        ServerMenu[5].status = IT_HIDDEN;  // Wait Players
+        ServerMenu[6].status = IT_HIDDEN;  // Wait Timeout
+        ServerMenu[7].status = IT_HIDDEN;  // Internet Server
+        ServerMenu[8].status = IT_HIDDEN;  // Server Name
+        ServerMenu[10].status = IT_HIDDEN; // Dedicated
         if( (ServerDef.lastOn >= 5 && ServerDef.lastOn <= 8)
             || ServerDef.lastOn == 10 )
             ServerDef.lastOn = 0;
 
         // Setup Player 1/2 (shared array for both players): fixed
         // name/skin, no per-player mouse config or control rebinding.
-        SetupMultiPlayerMenu[setupmultiplayer_name].status     = IT_DISABLED;  // Your name
-        SetupMultiPlayerMenu[setupmultiplayer_skin].status     = IT_DISABLED;  // Your skin
-        SetupMultiPlayerMenu[setupmultiplayer_controls].status = IT_DISABLED;  // Player2 Controls >>
-        SetupMultiPlayerMenu[setupmultiplayer_mouse2].status   = IT_DISABLED;  // Second Mouse config >>
+        SetupMultiPlayerMenu[setupmultiplayer_name].status = IT_HIDDEN;  // Your name
+        SetupMultiPlayerMenu[setupmultiplayer_skin].status = IT_HIDDEN;  // Your skin
+        SetupMultiPlayerMenu[setupmultiplayer_controls].status = IT_HIDDEN;  // Player2 Controls >>
+        SetupMultiPlayerMenu[setupmultiplayer_mouse2].status = IT_HIDDEN;  // Second Mouse config >>
         if( SetupMultiPlayerDef.lastOn == setupmultiplayer_name
             || SetupMultiPlayerDef.lastOn == setupmultiplayer_skin
             || SetupMultiPlayerDef.lastOn == setupmultiplayer_controls
@@ -6369,11 +6383,11 @@ void M_Init (void)
             SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
 
         // Player config screen (also shared for both players).
-        PlayerOptionsMenu[playeroption_usemouse].status     = IT_DISABLED;  // Use Mouse
-        PlayerOptionsMenu[playeroption_mousemove].status    = IT_DISABLED;  // Mouse Move
-        PlayerOptionsMenu[playeroption_mouselook].status    = IT_DISABLED;  // Always MouseLook
-        PlayerOptionsMenu[playeroption_weaponpref].status   = IT_DISABLED;  // WeaponPref
-        PlayerOptionsMenu[playeroption_setupcontrol].status = IT_DISABLED;  // Player1/2 controls >>
+        PlayerOptionsMenu[playeroption_usemouse].status = IT_HIDDEN;  // Use Mouse
+        PlayerOptionsMenu[playeroption_mousemove].status = IT_HIDDEN;  // Mouse Move
+        PlayerOptionsMenu[playeroption_mouselook].status = IT_HIDDEN;  // Always MouseLook
+        PlayerOptionsMenu[playeroption_weaponpref].status = IT_HIDDEN;  // WeaponPref
+        PlayerOptionsMenu[playeroption_setupcontrol].status = IT_HIDDEN;  // Player1/2 controls >>
         if( PlayerOptionsDef.lastOn == playeroption_usemouse
             || PlayerOptionsDef.lastOn == playeroption_mousemove
             || PlayerOptionsDef.lastOn == playeroption_mouselook
