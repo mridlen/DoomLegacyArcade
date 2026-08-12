@@ -120,6 +120,11 @@ silently made the flag do nothing at all.
   cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
   without closing it, so live recording continues after a record is saved.
 
+- **Vanilla gameplay is forced** after the config load (`d_main.c`, unless `-devmode`): the Legacy
+  extras above are set to 0 so the cabinet plays like Doom regardless of the config. Note these are
+  single global `CV_NETVAR` cvars, not per-player — the two-player Options screen edits
+  single-player behavior too.
+
 Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text, `map skill tics`),
 and `demos/<map>_sk<N>.lmp`. Deleting them is a clean reset.
 
@@ -133,11 +138,19 @@ and `demos/<map>_sk<N>.lmp`. Deleting them is a clean reset.
 - **`demoname` is only 32 chars** (`DEMONAME_LEN`). `G_DoPlayDemo` used to copy full external demo
   paths into it and silently truncate them; the failure path does not advance the attract cycle, so
   the title screen froze forever. It now uses a `MAX_WADPATH` buffer for the file read.
-- **Demo playback desyncs.** Reproducible with stock `-record`/`-playdemo` and therefore upstream,
-  not caused by the local work. Ruled out: complevel (no such system here — `compatibility_level`
-  only appears in dead `#if 0` code), compatibility flags (both paths run `G_Downgrade(VERSION)`),
-  ticcmd read/write symmetry, and the `oldcmd[]` delta baseline (zeroed on both sides). Consequence:
-  record-holder demos in the attract cycle replay incorrectly.
+- **Demo desync (fixed).** Demos desynced whenever any DoomLegacy gameplay extra was enabled —
+  `tiredrun`, `drown`, `monster_vary`, `tele_control`, `slow_react` — which `tiredrun` is by
+  default. `G_demo_defaults()` force-disables them so demos replay vanilla, but it runs **only**
+  from `G_DoPlayDemo`; nothing equivalent runs while recording, and the cvars were never written to
+  the demo. So a demo recorded *with* tired-run replayed *without* it: `movefactor` 2048 → 2046 once
+  the player tires, a ~0.1% momentum error per tic that compounds. Fixed by writing them (plus
+  `cv_viewheight`) into the header's spare option bytes. **When adding any new gameplay-affecting
+  cvar, either add it to the demo header or to `G_demo_defaults()`, or demos will desync.**
+- **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
+  `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that
+  demo back with it, and diff: the first differing line is the divergence tic. Inert without the
+  flag. This is what found the bug above — identical inputs/RNG/angle with drifting momentum
+  immediately excluded logic and RNG causes and pointed at the movement factor.
 - **`G_StopDemo`/`G_CheckDemoStatus` used to free `demobuffer` without clearing it**, leaving a
   dangling pointer for any later recording to re-free. They now NULL it.
 - The background recorder writes a stray `hs_background.lmp` into the current directory on exit.
