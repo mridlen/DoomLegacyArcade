@@ -2828,6 +2828,11 @@ restart_command:
 
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
 
+    // [Arcade] -clearhighscores : wipe the times and record demos at startup,
+    // for a cabinet reset without needing the console.
+    if( M_CheckParm("-clearhighscores") )
+        Command_ClearHighScores_f();
+
 #if 0
     Print_search_directories( EMSG_debug, 0x0F );
 #endif
@@ -3904,6 +3909,8 @@ static void Help( void )
        (
         "-devparm        Develop mode\n"
         "-devmode        Unlock full menu (e.g. Multiplayer)\n"
+        "-clearhighscores  Erase recorded times and record demos\n"
+        "-synclog        Log per-tic state while recording/playing a demo\n"
 #ifdef DEVPARM_LOADING
         "-devgame gamename  Develop mode, and specify game\n"
         "-wart 3 1       Load file devmaps/E3M1.wad, then warp to it\n"
