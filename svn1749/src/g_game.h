@@ -291,6 +291,7 @@ void G_DoneLevelLoad(void);
 void G_StopDemo(void);
 boolean G_CheckDemoStatus (void);
 boolean G_SnapshotDemo (const char * filename);
+void G_Synclog_Tic (void);  // [Arcade] demo desync diagnostic
 
 // --- Level Func
 void G_ExitLevel (void);

@@ -1675,6 +1675,64 @@ handled:
 }
 
 
+// [Arcade] Demo desync diagnostic.
+// With -synclog, write one line of simulation state per tic while a demo
+// is being recorded or played back.  Recording goes to synclog_rec.txt,
+// playback to synclog_play.txt; diff them and the first differing line is
+// the tic where the simulation diverged.
+// Lines are keyed on leveltime (which restarts at 0 on every level load)
+// rather than gametic, because a recording session and a playback session
+// reach the level at different absolute gametic values.
+static FILE * synclog_fp = NULL;
+static byte   synclog_mode = 0;   // 0 = unchecked, 1 = off, 2 = recording, 3 = playback
+
+void G_Synclog_Tic( void )
+{
+    player_t * p = &players[consoleplayer];
+
+    if( synclog_mode == 1 )  return;
+
+    if( synclog_mode == 0 )
+    {
+        if( ! M_CheckParm("-synclog") )
+        {
+            synclog_mode = 1;
+            return;
+        }
+        if( demorecording )
+            synclog_fp = fopen("synclog_rec.txt", "w");
+        else if( demoplayback )
+            synclog_fp = fopen("synclog_play.txt", "w");
+        if( ! synclog_fp )
+        {
+            synclog_mode = 1;   // neither, or could not open
+            return;
+        }
+        synclog_mode = demorecording ? 2 : 3;
+        fprintf(synclog_fp,
+                "# leveltime prnd x y angle momx momy fwd side aturn btn tflags\n");
+    }
+
+    if( p->mo )
+    {
+        ticcmd_t * c = &p->cmd;
+        fprintf(synclog_fp, "%u %u %d %d %u %d %d %d %d %d %u %u\n",
+                (unsigned int) leveltime, (unsigned int) P_Rand_GetIndex(),
+                p->mo->x, p->mo->y, (unsigned int) p->mo->angle,
+                p->mo->momx, p->mo->momy,
+                (int) c->forwardmove, (int) c->sidemove, (int) c->angleturn,
+                (unsigned int) c->buttons,
+#ifdef TICCMD_148
+                (unsigned int) c->ticflags
+#else
+                0u
+#endif
+                );
+        fflush(synclog_fp);
+    }
+}
+
+
 //
 // G_Ticker
 // Make ticcmd_ts for the players.
@@ -1812,12 +1870,14 @@ main_actions:
     {
       case GS_LEVEL:
         //IO_Color(0,255,0,0);
-        // Apply player cmds to players, then run thinkers and level animations for this gametic.       
+        // Apply player cmds to players, then run thinkers and level animations for this gametic.
         P_Ticker ();             // tic the game
         //IO_Color(0,0,255,0);
         ST_Ticker ();
         AM_Ticker ();
         HU_Ticker ();
+
+        G_Synclog_Tic();   // [Arcade] demo desync diagnostic, -synclog
 
         // [Arcade lockdown] Idle-to-title timeout.
         // Not during demo playback: the attract-mode demos generate no real
@@ -3932,7 +3992,38 @@ void G_BeginRecording (void)
     *demo_p++ = 0;
 #endif
     // 38
-    
+
+    // [WDJ fix] Legacy gameplay extras.  G_demo_defaults() disables all of
+    // these for playback, but they were never written to the demo, so any
+    // demo recorded with one of them enabled desynced -- notably tiredrun,
+    // which scales movefactor and so slowly skews the player's momentum.
+    // Recorded into the previously zero-filled option area, so demos from
+    // older builds read 0 here and keep the old (disabled) behavior.
+#ifdef ENABLE_TIRED_RUN
+    *demo_p++ = cv_tired_run.EV;
+    *demo_p++ = cv_drown.EV;
+#else
+    *demo_p++ = 0;
+    *demo_p++ = 0;
+#endif
+#ifdef MONSTER_VARY
+    *demo_p++ = cv_monster_vary.EV;
+#else
+    *demo_p++ = 0;
+#endif
+#ifdef ENABLE_TELE_CONTROL
+    *demo_p++ = cv_tele_control.EV;
+#else
+    *demo_p++ = 0;
+#endif
+#ifdef ENABLE_SLOW_REACT
+    *demo_p++ = cv_slow_react.EV;
+#else
+    *demo_p++ = 0;
+#endif
+    *demo_p++ = cv_viewheight.EV;   // 0 means "not recorded", see read side
+    // 44
+
     // empty space
     while( demo_p < demo_p_next )  *demo_p++ = 0;
 
@@ -4538,6 +4629,39 @@ void G_DoPlayDemo (const char *defdemoname)
         demo_p += 4;
 #endif
         // 38
+
+        // [WDJ fix] Legacy gameplay extras, see G_BeginRecording.
+        // Demos recorded before these were added have 0 here, which matches
+        // the G_demo_defaults() values already applied, so they are unaffected.
+        if( demoversion >= 148 )
+        {
+#ifdef ENABLE_TIRED_RUN
+            cv_tired_run.EV = *demo_p++;
+            cv_drown.EV = *demo_p++;
+#else
+            demo_p += 2;
+#endif
+#ifdef MONSTER_VARY
+            cv_monster_vary.EV = *demo_p++;
+#else
+            demo_p++;
+#endif
+#ifdef ENABLE_TELE_CONTROL
+            cv_tele_control.EV = *demo_p++;
+#else
+            demo_p++;
+#endif
+#ifdef ENABLE_SLOW_REACT
+            cv_slow_react.EV = *demo_p++;
+#else
+            demo_p++;
+#endif
+            {
+                byte vh = *demo_p++;
+                if( vh )  cv_viewheight.EV = vh;  // 0 = not recorded
+            }
+            // 44
+        }
 
         demo_p = demo_p_next;  // skip rest of settings
         if( *demo_p++ != 0x55 )  goto broken_header;  // Sync mark, start of data
