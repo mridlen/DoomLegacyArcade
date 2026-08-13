@@ -82,18 +82,42 @@ Local additions on top of upstream r1749, all aimed at an unattended cabinet. Mo
 `devmode` global (`extern byte devmode` in `doomincl.h`, defined in `d_main.c`), set by the
 **`-devmode`** command-line flag, which unlocks everything back to stock behavior for development.
 
+`-devmode` now carries three separate jobs — it unlocks the menus, keeps the Legacy gameplay extras
+instead of forcing vanilla, and is the only mode that writes `config.cfg`. That is deliberate (an
+operator-versus-player split), but it means the three cannot be chosen independently: an operator
+session is `./doomlegacy -devmode`, change settings, quit; a player session is plain `./doomlegacy`.
+
 **`-devmode` must be parsed before `M_Init()`** (`d_main.c`, just above the `M_Init()` call), because
 `M_Init` is what applies the menu lockdown. It was originally parsed later alongside `-devparm`, which
 silently made the flag do nothing at all.
 
-- **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). Hides Multiplayer (both entry
-  points), Load/Save/Options on the main menu, several Start Game server options, and the name/skin/
-  mouse/rebinding entries on the Setup Player screens. Uses **`IT_HIDDEN`**, a locally added
+- **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). What a player can reach:
+
+  ```
+  Main:     New Game / Options / Info / Quit Game
+  Options:  Crosshair / Player >> / Game Options >>
+  Player:   Player1 config >> / Player2 config >>
+  Config:   Crosshair / Player setup >>
+  Setup:    Your color / Control scheme / Player config >>
+  ```
+
+  Hidden: Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
+  Always Run, Effects/Connect/Network/Server/Menu Options, Sound Volume, Video Options, Setup
+  Controls), Network Options again where Game Options nests it, several Start Game server options,
+  Always Run/Autoaim/mouse/weaponpref/rebinding on the player config screen, and name/skin on the
+  Setup Player screens. Uses **`IT_HIDDEN`**, a locally added
   `IT_DISPLAY` value — unlike stock `IT_DISABLED` (grayed but still occupying a row) the generic
   drawer skips it without advancing `y`, so entries vanish and the list closes up. Items are hidden
   *in place*, never removed from the arrays, because several menus are indexed by hardcoded position
   elsewhere. `M_DrawSetupMultiPlayerMenu` paints the name box and skin string outside the item loop,
-  so those are suppressed separately.
+  so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
+  shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
+  items, so it cannot recover when index 0 is hidden).
+- **Settings do not persist** (`m_misc.c`, `M_SaveAllConfig` returns early unless `devmode`).
+  Anything a player changes lasts only for that session; every launch reloads the baseline from
+  `config.cfg`. The operator sets that baseline by running with `-devmode`, which is the **only**
+  way the config is written — including for settings not exposed in the menus, such as screen
+  resolution. High scores and record demos are separate files and still persist.
 - **Launcher bypass** (`d_main.c`, `#ifdef LAUNCHER` block in `D_DoomMain`). Upstream shows its
   built-in Launcher menu whenever `myargc < 2`; that condition is removed so it only appears after a
   genuine startup error.
