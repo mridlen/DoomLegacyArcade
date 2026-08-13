@@ -5484,6 +5484,38 @@ boolean M_Change_cvar_string(int key, char ch)
 //
 // M_Responder
 //
+// [Arcade] Is this key bound to gamecontrol action gcnum, for either player?
+static
+boolean  M_key_is_control( uint16_t key, int gcnum )
+{
+    return ( gamecontrol[gcnum][0]  == key || gamecontrol[gcnum][1]  == key
+          || gamecontrol2[gcnum][0] == key || gamecontrol2[gcnum][1] == key );
+}
+
+// [Arcade] The cabinet panel has no arrow keys, Enter or Escape, so map both
+// players' buttons onto the menu keys: move = cursor, fire = select,
+// use/open = back out.  Read from gamecontrol[]/gamecontrol2[] rather than
+// hardcoding, so this follows the selected control scheme and any rebinding.
+// Turn and strafe both act as left/right, which is what the player expects
+// from a menu regardless of which pair the scheme assigns to turning.
+static
+uint16_t  M_Cabinet_Menu_Key( uint16_t key )
+{
+    if( key == KEY_NULL )  return key;   // unbound actions are KEY_NULL
+
+    if( M_key_is_control(key, gc_forward) )     return KEY_UPARROW;
+    if( M_key_is_control(key, gc_backward) )    return KEY_DOWNARROW;
+    if( M_key_is_control(key, gc_turnleft)
+     || M_key_is_control(key, gc_strafeleft) )  return KEY_LEFTARROW;
+    if( M_key_is_control(key, gc_turnright)
+     || M_key_is_control(key, gc_straferight) ) return KEY_RIGHTARROW;
+    if( M_key_is_control(key, gc_fire) )        return KEY_ENTER;
+    if( M_key_is_control(key, gc_use) )         return KEY_ESCAPE;
+
+    return key;
+}
+
+
 boolean M_Responder (event_t* ev)
 {
     static  boolean button_down = 0;
@@ -5503,6 +5535,12 @@ boolean M_Responder (event_t* ev)
     {
      case ev_keydown :
         key = ev->data1;  // keycode
+
+        // [Arcade] Drive the menus from the cabinet buttons.  Only while a
+        // menu is up, or "use" would open the menu during play instead of
+        // opening doors.
+        if( menuactive && ! devmode )
+            key = M_Cabinet_Menu_Key( key );
 
 #ifdef SDL2
         // SDL2 has separate ASCII event for translated char,
