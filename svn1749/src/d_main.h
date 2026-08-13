@@ -57,6 +57,10 @@ extern char * startupwadfiles[MAX_WADFILES+1];
 // Setup variable doomwaddir for owner usage.
 void  owner_wad_search_order( void );
 
+// [Arcade] Is the IWAD for the -game short name (e.g. "doom2") available?
+// Only valid after the doomwaddir search paths are set up.
+boolean  D_Game_Available( const char * idstr );
+
 extern consvar_t cv_home, cv_doomwaddir, cv_iwad;
 extern consvar_t cv_screenshot_type, cv_screenshot_dir;
 

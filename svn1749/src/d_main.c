@@ -1650,6 +1650,38 @@ game_desc_t *  D_GameDesc( int i )
 #endif
 
 
+// [Arcade] Is the IWAD for a game present on the wad search paths?
+// Used by the Select Game menu so it only offers games that can be started.
+//   idstr : the -game short name, as in the game_desc_table ("doom2", "doomu")
+// Must not be called before the doomwaddir search paths are set up.
+boolean  D_Game_Available( const char * idstr )
+{
+    char  pathbuf[MAX_WADPATH];
+    int   gmi, w;
+
+    if( ! idstr )  return false;
+
+    for( gmi = 0; gmi < NUM_GDESC; gmi++ )
+    {
+        game_desc_t * gmtp = & game_desc_table[gmi];
+
+        if( ! gmtp->idstr || strcasecmp( gmtp->idstr, idstr ) != 0 )
+            continue;
+
+        // Any one of the possible filenames will do.
+        for( w = 0; w < 3; w++ )
+        {
+            if( gmtp->iwad_filename[w] == NULL )  break;
+            if( Search_doomwaddir( gmtp->iwad_filename[w], GAME_SEARCH_DEPTH,
+                                   /*OUT*/ pathbuf ) != FS_NOTFOUND )
+                return true;
+        }
+        return false;   // matched the game, but found no iwad for it
+    }
+    return false;   // no such game
+}
+
+
 // Check all lump names in lumpnames list, count is limited to 8
 // Return byte has a bit set for each lumpname found.
 static

@@ -2184,6 +2184,9 @@ menuitem_t OptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING,0,"Select Game >>"   ,&GameSelectDef     ,0},  // [Arcade]
 };
 
+// [Arcade] index of the Select Game line, which is the last one
+enum { OPT_selectgame = (sizeof(OptionsMenu)/sizeof(menuitem_t)) - 1 };
+
 menu_t  OptionsDef =
 {
     "M_OPTTTL",
@@ -6712,6 +6715,27 @@ void M_Configure (void)
     {
         exmy_cons_t[36].value = 0;
         exmy_cons_t[36].strvalue = NULL;
+    }
+
+    // [Arcade] Only offer games whose IWAD is actually present.  Done here
+    // because the doomwaddir search paths are not set up as early as M_Init.
+    {
+        int gs;
+        int avail = 0;
+        for( gs = 0; gs < GameSelectDef.numitems; gs++ )
+        {
+            if( D_Game_Available( gameselect_arg[gs] ) )
+            {
+                if( avail == 0 )
+                    GameSelectDef.lastOn = gs;  // start on a shown item
+                avail++;
+            }
+            else
+                GameSelectMenu[gs].status = IT_HIDDEN;
+        }
+        // Nothing worth switching to: only the game already running, or none.
+        if( avail < 2 )
+            OptionsMenu[OPT_selectgame].status = IT_HIDDEN;
     }
 
     switch ( gamemode )
