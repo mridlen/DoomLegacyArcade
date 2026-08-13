@@ -94,8 +94,8 @@ silently made the flag do nothing at all.
 - **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). What a player can reach:
 
   ```
-  Main:     New Game / Options / Info / Quit Game
-  Options:  Crosshair / Player >> / Game Options >>
+  Main:     New Game / Options / Quit Game
+  Options:  Crosshair / Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
   Config:   Crosshair / Player setup >>
   Setup:    Your color / Control scheme / Player config >>
@@ -113,6 +113,25 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **Game selector** (`m_menu.c`, `M_SelectGame` / `GameSelectDef`, reached from Options). Switches
+  the IWAD between Ultimate Doom and Doom II. Changing IWAD requires the startup sequence to run
+  again; the engine can do that (the Launcher's "Iwad" item reaches `goto restart_command` in
+  `D_DoomMain`) but only *before* `D_DoomLoop`, which is a `while(1)` that never returns. So it
+  shuts down cleanly and **re-execs** with a different `-game`. Notes:
+  - `-game` takes the short name from the `gamedesc` table in `d_main.c` (`doomu`, `doom2`, …), so
+    the engine locates the IWAD itself and no wad path is hardcoded here.
+  - The rebuilt command line preserves the existing arguments (so `-devmode` survives a switch) and
+    strips any earlier `-game`/`-iwad`.
+  - `QUIT_normal` is required for the shutdown — the other severities force a 3 second sleep in
+    `D_Quit_Save` — and `cv_textout.EV` is zeroed first to skip the ENDOOM screen.
+  - High scores are keyed by map name, so Doom's `E1M1` and Doom 2's `MAP01` records coexist.
+  - Known limitation: both games are listed unconditionally, with no check that the IWAD exists.
+- **"Read This!" is hidden on the Doom 1 gamemodes** (`m_menu.c`, `M_Configure`). Doom 2 already
+  overwrites that slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]`), which is why the
+  entry only appeared under Ultimate Doom, where it is the help/order-form screens. This lives in
+  `M_Configure` rather than the `M_Init` lockdown because **`gamemode` is not yet known at
+  `M_Init`** — `IdentifyVersion()` runs later. Anything menu-related that depends on the game must
+  go here.
 - **The menus are driven by the cabinet buttons** (`m_menu.c`, `M_Cabinet_Menu_Key`, called from
   `M_Responder`'s `ev_keydown`). The panel has no arrow keys, Enter or Escape, so both players'
   buttons are translated: forward/backward = cursor up/down, turn *or* strafe left/right =
@@ -175,6 +194,14 @@ memory while the game runs, so a later record writes the old entries straight ba
 
 ### Gotchas found the hard way
 
+- **No PK3 support; WadSmoosh is not usable.** The file-type dispatch (`w_wad.c`, `W_...` extension
+  check) recognizes only `.wad`, `.deh`, `.bex` and `.zip` — anything else is loaded as a single
+  lump — and the IWAD tables (`d_main.c`, the `gamedesc` list) name `.wad` files only. WadSmoosh's
+  `doom_complete.pk3` additionally depends on GZDoom-specific machinery (a `GAMEINFO` lump to
+  declare itself an IWAD, ZMAPINFO/MAPINFO for episode and map definitions) that this engine does
+  not implement, so renaming it to `.zip` will not help either. `.zip` support here is for
+  supplementary lump archives, not IWAD replacement. Use separate `.wad` IWADs and the game
+  selector above.
 - **Demo recording must start before the game-start commands are issued.** `G_Ticker` writes demo
   data *before* `ExtraDataTicker` executes queued netxcmds, so recording started from inside
   `G_InitNew` misses the commands that create the player and load the first map. Such demos then
