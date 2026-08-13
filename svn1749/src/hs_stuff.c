@@ -321,11 +321,13 @@ void HS_Draw_AttractTable( void )
         {
             if( ! hs_table[i].has_record[sk] )  continue;
 
+            // Columns: map at x, skill at x+50 (up to 5 chars, "ITYTD"),
+            // time right-justified at x+150 so it clears the skill name.
             V_DrawString(x, y, 0, hs_table[i].mapname);
-            V_DrawString(x+40, y, 0, hs_skillnames[sk]);
+            V_DrawString(x+50, y, 0, hs_skillnames[sk]);
 
             HS_FormatTime(hs_table[i].besttime[sk], timebuf, sizeof(timebuf));
-            V_DrawString(x+90-V_StringWidth(timebuf), y, 0, timebuf);
+            V_DrawString(x+150-V_StringWidth(timebuf), y, 0, timebuf);
 
             y += 10;
             if( y >= BASEVIDHEIGHT-10 )  break;
