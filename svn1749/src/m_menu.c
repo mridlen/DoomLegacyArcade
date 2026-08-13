@@ -6044,11 +6044,19 @@ boolean M_Responder (event_t* ev)
 #endif
           goto ret_true;
 
+        // [Arcade] Skip IT_SPACE items, which covers IT_HIDDEN and
+        // IT_DISABLED as well as plain spacers.  Without this the hotkey of
+        // a hidden entry (for instance 's' for the hidden Save Game) still
+        // moved the cursor onto that invisible row.
+#define MENU_HOTKEY_MATCH(i) \
+        (    (currentMenu->menuitems[i].alphaKey == ch) \
+          && ((currentMenu->menuitems[i].status & IT_OPTION) == 0) \
+          && ((currentMenu->menuitems[i].status & IT_TYPE) != IT_SPACE) )
+
         // from itemOn to bottom
         for (i = itemOn+1;i < currentMenu->numitems;i++)
         {
-            if( (currentMenu->menuitems[i].alphaKey == ch)
-                 && ((currentMenu->menuitems[i].status & IT_OPTION) == 0) )
+            if( MENU_HOTKEY_MATCH(i) )
             {
                 itemOn = i;
                 goto ret_action;
@@ -6057,13 +6065,13 @@ boolean M_Responder (event_t* ev)
         // search from top to itemOn
         for (i = 0;i <= itemOn;i++)
         {
-            if( (currentMenu->menuitems[i].alphaKey == ch)
-                 && ((currentMenu->menuitems[i].status & IT_OPTION) == 0) )
+            if( MENU_HOTKEY_MATCH(i) )
             {
                 itemOn = i;
                 goto ret_action;
             }
         }
+#undef MENU_HOTKEY_MATCH
         break;
 
     }
