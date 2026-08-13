@@ -113,6 +113,16 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **The menus are driven by the cabinet buttons** (`m_menu.c`, `M_Cabinet_Menu_Key`, called from
+  `M_Responder`'s `ev_keydown`). The panel has no arrow keys, Enter or Escape, so both players'
+  buttons are translated: forward/backward = cursor up/down, turn *or* strafe left/right =
+  left/right, fire = select, use/open = back out. Read from `gamecontrol[]`/`gamecontrol2[]` **by
+  action**, not by hardcoded character, so it follows the selected control scheme and any
+  rebinding. Turn and strafe both map to left/right on purpose: the two schemes only swap which
+  side pair is turning, so mapping both makes the `,aoe` diamond behave identically either way.
+  Only applied while `menuactive` — otherwise "use" would open the menu during play instead of
+  opening doors — and skipped in devmode so the keyboard behaves normally.
+  Note the menu is still *opened* with Escape, which is not on the panel.
 - **Menu letter shortcuts are disabled** outside devmode (`m_menu.c`, `M_Responder`'s `default:`
   case returns before the `alphaKey` search). The cabinet is buttons-only and several of those
   buttons are letters that collided with the shortcuts — player 1's turn-right button (`e`) on the
