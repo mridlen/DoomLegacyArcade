@@ -573,6 +573,7 @@ static void M_NetOption(int choice);
 static void M_OpenGLOption(int choice);
 static void M_PlayerDirector(int choice);
 
+menu_t GameSelectDef;   // [Arcade] IWAD switcher
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
   PlayerDirectorDef, PlayerOptionsDef,
@@ -2180,6 +2181,7 @@ menuitem_t OptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING,0,"Sound Volume >>"  ,&SoundDef          ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Video Options >>" ,&VideoOptionsDef   ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Setup Controls >>",&MControlDef       ,0},
+    {IT_SUBMENU | IT_WHITESTRING,0,"Select Game >>"   ,&GameSelectDef     ,0},  // [Arcade]
 };
 
 menu_t  OptionsDef =
@@ -2193,6 +2195,90 @@ menu_t  OptionsDef =
     60,40,
     0
 };
+
+
+// =========================================================================
+//   [Arcade] GAME SELECT
+// =========================================================================
+// Switching IWAD needs the startup sequence to run again.  The engine can
+// do that (the Launcher's "Iwad" item reaches `goto restart_command` in
+// D_DoomMain), but only before D_DoomLoop is entered, and D_DoomLoop is a
+// while(1) that never returns.  So instead shut down cleanly and re-exec
+// ourselves with a different -game, which re-runs startup from scratch.
+//
+// -game takes the short name from the gamedesc table in d_main.c, and the
+// engine then finds the matching IWAD along its usual search paths, so no
+// absolute wad path is needed here.
+static void M_SelectGame(int choice);
+
+static const char * gameselect_arg[] = { "doomu", "doom2" };
+
+menuitem_t GameSelectMenu[] =
+{
+    {IT_STRING | IT_CALL, 0, "Ultimate Doom", M_SelectGame, 0},
+    {IT_STRING | IT_CALL, 0, "Doom II",       M_SelectGame, 0},
+};
+
+menu_t  GameSelectDef =
+{
+    "M_OPTTTL",
+    "Select Game",
+    GameSelectMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(GameSelectMenu)/sizeof(menuitem_t),
+    60,60,
+    0
+};
+
+//  choice : index into GameSelectMenu / gameselect_arg
+static
+void M_SelectGame(int choice)
+{
+    char ** newargv;
+    int  i, n = 0;
+
+    if( choice < 0
+        || choice >= (int)(sizeof(gameselect_arg)/sizeof(gameselect_arg[0])) )
+        return;
+
+    // Rebuild the command line: keep our own arguments, drop any existing
+    // game selection, and append the new one.  +3 for "-game", the name,
+    // and the NULL terminator.
+    newargv = (char**) malloc( (myargc + 3) * sizeof(char*) );
+    if( ! newargv )  return;
+
+    newargv[n++] = myargv[0];
+    for( i = 1; i < myargc; i++ )
+    {
+        // Skip a previous "-game <name>" or "-iwad <file>", both of which
+        // would otherwise override or conflict with the new selection.
+        if( strcasecmp(myargv[i], "-game") == 0
+            || strcasecmp(myargv[i], "-iwad") == 0 )
+        {
+            if( (i+1) < myargc )  i++;   // skip its parameter too
+            continue;
+        }
+        newargv[n++] = myargv[i];
+    }
+    newargv[n++] = "-game";
+    newargv[n++] = (char*) gameselect_arg[choice];
+    newargv[n] = NULL;
+
+    // Flush config (devmode only), high scores, demos, and shut down the
+    // video/sound devices, but do not exit -- exec replaces us instead.
+    // QUIT_normal is required: the other severities force a 3 second sleep
+    // in D_Quit_Save.  Suppress the ENDOOM screen it would otherwise print,
+    // since we are relaunching rather than returning to a terminal.
+    cv_textout.EV = 0;
+    D_Quit_Save( QUIT_normal );
+
+    execvp( newargv[0], newargv );
+
+    // Only reached if exec failed; the devices are already down, so there
+    // is nothing sensible left to return to.
+    I_Error("Could not restart for game '%s'\n", gameselect_arg[choice]);
+}
 
 //
 //  A smaller 'Thermo', with range given as percents (0-100)
@@ -6650,6 +6736,16 @@ void M_Configure (void)
           EpiDef.numitems--;
       case ultdoom_retail:
           // We are fine.
+          // [Arcade] Doom 2 replaces the "Read This!" entry just above, but
+          // the Doom 1 gamemodes keep it, and it is the help / order-form
+          // screens -- of no use on a cabinet.  Done here rather than in
+          // M_Init because gamemode is not known that early.
+          if( ! devmode )
+          {
+              MainMenu[MM_readthis].status = IT_HIDDEN;
+              if( MainDef.lastOn == MM_readthis )
+                  MainDef.lastOn = 0;
+          }
           cv_nextmap.PossibleValue = exmy_cons_t;
           cv_nextmap.defaultvalue = "11";
           // We need to remove the fifth episode.
