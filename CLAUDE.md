@@ -113,6 +113,12 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **Menu letter shortcuts are disabled** outside devmode (`m_menu.c`, `M_Responder`'s `default:`
+  case returns before the `alphaKey` search). The cabinet is buttons-only and several of those
+  buttons are letters that collided with the shortcuts — player 1's turn-right button (`e`) on the
+  New Game menu jumped to END GAME, one Enter from ending the run now that prompts are gone. Done
+  at the dispatch point rather than by clearing `alphaKey` per menu, so it covers every menu.
+  Text entry is unaffected: `IT_KEYHANDLER` items consume the key earlier in `M_Responder`.
 - **Settings do not persist** (`m_misc.c`, `M_SaveAllConfig` returns early unless `devmode`).
   Anything a player changes lasts only for that session; every launch reloads the baseline from
   `config.cfg`. The operator sets that baseline by running with `-devmode`, which is the **only**

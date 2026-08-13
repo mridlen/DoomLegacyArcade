@@ -6044,10 +6044,19 @@ boolean M_Responder (event_t* ev)
 #endif
           goto ret_true;
 
-        // [Arcade] Skip IT_SPACE items, which covers IT_HIDDEN and
-        // IT_DISABLED as well as plain spacers.  Without this the hotkey of
-        // a hidden entry (for instance 's' for the hidden Save Game) still
-        // moved the cursor onto that invisible row.
+        // [Arcade] No letter shortcuts on the cabinet: the controls are
+        // buttons, and several are letters that collide with these
+        // shortcuts -- pressing player 1's turn-right button ('e') on the
+        // New Game menu jumped straight to END GAME.  Arrow keys and Enter
+        // are all a cabinet needs.  Text entry is unaffected: IT_KEYHANDLER
+        // items consume the key earlier in this function.
+        if( ! devmode )
+          goto ret_true;
+
+        // Skip IT_SPACE items, which covers IT_HIDDEN and IT_DISABLED as
+        // well as plain spacers.  Without this the hotkey of a hidden entry
+        // (for instance 's' for the hidden Save Game) still moved the
+        // cursor onto that invisible row.
 #define MENU_HOTKEY_MATCH(i) \
         (    (currentMenu->menuitems[i].alphaKey == ch) \
           && ((currentMenu->menuitems[i].status & IT_OPTION) == 0) \
