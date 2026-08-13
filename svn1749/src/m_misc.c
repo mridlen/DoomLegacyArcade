@@ -580,6 +580,14 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
 //  Save all game config here
 void M_SaveAllConfig( void )
 {
+    // [Arcade] The cabinet does not persist settings: whatever a player
+    // changes in the menus lasts only for that session, and the next launch
+    // reloads the operator's baseline.  Run with -devmode to set that
+    // baseline -- only then is the config written back.
+    // High scores and record demos are separate files and are unaffected.
+    if( ! devmode )
+        return;
+
     M_SaveConfig( CFG_main, configfile_main );
 
     M_SaveConfig( CFG_drawmode, configfile_drawmode );

@@ -6374,6 +6374,14 @@ void M_Init (void)
         OptionsMenu[12].status = IT_HIDDEN;  // Setup Controls >>
         OptionsDef.lastOn = 2;   // Crosshair, the first item still shown
 
+        // Game Options reaches Network Options too; hide that as well.
+        // It is the last entry, and the array length varies with the
+        // MAPADJUST_MENU and ENABLE_TIRED_RUN build options, so index it
+        // from the end rather than by a fixed number.
+        GameOptionsMenu[ GameOptionDef.numitems - 1 ].status = IT_HIDDEN;
+        if( GameOptionDef.lastOn >= GameOptionDef.numitems - 1 )
+            GameOptionDef.lastOn = 0;
+
         ServerMenu[5].status = IT_HIDDEN;  // Wait Players
         ServerMenu[6].status = IT_HIDDEN;  // Wait Timeout
         ServerMenu[7].status = IT_HIDDEN;  // Internet Server
