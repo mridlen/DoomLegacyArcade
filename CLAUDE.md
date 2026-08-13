@@ -125,13 +125,17 @@ silently made the flag do nothing at all.
   - `QUIT_normal` is required for the shutdown — the other severities force a 3 second sleep in
     `D_Quit_Save` — and `cv_textout.EV` is zeroed first to skip the ENDOOM screen.
   - High scores are keyed by map name, so Doom's `E1M1` and Doom 2's `MAP01` records coexist.
-  - Known limitation: both games are listed unconditionally, with no check that the IWAD exists.
+  - Entries whose IWAD is missing are hidden, via `D_Game_Available()` (`d_main.c`), which tries
+    each candidate filename from `game_desc_table` through the engine's own `Search_doomwaddir` —
+    so the normal search paths and alternate names (`doomu.wad`/`doom_se.wad`/`doom.wad`) all
+    count. The whole "Select Game" line is hidden when fewer than two games are available.
 - **"Read This!" is hidden on the Doom 1 gamemodes** (`m_menu.c`, `M_Configure`). Doom 2 already
   overwrites that slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]`), which is why the
   entry only appeared under Ultimate Doom, where it is the help/order-form screens. This lives in
   `M_Configure` rather than the `M_Init` lockdown because **`gamemode` is not yet known at
-  `M_Init`** — `IdentifyVersion()` runs later. Anything menu-related that depends on the game must
-  go here.
+  `M_Init`** — `IdentifyVersion()` runs later, as does the doomwaddir setup. Anything menu-related
+  that depends on the game or on locating wads must go in `M_Configure`; the game selector's
+  availability check is there for the same reason.
 - **The menus are driven by the cabinet buttons** (`m_menu.c`, `M_Cabinet_Menu_Key`, called from
   `M_Responder`'s `ev_keydown`). The panel has no arrow keys, Enter or Escape, so both players'
   buttons are translated: forward/backward = cursor up/down, turn *or* strafe left/right =
