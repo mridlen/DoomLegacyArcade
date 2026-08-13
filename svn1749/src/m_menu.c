@@ -6357,9 +6357,22 @@ void M_Init (void)
 
         MainMenu[1].status = IT_HIDDEN;  // Load Game
         MainMenu[2].status = IT_HIDDEN;  // Save Game
-        MainMenu[3].status = IT_HIDDEN;  // Options
-        if( MainDef.lastOn >= 1 && MainDef.lastOn <= 3 )
+        if( MainDef.lastOn >= 1 && MainDef.lastOn <= 2 )
             MainDef.lastOn = 0;
+
+        // Options stays reachable, but pared down to the few settings a
+        // player may change.  Leaves Crosshair, Player >>, Game Options >>.
+        OptionsMenu[0].status  = IT_HIDDEN;  // Messages:
+        OptionsMenu[1].status  = IT_HIDDEN;  // Always Run
+        OptionsMenu[4].status  = IT_HIDDEN;  // Effects Options >>
+        OptionsMenu[6].status  = IT_HIDDEN;  // Connect Options >>
+        OptionsMenu[7].status  = IT_HIDDEN;  // Network Options >>
+        OptionsMenu[8].status  = IT_HIDDEN;  // Server Options >>
+        OptionsMenu[9].status  = IT_HIDDEN;  // Menu Options >>
+        OptionsMenu[10].status = IT_HIDDEN;  // Sound Volume >>
+        OptionsMenu[11].status = IT_HIDDEN;  // Video Options >>
+        OptionsMenu[12].status = IT_HIDDEN;  // Setup Controls >>
+        OptionsDef.lastOn = 2;   // Crosshair, the first item still shown
 
         ServerMenu[5].status = IT_HIDDEN;  // Wait Players
         ServerMenu[6].status = IT_HIDDEN;  // Wait Timeout
@@ -6383,17 +6396,15 @@ void M_Init (void)
             SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
 
         // Player config screen (also shared for both players).
+        // Leaves Crosshair and the Player setup screen.
+        PlayerOptionsMenu[playeroption_alwaysrun].status = IT_HIDDEN;  // Always Run
+        PlayerOptionsMenu[playeroption_autoaim].status = IT_HIDDEN;  // Autoaim
         PlayerOptionsMenu[playeroption_usemouse].status = IT_HIDDEN;  // Use Mouse
         PlayerOptionsMenu[playeroption_mousemove].status = IT_HIDDEN;  // Mouse Move
         PlayerOptionsMenu[playeroption_mouselook].status = IT_HIDDEN;  // Always MouseLook
         PlayerOptionsMenu[playeroption_weaponpref].status = IT_HIDDEN;  // WeaponPref
         PlayerOptionsMenu[playeroption_setupcontrol].status = IT_HIDDEN;  // Player1/2 controls >>
-        if( PlayerOptionsDef.lastOn == playeroption_usemouse
-            || PlayerOptionsDef.lastOn == playeroption_mousemove
-            || PlayerOptionsDef.lastOn == playeroption_mouselook
-            || PlayerOptionsDef.lastOn == playeroption_weaponpref
-            || PlayerOptionsDef.lastOn == playeroption_setupcontrol )
-            PlayerOptionsDef.lastOn = playeroption_alwaysrun;
+        PlayerOptionsDef.lastOn = playeroption_crosshair;  // first item still shown
     }
 
     CV_RegisterVar_list( menu_init_cvar_list );
