@@ -298,6 +298,14 @@ void HS_Draw_AttractTable( void )
     int    x = 40;
     int    y = 20;
 
+    // This is an attract-screen page like the ones D_PageDrawer handles, so
+    // it must establish the same draw state and cover the whole screen.
+    // Without this it painted over whatever the previous page or demo had
+    // left in the buffer -- and with page flipping, over two different stale
+    // frames alternately, which looked like flickering garbage.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
+
     V_DrawString(x, y, V_WHITEMAP, "HIGH SCORES - BEST TIME TO EXIT");
     y += 14;
 
