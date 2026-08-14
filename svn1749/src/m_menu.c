@@ -2219,8 +2219,11 @@ menu_t  OptionsDef =
 // absolute wad path is needed here.
 static void M_SelectGame(int choice);
 
-static const char * gameselect_arg[] = { "doomu", "doom2" };
-enum { GS_numgames = 2 };   // the IWAD entries, ahead of the level packs
+// Short names from the gamedesc table in d_main.c.  Entries whose IWAD is
+// not installed are hidden by M_Configure, so listing extra games is free.
+static const char * gameselect_arg[] =
+  { "doomu", "doom2", "plutonia", "tnt" };
+enum { GS_numgames = 4 };   // the IWAD entries, ahead of the level packs
 
 // [Arcade] Level packs, scanned from legacyhome/levels/ by
 // M_Scan_LevelPacks.  Unlike an IWAD switch these need no restart: the map
@@ -2237,8 +2240,10 @@ static boolean  levelpack_loaded = false;   // see M_LevelPack_Loaded
 
 menuitem_t GameSelectMenu[ GS_numgames + MAX_LEVELPACK ] =
 {
-    {IT_STRING | IT_CALL, 0, "Ultimate Doom", M_SelectGame, 0},
-    {IT_STRING | IT_CALL, 0, "Doom II",       M_SelectGame, 0},
+    {IT_STRING | IT_CALL, 0, "Ultimate Doom",  M_SelectGame, 0},
+    {IT_STRING | IT_CALL, 0, "Doom II",        M_SelectGame, 0},
+    {IT_STRING | IT_CALL, 0, "Final Doom: Plutonia", M_SelectGame, 0},
+    {IT_STRING | IT_CALL, 0, "Final Doom: TNT",      M_SelectGame, 0},
     // remainder filled in from the levels directory
 };
 
