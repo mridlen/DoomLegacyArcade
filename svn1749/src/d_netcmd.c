@@ -1048,6 +1048,12 @@ void Command_ExitGame_f(void)
 {
     D_Quit_NetGame();
     CL_Reset();
+
+    // [Arcade] Splitscreen otherwise persists into the attract screen, and
+    // the demos play back in a split view.  Setting the cvar also runs
+    // SplitScreen_OnChange, which takes the player 2 menu entries back down.
+    CV_SetValue( &cv_splitscreen, 0 );
+
     D_StartTitle();
 }
 
