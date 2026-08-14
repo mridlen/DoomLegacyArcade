@@ -3,6 +3,8 @@
 // Single-player only.
 
 #include <unistd.h>     // access()
+#include <sys/types.h>
+#include <dirent.h>     // demo directory sweep in Command_ClearHighScores_f
 
 #include "doomincl.h"
 #include "doomdef.h"
@@ -18,8 +20,13 @@
 
 #define HS_MAX_MAPS      64
 
+// Records are keyed by game as well as map: Doom 2, Plutonia and TNT all
+// have a MAP01, and they are different levels.
+#define HS_GAMEID_LEN  12
+
 typedef struct
 {
+    char     game[HS_GAMEID_LEN];   // gamedesc idstr: doom2, plutonia, tnt...
     char     mapname[9];
     boolean  has_record[HS_NUMSKILLS];
     tic_t    besttime[HS_NUMSKILLS];
@@ -38,6 +45,13 @@ static char    hs_demodir[MAX_WADPATH];
 static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV", "NM" };
 
 
+// The running game's short name, as used in the score file and demo names.
+static const char * HS_GameId( void )
+{
+    return ( gamedesc.idstr && gamedesc.idstr[0] ) ? gamedesc.idstr : "game";
+}
+
+
 static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
 {
     int seconds = tics / TICRATE;
@@ -47,13 +61,14 @@ static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
 }
 
 
-static hs_maprecord_t * HS_FindOrAddRecord( const char * mapname )
+static hs_maprecord_t * HS_FindOrAddRecord( const char * game, const char * mapname )
 {
     int  i;
 
     for( i=0; i<hs_table_count; i++ )
     {
-        if( strncmp(hs_table[i].mapname, mapname, 8) == 0 )
+        if( strncmp(hs_table[i].mapname, mapname, 8) == 0
+            && strncmp(hs_table[i].game, game, HS_GAMEID_LEN-1) == 0 )
             return &hs_table[i];
     }
 
@@ -62,16 +77,21 @@ static hs_maprecord_t * HS_FindOrAddRecord( const char * mapname )
 
     hs_maprecord_t * rec = &hs_table[hs_table_count++];
     memset(rec, 0, sizeof(*rec));
+    dl_strncpy(rec->game, game, HS_GAMEID_LEN-1);
     dl_strncpy(rec->mapname, mapname, 8);
     return rec;
 }
 
 
-static void HS_BuildDemoPath( char * dest, const char * mapname, skill_e skill )
+// Demo files carry the game too: a Doom 2 MAP01 demo would replay against
+// the wrong level under Plutonia or TNT.
+static void HS_BuildDemoPath( char * dest, const char * game,
+                              const char * mapname, skill_e skill )
 {
-    char relname[32];
-    // Bound the map name explicitly; it is at most 8 chars ("MAPxx"/"ExMy").
-    snprintf(relname, sizeof(relname), "%.8s_sk%d.lmp", mapname, (int)skill);
+    char relname[48];
+    // Bound the parts explicitly; map name is at most 8 ("MAPxx"/"ExMy").
+    snprintf(relname, sizeof(relname), "%.11s_%.8s_sk%d.lmp",
+             game, mapname, (int)skill);
     cat_filename(dest, hs_demodir, relname);
 }
 
@@ -79,10 +99,12 @@ static void HS_BuildDemoPath( char * dest, const char * mapname, skill_e skill )
 static void HS_Load( void )
 {
     FILE * fr;
-    char   line[64];
+    char   line[96];
+    char   game[16];
     char   mapname[16];
     int    skillnum;
     unsigned int  tics;
+    int    old_format = 0;
 
     hs_table_count = 0;
 
@@ -93,18 +115,28 @@ static void HS_Load( void )
     {
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
             continue;
-        if( sscanf(line, "%15s %d %u", mapname, &skillnum, &tics) != 3 )
+        if( sscanf(line, "%15s %15s %d %u", game, mapname, &skillnum, &tics) != 4 )
+        {
+            // Records written before scores were tracked per game cannot be
+            // attributed to one, so they are dropped rather than guessed at.
+            old_format ++;
             continue;
+        }
         if( skillnum < 0 || skillnum >= HS_NUMSKILLS )
             continue;
 
-        hs_maprecord_t * rec = HS_FindOrAddRecord(mapname);
+        hs_maprecord_t * rec = HS_FindOrAddRecord(game, mapname);
         if( ! rec )  continue;
         rec->has_record[skillnum] = true;
         rec->besttime[skillnum]   = (tic_t) tics;
     }
 
     fclose(fr);
+
+    if( old_format )
+        GenPrintf(EMSG_info,
+                  "High scores: discarded %d record(s) from before per-game scoring.\n",
+                  old_format);
 }
 
 
@@ -120,13 +152,14 @@ static void HS_Save( void )
         return;
     }
 
-    fprintf(fw, "# DoomLegacy arcade high scores: mapname skill cumulative_tics\n");
+    fprintf(fw, "# DoomLegacy arcade high scores: game mapname skill cumulative_tics\n");
     for( i=0; i<hs_table_count; i++ )
     {
         for( sk=0; sk<HS_NUMSKILLS; sk++ )
         {
             if( hs_table[i].has_record[sk] )
-                fprintf(fw, "%s %d %u\n", hs_table[i].mapname, sk,
+                fprintf(fw, "%s %s %d %u\n",
+                        hs_table[i].game, hs_table[i].mapname, sk,
                         (unsigned int) hs_table[i].besttime[sk]);
         }
     }
@@ -161,19 +194,26 @@ void HS_Init( void )
 // the game is running does not work.
 void Command_ClearHighScores_f( void )
 {
-    int  i, sk;
     int  removed = 0;
+    DIR * dp;
 
-    for( i=0; i<hs_table_count; i++ )
+    // Sweep the whole demos directory rather than only the files the current
+    // table references, so demos orphaned by a format change (or by editing
+    // the score file) are cleaned up too.
+    dp = opendir( hs_demodir );
+    if( dp )
     {
-        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        struct dirent * dent;
+        while( (dent = readdir(dp)) != NULL )
         {
-            if( ! hs_table[i].has_record[sk] )  continue;
-
             char demopath[MAX_WADPATH];
-            HS_BuildDemoPath(demopath, hs_table[i].mapname, (skill_e)sk);
+            const char * extp = strrchr( dent->d_name, '.' );
+            if( (extp == NULL) || (strcasecmp(extp, ".lmp") != 0) )  continue;
+
+            cat_filename( demopath, hs_demodir, dent->d_name );
             if( remove(demopath) == 0 )  removed++;
         }
+        closedir( dp );
     }
 
     hs_table_count = 0;
@@ -227,7 +267,7 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime )
     hs_cumulative_time += leveltime;
 
     const char * mapname = G_BuildMapName(episode, map);
-    hs_maprecord_t * rec = HS_FindOrAddRecord(mapname);
+    hs_maprecord_t * rec = HS_FindOrAddRecord(HS_GameId(), mapname);
     if( rec == NULL )  return;   // table full
 
     dl_strncpy(hs_last_exit_mapname, mapname, 8);
@@ -242,7 +282,7 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime )
         if( demorecording )
         {
             char demopath[MAX_WADPATH];
-            HS_BuildDemoPath(demopath, mapname, skill);
+            HS_BuildDemoPath(demopath, HS_GameId(), mapname, skill);
             G_SnapshotDemo(demopath);
         }
     }
@@ -261,7 +301,8 @@ void HS_Draw_IntermissionTable( int x, int y )
     rec = NULL;
     for( i=0; i<hs_table_count; i++ )
     {
-        if( strncmp(hs_table[i].mapname, hs_last_exit_mapname, 8) == 0 )
+        if( strncmp(hs_table[i].mapname, hs_last_exit_mapname, 8) == 0
+            && strncmp(hs_table[i].game, HS_GameId(), HS_GAMEID_LEN-1) == 0 )
         {
             rec = &hs_table[i];
             break;
@@ -295,6 +336,7 @@ void HS_Draw_AttractTable( void )
 {
     char   timebuf[16];
     int    i, sk;
+    int    shown = 0;
     int    x = 40;
     int    y = 20;
 
@@ -309,17 +351,18 @@ void HS_Draw_AttractTable( void )
     V_DrawString(x, y, V_WHITEMAP, "HIGH SCORES - BEST TIME TO EXIT");
     y += 14;
 
-    if( hs_table_count == 0 )
+    // Only the running game's records: the attract screen advertises the
+    // game that is about to be played, and Doom 2 / Plutonia / TNT all have
+    // a MAP01 which would otherwise be indistinguishable in this list.
+    for( i=0, shown=0; i<hs_table_count && y < BASEVIDHEIGHT-10; i++ )
     {
-        V_DrawString(x, y, 0, "No times recorded yet");
-        return;
-    }
+        if( strncmp(hs_table[i].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+            continue;
 
-    for( i=0; i<hs_table_count && y < BASEVIDHEIGHT-10; i++ )
-    {
         for( sk=0; sk<HS_NUMSKILLS; sk++ )
         {
             if( ! hs_table[i].has_record[sk] )  continue;
+            shown ++;
 
             // Columns: map at x, skill at x+50 (up to 5 chars, "ITYTD"),
             // time right-justified at x+150 so it clears the skill name.
@@ -333,6 +376,9 @@ void HS_Draw_AttractTable( void )
             if( y >= BASEVIDHEIGHT-10 )  break;
         }
     }
+
+    if( shown == 0 )
+        V_DrawString(x, y, 0, "No times recorded yet");
 }
 
 
@@ -352,9 +398,15 @@ const char * HS_NextRecordDemoPath( void )
     {
         mi = cursor / HS_NUMSKILLS;
         sk = cursor % HS_NUMSKILLS;
+        // Only demos from the running game: the same map name is a
+        // different level in Doom 2, Plutonia and TNT, so replaying another
+        // game's demo would desync immediately.
+        if( strncmp(hs_table[mi].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+            continue;
         if( hs_table[mi].has_record[sk] )
         {
-            HS_BuildDemoPath(path, hs_table[mi].mapname, (skill_e)sk);
+            HS_BuildDemoPath(path, hs_table[mi].game, hs_table[mi].mapname,
+                             (skill_e)sk);
             if( access(path, R_OK) == 0 )
             {
                 cursor = (cursor+1) % total;
