@@ -2332,11 +2332,30 @@ void M_SelectGame(int choice)
         // Level pack.  No restart needed: the map command takes a wad
         // filename, which G_InitNew treats as an external map file and
         // P_SetupLevel loads with P_AddWadFile, starting its first map.
+        //
+        // Start it as a two player splitscreen game, mirroring what the
+        // Start Game menu does (see M_StartServer).  These packs are
+        // deathmatch/coop map sets, and issuing the map command alone would
+        // just drop the pack into the current single player session.
+        // Coop versus deathmatch follows the Start Game screen's setting,
+        // which defaults to DM.
         int lp = choice - GS_numgames;
         if( lp >= num_levelpack )  return;
 
-        COM_BufAddText( va("map \"%s\"\n", levelpack_path[lp]) );
+        StartSplitScreenGame = true;
+        M_Player2_MenuEnable( 1 );
         M_Clear_Menus( true );
+
+        server = true;
+        netgame = true;
+        multiplayer = true;
+        D_WaitPlayer_Setup();
+
+        COM_BufAddText( va("stopdemo;splitscreen 1;deathmatch %d\n",
+                           cv_deathmatch_menu.value) );
+        COM_BufAddText( va("map \"%s\" -skill %d -monsters %d\n",
+                           levelpack_path[lp],
+                           cv_skill.value, cv_monsters.value) );
         return;
     }
 

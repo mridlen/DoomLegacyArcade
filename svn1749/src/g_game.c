@@ -1882,7 +1882,12 @@ main_actions:
         // [Arcade lockdown] Idle-to-title timeout.
         // Not during demo playback: the attract-mode demos generate no real
         // input, so the timer would always expire and kick back to the title.
-        if( !devmode && !netgame && !demoplayback && cv_idletimeout.value > 0 )
+        // Local splitscreen sets netgame too (see M_StartServer), so test for
+        // it explicitly -- otherwise a two player game on the cabinet would
+        // never return to the attract screen.  Only a real network game,
+        // which this build cannot reach without -devmode, is exempt.
+        if( !devmode && !demoplayback && cv_idletimeout.value > 0
+            && (!netgame || cv_splitscreen.EV) )
         {
             static int last_warn_secs_shown = -1;
             tic_t idle_tics    = gametic - last_input_tic;
