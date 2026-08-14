@@ -2253,6 +2253,61 @@ menu_t  GameSelectDef =
     0
 };
 
+// [Arcade] Classify a wad's maps by reading its lump directory directly.
+// Doing it by hand avoids loading the wad into the engine just to find out
+// whether it is usable, which is the whole point of the check.
+// Return: 1 = MAPxx (Doom 2 style), 2 = ExMy (episodic), 0 = neither.
+static
+int  M_LevelPack_MapStyle( const char * path )
+{
+    unsigned char hdr[12], ent[16];
+    FILE * f;
+    unsigned int numlumps, infotableofs, i;
+    int  style = 0;
+
+    f = fopen( path, "rb" );
+    if( ! f )  return 0;
+
+    if( fread( hdr, 1, 12, f ) != 12 )        goto done;
+    if( memcmp( hdr, "IWAD", 4 ) != 0
+        && memcmp( hdr, "PWAD", 4 ) != 0 )    goto done;
+
+    // wad header is little endian
+    numlumps     = hdr[4] | (hdr[5]<<8) | (hdr[6]<<16) | ((unsigned)hdr[7]<<24);
+    infotableofs = hdr[8] | (hdr[9]<<8) | (hdr[10]<<16) | ((unsigned)hdr[11]<<24);
+
+    if( numlumps > 65536 )  numlumps = 65536;   // sanity, do not trust the file
+    if( fseek( f, infotableofs, SEEK_SET ) != 0 )  goto done;
+
+    for( i = 0; i < numlumps; i++ )
+    {
+        char nm[9];
+        if( fread( ent, 1, 16, f ) != 16 )  break;
+        memcpy( nm, &ent[8], 8 );
+        nm[8] = '\0';
+
+        // MAPxx
+        if( toupper(nm[0])=='M' && toupper(nm[1])=='A' && toupper(nm[2])=='P'
+            && isdigit(nm[3]) && isdigit(nm[4]) )
+        {
+            style = 1;
+            break;
+        }
+        // ExMy
+        if( toupper(nm[0])=='E' && isdigit(nm[1])
+            && toupper(nm[2])=='M' && isdigit(nm[3]) )
+        {
+            style = 2;
+            break;
+        }
+    }
+
+done:
+    fclose( f );
+    return style;
+}
+
+
 // [Arcade] Find selectable level packs in legacyhome/levels/.
 // Every .wad there is offered.  Keeping them out of the iwad search
 // directories means no name filtering is needed, so an IWAD or legacy.wad
@@ -2289,6 +2344,15 @@ void M_Scan_LevelPacks( void )
         if( (extp == NULL) || (strcasecmp( extp, ".wad" ) != 0) )  continue;
 
         cat_filename( levelpack_path[num_levelpack], dirpath, dent->d_name );
+
+        // Only offer packs whose maps match the running game: a MAPxx pack
+        // under Ultimate Doom (or an ExMy pack under Doom 2) fails to load.
+        // gamemode is valid here because the scan runs from M_Configure.
+        {
+            int style = M_LevelPack_MapStyle( levelpack_path[num_levelpack] );
+            int want = (gamemode == doom2_commercial) ? 1 : 2;
+            if( style != want )  continue;   // wrong style, or no maps at all
+        }
 
         // Menu label is the filename without its extension.
         len = extp - dent->d_name;
