@@ -2231,6 +2231,7 @@ enum { GS_numgames = 2 };   // the IWAD entries, ahead of the level packs
 
 static char  levelpack_path[MAX_LEVELPACK][MAX_WADPATH];
 static char  levelpack_name[MAX_LEVELPACK][28];
+static char  levelpack_label[MAX_LEVELPACK][48];  // "<game> wad: <NAME>"
 static int   num_levelpack = 0;
 static boolean  levelpack_loaded = false;   // see M_LevelPack_Loaded
 
@@ -2361,6 +2362,15 @@ void M_Scan_LevelPacks( void )
         memcpy( levelpack_name[num_levelpack], dent->d_name, len );
         levelpack_name[num_levelpack][len] = '\0';
 
+        // Distinguish add-on packs from the IWAD entries above them, and
+        // say which game they belong to.  gamedesc.gname is the running
+        // game ("Doom2", "Ultimate Doom", ...), so this stays right for
+        // whatever is loaded rather than being hardcoded.
+        snprintf( levelpack_label[num_levelpack],
+                  sizeof(levelpack_label[0]), "%s wad: %s",
+                  gamedesc.gname ? gamedesc.gname : "Game",
+                  levelpack_name[num_levelpack] );
+
         num_levelpack ++;
     }
     closedir( dp );
@@ -2372,10 +2382,14 @@ void M_Scan_LevelPacks( void )
              && strcasecmp( levelpack_name[j-1], levelpack_name[j] ) > 0; j-- )
         {
             char tmpname[ sizeof(levelpack_name[0]) ];
+            char tmplabel[ sizeof(levelpack_label[0]) ];
             char tmppath[ MAX_WADPATH ];
             memcpy( tmpname, levelpack_name[j-1], sizeof(tmpname) );
             memcpy( levelpack_name[j-1], levelpack_name[j], sizeof(tmpname) );
             memcpy( levelpack_name[j], tmpname, sizeof(tmpname) );
+            memcpy( tmplabel, levelpack_label[j-1], sizeof(tmplabel) );
+            memcpy( levelpack_label[j-1], levelpack_label[j], sizeof(tmplabel) );
+            memcpy( levelpack_label[j], tmplabel, sizeof(tmplabel) );
             memcpy( tmppath, levelpack_path[j-1], sizeof(tmppath) );
             memcpy( levelpack_path[j-1], levelpack_path[j], sizeof(tmppath) );
             memcpy( levelpack_path[j], tmppath, sizeof(tmppath) );
@@ -6948,7 +6962,7 @@ void M_Configure (void)
         {
             int mi = GS_numgames + gs;
             GameSelectMenu[mi].status = IT_STRING | IT_CALL;
-            GameSelectMenu[mi].text = levelpack_name[gs];
+            GameSelectMenu[mi].text = levelpack_label[gs];
             GameSelectMenu[mi].itemaction = M_SelectGame;
             GameSelectMenu[mi].alphaKey = 0;
             if( first < 0 )  first = mi;
