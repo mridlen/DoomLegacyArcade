@@ -113,22 +113,41 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
-- **Game selector** (`m_menu.c`, `M_SelectGame` / `GameSelectDef`, reached from Options). Switches
-  the IWAD between Ultimate Doom and Doom II. Changing IWAD requires the startup sequence to run
-  again; the engine can do that (the Launcher's "Iwad" item reaches `goto restart_command` in
-  `D_DoomMain`) but only *before* `D_DoomLoop`, which is a `while(1)` that never returns. So it
-  shuts down cleanly and **re-execs** with a different `-game`. Notes:
-  - `-game` takes the short name from the `gamedesc` table in `d_main.c` (`doomu`, `doom2`, …), so
-    the engine locates the IWAD itself and no wad path is hardcoded here.
-  - The rebuilt command line preserves the existing arguments (so `-devmode` survives a switch) and
+- **Game selector** (`m_menu.c`, `M_SelectGame` / `GameSelectDef`, reached from Options). Lists the
+  installed IWADs (Ultimate Doom, Doom II, Final Doom Plutonia and TNT) and then any level packs.
+
+  **Switching IWAD restarts the program.** The startup sequence has to run again; the engine can do
+  that (the Launcher's "Iwad" item reaches `goto restart_command` in `D_DoomMain`) but only *before*
+  `D_DoomLoop`, which is a `while(1)` that never returns. So `M_Restart_Program(idstr)` shuts down
+  cleanly and **re-execs** with a different `-game`. Passing `NULL` restarts as-is, which the idle
+  timeout uses to discard a loaded level pack.
+  - `-game` takes the short name from the `gamedesc` table in `d_main.c` (`doomu`, `doom2`,
+    `plutonia`, `tnt`, …), so the engine locates the IWAD itself and no wad path is hardcoded.
+    Adding another game is one entry in `gameselect_arg[]` plus a display name.
+  - The rebuilt command line preserves existing arguments (so `-devmode` survives a switch) and
     strips any earlier `-game`/`-iwad`.
   - `QUIT_normal` is required for the shutdown — the other severities force a 3 second sleep in
     `D_Quit_Save` — and `cv_textout.EV` is zeroed first to skip the ENDOOM screen.
-  - High scores are keyed by map name, so Doom's `E1M1` and Doom 2's `MAP01` records coexist.
   - Entries whose IWAD is missing are hidden, via `D_Game_Available()` (`d_main.c`), which tries
     each candidate filename from `game_desc_table` through the engine's own `Search_doomwaddir` —
     so the normal search paths and alternate names (`doomu.wad`/`doom_se.wad`/`doom.wad`) all
-    count. The whole "Select Game" line is hidden when fewer than two games are available.
+    count. The whole "Select Game" line is hidden when fewer than two choices exist.
+
+  **Level packs need no restart.** Every `.wad` in `legacyhome/levels/` is listed below the games as
+  `"<game> wad: <name>"`. Selecting one issues `map "<path>"`: a name with a `.wad` extension is
+  treated as an external map file, and `P_SetupLevel` loads it with `P_AddWadFile()` and starts its
+  first map. Adding a PWAD at runtime is supported; swapping the IWAD is not.
+  - The directory is deliberately **separate from the iwad search paths**, so no name filtering is
+    needed and `legacy.wad` or an IWAD can never be listed as a pack. Created on startup if absent.
+  - Packs are filtered by map style: `MAPxx` for `doom2_commercial`, `ExMy` otherwise. A mismatch
+    fails to load (DWANGO5 under Ultimate Doom), so `M_LevelPack_MapStyle()` reads the wad's lump
+    directory directly — loading the pack to discover whether it loads defeats the purpose.
+  - They start as a **two player splitscreen game**, mirroring `M_StartServer`, since these are
+    deathmatch/coop map sets; the map command alone would drop them into the single player session.
+    Coop versus deathmatch follows the Start Game screen's setting, which defaults to DM.
+  - Once a pack is loaded the attract screen is not trustworthy — the pack overrides the IWAD maps,
+    so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this and the
+    idle timeout restarts instead of returning to title. **End Game does not yet do this.**
 - **"Read This!" is hidden on the Doom 1 gamemodes** (`m_menu.c`, `M_Configure`). Doom 2 already
   overwrites that slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]`), which is why the
   entry only appeared under Ultimate Doom, where it is the help/order-form screens. This lives in
@@ -166,8 +185,11 @@ silently made the flag do nothing at all.
 - **Idle-to-title timeout** (`g_game.c`). `last_input_tic` is stamped in `D_PostEvent`, checked once
   per tic in `G_Ticker`'s `GS_LEVEL` case, and re-armed in `G_DoLoadLevel` so intermission time does
   not carry over. Ends the game via `Command_ExitGame_f()` and warns beforehand through the existing
-  `HU_SetTip` centered-text mechanism. Tunable via `cv_idletimeout` / `cv_idlewarntime` (default
-  60s/15s, `0` disables). Skipped in devmode, netgames, and demo playback.
+  `HU_SetTip` centered-text mechanism, or restarts the program when a level pack is loaded (see the
+  game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime` (default 60s/15s, `0` disables).
+  Skipped in devmode and demo playback. **Local splitscreen sets `netgame`**, so the check tests
+  `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone meant no two player game ever timed
+  out, which is exactly when an unattended cabinet needs it.
 - **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
   selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
   player (move/turn/strafe/fire/use/weapon cycling) and rewrites them on change and on config load,
@@ -175,8 +197,11 @@ silently made the flag do nothing at all.
   alone. Keys are the characters the user's **Dvorak** layout produces — the engine captures
   layout-aware SDL keycodes, not physical scancodes (`sdl/i_system.c`).
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
-  (map, skill) for single player, shown on the intermission screen and as a page in the attract
-  cycle. Records demos in the background and saves the run that set each record. Hooks:
+  **(game, map, skill)** for single player, shown on the intermission screen and as a page in the
+  attract cycle. The game is part of the key because Doom 2, Plutonia and TNT all have a `MAP01`
+  and they are different levels; record demos are named per game for the same reason, and only the
+  running game's records and demos are shown or replayed. Records demos in the background and saves
+  the run that set each record. Hooks:
   `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),
   `HS_NewGame` from the menu skill-select handlers (**must** precede `G_DeferedInitNew`, see below),
   `HS_LevelExit` from `WI_Init_Stats` (already the single-player-only branch of `WI_Start`), and new
@@ -188,8 +213,8 @@ silently made the flag do nothing at all.
   single global `CV_NETVAR` cvars, not per-player — the two-player Options screen edits
   single-player behavior too.
 
-Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text, `map skill tics`),
-and `demos/<map>_sk<N>.lmp`.
+Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text,
+`game map skill tics`), `demos/<game>_<map>_sk<N>.lmp`, and `levels/` for selectable level packs.
 
 To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
 command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory table
