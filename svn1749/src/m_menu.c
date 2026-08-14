@@ -2232,6 +2232,7 @@ enum { GS_numgames = 2 };   // the IWAD entries, ahead of the level packs
 static char  levelpack_path[MAX_LEVELPACK][MAX_WADPATH];
 static char  levelpack_name[MAX_LEVELPACK][28];
 static int   num_levelpack = 0;
+static boolean  levelpack_loaded = false;   // see M_LevelPack_Loaded
 
 menuitem_t GameSelectMenu[ GS_numgames + MAX_LEVELPACK ] =
 {
@@ -2319,14 +2320,71 @@ void M_Scan_LevelPacks( void )
 }
 
 
+// [Arcade] Restart the program, optionally switching game.
+// Shuts down cleanly and re-execs; does not return.
+//   game_idstr : the -game short name, or NULL to keep the current game
+//                (which also discards any level pack loaded at runtime)
+void M_Restart_Program( const char * game_idstr )
+{
+    char ** newargv;
+    int  i, n = 0;
+
+    // +3 for "-game", the name, and the NULL terminator.
+    newargv = (char**) malloc( (myargc + 3) * sizeof(char*) );
+    if( ! newargv )  return;
+
+    newargv[n++] = myargv[0];
+    for( i = 1; i < myargc; i++ )
+    {
+        // When switching game, drop any previous selection, which would
+        // otherwise override or conflict with the new one.
+        if( game_idstr
+            && ( strcasecmp(myargv[i], "-game") == 0
+              || strcasecmp(myargv[i], "-iwad") == 0 ) )
+        {
+            if( (i+1) < myargc )  i++;   // skip its parameter too
+            continue;
+        }
+        newargv[n++] = myargv[i];
+    }
+    if( game_idstr )
+    {
+        newargv[n++] = "-game";
+        newargv[n++] = (char*) game_idstr;
+    }
+    newargv[n] = NULL;
+
+    // Flush config (devmode only), high scores, demos, and shut down the
+    // video/sound devices, but do not exit -- exec replaces us instead.
+    // QUIT_normal is required: the other severities force a 3 second sleep
+    // in D_Quit_Save.  Suppress the ENDOOM screen it would otherwise print,
+    // since we are relaunching rather than returning to a terminal.
+    cv_textout.EV = 0;
+    D_Quit_Save( QUIT_normal );
+
+    execvp( newargv[0], newargv );
+
+    // Only reached if exec failed; the devices are already down, so there
+    // is nothing sensible left to return to.
+    I_Error("Could not restart DoomLegacy\n");
+}
+
+
+// [Arcade] Has a level pack been loaded into this session?
+// Once one is, the attract screen cannot be trusted: the pack overrides the
+// IWAD maps, so the built-in demos play back against the wrong levels.
+// G_Ticker's idle timeout restarts instead of returning to the title.
+boolean  M_LevelPack_Loaded( void )
+{
+    return levelpack_loaded;
+}
+
+
 //  choice : index into GameSelectMenu; the first GS_numgames entries are
 //           IWADs, the rest are level packs
 static
 void M_SelectGame(int choice)
 {
-    char ** newargv;
-    int  i, n = 0;
-
     if( choice >= GS_numgames )
     {
         // Level pack.  No restart needed: the map command takes a wad
@@ -2342,6 +2400,7 @@ void M_SelectGame(int choice)
         int lp = choice - GS_numgames;
         if( lp >= num_levelpack )  return;
 
+        levelpack_loaded = true;   // attract demos are no longer valid
         StartSplitScreenGame = true;
         M_Player2_MenuEnable( 1 );
         M_Clear_Menus( true );
@@ -2361,42 +2420,9 @@ void M_SelectGame(int choice)
 
     if( choice < 0 )  return;
 
-    // Rebuild the command line: keep our own arguments, drop any existing
-    // game selection, and append the new one.  +3 for "-game", the name,
-    // and the NULL terminator.
-    newargv = (char**) malloc( (myargc + 3) * sizeof(char*) );
-    if( ! newargv )  return;
-
-    newargv[n++] = myargv[0];
-    for( i = 1; i < myargc; i++ )
-    {
-        // Skip a previous "-game <name>" or "-iwad <file>", both of which
-        // would otherwise override or conflict with the new selection.
-        if( strcasecmp(myargv[i], "-game") == 0
-            || strcasecmp(myargv[i], "-iwad") == 0 )
-        {
-            if( (i+1) < myargc )  i++;   // skip its parameter too
-            continue;
-        }
-        newargv[n++] = myargv[i];
-    }
-    newargv[n++] = "-game";
-    newargv[n++] = (char*) gameselect_arg[choice];
-    newargv[n] = NULL;
-
-    // Flush config (devmode only), high scores, demos, and shut down the
-    // video/sound devices, but do not exit -- exec replaces us instead.
-    // QUIT_normal is required: the other severities force a 3 second sleep
-    // in D_Quit_Save.  Suppress the ENDOOM screen it would otherwise print,
-    // since we are relaunching rather than returning to a terminal.
-    cv_textout.EV = 0;
-    D_Quit_Save( QUIT_normal );
-
-    execvp( newargv[0], newargv );
-
-    // Only reached if exec failed; the devices are already down, so there
-    // is nothing sensible left to return to.
-    I_Error("Could not restart for game '%s'\n", gameselect_arg[choice]);
+    // Switching IWAD needs the startup sequence to run again, which is only
+    // reachable by restarting the program.
+    M_Restart_Program( gameselect_arg[choice] );   // no return
 }
 
 //

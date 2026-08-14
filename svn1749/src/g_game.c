@@ -1898,6 +1898,13 @@ main_actions:
 
             if( idle_tics >= timeout_tics )
             {
+                // A level pack overrides the IWAD maps, so the attract
+                // screen's built-in demos would play back against the wrong
+                // levels, and the splitscreen state would persist.  Restart
+                // for a clean attract screen instead of returning to title.
+                if( M_LevelPack_Loaded() )
+                    M_Restart_Program( NULL );   // no return
+
                 Command_ExitGame_f();
                 break;
             }
