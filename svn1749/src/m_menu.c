@@ -5202,6 +5202,13 @@ void M_EndGameResponse(int ch)
 
     currentMenu->lastOn = itemOn;
     M_Clear_Menus (true);
+
+    // [Arcade] A level pack overrides the IWAD maps, so the attract screen's
+    // built-in demos would play back against the wrong levels.  Restart for
+    // a clean attract screen, as the idle timeout does.
+    if( M_LevelPack_Loaded() )
+        M_Restart_Program( NULL );   // no return
+
     COM_BufAddText("exitgame\n");
 }
 

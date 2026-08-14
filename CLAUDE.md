@@ -146,8 +146,9 @@ silently made the flag do nothing at all.
     deathmatch/coop map sets; the map command alone would drop them into the single player session.
     Coop versus deathmatch follows the Start Game screen's setting, which defaults to DM.
   - Once a pack is loaded the attract screen is not trustworthy — the pack overrides the IWAD maps,
-    so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this and the
-    idle timeout restarts instead of returning to title. **End Game does not yet do this.**
+    so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this, and
+    both routes back to the attract screen (the idle timeout in `G_Ticker`, and
+    `M_EndGameResponse`) restart the program instead of returning to title.
 - **"Read This!" is hidden on the Doom 1 gamemodes** (`m_menu.c`, `M_Configure`). Doom 2 already
   overwrites that slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]`), which is why the
   entry only appeared under Ultimate Doom, where it is the help/order-form screens. This lives in
