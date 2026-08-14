@@ -2232,6 +2232,9 @@ enum { GS_numgames = 4 };   // the IWAD entries, ahead of the level packs
 #define MAX_LEVELPACK   16
 #define LEVELPACK_DIR   "levels"
 
+// map styles a level pack may contain, see M_LevelPack_MapStyle
+enum { LPM_mapxx = 0x01, LPM_exmy = 0x02 };
+
 static char  levelpack_path[MAX_LEVELPACK][MAX_WADPATH];
 static char  levelpack_name[MAX_LEVELPACK][28];
 static char  levelpack_label[MAX_LEVELPACK][48];  // "<game> wad: <NAME>"
@@ -2262,7 +2265,11 @@ menu_t  GameSelectDef =
 // [Arcade] Classify a wad's maps by reading its lump directory directly.
 // Doing it by hand avoids loading the wad into the engine just to find out
 // whether it is usable, which is the whole point of the check.
-// Return: 1 = MAPxx (Doom 2 style), 2 = ExMy (episodic), 0 = neither.
+// Return a bitmask, because a pack may carry both: some (Maps of Chaos, for
+// one) ship MAPxx and ExMy versions of every level in a single wad, and
+// stopping at the first map lump pinned them to whichever style happened to
+// come first in the directory, hiding them under the other game.
+//   LPM_mapxx = has MAPxx (Doom 2 style),  LPM_exmy = has ExMy (episodic)
 static
 int  M_LevelPack_MapStyle( const char * path )
 {
@@ -2296,16 +2303,16 @@ int  M_LevelPack_MapStyle( const char * path )
         if( toupper(nm[0])=='M' && toupper(nm[1])=='A' && toupper(nm[2])=='P'
             && isdigit(nm[3]) && isdigit(nm[4]) )
         {
-            style = 1;
-            break;
+            style |= LPM_mapxx;
         }
         // ExMy
-        if( toupper(nm[0])=='E' && isdigit(nm[1])
+        else if( toupper(nm[0])=='E' && isdigit(nm[1])
             && toupper(nm[2])=='M' && isdigit(nm[3]) )
         {
-            style = 2;
-            break;
+            style |= LPM_exmy;
         }
+
+        if( style == (LPM_mapxx | LPM_exmy) )  break;  // nothing more to learn
     }
 
 done:
@@ -2351,13 +2358,14 @@ void M_Scan_LevelPacks( void )
 
         cat_filename( levelpack_path[num_levelpack], dirpath, dent->d_name );
 
-        // Only offer packs whose maps match the running game: a MAPxx pack
-        // under Ultimate Doom (or an ExMy pack under Doom 2) fails to load.
+        // Only offer packs carrying maps the running game can load: a
+        // MAPxx-only pack under Ultimate Doom (or an ExMy-only pack under
+        // Doom 2) fails.  A pack holding both is offered under either.
         // gamemode is valid here because the scan runs from M_Configure.
         {
             int style = M_LevelPack_MapStyle( levelpack_path[num_levelpack] );
-            int want = (gamemode == doom2_commercial) ? 1 : 2;
-            if( style != want )  continue;   // wrong style, or no maps at all
+            int want = (gamemode == doom2_commercial) ? LPM_mapxx : LPM_exmy;
+            if( ! (style & want) )  continue;   // wrong style, or no maps
         }
 
         // Menu label is the filename without its extension.
