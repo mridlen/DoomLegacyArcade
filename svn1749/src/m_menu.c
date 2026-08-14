@@ -170,6 +170,11 @@
 #include "doomincl.h"
 #include "am_map.h"
 #include "dstrings.h"
+// [Arcade] level pack scan (the dirent include further down is on the
+// non-FTW path only, which this build does not take)
+#include <sys/types.h>
+#include <dirent.h>
+
 #include "d_main.h"
 
 #include "console.h"
@@ -2215,11 +2220,24 @@ menu_t  OptionsDef =
 static void M_SelectGame(int choice);
 
 static const char * gameselect_arg[] = { "doomu", "doom2" };
+enum { GS_numgames = 2 };   // the IWAD entries, ahead of the level packs
 
-menuitem_t GameSelectMenu[] =
+// [Arcade] Level packs, scanned from legacyhome/levels/ by
+// M_Scan_LevelPacks.  Unlike an IWAD switch these need no restart: the map
+// command accepts a wad filename, and P_SetupLevel then calls
+// P_AddWadFile() to load it and jump to its first map.
+#define MAX_LEVELPACK   16
+#define LEVELPACK_DIR   "levels"
+
+static char  levelpack_path[MAX_LEVELPACK][MAX_WADPATH];
+static char  levelpack_name[MAX_LEVELPACK][28];
+static int   num_levelpack = 0;
+
+menuitem_t GameSelectMenu[ GS_numgames + MAX_LEVELPACK ] =
 {
     {IT_STRING | IT_CALL, 0, "Ultimate Doom", M_SelectGame, 0},
     {IT_STRING | IT_CALL, 0, "Doom II",       M_SelectGame, 0},
+    // remainder filled in from the levels directory
 };
 
 menu_t  GameSelectDef =
@@ -2234,16 +2252,95 @@ menu_t  GameSelectDef =
     0
 };
 
-//  choice : index into GameSelectMenu / gameselect_arg
+// [Arcade] Find selectable level packs in legacyhome/levels/.
+// Every .wad there is offered.  Keeping them out of the iwad search
+// directories means no name filtering is needed, so an IWAD or legacy.wad
+// can never be mistaken for a level pack.
+void M_Scan_LevelPacks( void )
+{
+    char dirpath[MAX_WADPATH];
+    DIR * dp;
+    struct dirent * dent;
+    int  i, j;
+
+    num_levelpack = 0;
+
+    cat_filename( dirpath, legacyhome, LEVELPACK_DIR );
+    if( access( dirpath, R_OK ) < 0 )
+    {
+        // Create it so it is obvious where level packs belong.
+        I_mkdir( dirpath, 0700 );
+        return;
+    }
+
+    dp = opendir( dirpath );
+    if( ! dp )  return;
+
+    while( num_levelpack < MAX_LEVELPACK )
+    {
+        char * extp;
+        int len;
+
+        dent = readdir( dp );
+        if( dent == NULL )  break;
+
+        extp = strrchr( dent->d_name, '.' );
+        if( (extp == NULL) || (strcasecmp( extp, ".wad" ) != 0) )  continue;
+
+        cat_filename( levelpack_path[num_levelpack], dirpath, dent->d_name );
+
+        // Menu label is the filename without its extension.
+        len = extp - dent->d_name;
+        if( len > (int)sizeof(levelpack_name[0]) - 1 )
+            len = sizeof(levelpack_name[0]) - 1;
+        memcpy( levelpack_name[num_levelpack], dent->d_name, len );
+        levelpack_name[num_levelpack][len] = '\0';
+
+        num_levelpack ++;
+    }
+    closedir( dp );
+
+    // readdir order is arbitrary, so sort for a stable menu.
+    for( i = 1; i < num_levelpack; i++ )
+    {
+        for( j = i; j > 0
+             && strcasecmp( levelpack_name[j-1], levelpack_name[j] ) > 0; j-- )
+        {
+            char tmpname[ sizeof(levelpack_name[0]) ];
+            char tmppath[ MAX_WADPATH ];
+            memcpy( tmpname, levelpack_name[j-1], sizeof(tmpname) );
+            memcpy( levelpack_name[j-1], levelpack_name[j], sizeof(tmpname) );
+            memcpy( levelpack_name[j], tmpname, sizeof(tmpname) );
+            memcpy( tmppath, levelpack_path[j-1], sizeof(tmppath) );
+            memcpy( levelpack_path[j-1], levelpack_path[j], sizeof(tmppath) );
+            memcpy( levelpack_path[j], tmppath, sizeof(tmppath) );
+        }
+    }
+}
+
+
+//  choice : index into GameSelectMenu; the first GS_numgames entries are
+//           IWADs, the rest are level packs
 static
 void M_SelectGame(int choice)
 {
     char ** newargv;
     int  i, n = 0;
 
-    if( choice < 0
-        || choice >= (int)(sizeof(gameselect_arg)/sizeof(gameselect_arg[0])) )
+    if( choice >= GS_numgames )
+    {
+        // Level pack.  No restart needed: the map command takes a wad
+        // filename, which G_InitNew treats as an external map file and
+        // P_SetupLevel loads with P_AddWadFile, starting its first map.
+        int lp = choice - GS_numgames;
+        if( lp >= num_levelpack )  return;
+
+        COM_BufAddText( va("map \"%s\"\n", levelpack_path[lp]) );
+        M_Clear_Menus( true );
         return;
+    }
+
+    if( choice < 0 )  return;
 
     // Rebuild the command line: keep our own arguments, drop any existing
     // game selection, and append the new one.  +3 for "-game", the name,
@@ -6722,17 +6819,36 @@ void M_Configure (void)
     {
         int gs;
         int avail = 0;
-        for( gs = 0; gs < GameSelectDef.numitems; gs++ )
+        int first = -1;
+
+        M_Scan_LevelPacks();
+
+        for( gs = 0; gs < GS_numgames; gs++ )
         {
             if( D_Game_Available( gameselect_arg[gs] ) )
             {
-                if( avail == 0 )
-                    GameSelectDef.lastOn = gs;  // start on a shown item
+                if( first < 0 )  first = gs;
                 avail++;
             }
             else
                 GameSelectMenu[gs].status = IT_HIDDEN;
         }
+
+        // Append a line per level pack found.
+        for( gs = 0; gs < num_levelpack; gs++ )
+        {
+            int mi = GS_numgames + gs;
+            GameSelectMenu[mi].status = IT_STRING | IT_CALL;
+            GameSelectMenu[mi].text = levelpack_name[gs];
+            GameSelectMenu[mi].itemaction = M_SelectGame;
+            GameSelectMenu[mi].alphaKey = 0;
+            if( first < 0 )  first = mi;
+            avail++;
+        }
+        GameSelectDef.numitems = GS_numgames + num_levelpack;
+        if( first >= 0 )
+            GameSelectDef.lastOn = first;   // start on a shown item
+
         // Nothing worth switching to: only the game already running, or none.
         if( avail < 2 )
             OptionsMenu[OPT_selectgame].status = IT_HIDDEN;
