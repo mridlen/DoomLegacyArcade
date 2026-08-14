@@ -2238,6 +2238,7 @@ enum { LPM_mapxx = 0x01, LPM_exmy = 0x02 };
 static char  levelpack_path[MAX_LEVELPACK][MAX_WADPATH];
 static char  levelpack_name[MAX_LEVELPACK][28];
 static char  levelpack_label[MAX_LEVELPACK][48];  // "<game> wad: <NAME>"
+static boolean  levelpack_isloaded[MAX_LEVELPACK];
 static int   num_levelpack = 0;
 static boolean  levelpack_loaded = false;   // see M_LevelPack_Loaded
 
@@ -2258,9 +2259,25 @@ menu_t  GameSelectDef =
     M_DrawGenericMenu,
     NULL,
     sizeof(GameSelectMenu)/sizeof(menuitem_t),
-    60,60,
+    // x=20: pack lines are long ("* Ultimate Doom wad: mapsofchaos-hc"), and
+    // at 8 pixels a character they run off a 320 wide screen from x=60.
+    20,60,
     0
 };
+
+// [Arcade] Build a pack's menu line: which game it belongs to, and whether
+// it is loaded.  gamedesc.gname is the running game ("Doom2", "Ultimate
+// Doom", ...), so this stays right for whatever is loaded rather than being
+// hardcoded.  A leading "*" marks a pack already added to this session.
+static
+void  M_LevelPack_SetLabel( int i )
+{
+    snprintf( levelpack_label[i], sizeof(levelpack_label[0]), "%s%s wad: %s",
+              levelpack_isloaded[i] ? "* " : "",
+              gamedesc.gname ? gamedesc.gname : "Game",
+              levelpack_name[i] );
+}
+
 
 // [Arcade] Classify a wad's maps by reading its lump directory directly.
 // Doing it by hand avoids loading the wad into the engine just to find out
@@ -2375,14 +2392,8 @@ void M_Scan_LevelPacks( void )
         memcpy( levelpack_name[num_levelpack], dent->d_name, len );
         levelpack_name[num_levelpack][len] = '\0';
 
-        // Distinguish add-on packs from the IWAD entries above them, and
-        // say which game they belong to.  gamedesc.gname is the running
-        // game ("Doom2", "Ultimate Doom", ...), so this stays right for
-        // whatever is loaded rather than being hardcoded.
-        snprintf( levelpack_label[num_levelpack],
-                  sizeof(levelpack_label[0]), "%s wad: %s",
-                  gamedesc.gname ? gamedesc.gname : "Game",
-                  levelpack_name[num_levelpack] );
+        levelpack_isloaded[num_levelpack] = false;
+        M_LevelPack_SetLabel( num_levelpack );
 
         num_levelpack ++;
     }
@@ -2478,34 +2489,24 @@ void M_SelectGame(int choice)
 {
     if( choice >= GS_numgames )
     {
-        // Level pack.  No restart needed: the map command takes a wad
-        // filename, which G_InitNew treats as an external map file and
-        // P_SetupLevel loads with P_AddWadFile, starting its first map.
-        //
-        // Start it as a two player splitscreen game, mirroring what the
-        // Start Game menu does (see M_StartServer).  These packs are
-        // deathmatch/coop map sets, and issuing the map command alone would
-        // just drop the pack into the current single player session.
-        // Coop versus deathmatch follows the Start Game screen's setting,
-        // which defaults to DM.
+        // Level pack: only load it.  Adding a PWAD at runtime is supported
+        // (unlike swapping the IWAD), and its maps then replace the IWAD's,
+        // so the ordinary One or Two Player flow plays the pack.  Starting
+        // a game here instead would force the player into whichever mode
+        // this code picked, and into the pack's first map.
         int lp = choice - GS_numgames;
         if( lp >= num_levelpack )  return;
 
-        levelpack_loaded = true;   // attract demos are no longer valid
-        StartSplitScreenGame = true;
-        M_Player2_MenuEnable( 1 );
-        M_Clear_Menus( true );
+        if( ! levelpack_isloaded[lp] )
+        {
+            COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
+            levelpack_isloaded[lp] = true;
+            levelpack_loaded = true;   // attract demos are no longer valid
+            M_LevelPack_SetLabel( lp );
+        }
 
-        server = true;
-        netgame = true;
-        multiplayer = true;
-        D_WaitPlayer_Setup();
-
-        COM_BufAddText( va("stopdemo;splitscreen 1;deathmatch %d\n",
-                           cv_deathmatch_menu.value) );
-        COM_BufAddText( va("map \"%s\" -skill %d -monsters %d\n",
-                           levelpack_path[lp],
-                           cv_skill.value, cv_monsters.value) );
+        CONS_Printf( "\2%s loaded. Start a One or Two Player game to play it.\n",
+                     levelpack_name[lp] );
         return;
     }
 
