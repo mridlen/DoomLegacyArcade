@@ -1903,7 +1903,7 @@ main_actions:
                 // levels, and the splitscreen state would persist.  Restart
                 // for a clean attract screen instead of returning to title.
                 if( M_LevelPack_Loaded() )
-                    M_Restart_Program( NULL );   // no return
+                    M_Restart_Program( NULL, false );   // no return
 
                 Command_ExitGame_f();
                 break;

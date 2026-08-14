@@ -69,7 +69,8 @@ void M_Configure (void);
 
 // [Arcade] Restart the program; does not return.
 //   game_idstr : -game short name, or NULL to keep the current game
-void M_Restart_Program( const char * game_idstr );
+//   keep_packs : re-add the loaded level packs with -file, else drop them
+void M_Restart_Program( const char * game_idstr, boolean keep_packs );
 // [Arcade] True once a level pack has been loaded, after which the attract
 // screen demos play against the wrong maps.
 boolean  M_LevelPack_Loaded( void );

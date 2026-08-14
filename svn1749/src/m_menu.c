@@ -2265,6 +2265,34 @@ menu_t  GameSelectDef =
     0
 };
 
+// [Arcade] Was this pack passed on the command line with -file?
+// That is how a restart re-adds the packs being kept, so they must come back
+// marked as loaded.  -file takes one or more filenames, up to the next switch.
+static
+boolean  M_LevelPack_InArgv( const char * path )
+{
+    int  i;
+    boolean in_file_list = false;
+
+    for( i = 1; i < myargc; i++ )
+    {
+        if( strcasecmp(myargv[i], "-file") == 0 )
+        {
+            in_file_list = true;
+            continue;
+        }
+        if( ! in_file_list )  continue;
+        if( myargv[i][0] == '-' )
+        {
+            in_file_list = false;
+            continue;
+        }
+        if( strcmp(myargv[i], path) == 0 )  return true;
+    }
+    return false;
+}
+
+
 // [Arcade] Build a pack's menu line: which game it belongs to, and whether
 // it is loaded.  gamedesc.gname is the running game ("Doom2", "Ultimate
 // Doom", ...), so this stays right for whatever is loaded rather than being
@@ -2392,7 +2420,13 @@ void M_Scan_LevelPacks( void )
         memcpy( levelpack_name[num_levelpack], dent->d_name, len );
         levelpack_name[num_levelpack][len] = '\0';
 
-        levelpack_isloaded[num_levelpack] = false;
+        // A pack re-added by a restart arrives on the command line, so it is
+        // already loaded and must show as such -- otherwise selecting it
+        // would add it a second time.
+        levelpack_isloaded[num_levelpack] =
+            M_LevelPack_InArgv( levelpack_path[num_levelpack] );
+        if( levelpack_isloaded[num_levelpack] )
+            levelpack_loaded = true;
         M_LevelPack_SetLabel( num_levelpack );
 
         num_levelpack ++;
@@ -2425,14 +2459,17 @@ void M_Scan_LevelPacks( void )
 // [Arcade] Restart the program, optionally switching game.
 // Shuts down cleanly and re-execs; does not return.
 //   game_idstr : the -game short name, or NULL to keep the current game
-//                (which also discards any level pack loaded at runtime)
-void M_Restart_Program( const char * game_idstr )
+//   keep_packs : re-add the currently loaded level packs with -file.
+//                false discards them, which is how a pack is unloaded --
+//                the engine cannot remove a wad's lumps once loaded.
+void M_Restart_Program( const char * game_idstr, boolean keep_packs )
 {
     char ** newargv;
     int  i, n = 0;
+    boolean in_file_list = false;
 
-    // +3 for "-game", the name, and the NULL terminator.
-    newargv = (char**) malloc( (myargc + 3) * sizeof(char*) );
+    // +3 for "-game" and its name and the NULL terminator, +2 per pack.
+    newargv = (char**) malloc( (myargc + 3 + (2*MAX_LEVELPACK)) * sizeof(char*) );
     if( ! newargv )  return;
 
     newargv[n++] = myargv[0];
@@ -2445,14 +2482,39 @@ void M_Restart_Program( const char * game_idstr )
               || strcasecmp(myargv[i], "-iwad") == 0 ) )
         {
             if( (i+1) < myargc )  i++;   // skip its parameter too
+            in_file_list = false;
             continue;
         }
+
+        // Always drop any -file list: the set of packs is rebuilt below, so
+        // carrying the old one forward would duplicate or resurrect packs.
+        // -file takes one or more filenames, up to the next switch.
+        if( strcasecmp(myargv[i], "-file") == 0 )
+        {
+            in_file_list = true;
+            continue;
+        }
+        if( in_file_list )
+        {
+            if( myargv[i][0] != '-' )  continue;   // still a filename
+            in_file_list = false;
+        }
+
         newargv[n++] = myargv[i];
     }
     if( game_idstr )
     {
         newargv[n++] = "-game";
         newargv[n++] = (char*) game_idstr;
+    }
+    if( keep_packs )
+    {
+        for( i = 0; i < num_levelpack; i++ )
+        {
+            if( ! levelpack_isloaded[i] )  continue;
+            newargv[n++] = "-file";
+            newargv[n++] = levelpack_path[i];
+        }
     }
     newargv[n] = NULL;
 
@@ -2497,13 +2559,20 @@ void M_SelectGame(int choice)
         int lp = choice - GS_numgames;
         if( lp >= num_levelpack )  return;
 
-        if( ! levelpack_isloaded[lp] )
+        if( levelpack_isloaded[lp] )
         {
-            COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
-            levelpack_isloaded[lp] = true;
-            levelpack_loaded = true;   // attract demos are no longer valid
-            M_LevelPack_SetLabel( lp );
+            // Unload.  The engine cannot remove a wad's lumps once loaded,
+            // so this restarts and re-adds the packs that remain via -file.
+            levelpack_isloaded[lp] = false;
+            CONS_Printf( "\2Unloading %s, restarting.\n", levelpack_name[lp] );
+            M_Restart_Program( NULL, true );   // no return
+            return;
         }
+
+        COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
+        levelpack_isloaded[lp] = true;
+        levelpack_loaded = true;   // attract demos are no longer valid
+        M_LevelPack_SetLabel( lp );
 
         CONS_Printf( "\2%s loaded. Start a One or Two Player game to play it.\n",
                      levelpack_name[lp] );
@@ -2514,7 +2583,7 @@ void M_SelectGame(int choice)
 
     // Switching IWAD needs the startup sequence to run again, which is only
     // reachable by restarting the program.
-    M_Restart_Program( gameselect_arg[choice] );   // no return
+    M_Restart_Program( gameselect_arg[choice], false );   // no return
 }
 
 //
@@ -5216,7 +5285,7 @@ void M_EndGameResponse(int ch)
     // built-in demos would play back against the wrong levels.  Restart for
     // a clean attract screen, as the idle timeout does.
     if( M_LevelPack_Loaded() )
-        M_Restart_Program( NULL );   // no return
+        M_Restart_Program( NULL, false );   // no return
 
     COM_BufAddText("exitgame\n");
 }
