@@ -224,6 +224,14 @@ memory while the game runs, so a later record writes the old entries straight ba
 
 ### Gotchas found the hard way
 
+- **Returning to the title screen resets very little.** State from the finished game leaks into the
+  attract screen, which has produced two separate bugs: a loaded level pack left the built-in demos
+  playing against the wrong maps, and `cv_splitscreen` left them rendering in a split view. Both are
+  now cleared on the way out — the pack by restarting, splitscreen in `Command_ExitGame_f()`, which
+  is the single funnel for every route back to attract mode (End Game, the idle timeout, and the
+  engine's own error paths). **If the attract screen ever looks wrong after play, suspect leftover
+  state first**, and prefer fixing it in `Command_ExitGame_f` so every route is covered.
+
 - **No PK3 support; WadSmoosh is not usable.** The file-type dispatch (`w_wad.c`, `W_...` extension
   check) recognizes only `.wad`, `.deh`, `.bex` and `.zip` — anything else is loaded as a single
   lump — and the IWAD tables (`d_main.c`, the `gamedesc` list) name `.wad` files only. WadSmoosh's
