@@ -217,6 +217,17 @@ silently made the flag do nothing at all.
   latches false on the first level exited short; from then on only the speed record can be beaten
   for the rest of that run. Each category keeps its **own** record demo.
 
+  Both tables are laid out by hand against the surrounding graphics, so **the numbers matter**.
+  `HS_Draw_IntermissionTable(x, y)` draws its column header 14 *above* the `y` it is passed, and
+  right-justifies each category's times at `x + HS_COL_TIME + cat*HS_COL_STEP` (90 and 62), so the
+  last column's right edge is `x + 152` and must stay inside `BASEVIDWIDTH` (320). On the single
+  player intermission the free band is only what is left between the Secrets row and the Time row:
+  rows start at `SP_STATSY` (50) and are `lh` apart, where `lh` is 1.5× the `WINUM0` patch height
+  (12) = **18**, and the percent patches are 12 tall — so Secrets ends at 98 and `SP_TIMEY` is 168.
+  The call site's `+ 12` centers header-plus-five-rows in that 70px gap. **If a row is ever added
+  or the font changes, re-check both ends** — the drawer only bails at `BASEVIDHEIGHT`, so it will
+  happily paint over the Time/Par row.
+
   The **wad combination** is `HS_GameId()`: the game's short name plus any loaded level pack, such
   as `doom2` or `doomu+mapsofchaos`. Both parts are needed — Doom 2, Plutonia and TNT all have a
   `MAP01` that is a different level, and a pack replaces the maps again. Record demos are named
