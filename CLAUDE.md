@@ -205,11 +205,24 @@ silently made the flag do nothing at all.
   alone. Keys are the characters the user's **Dvorak** layout produces — the engine captures
   layout-aware SDL keycodes, not physical scancodes (`sdl/i_system.c`).
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
-  **(game, map, skill)** for single player, shown on the intermission screen and as a page in the
-  attract cycle. The game is part of the key because Doom 2, Plutonia and TNT all have a `MAP01`
-  and they are different levels; record demos are named per game for the same reason, and only the
-  running game's records and demos are shown or replayed. Records demos in the background and saves
-  the run that set each record. Hooks:
+  **(wad combination, map, skill)** for single player, shown on the intermission screen and as a
+  page in the attract cycle.
+
+  The **wad combination** is `HS_GameId()`: the game's short name plus any loaded level pack, such
+  as `doom2` or `doomu+mapsofchaos`. Both parts are needed — Doom 2, Plutonia and TNT all have a
+  `MAP01` that is a different level, and a pack replaces the maps again. Record demos are named
+  with the same key, and only the current combination's records and demos are shown or replayed
+  (a demo from another combination would desync instantly). The key is recomputed per use, since a
+  pack can be loaded mid-session, and sanitized to one filename-safe word because it is a space
+  separated field in `highscores.dat` *and* part of the demo filename, while pack names come from
+  arbitrary filenames. Renaming a wad therefore starts a fresh table — the name is the identity.
+
+  The attract page appears **after every demo**, skipped when the current combination has no times
+  (`HS_Have_Records()`) so a fresh cabinet does not show an empty page repeatedly. It is interposed
+  in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
+  are shared between game modes and the last is reachable only under the retail divisor.
+
+  Records demos in the background and saves the run that set each record. Hooks:
   `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),
   `HS_NewGame` from the menu skill-select handlers (**must** precede `G_DeferedInitNew`, see below),
   `HS_LevelExit` from `WI_Init_Stats` (already the single-player-only branch of `WI_Start`), and new
@@ -222,7 +235,8 @@ silently made the flag do nothing at all.
   single-player behavior too.
 
 Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text,
-`game map skill tics`), `demos/<game>_<map>_sk<N>.lmp`, and `levels/` for selectable level packs.
+`<wadcombo> map skill tics`), `demos/<wadcombo>_<map>_sk<N>.lmp`, and `levels/` for selectable
+level packs. `<wadcombo>` is `HS_GameId()`, e.g. `doom2` or `doomu+mapsofchaos`.
 
 To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
 command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory table
