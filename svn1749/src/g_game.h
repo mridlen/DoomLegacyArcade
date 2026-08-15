@@ -139,6 +139,9 @@ extern  gameaction_e    gameaction;
 // demoplaying back and demo recording
 extern  boolean   demoplayback;
 extern  boolean   demorecording;
+// [Arcade] Recording is a scratch buffer for G_SnapshotDemo, not a demo to
+// keep: G_CheckDemoStatus discards it instead of writing a file.
+extern  boolean   demo_scratch;
 extern  boolean   timingdemo;       
 
 // Quit after playing a demo from cmdline.

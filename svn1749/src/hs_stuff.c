@@ -253,6 +253,7 @@ void HS_NewGame( void )
         G_CheckDemoStatus();
 
     G_RecordDemo_maxsize( "hs_background", HS_DEMOBUFFER_SIZE );
+    demo_scratch = true;   // only ever read via G_SnapshotDemo, never saved
     G_BeginRecording();
 }
 

@@ -529,6 +529,9 @@ wb_start_t      wminfo;                 // parms for world map / intermission
 #define DEMONAME_LEN  32
 char            demoname[DEMONAME_LEN+5];
 boolean         demorecording;
+// [Arcade] This recording is a scratch buffer to be snapshotted, not a demo
+// to keep; do not write it out when recording stops.
+boolean         demo_scratch = false;
 boolean         demoplayback;
 byte*           demobuffer;
 byte*           demo_p;
@@ -3869,6 +3872,8 @@ void G_RecordDemo_maxsize (const char* name, int maxsize)
     dl_strncpy(demoname, name, DEMONAME_LEN);
     strcat (demoname, ".lmp");
 
+    demo_scratch = false;   // -record saves; see G_CheckDemoStatus
+
     if( demobuffer )
     {
         Z_Free (demobuffer);
@@ -4839,12 +4844,21 @@ boolean G_CheckDemoStatus (void)
     if (demorecording)
     {
         *demo_p++ = DEMOMARKER;
-        FIL_WriteFile (demoname, demobuffer, demo_p - demobuffer);
+
+        // [Arcade] The high score recorder runs continuously and is only
+        // ever read through G_SnapshotDemo, so its buffer has no consumer
+        // when recording stops.  Writing it dropped a stray hs_background.lmp
+        // into the working directory on every exit.
+        if( ! demo_scratch )
+        {
+            FIL_WriteFile (demoname, demobuffer, demo_p - demobuffer);
+            GenPrintf(EMSG_hud, "\2Demo %s recorded\n", demoname);
+        }
+
         Z_Free (demobuffer);
         demobuffer = NULL;  // [Arcade] was left dangling
         demorecording = false;
-
-        GenPrintf(EMSG_hud, "\2Demo %s recorded\n", demoname);
+        demo_scratch = false;
         return true;
     }
 
