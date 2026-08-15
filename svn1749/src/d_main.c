@@ -447,6 +447,7 @@ int demosequence;
 int pagetic;
 static const char * pagename = "TITLEPIC";
 static boolean hs_attract_page = false;   // [Arcade] high-score table page active
+static boolean hs_page_after_demo = false;  // [Arcade] show scores after this demo
 
 //  PROTOS
 static void Help(void);
@@ -1264,12 +1265,31 @@ void D_DoAdvanceDemo(void)
     players[consoleplayer].playerstate = PST_LIVE;      // not reborn
     gameaction = ga_nothing;
 
-    if (gamemode == ultdoom_retail)
-        demosequence = (demosequence + 1) % 8;   // was % 7
-    else
-        demosequence = (demosequence + 1) % 7;   // was % 6
+    // [Arcade] Show the high score table after each demo rather than once
+    // per cycle, so it comes around often.  Interposed here instead of being
+    // another demosequence case: the cases are shared between game modes and
+    // the last one is reachable only under the retail divisor, so inserting
+    // pages into that sequence is what forced it to be renumbered before.
+    // Skipped when there is nothing to list, or a fresh cabinet would show
+    // an empty page after every demo.
+    if( hs_page_after_demo )
+    {
+        hs_page_after_demo = false;
+        if( HS_Have_Records() )
+        {
+            pagetic = TICRATE * 8;
+            hs_attract_page = true;
+            gamestate = GS_DEMOSCREEN;
+            return;                 // demosequence deliberately not advanced
+        }
+    }
 
-    hs_attract_page = false;   // [Arcade] reset each cycle; only case 6 sets it
+    if (gamemode == ultdoom_retail)
+        demosequence = (demosequence + 1) % 7;
+    else
+        demosequence = (demosequence + 1) % 6;
+
+    hs_attract_page = false;   // [Arcade] cleared for the graphic/demo pages
 
     switch (demosequence)
     {
@@ -1337,13 +1357,8 @@ void D_DoAdvanceDemo(void)
             demo_name = HS_NextRecordDemoPath();   // [Arcade]
             if( demo_name == NULL )  demo_name = "demo3";
             goto playdemo;
-        case 6:                       // [Arcade] combined high-score table page
-            pagetic = TICRATE * 8;
-            hs_attract_page = true;
-            gamestate = GS_DEMOSCREEN;
-            break;
             // THE DEFINITIVE DOOM Special Edition demo
-        case 7:
+        case 6:
             demo_name = "demo4";
             goto playdemo;
     }
@@ -1353,6 +1368,7 @@ void D_DoAdvanceDemo(void)
     G_DeferedPlayDemo( demo_name );
     demo_ctrl = DEMO_seq_playdemo;  // demo started here (not console)
     pagetic = 9999999;
+    hs_page_after_demo = true;      // [Arcade] scores follow this demo
     return;
 }
 

@@ -22,6 +22,7 @@ void  HS_NewGame(void);
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime);
 void  HS_Draw_IntermissionTable(int x, int y);
 void  HS_Draw_AttractTable(void);
+boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);
 
 #endif // HS_STUFF_H

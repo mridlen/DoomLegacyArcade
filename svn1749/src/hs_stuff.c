@@ -333,6 +333,26 @@ void HS_Draw_IntermissionTable( int x, int y )
 }
 
 
+// Does the running game have any recorded times?
+// The attract screen uses this to skip the page when it would only say
+// "No times recorded yet", which would otherwise show after every demo.
+boolean  HS_Have_Records( void )
+{
+    int  i, sk;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+            continue;
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        {
+            if( hs_table[i].has_record[sk] )  return true;
+        }
+    }
+    return false;
+}
+
+
 void HS_Draw_AttractTable( void )
 {
     char   timebuf[16];
