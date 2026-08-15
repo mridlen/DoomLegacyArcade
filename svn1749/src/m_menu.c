@@ -2557,18 +2557,35 @@ void M_SelectGame(int choice)
         // a game here instead would force the player into whichever mode
         // this code picked, and into the pack's first map.
         int lp = choice - GS_numgames;
+        int i;
         if( lp >= num_levelpack )  return;
 
+        // One pack at a time.  The cabinet keeps a state a player cannot get
+        // wrong -- one IWAD and at most one pack -- and it avoids stacked
+        // packs fighting over the same map and texture lumps.
         if( levelpack_isloaded[lp] )
         {
             // Unload.  The engine cannot remove a wad's lumps once loaded,
-            // so this restarts and re-adds the packs that remain via -file.
+            // so this restarts with no pack at all.
             levelpack_isloaded[lp] = false;
             CONS_Printf( "\2Unloading %s, restarting.\n", levelpack_name[lp] );
+            M_Restart_Program( NULL, false );   // no return
+            return;
+        }
+
+        if( levelpack_loaded )
+        {
+            // Another pack is loaded and cannot be removed in place, so
+            // restart with this one instead.  Marking it here is what the
+            // -file list is built from.
+            for( i = 0; i < num_levelpack; i++ )
+                levelpack_isloaded[i] = (i == lp);
+            CONS_Printf( "\2Switching to %s, restarting.\n", levelpack_name[lp] );
             M_Restart_Program( NULL, true );   // no return
             return;
         }
 
+        // Nothing loaded yet, so it can just be added, with no restart.
         COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
         levelpack_isloaded[lp] = true;
         levelpack_loaded = true;   // attract demos are no longer valid
