@@ -2169,9 +2169,12 @@ static void WI_Draw_Stats(void)
     if (draw_pars)
         WI_Draw_Time(BASEVIDWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
 
-    // [Arcade] Best-time-per-skill table for the map just exited.
-    // Placed below the Kills/Items/Secrets block, above the Time row.
-    HS_Draw_IntermissionTable( 156, SP_STATSY + 3*lh );
+    // [Arcade] Best-time-per-skill table for the map just exited, centered in
+    // the gap between the Secrets row and the Time row.  The +12 is needed
+    // because the table draws its own header 14 above the y given here, which
+    // otherwise lands on the Secrets percentage (lh is 18, the percent patches
+    // are 12 tall, so that row ends at SP_STATSY + 2*lh + 12).
+    HS_Draw_IntermissionTable( 156, SP_STATSY + 3*lh + 12 );
 }
 
 // Called by WI_Ticker
