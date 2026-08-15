@@ -133,18 +133,25 @@ silently made the flag do nothing at all.
     so the normal search paths and alternate names (`doomu.wad`/`doom_se.wad`/`doom.wad`) all
     count. The whole "Select Game" line is hidden when fewer than two choices exist.
 
-  **Level packs need no restart.** Every `.wad` in `legacyhome/levels/` is listed below the games as
-  `"<game> wad: <name>"`. Selecting one issues `map "<path>"`: a name with a `.wad` extension is
-  treated as an external map file, and `P_SetupLevel` loads it with `P_AddWadFile()` and starts its
-  first map. Adding a PWAD at runtime is supported; swapping the IWAD is not.
+  **Level packs are loaded, not launched.** Every `.wad` in `legacyhome/levels/` is listed below the
+  games as `"<game> wad: <name>"`, with a leading `*` when loaded. Selecting one issues
+  `addfile "<path>"`, which adds the PWAD to the running session; its maps then replace the IWAD's,
+  so the ordinary One or Two Player flow plays it. Adding a PWAD at runtime is supported; swapping
+  the IWAD is not. Selecting does **not** start a game — doing so would force the mode and the
+  starting map, which suits a deathmatch set but not a single player overhaul.
   - The directory is deliberately **separate from the iwad search paths**, so no name filtering is
     needed and `legacy.wad` or an IWAD can never be listed as a pack. Created on startup if absent.
   - Packs are filtered by map style: `MAPxx` for `doom2_commercial`, `ExMy` otherwise. A mismatch
     fails to load (DWANGO5 under Ultimate Doom), so `M_LevelPack_MapStyle()` reads the wad's lump
-    directory directly — loading the pack to discover whether it loads defeats the purpose.
-  - They start as a **two player splitscreen game**, mirroring `M_StartServer`, since these are
-    deathmatch/coop map sets; the map command alone would drop them into the single player session.
-    Coop versus deathmatch follows the Start Game screen's setting, which defaults to DM.
+    directory directly — loading the pack to discover whether it loads defeats the purpose. It
+    returns a **bitmask**, because some packs (Maps of Chaos) ship `MAPxx` and `ExMy` versions of
+    every level in one wad; stopping at the first map lump hid them under one of the two games.
+  - **One pack at a time.** Selecting a different pack replaces the loaded one; selecting the loaded
+    one unloads it. **The engine cannot remove a wad** — there is no `W_Unload` in `w_wad.c`, the
+    lumps stay for the life of the process — so both restart, re-adding what should remain with
+    `-file` (`M_Restart_Program(idstr, keep_packs)`). Only loading into an empty slot avoids a
+    restart. Packs restored by `-file` are detected in `argv` during the scan so they come back
+    marked, and the old `-file` list is always stripped when rebuilding so packs cannot accumulate.
   - Once a pack is loaded the attract screen is not trustworthy — the pack overrides the IWAD maps,
     so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this, and
     both routes back to the attract screen (the idle timeout in `G_Ticker`, and
@@ -239,7 +246,12 @@ memory while the game runs, so a later record writes the old entries straight ba
   declare itself an IWAD, ZMAPINFO/MAPINFO for episode and map definitions) that this engine does
   not implement, so renaming it to `.zip` will not help either. `.zip` support here is for
   supplementary lump archives, not IWAD replacement. Use separate `.wad` IWADs and the game
-  selector above.
+  selector above. **Gameplay mods** follow from the same limits: DEHACKED and BEX are supported
+  file types (`FC_deh`/`FC_bex`, loadable with `-file`) and `MBF21` is compiled in
+  (`doomdef.h`), so DEH/BEX-driven mods including MBF21 ones are the compatible category. There is
+  **no DECORATE or ZScript anywhere in the tree**, so GZDoom mods (Brutal Doom and similar) cannot
+  work, and no amount of repackaging changes that. Test a candidate with `-file mod.deh` before
+  building anything around it.
 - **Demo recording must start before the game-start commands are issued.** `G_Ticker` writes demo
   data *before* `ExtraDataTicker` executes queued netxcmds, so recording started from inside
   `G_InitNew` misses the commands that create the player and load the first map. Such demos then
