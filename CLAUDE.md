@@ -205,8 +205,17 @@ silently made the flag do nothing at all.
   alone. Keys are the characters the user's **Dvorak** layout produces — the engine captures
   layout-aware SDL keycodes, not physical scancodes (`sdl/i_system.c`).
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
-  **(wad combination, map, skill)** for single player, shown on the intermission screen and as a
-  page in the attract cycle.
+  **(wad combination, map, skill, category)** for single player, shown on the intermission screen
+  and as a page in the attract cycle.
+
+  There are two **categories** (`HS_NUMCAT`, `HS_CAT_speed`/`HS_CAT_max`), timed identically and
+  displayed as side-by-side time columns. A **max** run additionally requires 100% kills and 100%
+  secrets on *every* level so far — items are deliberately not required. `WI_Init_Stats` computes
+  that per level from `wb_plyr[me].skills`/`.ssecret` against `wbs->maxkills`/`->maxsecret` (a map
+  with none of a category counts as satisfied, matching how the percentage display treats it) and
+  passes it to `HS_LevelExit`. The run-level flag `hs_run_is_max` starts true in `HS_NewGame` and
+  latches false on the first level exited short; from then on only the speed record can be beaten
+  for the rest of that run. Each category keeps its **own** record demo.
 
   The **wad combination** is `HS_GameId()`: the game's short name plus any loaded level pack, such
   as `doom2` or `doomu+mapsofchaos`. Both parts are needed — Doom 2, Plutonia and TNT all have a
@@ -235,8 +244,10 @@ silently made the flag do nothing at all.
   single-player behavior too.
 
 Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text,
-`<wadcombo> map skill tics`), `demos/<wadcombo>_<map>_sk<N>.lmp`, and `levels/` for selectable
-level packs. `<wadcombo>` is `HS_GameId()`, e.g. `doom2` or `doomu+mapsofchaos`.
+`<wadcombo> map skill tics <category>`), `demos/<wadcombo>_<map>_sk<N>_<category>.lmp`, and
+`levels/` for selectable level packs. `<wadcombo>` is `HS_GameId()`, e.g. `doom2` or
+`doomu+mapsofchaos`; `<category>` is `speed` or `max`. The category is written **last** so a
+four-field line from before categories existed still loads, as a speed record.
 
 To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
 command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory table

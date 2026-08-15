@@ -1989,7 +1989,13 @@ static void WI_Init_Stats(void)
 
     // [Arcade] Single-player only (this is WI_Start's non-deathmatch,
     // non-coop branch). wb_plyr[me].stime is this level's leveltime.
-    HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime );
+    // A "max" exit is 100% kills and 100% secrets; items are not required.
+    // A map with none of a category (max* <= 0) counts as satisfied -- the
+    // percentage display treats those the same way (see the -100 cases).
+    boolean maxed =
+        ( wbs->maxkills  <= 0 || wb_plyr[me].skills  >= wbs->maxkills )
+     && ( wbs->maxsecret <= 0 || wb_plyr[me].ssecret >= wbs->maxsecret );
+    HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime, maxed );
 
     WI_Init_AnimatedBack();
 }

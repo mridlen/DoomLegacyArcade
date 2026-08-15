@@ -19,7 +19,11 @@
 void  HS_Init(void);
 void  Command_ClearHighScores_f(void);   // console: clearhighscores
 void  HS_NewGame(void);
-void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime);
+// maxed: this level was exited with 100% kills and 100% secrets (items are
+// not required).  A run stays eligible for the "max" record only while every
+// level of it has been maxed; the "speed" record ignores this entirely.
+void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime,
+                   boolean maxed);
 void  HS_Draw_IntermissionTable(int x, int y);
 void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
