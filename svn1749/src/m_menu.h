@@ -74,6 +74,8 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs );
 // [Arcade] True once a level pack has been loaded, after which the attract
 // screen demos play against the wrong maps.
 boolean  M_LevelPack_Loaded( void );
+// [Arcade] Name of the loaded level pack, or NULL. Only one loads at a time.
+const char * M_LevelPack_LoadedName( void );
 
 // Called by intro code to force menu up upon a keypress,
 // does nothing if menu is already up.

@@ -16,13 +16,16 @@
 #include "i_system.h"
 #include "v_video.h"
 #include "screen.h"
+#include "m_menu.h"     // M_LevelPack_LoadedName
 #include "hs_stuff.h"
 
 #define HS_MAX_MAPS      64
 
 // Records are keyed by game as well as map: Doom 2, Plutonia and TNT all
-// have a MAP01, and they are different levels.
-#define HS_GAMEID_LEN  12
+// have a MAP01, and they are different levels.  The loaded level pack is
+// part of that key too ("doomu+mapsofchaos"), since a pack replaces the
+// maps -- the same game with and without a pack are different levels again.
+#define HS_GAMEID_LEN  40
 
 typedef struct
 {
@@ -45,10 +48,32 @@ static char    hs_demodir[MAX_WADPATH];
 static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV", "NM" };
 
 
-// The running game's short name, as used in the score file and demo names.
+// The key identifying what is being played, used in the score file and in
+// record demo names: the game's short name, plus the loaded level pack.
+// Recomputed each call because a pack can be loaded mid-session.
 static const char * HS_GameId( void )
 {
-    return ( gamedesc.idstr && gamedesc.idstr[0] ) ? gamedesc.idstr : "game";
+    static char  id[HS_GAMEID_LEN];
+    const char * game = ( gamedesc.idstr && gamedesc.idstr[0] )
+                        ? gamedesc.idstr : "game";
+    const char * pack = M_LevelPack_LoadedName();
+    char * p;
+
+    if( pack )
+        snprintf( id, sizeof(id), "%s+%s", game, pack );
+    else
+        snprintf( id, sizeof(id), "%s", game );
+
+    // Keep it a single filename-safe word: this is a space separated field
+    // in highscores.dat and part of the record demo filename, and pack names
+    // come from arbitrary filenames.
+    for( p = id; *p; p++ )
+    {
+        if( ! ( isalnum((unsigned char)*p)
+                || *p=='-' || *p=='_' || *p=='.' || *p=='+' ) )
+            *p = '_';
+    }
+    return id;
 }
 
 
@@ -88,9 +113,11 @@ static hs_maprecord_t * HS_FindOrAddRecord( const char * game, const char * mapn
 static void HS_BuildDemoPath( char * dest, const char * game,
                               const char * mapname, skill_e skill )
 {
-    char relname[48];
+    char relname[80];
     // Bound the parts explicitly; map name is at most 8 ("MAPxx"/"ExMy").
-    snprintf(relname, sizeof(relname), "%.11s_%.8s_sk%d.lmp",
+    // The game id can be long once a pack name is folded in, and truncating
+    // it would let two packs share a demo file.
+    snprintf(relname, sizeof(relname), "%.39s_%.8s_sk%d.lmp",
              game, mapname, (int)skill);
     cat_filename(dest, hs_demodir, relname);
 }
@@ -99,8 +126,8 @@ static void HS_BuildDemoPath( char * dest, const char * game,
 static void HS_Load( void )
 {
     FILE * fr;
-    char   line[96];
-    char   game[16];
+    char   line[128];
+    char   game[64];   // wider than HS_GAMEID_LEN; copy in is bounded
     char   mapname[16];
     int    skillnum;
     unsigned int  tics;
@@ -115,7 +142,7 @@ static void HS_Load( void )
     {
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
             continue;
-        if( sscanf(line, "%15s %15s %d %u", game, mapname, &skillnum, &tics) != 4 )
+        if( sscanf(line, "%63s %15s %d %u", game, mapname, &skillnum, &tics) != 4 )
         {
             // Records written before scores were tracked per game cannot be
             // attributed to one, so they are dropped rather than guessed at.

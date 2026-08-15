@@ -2534,6 +2534,21 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs )
 }
 
 
+// [Arcade] Name of the loaded level pack, or NULL when none is loaded.
+// Only one can be loaded at a time.  High scores fold this into their key,
+// so a pack's records are kept apart from the bare game's.
+const char * M_LevelPack_LoadedName( void )
+{
+    int i;
+
+    for( i = 0; i < num_levelpack; i++ )
+    {
+        if( levelpack_isloaded[i] )  return levelpack_name[i];
+    }
+    return NULL;
+}
+
+
 // [Arcade] Has a level pack been loaded into this session?
 // Once one is, the attract screen cannot be trusted: the pack overrides the
 // IWAD maps, so the built-in demos play back against the wrong levels.
