@@ -269,12 +269,16 @@ silently made the flag do nothing at all.
     surviving under **both** presets.) What actually loses them is *toggling the scheme cvar*,
     which re-stamps all ten immediately.
 - **Guided control setup** (`m_menu.c`, `M_Guided_Controls_P1`/`_P2`, under Options → Setup
-  Controls, which is devmode-only). Prompts for the ten actions a cabinet panel needs — forward,
-  backward, turn left/right, strafe left/right, fire, use/open, next/previous weapon, i.e. a 4-way
-  stick plus six buttons — binding each to whatever is pressed. Everything else stays on the
-  ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing as
-  `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
+  Controls, which is devmode-only). Prompts for the ten controls a cabinet panel needs, binding
+  each to whatever is pressed: **STICK UP / DOWN / LEFT / RIGHT**, then STRAFE LEFT, STRAFE RIGHT,
+  FIRE, USE / OPEN, NEXT WEAPON, PREVIOUS WEAPON — a 4-way stick plus six buttons. Everything else
+  stays on the ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing
+  as `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
   joystick buttons arrive as `ev_keydown` with codes in the key space, so any panel wiring works.
+  - The prompts deliberately name the **physical control, not the game action**. They first said
+    "TURN LEFT" with a note that WASD mode swaps turn and strafe, which reads as confusing to
+    someone actually wiring a panel: they know they are pushing the stick left and should not have
+    to reason about the simulation to answer. Keep it that way.
   - Finishing does **not** write bindings directly. It hands the ten captured keys to
     `G_Save_CustomControls()`, which stores them in **`cv_customcontrols[2]`** — a `CV_SAVE` string
     cvar per player holding ten space-separated key codes in `CK_*` order. `ControlScheme_Apply`
@@ -282,12 +286,12 @@ silently made the flag do nothing at all.
     control layout lives in `config.cfg`** and the hardcoded table is only the fallback preset.
     An empty or malformed string falls back silently.
   - Going through the scheme machinery instead of writing `gamecontrol[]` is what keeps
-    **"Look and Move" / "WASD" working on a custom panel**: the panel is taught once, in
-    Look-and-Move terms (turn pair = pair A, strafe pair = pair B), and picking WASD afterwards
-    swaps which pair turns and which strafes. The four directional prompts say so on screen
-    (`GUIDED_SWAPNOTE`), since that is the only place the distinction is visible to an operator.
-    Verified headless with a distinct key per slot: under "Look and Move" turn was `a`/`e` and
-    strafe `t`/`n`; under "WASD" they traded, with forward and fire unmoved.
+    **"Look and Move" / "WASD" working on a custom panel**. The stick's left/right lands in pair A
+    and the strafe buttons in pair B, which is the Look-and-Move arrangement; picking WASD
+    afterwards swaps which pair turns and which strafes. The operator is never asked about this —
+    it is a player preference applied after the fact. Verified headless with a distinct key per
+    slot: under "Look and Move" turn was `a`/`e` and strafe `t`/`n`; under "WASD" they traded,
+    with forward and fire unmoved.
   - `cv_customcontrols` is `CV_CALL` onto the same OnChange as the scheme cvar, so whichever of the
     two lines config.cfg happens to list last still leaves the bindings correct.
   - Only `ev_keydown` is accepted. Taking `ev_keyup` too would let the release of one press land

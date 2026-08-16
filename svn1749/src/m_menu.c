@@ -3748,31 +3748,30 @@ done:
 // and joystick buttons arrive as ev_keydown with codes in the key space, so
 // a panel wired through any of the three works without special handling.
 
-// Captured in "Look and Move" terms: the turn pair is pair A and the strafe
-// pair is pair B.  Selecting WASD afterwards swaps which pair does which, so
-// the panel only ever has to be taught once -- hence the note on those four
-// prompts, which is the only place the distinction is visible.
+// Prompts name the *physical* control, not what it does in the simulation:
+// an operator wiring a panel knows they are pushing the stick left, and does
+// not want to reason about whether that turns or strafes.  The four stick
+// directions still land in the Look-and-Move slots underneath (the stick's
+// left/right is pair A, the strafe buttons are pair B), so the "Look and
+// Move" / "WASD" selector goes on swapping them for the player afterwards.
 typedef struct
 {
     int          ck;        // CK_* slot in the key table
     const char * label;
-    const char * note;      // extra line, or NULL
 } guided_step_t;
-
-#define GUIDED_SWAPNOTE  "WASD mode swaps turn and strafe"
 
 static const guided_step_t  guided_steps[] =
 {
-    { CK_forward,      "MOVE FORWARD",    NULL },
-    { CK_backward,     "MOVE BACKWARD",   NULL },
-    { CK_pair_a_left,  "TURN LEFT",       GUIDED_SWAPNOTE },
-    { CK_pair_a_right, "TURN RIGHT",      GUIDED_SWAPNOTE },
-    { CK_pair_b_left,  "STRAFE LEFT",     GUIDED_SWAPNOTE },
-    { CK_pair_b_right, "STRAFE RIGHT",    GUIDED_SWAPNOTE },
-    { CK_fire,         "FIRE",            NULL },
-    { CK_use,          "USE / OPEN",      NULL },
-    { CK_nextweapon,   "NEXT WEAPON",     NULL },
-    { CK_prevweapon,   "PREVIOUS WEAPON", NULL },
+    { CK_forward,      "STICK UP"        },
+    { CK_backward,     "STICK DOWN"      },
+    { CK_pair_a_left,  "STICK LEFT"      },
+    { CK_pair_a_right, "STICK RIGHT"     },
+    { CK_pair_b_left,  "STRAFE LEFT"     },
+    { CK_pair_b_right, "STRAFE RIGHT"    },
+    { CK_fire,         "FIRE"            },
+    { CK_use,          "USE / OPEN"      },
+    { CK_nextweapon,   "NEXT WEAPON"     },
+    { CK_prevweapon,   "PREVIOUS WEAPON" },
 };
 
 #define GUIDED_NUM_STEPS  ((int)(sizeof(guided_steps)/sizeof(guided_steps[0])))
@@ -3784,15 +3783,12 @@ static void M_Guided_Response(event_t * ev);
 
 static void M_Guided_Prompt( void )
 {
-    const guided_step_t * st = &guided_steps[guided_step];
-
     snprintf( msgtmp, MSGTMP_LEN,
               "PLAYER %d CONTROL SETUP\n\n"
-              "Press the control for\n%s\n%s\n"
+              "Press the control for\n%s\n\n"
               "%d of %d\nESC to cancel",
               controls_player + 1,
-              st->label,
-              st->note ? st->note : "",
+              guided_steps[guided_step].label,
               guided_step + 1, GUIDED_NUM_STEPS );
     msgtmp[MSGTMP_LEN-1] = '\0';
 
