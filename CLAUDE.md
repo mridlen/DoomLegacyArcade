@@ -303,11 +303,16 @@ silently made the flag do nothing at all.
   called from `M_Drawer` so all three screens are covered in one place), and an `UNRANKED` marker
   at the top of the HUD during play.
   - **`cv_respawnmonsters` and `cv_fastmonsters` are deliberately absent from the table.**
-    `G_InitNew` turns both on for `sk_nightmare`, so they belong to the skill, not the player —
-    and `gameskill` is still the *previous* game's value at `HS_NewGame` time, so checking them
-    there flagged legitimate runs unranked. Leaving them out costs nothing: Nightmare overrides
-    the player either way, and on other skills both default to off and can only be switched *on*,
-    which makes the game harder.
+    `G_InitNew` turns both on for `sk_nightmare` (`g_game.c`, `CV_SetParam`), so they belong to
+    the skill, not the player. Leaving them out costs nothing: Nightmare overrides the player
+    either way, and on other skills both default to off and can only be switched *on*, which
+    makes the game harder. **This bit once already** — `cv_fastmonsters` was left in the table by
+    mistake, and every Nightmare run played MAP01 normally, then showed `UNRANKED` from MAP02 with
+    no score for MAP01. That is the signature of a rule the *engine* changes after `HS_NewGame`:
+    the run passes the check at menu time and fails it at the first level exit.
+  - When a run is voided, `HS_LevelExit` logs `Run is unranked: "<cvar>" differs...` once via
+    `GenPrintf(EMSG_info, ...)`. A run that silently scores nothing is near-impossible to diagnose
+    from the outside; check the console/log first if scores stop appearing.
   - `HS_Apply_Ranked_Ruleset` **self-checks** and warns via `GenPrintf(EMSG_warn, ...)`. If a value
     in the table is not one of a cvar's `PossibleValue`s, `CV_Set` rejects it silently and the
     cabinet would record nothing forever — this turns that into a visible message. All current

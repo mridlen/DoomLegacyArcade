@@ -90,7 +90,6 @@ static hs_rule_t  hs_ranked_rules[] =
     { &cv_itemrespawntime,      30 },
     { &cv_respawnmonsterstime,  12 },
     { &cv_monbehavior,           0 },   // Vanilla
-    { &cv_fastmonsters,          0 },
     { &cv_predictingmonsters,    0 },
     { &cv_solidcorpse,           0 },
     { &cv_monstergravity,        0 },   // Vanilla (see G_demo_defaults)
@@ -515,7 +514,17 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // reachable mid-game, so a run started under the ranked ruleset can be
     // altered part way through.  Once voided it stays voided for this run.
     if( ! HS_Ruleset_Is_Ranked() )
+    {
+        // Name the cvar.  A run silently scoring nothing is very hard to
+        // diagnose from the outside -- this is exactly how the Nightmare
+        // cv_fastmonsters bug presented (played fine, then UNRANKED with no
+        // score for the level just finished).
+        if( hs_run_ranked )
+            GenPrintf( EMSG_info,
+                "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
+                HS_Unranked_Reason() );
         hs_run_ranked = false;
+    }
     if( ! hs_run_ranked )
         return;
 
@@ -763,3 +772,5 @@ const char * HS_NextRecordDemoPath( void )
 
     return NULL;
 }
+
+
