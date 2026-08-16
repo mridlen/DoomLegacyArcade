@@ -683,6 +683,27 @@ void HS_Attract_Advance_Page( void )
 }
 
 
+// How many map pages the attract screen will step through.
+int HS_Attract_Page_Count( void )
+{
+    int  i, n = 0;
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( HS_Entry_Eligible(&hs_table[i]) )  n++;
+    }
+    return n;
+}
+
+
+// Start the cycle over at the first map, so every appearance shows the same
+// sequence from the top rather than resuming wherever the last one stopped.
+void HS_Attract_Reset_Pages( void )
+{
+    hs_attract_mapname[0] = 0;   // nothing sorts before the empty string
+    HS_Attract_Advance_Page();
+}
+
+
 // Position and count of the current page, for the "n of m" footer.
 static void  HS_Attract_Page_Number( int * pos, int * total )
 {

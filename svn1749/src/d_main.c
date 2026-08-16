@@ -447,6 +447,7 @@ int demosequence;
 int pagetic;
 static const char * pagename = "TITLEPIC";
 static boolean hs_attract_page = false;   // [Arcade] high-score table page active
+static int     hs_subpage_tic = 0;        // [Arcade] tics left on the map on screen
 static boolean hs_page_after_demo = false;  // [Arcade] show scores after this demo
 
 //  PROTOS
@@ -1182,7 +1183,20 @@ void D_DoomLoop(void)
 void D_PageTicker(void)
 {
     if (--pagetic < 0)
+    {
         D_AdvanceDemo();
+        return;
+    }
+
+    // [Arcade] The high-score page is really a stack of one-map pages, and
+    // pagetic covers all of them; step to the next map as each elapses.
+    // Checked after the pagetic expiry above so the last map is not replaced
+    // by a one-tic flash of the first on the way out.
+    if( hs_attract_page && (--hs_subpage_tic <= 0) )
+    {
+        HS_Attract_Advance_Page();
+        hs_subpage_tic = TICRATE * HS_PAGE_SECS;
+    }
 }
 
 //
@@ -1279,10 +1293,12 @@ void D_DoAdvanceDemo(void)
         hs_page_after_demo = false;
         if( HS_Have_Records() )
         {
-            // One map per appearance, so the page never overflows; the next
-            // map in name order comes up after the next demo.
-            HS_Attract_Advance_Page();
-            pagetic = TICRATE * 8;
+            // Step through every map that has a time, HS_PAGE_SECS each, so
+            // the whole table is shown between demos without any one page
+            // overflowing.  Length scales with how much has been recorded.
+            HS_Attract_Reset_Pages();
+            hs_subpage_tic = TICRATE * HS_PAGE_SECS;
+            pagetic = (TICRATE * HS_PAGE_SECS * HS_Attract_Page_Count()) - 1;
             hs_attract_page = true;
             gamestate = GS_DEMOSCREEN;
             return;                 // demosequence deliberately not advanced

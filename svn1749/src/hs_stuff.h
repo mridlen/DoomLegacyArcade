@@ -35,9 +35,14 @@ void  HS_NewGame(void);
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed);
 void  HS_Draw_IntermissionTable(int x, int y);
-// The attract page shows one map at a time; call this each time the page is
-// armed to move to the next map that has a time recorded.
-void  HS_Attract_Advance_Page(void);
+// The attract page shows one map at a time and steps through every map that
+// has a time before handing back to the demo cycle.  Seconds each map is on
+// screen; the whole page lasts this times HS_Attract_Page_Count().
+#define HS_PAGE_SECS  3
+
+void  HS_Attract_Reset_Pages(void);   // back to the first map
+void  HS_Attract_Advance_Page(void);  // next map, wrapping
+int   HS_Attract_Page_Count(void);    // maps with at least one time
 void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);

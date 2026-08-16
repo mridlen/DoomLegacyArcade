@@ -257,12 +257,20 @@ silently made the flag do nothing at all.
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
   are shared between game modes and the last is reachable only under the retail divisor.
 
-  The page is **paginated one map at a time** — five skills by two categories always fits, so
-  nothing is ever cut off however many maps get recorded, and a `n of m` footer shows there is
-  more. `HS_Attract_Advance_Page()` is called from `D_DoAdvanceDemo` as the page is armed, so a
-  different map comes up after each demo. Maps with no time at all are skipped
-  (`HS_Entry_Eligible()`); skills with no time still get a `--:--` row, since a gap in five rows
-  reads as missing rather than as an open slot.
+  The page is **paginated one map at a time**, and steps through **every** map with a time before
+  handing back to the demo cycle — five skills by two categories always fits, so nothing is ever
+  cut off however many maps get recorded, and an `n of m` footer shows the position. Maps with no
+  time at all are skipped (`HS_Entry_Eligible()`); skills with no time still get a `--:--` row,
+  since a gap in five rows reads as missing rather than as an open slot.
+  - Timing: `D_DoAdvanceDemo` arms it with `pagetic = TICRATE * HS_PAGE_SECS * page_count - 1`,
+    and `D_PageTicker` runs a second countdown (`hs_subpage_tic`) that calls
+    `HS_Attract_Advance_Page()` as each map's slice elapses. **The whole segment therefore grows
+    with the table** — at `HS_PAGE_SECS` = 3 and 14 maps recorded it is 42 seconds between demos.
+    That is the intent (show everything), but it is the knob to turn if the attract loop feels
+    slow; `HS_PAGE_SECS` is in `hs_stuff.h`.
+  - The sub-page step is checked **after** `pagetic` expires and returns, so the last map is not
+    replaced by a one-tic flash of the first on the way out. The `-1` on `pagetic` is part of the
+    same fencepost.
   - The current page is tracked **by map name, not by table index**. `hs_table` is in the order
     maps were first played and grows mid-session, so an index would silently start pointing at a
     different map. Rotation picks the smallest name greater than the current one, wrapping to the
