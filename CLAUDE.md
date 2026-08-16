@@ -383,6 +383,16 @@ silently made the flag do nothing at all.
   - When a run is voided, `HS_LevelExit` logs `Run is unranked: "<cvar>" differs...` once via
     `GenPrintf(EMSG_info, ...)`. A run that silently scores nothing is near-impossible to diagnose
     from the outside; check the console/log first if scores stop appearing.
+  - **`config.cfg` legitimately disagrees with the ruleset, and that is not a bug.** `-devmode`
+    skips `HS_Apply_Ranked_Ruleset()` entirely, so an operator session keeps whatever the config
+    holds and writes it straight back; a player session loads the same file and then overrides the
+    relevant cvars in memory, never saving. On the current cabinet config exactly three saved
+    values differ — `monsterfriction "Momentum"` (2 vs 0), `monstergravity "On"` (2 vs 0) and
+    `voodoo_mode "Auto"` (3 vs 0), all DoomLegacy defaults the ruleset pins to vanilla. Everything
+    else in the table already matches. **Do not "fix" the config to match**, and do not compare the
+    two by eye: config stores the *label* (`"On"`, `"Boom"`, `"x3"`, `"50"`) while the table stores
+    the number, so most apparent mismatches are the same value. Resolve labels through the cvar's
+    `PossibleValue` table before concluding anything.
   - `HS_Apply_Ranked_Ruleset` **self-checks** and warns via `GenPrintf(EMSG_warn, ...)`. If a value
     in the table is not one of a cvar's `PossibleValue`s, `CV_Set` rejects it silently and the
     cabinet would record nothing forever — this turns that into a visible message. All current
