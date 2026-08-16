@@ -67,7 +67,42 @@ directory (see `make install`, `install_user`, `install_sys`, `install_games` ta
 everything from `bin/` to a run directory alongside a `legacy.wad`).
 
 There is no automated test suite; validating a change means building and running the game
-interactively (or asking the user to).
+interactively (or asking the user to). **A lot can still be checked without a screen**, though —
+see below.
+
+### Headless verification
+
+The game runs under SDL's dummy drivers, which is enough to exercise startup, config load, cvar
+state, the attract cycle and level setup. This has caught real bugs that would otherwise have
+needed a play session:
+
+```
+RD=/tmp/rundir            # NOT the build tree; needs the IWADs + legacy.wad
+mkdir -p "$RD" && cp svn1749/bin/doomlegacy "$RD"/
+ln -sf /home/mridlen/games/doom/* "$RD"/          # DOOM.WAD, DOOM2.WAD, legacy.wad, ...
+SH=/tmp/fakehome && mkdir -p "$SH/.doomlegacy"
+cp ~/.doomlegacy/config.cfg "$SH/.doomlegacy/"    # see the crash note below
+cd "$RD" && HOME="$SH" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    timeout 40 ./doomlegacy -game doom2 -skill 5 -warp 1 > out.txt 2>&1
+sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color escapes
+```
+
+- **Always set `HOME` to a scratch directory.** `legacyhome` comes from `$HOME`, so a plain run
+  reads *and can write* the cabinet's live `~/.doomlegacy/highscores.dat` and `demos/` —
+  `HS_Save()` and `G_SnapshotDemo()` fire from `HS_LevelExit` whenever a record is beaten. A
+  no-input run cannot reach a level exit so in practice it writes nothing, but that is luck.
+- **Copy the real `config.cfg` into the scratch home.** With no config the software renderer
+  segfaults in `R_DrawColumn_32` ← `R_DrawPlayerSprites` after `Change Graphics failed: err=-100`
+  — the dummy driver never set a real mode. That is a harness artifact, not a fresh-install bug,
+  but it looks alarming and wastes time.
+- `timeout` exit code **124 means it survived**, which is the pass condition for a smoke test;
+  139 is a segfault. `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
+  gets a backtrace.
+- Temporary `GenPrintf(EMSG_warn, ...)` instrumentation plus a headless run is the fastest way to
+  answer "what is this cvar actually set to at runtime" — it is how the Nightmare `cv_fastmonsters`
+  bug and the high-score page timing were both pinned down. Remove it before committing.
+- **Before blaming a run for changed files, compare mtimes against the run times.** The cabinet is
+  played between turns, and those writes belong to the user, not the test.
 
 ## Compile-time feature flags
 
