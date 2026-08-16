@@ -77,8 +77,11 @@ CV_PossibleValue_t onecontrolperkey_cons_t[]={{1,"One"},{2,"Several"},{0,NULL}};
 // key pair turns and which strafes.
 void ControlScheme1_OnChange(void);
 void ControlScheme2_OnChange(void);
+// CS_custom is what the guided setup (m_menu.c) selects.  It is not a layout
+// of its own -- it means "leave these bindings alone", so whatever the
+// operator bound survives in config.cfg as ordinary setcontrol lines.
 CV_PossibleValue_t controlscheme_cons_t[] =
-  { {0,"Look and Move"}, {1,"WASD"}, {0,NULL} };
+  { {0,"Look and Move"}, {1,"WASD"}, {CS_custom,"Custom"}, {0,NULL} };
 consvar_t  cv_controlscheme[2] = {
   { "controlscheme",  "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme1_OnChange },
   { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange }
@@ -670,7 +673,18 @@ static void ControlScheme_Apply( int pind )
 {
     const controlkeys_t * k = & scheme_keys[pind];
     int (* gc)[2] = (pind == 0) ? gamecontrol : gamecontrol2;
-    boolean wasd = (cv_controlscheme[pind].value != 0);
+    boolean wasd;
+
+    // [Arcade] Custom: the guided setup owns these ten bindings, so step
+    // aside entirely and let the config's setcontrol lines stand.  Without
+    // this, every config load would stamp the preset back over them --
+    // config.cfg lists controlscheme well before the setcontrol lines, but
+    // any later toggle of the scheme cvar would still wipe the operator's
+    // work, and the intent would be invisible in the file.
+    if( cv_controlscheme[pind].value == CS_custom )
+        return;
+
+    wasd = (cv_controlscheme[pind].value != 0);
 
     // Only the actions the scheme defines are touched; weapon keys, run,
     // jump, console, menu keys etc. are left as configured.

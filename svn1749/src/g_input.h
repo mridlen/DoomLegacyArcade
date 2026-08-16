@@ -122,6 +122,9 @@ extern consvar_t   cv_alwaysfreelook[2];
 
 // [Arcade] Selectable control scheme, per player (see ControlScheme_Apply)
 extern consvar_t   cv_controlscheme[2];
+// Scheme value meaning "the guided setup bound these; do not touch them".
+// Set by M_Guided_Controls (m_menu.c) once every action has been captured.
+#define CS_custom  2
 
 // mouse1
 extern consvar_t   cv_mouse_invert;

@@ -1598,6 +1598,9 @@ static void M_SetupMultiPlayer1(int choice);
 static void M_SetupMultiPlayer2(int choice);
 static void M_Setup_P1_Controls(int choice);
 static void M_Setup_P2_Controls(int choice);
+// [Arcade] guided panel setup, defined next to M_ChangeControl
+static void M_Guided_Controls_P1(int choice);
+static void M_Guided_Controls_P2(int choice);
 
 static menufunc_t M_SetupMultiPlayer[2] = { M_SetupMultiPlayer1, M_SetupMultiPlayer2 };
 static menufunc_t M_Setup_P_Controls[2] = { M_Setup_P1_Controls, M_Setup_P2_Controls };
@@ -1766,6 +1769,20 @@ void M_SetupMultiPlayer_pind( byte pind )
 
     SetupMultiPlayerMenu[setupmultiplayer_color].itemaction = setupm_cvcolor;
     SetupMultiPlayerMenu[setupmultiplayer_scheme].itemaction = &cv_controlscheme[pind];  // [Arcade]
+
+    // [Arcade] Once the guided setup has wired this player's panel, the
+    // preset selector must go: picking "Look and Move" here would replace
+    // all ten bindings with keys the cabinet does not physically have, and
+    // this screen is player-reachable.  Decided per player, and here rather
+    // than in the M_Init lockdown, because the menu is shared between the
+    // two players and repointed on entry.
+    SetupMultiPlayerMenu[setupmultiplayer_scheme].status =
+        ( !devmode && (cv_controlscheme[pind].value == CS_custom) )
+          ? IT_HIDDEN
+          : (IT_CVAR | IT_STRING | IT_YOFFSET);
+    if( SetupMultiPlayerDef.lastOn == setupmultiplayer_scheme
+        && SetupMultiPlayerMenu[setupmultiplayer_scheme].status == IT_HIDDEN )
+        SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
 
     // PlayerOptionsMenu
     PlayerOptionsDef.menutitle = player_pind_str[pind];
@@ -3411,6 +3428,12 @@ menu_t  SoundDef =
 //===========================================================================
 menuitem_t MControlMenu[]=
 {
+    // [Arcade] Guided panel setup first: it is the fast path when standing
+    // up a new cabinet, and the pages below are for everything it skips.
+    // Appended-in-spirit at the top is safe here -- nothing indexes this
+    // menu by position (the lockdown hides its whole Options entry instead).
+    {IT_CALL | IT_WHITESTRING, 0,"Guided setup P1", M_Guided_Controls_P1, 0},
+    {IT_CALL | IT_WHITESTRING, 0,"Guided setup P2", M_Guided_Controls_P2, 0},
     {IT_STRING | IT_CVAR, 0,"Control per key" ,&cv_controlperkey   ,0},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Mouse Options >>" ,&MouseOptionsDef   , 'm'},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Second Mouse config >>", &SecondMouseCfgdef, 0},
@@ -3725,6 +3748,122 @@ void M_ChangecontrolResponse(event_t* ev)
 done:
     M_StopMessage(0);
 }
+
+//===========================================================================
+//  [Arcade] Guided control setup
+//===========================================================================
+// Walks an operator through the ten actions a cabinet panel actually needs,
+// binding each to whatever button they press: a 4-way stick plus six
+// buttons.  Everything else (run, jump, weapon slots, console, automap) is
+// left to the ordinary Setup Controls pages, which are devmode-only anyway.
+//
+// Built on the same MM_EVENTHANDLER message plumbing M_ChangeControl uses,
+// so key capture, the message box and event routing are all shared.  Mouse
+// and joystick buttons arrive as ev_keydown with codes in the key space, so
+// a panel wired through any of the three works without special handling.
+
+typedef struct
+{
+    int          gc;        // gamecontrol index to bind
+    const char * label;
+} guided_step_t;
+
+static const guided_step_t  guided_steps[] =
+{
+    { gc_forward,     "MOVE FORWARD"    },
+    { gc_backward,    "MOVE BACKWARD"   },
+    { gc_turnleft,    "TURN LEFT"       },
+    { gc_turnright,   "TURN RIGHT"      },
+    { gc_strafeleft,  "STRAFE LEFT"     },
+    { gc_straferight, "STRAFE RIGHT"    },
+    { gc_fire,        "FIRE"            },
+    { gc_use,         "USE / OPEN"      },
+    { gc_nextweapon,  "NEXT WEAPON"     },
+    { gc_prevweapon,  "PREVIOUS WEAPON" },
+};
+
+#define GUIDED_NUM_STEPS  ((int)(sizeof(guided_steps)/sizeof(guided_steps[0])))
+
+static int  guided_step = -1;   // -1 when not running
+
+static void M_Guided_Response(event_t * ev);
+
+static void M_Guided_Prompt( void )
+{
+    snprintf( msgtmp, MSGTMP_LEN,
+              "PLAYER %d CONTROL SETUP\n\n"
+              "Press the control for\n%s\n\n"
+              "%d of %d\nESC to cancel",
+              controls_player + 1,
+              guided_steps[guided_step].label,
+              guided_step + 1, GUIDED_NUM_STEPS );
+    msgtmp[MSGTMP_LEN-1] = '\0';
+
+    M_StartMessage( msgtmp, M_Guided_Response, MM_EVENTHANDLER );
+}
+
+static void M_Guided_Response( event_t * ev )
+{
+    int  ch, gc;
+
+    // Only presses.  Without this the key-up of the very same press would
+    // land on the next prompt and bind two actions to one button.
+    if( ev->type != ev_keydown )  return;
+    ch = ev->data1;
+
+    M_StopMessage(0);
+
+    // Cancel leaves the steps already done in place; they are just bindings.
+    // KEY_PAUSE is refused for the same reason M_ChangecontrolResponse does.
+    if( ch == KEY_ESCAPE || ch == KEY_PAUSE || ch == KEY_NULL )
+    {
+        guided_step = -1;
+        return;
+    }
+
+    gc = guided_steps[guided_step].gc;
+    G_CheckDoubleUsage( ch );   // honors cv_controlperkey, as the normal menu does
+    setupcontrols[gc][0] = ch;
+    setupcontrols[gc][1] = KEY_NULL;   // cabinet panels have no second binding
+
+    guided_step++;
+    if( guided_step < GUIDED_NUM_STEPS )
+    {
+        M_Guided_Prompt();
+        return;
+    }
+
+    guided_step = -1;
+
+    // Take this player off the built-in schemes.  ControlScheme_Apply owns
+    // exactly these ten actions and would stamp the preset back over all of
+    // them; CS_custom makes it step aside so the bindings persist as plain
+    // setcontrol lines in config.cfg.
+    CV_SetValue( &cv_controlscheme[controls_player], CS_custom );
+
+    M_SimpleMessage( "Controls saved.\n\n"
+                     "They are written to config.cfg\nwhen this devmode session quits." );
+}
+
+// Menu entries; controls_player selects which panel is being wired.
+static void M_Guided_Controls_P1( int choice )
+{
+    (void)choice;
+    controls_player = 0;
+    setupcontrols = gamecontrol;
+    guided_step = 0;
+    M_Guided_Prompt();
+}
+
+static void M_Guided_Controls_P2( int choice )
+{
+    (void)choice;
+    controls_player = 1;
+    setupcontrols = gamecontrol2;
+    guided_step = 0;
+    M_Guided_Prompt();
+}
+
 
 void M_ChangeControl(int choice)
 {
@@ -7095,7 +7234,7 @@ void M_Configure (void)
         exmy_cons_t[36].strvalue = NULL;
     }
 
-    // [Arcade] Cabinets without a second set of controls hide two player
+        // [Arcade] Cabinets without a second set of controls hide two player
     // play entirely.  Must be here, not in M_Init's lockdown: cv_twoplayer
     // comes from config.cfg, which D_DoomMain does not load until long after
     // M_Init runs, so the value would still be the default there.
