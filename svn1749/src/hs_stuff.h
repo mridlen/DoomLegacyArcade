@@ -16,6 +16,16 @@
 // timeout (cv_idletimeout) will ever let a single session run.
 #define HS_DEMOBUFFER_SIZE  (8*1024*1024)
 
+// [Arcade] The competitive baseline: vanilla difficulty settings with the
+// Boom/MBF engine behavior left at its defaults (roughly complevel 11).
+// Applied at startup and again on the way back to the attract screen, so
+// every player starts ranked; checked at each new game and level exit, so a
+// session that changes any of it plays on but scores and records nothing.
+void      HS_Apply_Ranked_Ruleset(void);
+boolean   HS_Ruleset_Is_Ranked(void);   // do the cvars match right now?
+boolean   HS_Run_Is_Ranked(void);       // has this run stayed ranked?
+const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
+
 void  HS_Init(void);
 void  Command_ClearHighScores_f(void);   // console: clearhighscores
 void  HS_NewGame(void);

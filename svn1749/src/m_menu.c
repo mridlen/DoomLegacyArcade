@@ -6594,6 +6594,27 @@ int M_StringHeight(char* string)
 // Called after the view has been rendered,
 // but before it has been blitted.
 //
+// [Arcade] Tell the player, on the screens where they can cause it, that the
+// current settings have taken the session out of the running for records.
+// Drawn from M_Drawer rather than by giving each menu its own drawroutine,
+// so the three option screens that reach these cvars are covered in one
+// place -- and so it follows the player down into Adv Options.
+static void M_Draw_Unranked_Warning( void )
+{
+    if( devmode )  return;   // the operator is expected to change things
+    if( currentMenu != &GameOptionDef
+        && currentMenu != &AdvOption1Def
+        && currentMenu != &AdvOption2Def )  return;
+    if( HS_Ruleset_Is_Ranked() )  return;
+
+    // Under the item list, above the bottom edge.
+    V_DrawString( 8, BASEVIDHEIGHT-24, V_WHITEMAP,
+                  "SETTINGS CHANGED - NO HIGH SCORES" );
+    V_DrawString( 8, BASEVIDHEIGHT-14, 0,
+                  "OR RECORDINGS THIS GAME. END GAME TO RESET." );
+}
+
+
 void M_Drawer (void)
 {
     if (!menuactive)
@@ -6609,6 +6630,8 @@ void M_Drawer (void)
     // menu drawing
     if (currentMenu->drawroutine)
         currentMenu->drawroutine();      // call current menu Draw routine
+
+    M_Draw_Unranked_Warning();   // [Arcade]
 
     V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART | V_CENTERHORZ );  // restore
 

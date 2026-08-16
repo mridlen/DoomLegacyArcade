@@ -695,6 +695,15 @@ void HU_Drawer(void)
         }
     }
 
+    // [Arcade] Standing reminder that this run will not be scored, so a
+    // player who changed a setting is not surprised at the intermission.
+    if( !demoplayback && !devmode && !HS_Run_Is_Ranked() )
+    {
+        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth("UNRANKED")) / 2, 0,
+                      V_WHITEMAP, "UNRANKED" );
+    }
+
     HU_Draw_Tip();
     HU_Draw_FSPics();
 }

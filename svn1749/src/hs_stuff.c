@@ -17,6 +17,10 @@
 #include "v_video.h"
 #include "screen.h"
 #include "m_menu.h"     // M_LevelPack_LoadedName
+#include "p_local.h"    // ranked ruleset cvars
+#include "p_spec.h"     // cv_zerotags
+#include "d_netcmd.h"   // cv_itemrespawn, cv_respawnmonsters
+#include "s_sound.h"    // cv_rndsoundpitch
 #include "hs_stuff.h"
 
 #define HS_MAX_MAPS      64
@@ -55,8 +59,168 @@ typedef struct
 static hs_maprecord_t  hs_table[HS_MAX_MAPS];
 static int              hs_table_count = 0;
 
+// =========================================================================
+//   Ranked ruleset
+// =========================================================================
+// The cabinet's competitive baseline.  DoomLegacy has no separate single
+// player code path -- solo play runs the same client/server simulation, and
+// every gameplay setting below is a single global CV_NETVAR -- so anything a
+// player changes under Options applies to their scored run.  Rather than
+// hide the menus, the ruleset is applied at startup and then *checked*: a
+// session that no longer matches it still plays, but records nothing.
+//
+// The baseline is "vanilla difficulty knobs, Boom/MBF engine behavior":
+// every setting that makes the game easier or harder is pinned to its
+// vanilla value, while the Boom and MBF AI/physics fixes stay at their
+// defaults so Boom-format level packs still work.  Roughly complevel 11.
+//
+// Values are in the units the menu shows; CV_FLOAT cvars (gravity) are
+// scaled to fixed_t internally, exactly as CV_Set does.
+typedef struct
+{
+    consvar_t *  cv;
+    int          val;
+} hs_rule_t;
+
+static hs_rule_t  hs_ranked_rules[] =
+{
+    // --- vanilla difficulty knobs ---
+    { &cv_gravity,               1 },   // fixed_t FRACUNIT internally
+    { &cv_itemrespawn,           0 },
+    { &cv_itemrespawntime,      30 },
+    { &cv_respawnmonsterstime,  12 },
+    { &cv_monbehavior,           0 },   // Vanilla
+    { &cv_fastmonsters,          0 },
+    { &cv_predictingmonsters,    0 },
+    { &cv_solidcorpse,           0 },
+    { &cv_monstergravity,        0 },   // Vanilla (see G_demo_defaults)
+    { &cv_monsterfriction,       0 },   // Vanilla
+    { &cv_voodoo_mode,           0 },   // VM_vanilla
+    { &cv_instadeath,            0 },
+    { &cv_weapon_recoil,         0 },
+    { &cv_allowjump,             0 },   // vanilla Doom has no jumping
+    { &cv_rndsoundpitch,         0 },   // consumes M_Random, perturbs the RNG
+    { &cv_mbf_dogs,              0 },   // no helper dogs fighting for you
+#ifdef DOORDELAY_CONTROL
+    { &cv_doordelay,             1 },
+#endif
+#ifdef MAPTHING_ADJUST
+    { &cv_monster_health,        0 },
+    { &cv_health_pickup,         0 },
+    { &cv_armor_pickup,          0 },
+    { &cv_ammo_pickup,           0 },
+#endif
+#ifdef ENABLE_TIRED_RUN
+    { &cv_tired_run,             0 },
+    { &cv_drown,                 0 },
+#endif
+#ifdef MONSTER_VARY
+    { &cv_monster_vary,          0 },
+    { &cv_vary_percent,          5 },
+    { &cv_vary_size,             3 },
+#endif
+#ifdef ENABLE_TELE_CONTROL
+    { &cv_tele_control,          0 },
+#endif
+#ifdef ENABLE_SLOW_REACT
+    { &cv_slow_react,            0 },
+#endif
+
+    // --- Boom/MBF behavior, pinned at its default so packs still work ---
+    { &cv_monster_remember,             1 },
+    { &cv_mbf_monster_avoid_hazard,     1 },
+    { &cv_mbf_monster_backing,          0 },
+    { &cv_mbf_pursuit,                  0 },
+    { &cv_mbf_dropoff,                  1 },
+    { &cv_mbf_staylift,                 1 },
+    { &cv_mbf_help_friend,              1 },
+    { &cv_mbf_distfriend,             128 },
+    { &cv_mbf_monkeys,                  0 },
+    { &cv_mbf_falloff,                  1 },
+    { &cv_doorstuck,                    2 },
+    { &cv_zerotags,                     1 },
+#ifdef DOGS
+    { &cv_mbf_dog_jumping,              1 },
+#endif
+#ifdef GENERATE_BLOCKMAP
+    { &cv_blockmap_gen,                 3 },
+#endif
+};
+
+#define HS_NUM_RULES  (sizeof(hs_ranked_rules)/sizeof(hs_ranked_rules[0]))
+
+// Deliberately NOT in the table: cv_respawnmonsters and cv_fastmonsters.
+// G_InitNew turns both on for sk_nightmare (g_game.c, "skill == sk_nightmare"
+// -> CV_SetParam), so they are part of the skill rather than a player
+// setting, and gameskill is still the *previous* game's value at HS_NewGame
+// time -- checking them there flagged legitimate runs as unranked.  Leaving
+// them out costs nothing: on Nightmare the engine overrides the player
+// either way, and on every other skill both default to off and can only be
+// switched on, which makes the game harder rather than easier.  Both are
+// recorded in the demo header, so records still replay correctly.
+
+// What the simulation is actually running with.  command.c stores wide and
+// float values in .value and everything else in the .EV byte (which is also
+// what demo playback overwrites), so mirror that same test.
+static int  hs_rule_current( consvar_t * cv )
+{
+    return ( cv->flags & (CV_FLOAT | CV_VALUE) ) ? cv->value : (int) cv->EV;
+}
+
+static int  hs_rule_expected( const hs_rule_t * r )
+{
+    return ( r->cv->flags & CV_FLOAT ) ? (r->val * FRACUNIT) : r->val;
+}
+
+void HS_Apply_Ranked_Ruleset( void )
+{
+    unsigned int i;
+    const char * bad;
+
+    for( i=0; i<HS_NUM_RULES; i++ )
+        CV_SetValue( hs_ranked_rules[i].cv, hs_ranked_rules[i].val );
+
+    // Self-check.  If a value here is not one of a cvar's PossibleValues,
+    // CV_Set rejects it and leaves the cvar alone -- which would leave the
+    // cabinet permanently "unranked" and silently recording nothing at all.
+    // Say so loudly instead; this is a build error, not a runtime condition.
+    bad = HS_Unranked_Reason();
+    if( bad )
+    {
+        GenPrintf( EMSG_warn,
+          "Ranked ruleset did not apply: \"%s\" would not take its value.\n"
+          "No high scores or record demos will be saved.\n", bad );
+    }
+}
+
+const char *  HS_Unranked_Reason( void )
+{
+    unsigned int i;
+    for( i=0; i<HS_NUM_RULES; i++ )
+    {
+        const hs_rule_t * r = &hs_ranked_rules[i];
+        if( hs_rule_current(r->cv) != hs_rule_expected(r) )
+            return r->cv->name;
+    }
+    return NULL;
+}
+
+boolean  HS_Ruleset_Is_Ranked( void )
+{
+    return ( HS_Unranked_Reason() == NULL );
+}
+
+
 static tic_t   hs_cumulative_time = 0;
 static boolean hs_run_is_max = true;   // every level maxed so far this run
+// Latched false the moment the ruleset does not match the ranked baseline,
+// so changing a setting mid-run voids it rather than only the levels after.
+static boolean hs_run_ranked = true;
+
+boolean  HS_Run_Is_Ranked( void )
+{
+    return hs_run_ranked;
+}
 static char    hs_last_exit_mapname[9] = "";
 static skill_e hs_last_exit_skill = sk_baby;
 
@@ -303,6 +467,15 @@ void HS_NewGame( void )
     hs_cumulative_time = 0;
     hs_run_is_max = true;   // still eligible until a level is exited short
 
+    // An altered ruleset makes the run unscoreable, so do not spend the
+    // demo buffer on it either -- nothing would ever be saved from it.
+    hs_run_ranked = HS_Ruleset_Is_Ranked();
+    if( ! hs_run_ranked )
+    {
+        if( demorecording )  G_CheckDemoStatus();
+        return;
+    }
+
     // Do not fight an explicit -record: there is only one global demo
     // buffer, and that recording was asked for deliberately.
     if( M_CheckParm("-record") )  return;
@@ -337,6 +510,14 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // the speed run is unaffected and keeps accumulating.
     if( ! maxed )
         hs_run_is_max = false;
+
+    // Re-checked per level, not just at HS_NewGame: the Options menu is
+    // reachable mid-game, so a run started under the ranked ruleset can be
+    // altered part way through.  Once voided it stays voided for this run.
+    if( ! HS_Ruleset_Is_Ranked() )
+        hs_run_ranked = false;
+    if( ! hs_run_ranked )
+        return;
 
     const char * mapname = G_BuildMapName(episode, map);
     hs_maprecord_t * rec = HS_FindOrAddRecord(HS_GameId(), mapname);

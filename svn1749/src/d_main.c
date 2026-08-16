@@ -3161,27 +3161,15 @@ fatal_error_action:
     M_ClearConfig( CFG_main );  // due to launcher loop
     M_LoadConfig( CFG_main, configfile_main );        // WARNING : this do a "COM_BufExecute()"
 
-    // [Arcade] Force vanilla Doom gameplay.  DoomLegacy defaults these
-    // extras ON ("tiredrun" easy, "drown" Legacy), and they are single
-    // global cvars, so the two-player Options screen changes single player
-    // too.  Applied after the config load so a stale config cannot bring
-    // them back; -devmode leaves them alone for experimenting.
+    // [Arcade] Force the ranked ruleset: vanilla difficulty settings with
+    // Boom/MBF engine behavior left at its defaults.  DoomLegacy defaults
+    // several extras ON ("tiredrun" easy, "drown" Legacy), and they are
+    // single global CV_NETVARs, so the two-player Options screen changes
+    // single player too.  Applied after the config load so a stale config
+    // cannot bring them back; -devmode leaves them alone for experimenting.
+    // See hs_stuff.c for the table and for what an altered ruleset costs.
     if( ! devmode )
-    {
-#ifdef ENABLE_TIRED_RUN
-        CV_SetValue( &cv_tired_run, 0 );   // Off
-        CV_SetValue( &cv_drown, 0 );       // Off
-#endif
-#ifdef MONSTER_VARY
-        CV_SetValue( &cv_monster_vary, 0 );
-#endif
-#ifdef ENABLE_TELE_CONTROL
-        CV_SetValue( &cv_tele_control, 0 );
-#endif
-#ifdef ENABLE_SLOW_REACT
-        CV_SetValue( &cv_slow_react, 0 );
-#endif
-    }
+        HS_Apply_Ranked_Ruleset();
 
 
     //---------------------------------------------------- READY SCREEN

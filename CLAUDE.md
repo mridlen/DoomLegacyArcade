@@ -281,10 +281,46 @@ silently made the flag do nothing at all.
   - **`config.cfg` overrides the compiled default**, and only devmode rewrites it, so changing the
     default in `st_stuff.c` does nothing on a machine with an existing config — the saved
     `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
-- **Vanilla gameplay is forced** after the config load (`d_main.c`, unless `-devmode`): the Legacy
-  extras above are set to 0 so the cabinet plays like Doom regardless of the config. Note these are
-  single global `CV_NETVAR` cvars, not per-player — the two-player Options screen edits
-  single-player behavior too.
+- **The ranked ruleset** (`hs_stuff.c`, `hs_ranked_rules[]`). **Game options are not multiplayer
+  only.** DoomLegacy has no separate single-player path — solo play runs the same client/server
+  simulation — and every gameplay setting is a single global `CV_NETVAR`, so anything reachable
+  under Options applies to a scored single-player run. The two-player Options screen edits
+  single-player behavior for the same reason.
+
+  The baseline is **vanilla difficulty knobs with Boom/MBF engine behavior left at its defaults**
+  (roughly complevel 11): gravity, monster/item respawn, monster health and pickup multipliers,
+  dogs, voodoo mode, insta-death, weapon recoil, jumping, tired run/drown, monster vary and the
+  rest are pinned to vanilla, while the Boom/MBF AI and physics fixes stay on so Boom-format level
+  packs still work. `HS_Apply_Ranked_Ruleset()` runs after the config load (`d_main.c`) and again
+  in `Command_ExitGame_f`, so **one player's tinkering cannot leave the next player unable to
+  score**; settings are not saved outside devmode, so this only ever undoes a within-session change.
+
+  Rather than hide the menus, an altered ruleset **plays on but records nothing**:
+  `HS_Ruleset_Is_Ranked()` is checked in `HS_NewGame` (which then skips starting the background
+  recording at all) and again at every `HS_LevelExit`, latching `hs_run_ranked` false so a change
+  made *mid-run* voids it rather than only the levels after. The player is told twice — a warning
+  under the item list on the Game Options and Adv Options screens (`M_Draw_Unranked_Warning`,
+  called from `M_Drawer` so all three screens are covered in one place), and an `UNRANKED` marker
+  at the top of the HUD during play.
+  - **`cv_respawnmonsters` and `cv_fastmonsters` are deliberately absent from the table.**
+    `G_InitNew` turns both on for `sk_nightmare`, so they belong to the skill, not the player —
+    and `gameskill` is still the *previous* game's value at `HS_NewGame` time, so checking them
+    there flagged legitimate runs unranked. Leaving them out costs nothing: Nightmare overrides
+    the player either way, and on other skills both default to off and can only be switched *on*,
+    which makes the game harder.
+  - `HS_Apply_Ranked_Ruleset` **self-checks** and warns via `GenPrintf(EMSG_warn, ...)`. If a value
+    in the table is not one of a cvar's `PossibleValue`s, `CV_Set` rejects it silently and the
+    cabinet would record nothing forever — this turns that into a visible message. All current
+    values were verified against their `*_cons_t` tables and by a headless run.
+  - Values are in menu units; `hs_rule_expected` scales `CV_FLOAT` cvars (gravity) by `FRACUNIT`,
+    and `hs_rule_current` reads `.value` for `CV_FLOAT`/`CV_VALUE` cvars and the `.EV` byte
+    otherwise — mirroring `command.c`'s own split. **`.EV` is a byte**, so a fixed-point cvar's
+    `.EV` is its low 8 bits and useless for comparison.
+  - The demo header records nearly all of these (38 bytes at `G_BeginRecording`, plus the 6 added
+    for the Legacy extras), so pinning values is demo-safe. **`cv_gravity`, `cv_predictingmonsters`
+    and `cv_blockmap_gen` are the exceptions — not recorded anywhere**, so changing one would
+    desync a record demo. All three are pinned by the ruleset, which is now the only thing keeping
+    them consistent. Worth remembering if a demo ever desyncs mysteriously.
 
 Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text,
 `<wadcombo> map skill tics <category>`), `demos/<wadcombo>_<map>_sk<N>_<category>.lmp`, and

@@ -1054,6 +1054,13 @@ void Command_ExitGame_f(void)
     // SplitScreen_OnChange, which takes the player 2 menu entries back down.
     CV_SetValue( &cv_splitscreen, 0 );
 
+    // [Arcade] Restore the ranked ruleset, so one player's tinkering under
+    // Options does not leave the next player at the cabinet unable to set a
+    // record.  Settings are not saved outside devmode, so this is only ever
+    // undoing a within-session change.
+    if( ! devmode )
+        HS_Apply_Ranked_Ruleset();
+
     D_StartTitle();
 }
 
