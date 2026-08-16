@@ -257,6 +257,21 @@ silently made the flag do nothing at all.
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
   are shared between game modes and the last is reachable only under the retail divisor.
 
+  The page is **paginated one map at a time** — five skills by two categories always fits, so
+  nothing is ever cut off however many maps get recorded, and a `n of m` footer shows there is
+  more. `HS_Attract_Advance_Page()` is called from `D_DoAdvanceDemo` as the page is armed, so a
+  different map comes up after each demo. Maps with no time at all are skipped
+  (`HS_Entry_Eligible()`); skills with no time still get a `--:--` row, since a gap in five rows
+  reads as missing rather than as an open slot.
+  - The current page is tracked **by map name, not by table index**. `hs_table` is in the order
+    maps were first played and grows mid-session, so an index would silently start pointing at a
+    different map. Rotation picks the smallest name greater than the current one, wrapping to the
+    smallest overall — which also recovers automatically when the map on screen disappears
+    (scores cleared, game switched, pack loaded).
+  - Plain `strcmp` gives the right order for both map styles (`E1M1`..`E4M9`, `MAP01`..`MAP32`).
+    This matters: real tables are badly out of order (a live `highscores.dat` had E1M1, then
+    E2M1–E2M7, then E1M2–E1M7), and name-sorting is the only reason the pages advance sensibly.
+
   Records demos in the background and saves the run that set each record. Hooks:
   `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),
   `HS_NewGame` from the menu skill-select handlers (**must** precede `G_DeferedInitNew`, see below),

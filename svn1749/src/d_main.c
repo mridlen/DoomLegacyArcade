@@ -1279,6 +1279,9 @@ void D_DoAdvanceDemo(void)
         hs_page_after_demo = false;
         if( HS_Have_Records() )
         {
+            // One map per appearance, so the page never overflows; the next
+            // map in name order comes up after the next demo.
+            HS_Attract_Advance_Page();
             pagetic = TICRATE * 8;
             hs_attract_page = true;
             gamestate = GS_DEMOSCREEN;

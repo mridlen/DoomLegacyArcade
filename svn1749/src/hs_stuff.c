@@ -620,33 +620,100 @@ void HS_Draw_IntermissionTable( int x, int y )
 // Does the running game have any recorded times?
 // The attract screen uses this to skip the page when it would only say
 // "No times recorded yet", which would otherwise show after every demo.
-boolean  HS_Have_Records( void )
+// Part of the running game, and holding at least one time.  A map with
+// nothing recorded is skipped entirely rather than shown as a blank page.
+static boolean  HS_Entry_Eligible( const hs_maprecord_t * rec )
 {
-    int  i, sk, cat;
+    int  sk, cat;
 
-    for( i=0; i<hs_table_count; i++ )
+    if( strncmp(rec->game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+        return false;
+
+    for( cat=0; cat<HS_NUMCAT; cat++ )
     {
-        if( strncmp(hs_table[i].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
-            continue;
-        for( cat=0; cat<HS_NUMCAT; cat++ )
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
         {
-            for( sk=0; sk<HS_NUMSKILLS; sk++ )
-            {
-                if( hs_table[i].has_record[cat][sk] )  return true;
-            }
+            if( rec->has_record[cat][sk] )  return true;
         }
     }
     return false;
 }
 
 
+boolean  HS_Have_Records( void )
+{
+    int  i;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( HS_Entry_Eligible(&hs_table[i]) )  return true;
+    }
+    return false;
+}
+
+
+// The attract screen shows one map per appearance, so five skills x two
+// categories always fit.  Tracked by *name* rather than by table index
+// because hs_table is in the order maps were first played and grows during
+// a session -- an index would silently point at a different map.
+static char  hs_attract_mapname[9] = "";
+
+// Next eligible map in name order, wrapping at the end.  Map names sort
+// correctly as plain strings for both styles ("E1M1".."E4M9", "MAP01".."MAP32").
+void HS_Attract_Advance_Page( void )
+{
+    const char * next = NULL;   // smallest name greater than the current one
+    const char * first = NULL;  // smallest overall, to wrap onto
+    int  i;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        const char * nm = hs_table[i].mapname;
+        if( ! HS_Entry_Eligible(&hs_table[i]) )  continue;
+
+        if( first == NULL || strcmp(nm, first) < 0 )
+            first = nm;
+        if( strcmp(nm, hs_attract_mapname) > 0
+            && (next == NULL || strcmp(nm, next) < 0) )
+            next = nm;
+    }
+
+    if( next == NULL )  next = first;   // wrapped, or the old map is gone
+    dl_strncpy(hs_attract_mapname, next ? next : "", 8);
+}
+
+
+// Position and count of the current page, for the "n of m" footer.
+static void  HS_Attract_Page_Number( int * pos, int * total )
+{
+    int  i;
+    *pos = 0;
+    *total = 0;
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( ! HS_Entry_Eligible(&hs_table[i]) )  continue;
+        (*total) ++;
+        // Rank by name, so the number matches the display order.
+        if( strcmp(hs_table[i].mapname, hs_attract_mapname) <= 0 )
+            (*pos) ++;
+    }
+}
+
+
+// One map per page: five skills by two categories, which always fits, so
+// nothing is ever cut off no matter how many maps have been recorded.
+// Table origin, and the right edge of each category's time column.
+#define HS_PG_LABEL   60
+#define HS_PG_TIME   190
+#define HS_PG_STEP    62
+
 void HS_Draw_AttractTable( void )
 {
+    const hs_maprecord_t * rec = NULL;
     char   timebuf[16];
     int    i, sk, cat;
-    int    shown = 0;
-    int    x = 40;
-    int    y = 20;
+    int    pos, total;
+    int    y;
 
     // This is an attract-screen page like the ones D_PageDrawer handles, so
     // it must establish the same draw state and cover the whole screen.
@@ -656,58 +723,72 @@ void HS_Draw_AttractTable( void )
     V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
     V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
 
-    V_DrawString(x, y, V_WHITEMAP, "HIGH SCORES - BEST TIME TO EXIT");
-    y += 12;
-
-    // Column header.  "max" runs additionally require 100% kills and 100%
-    // secrets on every level of the run, so its times are always >= speed.
-    for( cat=0; cat<HS_NUMCAT; cat++ )
-    {
-        const char * cn = hs_catname[cat];
-        V_DrawString(x + HS_ATT_TIME + cat*HS_COL_STEP - V_StringWidth(cn),
-                     y, V_WHITEMAP, cn);
-    }
-    y += 12;
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth("HIGH SCORES - BEST TIME TO EXIT"))/2,
+                  24, V_WHITEMAP, "HIGH SCORES - BEST TIME TO EXIT" );
 
     // Only the running game's records: the attract screen advertises the
     // game that is about to be played, and Doom 2 / Plutonia / TNT all have
-    // a MAP01 which would otherwise be indistinguishable in this list.
-    for( i=0, shown=0; i<hs_table_count && y < BASEVIDHEIGHT-10; i++ )
+    // a MAP01 which would otherwise be indistinguishable.
+    for( i=0; i<hs_table_count; i++ )
     {
-        if( strncmp(hs_table[i].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
-            continue;
-
-        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        if( ! HS_Entry_Eligible(&hs_table[i]) )  continue;
+        if( strncmp(hs_table[i].mapname, hs_attract_mapname, 8) == 0 )
         {
-            if( ! hs_table[i].has_record[HS_CAT_speed][sk]
-                && ! hs_table[i].has_record[HS_CAT_max][sk] )  continue;
-            shown ++;
-
-            // Columns: map at x, skill at x+50 (up to 5 chars, "ITYTD"),
-            // then one right-justified time column per category.
-            V_DrawString(x, y, 0, hs_table[i].mapname);
-            V_DrawString(x+50, y, 0, hs_skillnames[sk]);
-
-            for( cat=0; cat<HS_NUMCAT; cat++ )
-            {
-                if( hs_table[i].has_record[cat][sk] )
-                    HS_FormatTime(hs_table[i].besttime[cat][sk],
-                                  timebuf, sizeof(timebuf));
-                else
-                    snprintf(timebuf, sizeof(timebuf), "--:--");
-
-                V_DrawString(x + HS_ATT_TIME + cat*HS_COL_STEP
-                               - V_StringWidth(timebuf),
-                             y, 0, timebuf);
-            }
-
-            y += 10;
-            if( y >= BASEVIDHEIGHT-10 )  break;
+            rec = &hs_table[i];
+            break;
         }
     }
 
-    if( shown == 0 )
-        V_DrawString(x, y, 0, "No times recorded yet");
+    if( rec == NULL )
+    {
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth("No times recorded yet"))/2,
+                      90, 0, "No times recorded yet" );
+        return;
+    }
+
+    // Map name, centered and set apart from the table below it.
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(rec->mapname))/2, 44,
+                  V_WHITEMAP, (char*) rec->mapname );
+
+    // Column header.  A "max" run additionally requires 100% kills and 100%
+    // secrets on every level of the run, so its times are always >= speed.
+    y = 66;
+    for( cat=0; cat<HS_NUMCAT; cat++ )
+    {
+        const char * cn = hs_catname[cat];
+        V_DrawString( HS_PG_TIME + cat*HS_PG_STEP - V_StringWidth(cn),
+                      y, V_WHITEMAP, cn );
+    }
+    y += 14;
+
+    // All five skills every time, including ones with no time -- there is
+    // room, and a gap would read as a missing row rather than an open slot.
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        V_DrawString( HS_PG_LABEL, y, 0, hs_skillnames[sk] );
+
+        for( cat=0; cat<HS_NUMCAT; cat++ )
+        {
+            if( rec->has_record[cat][sk] )
+                HS_FormatTime( rec->besttime[cat][sk], timebuf, sizeof(timebuf) );
+            else
+                snprintf( timebuf, sizeof(timebuf), "--:--" );
+
+            V_DrawString( HS_PG_TIME + cat*HS_PG_STEP - V_StringWidth(timebuf),
+                          y, 0, timebuf );
+        }
+        y += 12;
+    }
+
+    // Footer, so it is obvious that other maps follow on later pages.
+    HS_Attract_Page_Number( &pos, &total );
+    if( total > 1 )
+    {
+        char pagebuf[32];
+        snprintf( pagebuf, sizeof(pagebuf), "%d of %d", pos, total );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth(pagebuf))/2,
+                      BASEVIDHEIGHT-26, 0, pagebuf );
+    }
 }
 
 
