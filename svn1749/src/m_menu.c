@@ -585,6 +585,7 @@ static void M_OpenGLOption(int choice);
 static void M_PlayerDirector(int choice);
 
 menu_t GameSelectDef;   // [Arcade] IWAD switcher
+menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
   PlayerDirectorDef, PlayerOptionsDef,
@@ -3420,6 +3421,7 @@ menuitem_t MControlMenu[]=
     // menu by position (the lockdown hides its whole Options entry instead).
     {IT_CALL | IT_WHITESTRING, 0,"Guided setup P1", M_Guided_Controls_P1, 0},
     {IT_CALL | IT_WHITESTRING, 0,"Guided setup P2", M_Guided_Controls_P2, 0},
+    {IT_SUBMENU | IT_WHITESTRING, 0,"Recommended layout", &RecLayoutDef, 0},
     {IT_STRING | IT_CVAR, 0,"Control per key" ,&cv_controlperkey   ,0},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Mouse Options >>" ,&MouseOptionsDef   , 'm'},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Second Mouse config >>", &SecondMouseCfgdef, 0},
@@ -3439,6 +3441,91 @@ menu_t  MControlDef =
     NULL,
     sizeof(MControlMenu)/sizeof(menuitem_t),
     60,40,
+    0
+};
+
+
+//===========================================================================
+//  [Arcade] Recommended panel layout (informational)
+//===========================================================================
+// The layout the cabinet was actually play-tested with, on the usual
+// six-button arrangement: 1 2 3 across the top row, 4 5 6 below.
+//
+// Everything is placed at an explicit x rather than drawn as monospace ASCII
+// art, because hu_font is *proportional* (V_DrawString advances by each
+// patch's own width) and space is only 4px, so columns built out of spaces
+// do not line up.  Only characters in '!'..'_' exist -- no '|', and
+// lowercase is folded to uppercase -- hence "V" for the down arrow.
+
+static void  M_Centre_At( int cx, int y, int option, const char * s )
+{
+    V_DrawString( cx - (V_StringWidth((char*)s) / 2), y, option, (char*)s );
+}
+
+#define RL_STICK_X    58        // stick column centre
+#define RL_BTN_X      152       // centre of button 1 / 4
+#define RL_BTN_STEP   46        // to buttons 2/5 and 3/6
+#define RL_ROW1_Y     54        // top button row
+#define RL_ROW2_Y     78        // bottom button row
+
+static void M_Draw_RecLayout( void )
+{
+    static const char * btn_top[3] = { "(1)", "(2)", "(3)" };
+    static const char * btn_bot[3] = { "(4)", "(5)", "(6)" };
+    static const char * legend_l[3] =
+      { "1  FIRE", "2  STRAFE LEFT", "3  STRAFE RIGHT" };
+    static const char * legend_r[3] =
+      { "4  USE / OPEN", "5  WEAPON DOWN", "6  WEAPON UP" };
+    int  i, y;
+
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+
+    M_Centre_At( BASEVIDWIDTH/2, 16, V_WHITEMAP, "RECOMMENDED PANEL LAYOUT" );
+
+    // Stick, drawn as a four-way.
+    M_Centre_At( RL_STICK_X,      RL_ROW1_Y - 8, 0, "^" );
+    M_Centre_At( RL_STICK_X - 22, RL_ROW1_Y + 8, 0, "<" );
+    M_Centre_At( RL_STICK_X,      RL_ROW1_Y + 8, 0, "O" );
+    M_Centre_At( RL_STICK_X + 22, RL_ROW1_Y + 8, 0, ">" );
+    M_Centre_At( RL_STICK_X,      RL_ROW1_Y + 24, 0, "V" );
+    M_Centre_At( RL_STICK_X,      RL_ROW2_Y + 20, V_WHITEMAP, "STICK" );
+
+    // Buttons, two rows of three.
+    for( i=0; i<3; i++ )
+    {
+        int bx = RL_BTN_X + (i * RL_BTN_STEP);
+        M_Centre_At( bx, RL_ROW1_Y, V_WHITEMAP, btn_top[i] );
+        M_Centre_At( bx, RL_ROW2_Y, V_WHITEMAP, btn_bot[i] );
+    }
+
+    y = 112;
+    for( i=0; i<3; i++ )
+    {
+        V_DrawString( 24,  y, 0, (char*) legend_l[i] );
+        V_DrawString( 168, y, 0, (char*) legend_r[i] );
+        y += 12;
+    }
+
+    M_Centre_At( BASEVIDWIDTH/2, 158, 0, "STICK MOVES AND TURNS" );
+    M_Centre_At( BASEVIDWIDTH/2, 174, 0, "GUIDED SETUP ASKS IN THIS ORDER" );
+}
+
+menuitem_t RecLayoutMenu[] =
+{
+    // Invisible item: any select backs out to the controls menu, as the
+    // Read This screens do.
+    {IT_SUBMENU | IT_NOTHING, 0, "", &MControlDef, 0}
+};
+
+menu_t  RecLayoutDef =
+{
+    NULL,
+    NULL,
+    RecLayoutMenu,
+    M_Draw_RecLayout,
+    NULL,
+    sizeof(RecLayoutMenu)/sizeof(menuitem_t),
+    160, 190,
     0
 };
 

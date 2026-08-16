@@ -275,6 +275,17 @@ silently made the flag do nothing at all.
   stays on the ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing
   as `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
   joystick buttons arrive as `ev_keydown` with codes in the key space, so any panel wiring works.
+  - **Recommended layout screen** (`M_Draw_RecLayout` / `RecLayoutDef`, same menu). An
+    informational page showing the play-tested assignment on the standard six-button arrangement
+    (1 2 3 top row, 4 5 6 bottom): 1 fire, 2/3 strafe left/right, 4 use/open, 5 weapon down,
+    6 weapon up, stick moves and turns. Modelled on the "Read This" screens — a custom
+    `drawroutine` plus one `IT_SUBMENU | IT_NOTHING` item that backs out.
+  - **`hu_font` is proportional and space is only 4px**, so monospace ASCII art does not line up:
+    `V_DrawString` advances by each character patch's own width. The layout screen therefore
+    positions every element at an explicit x (`M_Centre_At`) instead of padding with spaces. Only
+    `'!'`..`'_'` exist and lowercase folds to uppercase — there is **no `|`** — which is why the
+    stick's down arrow is the letter `V`. Extents were checked against the real `STCFN0xx` widths
+    read out of the IWAD rather than estimated; the widest line is 212px of 320.
   - The prompts deliberately name the **physical control, not the game action**. They first said
     "TURN LEFT" with a note that WASD mode swaps turn and strafe, which reads as confusing to
     someone actually wiring a panel: they know they are pushing the stick left and should not have
