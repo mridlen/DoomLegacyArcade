@@ -86,6 +86,8 @@
 #include "r_local.h"
 #include "wi_stuff.h"
   // for drawrankings
+#include "hs_stuff.h"
+  // [Arcade] HS_DemoLabel
 #include "p_info.h"
 #include "p_inter.h"
   // P_SetMessage
@@ -163,7 +165,8 @@ static byte  hu_HWR_patchstore;  // the HWR_patchstore setting used by fonts.
 // -------
 static void  HU_Draw_DeathmatchRankings( void );
 static void  HU_Draw_Crosshair( void );
-static void  HU_Draw_Tip( void );
+// HU_Draw_Tip is declared in hu_stuff.h -- [Arcade] the intermission and
+// finale call it directly for the idle-timeout countdown.
 
 
 
@@ -678,6 +681,20 @@ void HU_Drawer(void)
     if (!automapactive && !demoplayback && !cv_chasecam.value)
         HU_Draw_Crosshair ();
 
+    // [Arcade] Caption the attract screen's record demos, so a player can
+    // see whose category and time they are watching.  Second text line, not
+    // the first: item pickups still print messages at y=0 during playback.
+    if( demoplayback )
+    {
+        const char * label = HS_DemoLabel();
+        if( label )
+        {
+            V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth(label)) / 2, 8,
+                          V_WHITEMAP, (char*) label );
+        }
+    }
+
     HU_Draw_Tip();
     HU_Draw_FSPics();
 }
@@ -747,7 +764,7 @@ void HU_SetTip(char *tip, int displaytics)
 
 
 
-static void HU_Draw_Tip()
+void HU_Draw_Tip(void)
 {
   int    i;
   if(!numtiplines) return;

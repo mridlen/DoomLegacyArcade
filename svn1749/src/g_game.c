@@ -1736,6 +1736,62 @@ void G_Synclog_Tic( void )
 }
 
 
+// [Arcade lockdown] Idle-to-title timeout.
+// Called once per tic from G_Ticker for GS_LEVEL, GS_INTERMISSION and
+// GS_FINALE.  The latter two matter as much as play does: both wait
+// indefinitely for a keypress the cabinet's walk-away player will never
+// give, so without this the machine hangs on the tally or the end text.
+//
+// Not during demo playback: the attract-mode demos generate no real input,
+// so the timer would always expire and kick back to the title.
+// Local splitscreen sets netgame too (see M_StartServer), so test for it
+// explicitly -- otherwise a two player game on the cabinet would never
+// return to the attract screen.  Only a real network game, which this build
+// cannot reach without -devmode, is exempt.
+static void G_Idle_Timeout_Check( void )
+{
+    static int last_warn_secs_shown = -1;
+    tic_t idle_tics, timeout_tics, warn_tics;
+
+    if( devmode || demoplayback || cv_idletimeout.value <= 0 )  return;
+    if( netgame && ! cv_splitscreen.EV )  return;
+
+    idle_tics    = gametic - last_input_tic;
+    timeout_tics = (tic_t)cv_idletimeout.value * TICRATE;
+    warn_tics    = (cv_idletimeout.value > cv_idlewarntime.value)
+                    ? (tic_t)(cv_idletimeout.value - cv_idlewarntime.value) * TICRATE
+                    : 0;
+
+    if( idle_tics >= timeout_tics )
+    {
+        last_warn_secs_shown = -1;
+        // A level pack overrides the IWAD maps, so the attract screen's
+        // built-in demos would play back against the wrong levels, and the
+        // splitscreen state would persist.  Restart for a clean attract
+        // screen instead of returning to title.
+        if( M_LevelPack_Loaded() )
+            M_Restart_Program( NULL, false );   // no return
+
+        Command_ExitGame_f();
+    }
+    else if( idle_tics >= warn_tics )
+    {
+        int remain_secs = cv_idletimeout.value - (int)(idle_tics / TICRATE);
+        if( remain_secs != last_warn_secs_shown )
+        {
+            char idlemsg[64];
+            snprintf(idlemsg, sizeof(idlemsg), "Returning to title in %ds...", remain_secs);
+            HU_SetTip(idlemsg, 3*TICRATE);
+            last_warn_secs_shown = remain_secs;
+        }
+    }
+    else
+    {
+        last_warn_secs_shown = -1;
+    }
+}
+
+
 //
 // G_Ticker
 // Make ticcmd_ts for the players.
@@ -1882,59 +1938,23 @@ main_actions:
 
         G_Synclog_Tic();   // [Arcade] demo desync diagnostic, -synclog
 
-        // [Arcade lockdown] Idle-to-title timeout.
-        // Not during demo playback: the attract-mode demos generate no real
-        // input, so the timer would always expire and kick back to the title.
-        // Local splitscreen sets netgame too (see M_StartServer), so test for
-        // it explicitly -- otherwise a two player game on the cabinet would
-        // never return to the attract screen.  Only a real network game,
-        // which this build cannot reach without -devmode, is exempt.
-        if( !devmode && !demoplayback && cv_idletimeout.value > 0
-            && (!netgame || cv_splitscreen.EV) )
-        {
-            static int last_warn_secs_shown = -1;
-            tic_t idle_tics    = gametic - last_input_tic;
-            tic_t timeout_tics = (tic_t)cv_idletimeout.value * TICRATE;
-            tic_t warn_tics    = (cv_idletimeout.value > cv_idlewarntime.value)
-                                  ? (tic_t)(cv_idletimeout.value - cv_idlewarntime.value) * TICRATE
-                                  : 0;
-
-            if( idle_tics >= timeout_tics )
-            {
-                // A level pack overrides the IWAD maps, so the attract
-                // screen's built-in demos would play back against the wrong
-                // levels, and the splitscreen state would persist.  Restart
-                // for a clean attract screen instead of returning to title.
-                if( M_LevelPack_Loaded() )
-                    M_Restart_Program( NULL, false );   // no return
-
-                Command_ExitGame_f();
-                break;
-            }
-            else if( idle_tics >= warn_tics )
-            {
-                int remain_secs = cv_idletimeout.value - (int)(idle_tics / TICRATE);
-                if( remain_secs != last_warn_secs_shown )
-                {
-                    char idlemsg[64];
-                    snprintf(idlemsg, sizeof(idlemsg), "Returning to title in %ds...", remain_secs);
-                    HU_SetTip(idlemsg, 3*TICRATE);
-                    last_warn_secs_shown = remain_secs;
-                }
-            }
-            else
-            {
-                last_warn_secs_shown = -1;
-            }
-        }
+        G_Idle_Timeout_Check();   // [Arcade]
         break;
 
       case GS_INTERMISSION:
         WI_Ticker ();
+        // [Arcade] The tally screen waits forever for a keypress once the
+        // counters finish (wi_stuff.c, sp_state == 10), so the cabinet must
+        // be able to time out here too.
+        G_Idle_Timeout_Check();
         break;
 
       case GS_FINALE:
         F_Ticker ();
+        // [Arcade] Same for the end-of-episode text (F_Ticker's finalestage
+        // 0 needs keypressed under doom2_commercial) and for the cast call,
+        // which loops indefinitely.
+        G_Idle_Timeout_Check();
         break;
 
       case GS_DEMOSCREEN:

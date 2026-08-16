@@ -1588,7 +1588,10 @@ void ST_Change_DemoView (void)
 //                         STATUS BAR OVERLAY
 // =========================================================================
 
-consvar_t cv_stbaroverlay = {"overlay","kahmf",CV_SAVE,NULL};
+// [Arcade] Stock default is "kahmf"; e/i/s (kills/items/secrets) added so the
+// cabinet shows run progress out of the box.  Only takes effect at viewsize
+// 11, which is what sets st_overlay_on (r_main.c, R_SetViewSize).
+consvar_t cv_stbaroverlay = {"overlay","kahmfeis",CV_SAVE,NULL};
 
 boolean   st_overlay_on;  // status overlay for Doom and Heretic
 
@@ -1777,21 +1780,35 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
            break;
 
          // added by Hurdler for single player only (or coop netplay)
-         case 'e': // number of monster killed 
+         // [Arcade] Labelled and stacked K/I/S so a run can be tracked against
+         // the "max" high-score category (100% kills and secrets on every
+         // level).  Splitscreen is excluded as before: killcount is per
+         // player while totalkills is the map's, so one corner cannot speak
+         // for both -- and the high-score table is single player anyway.
+         case 'e': // number of monsters killed
            if( (! deathmatch) && (!cv_splitscreen.EV) )
            {
-               char buf[16];
-               sprintf(buf, "%d/%d", plyr->killcount, totalkills);
+               char buf[24];
+               sprintf(buf, "K %d/%d", plyr->killcount, totalkills);
                V_DrawString(SCX(318-V_StringWidth(buf)), SCY(1,y0), 0, buf);
+           }
+           break;
+
+         case 'i': // number of items picked up
+           if( (! deathmatch) && (!cv_splitscreen.EV) )
+           {
+               char buf[24];
+               sprintf(buf, "I %d/%d", plyr->itemcount, totalitems);
+               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(11,y0), 0, buf);
            }
            break;
 
          case 's': // number of secrets found
            if( (! deathmatch) && (!cv_splitscreen.EV) )
            {
-               char buf[16];
-               sprintf(buf, "%d/%d", plyr->secretcount, totalsecret);
-               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(11,y0), 0, buf);
+               char buf[24];
+               sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);
+               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(21,y0), 0, buf);
            }
            break;
 

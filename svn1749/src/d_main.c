@@ -797,10 +797,12 @@ void D_Display(void)
 
         case GS_INTERMISSION:
             WI_Drawer();
+            HU_Draw_Tip();   // [Arcade] idle-timeout countdown
             break;
 
         case GS_FINALE:
             F_Drawer();
+            HU_Draw_Tip();   // [Arcade] idle-timeout countdown
             break;
 
         case GS_DEDICATEDSERVER:
@@ -1290,6 +1292,7 @@ void D_DoAdvanceDemo(void)
         demosequence = (demosequence + 1) % 6;
 
     hs_attract_page = false;   // [Arcade] cleared for the graphic/demo pages
+    HS_Clear_DemoLabel();      // [Arcade] only the record cases below set it
 
     switch (demosequence)
     {

@@ -113,6 +113,10 @@ int HU_Create_TeamFragTbl(fragsort_t *fragtab,
 
 
 void HU_SetTip(char *tip, int displaytics);
+// [Arcade] Normally reached only via HU_Drawer, which D_Display calls for
+// GS_LEVEL alone.  Exposed so the intermission and finale can draw the
+// idle-timeout countdown, which now runs in those states too.
+void HU_Draw_Tip(void);
 void HU_Clear_Tips();
 
 void HU_Draw_FSPics();

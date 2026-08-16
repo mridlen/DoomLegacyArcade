@@ -521,6 +521,22 @@ void HS_Draw_AttractTable( void )
 }
 
 
+// [Arcade] Describes the record demo HS_NextRecordDemoPath last handed out,
+// so the attract screen can caption it.  Empty while a stock IWAD demo (or
+// nothing) is playing -- D_DoAdvanceDemo clears it before every page.
+static char hs_demo_label[64] = "";
+
+void HS_Clear_DemoLabel( void )
+{
+    hs_demo_label[0] = 0;
+}
+
+const char * HS_DemoLabel( void )
+{
+    return hs_demo_label[0] ? hs_demo_label : NULL;
+}
+
+
 const char * HS_NextRecordDemoPath( void )
 {
     static char path[MAX_WADPATH];
@@ -549,6 +565,15 @@ const char * HS_NextRecordDemoPath( void )
                              (skill_e)sk, cat);
             if( access(path, R_OK) == 0 )
             {
+                char timebuf[16];
+                HS_FormatTime(hs_table[mi].besttime[cat][sk],
+                              timebuf, sizeof(timebuf));
+                // e.g. "E1M1  ITYTD  MAX  4:32"
+                snprintf(hs_demo_label, sizeof(hs_demo_label),
+                         "%s  %s  %s  %s", hs_table[mi].mapname,
+                         hs_skillnames[sk], hs_catname[cat], timebuf);
+                strupr(hs_demo_label);
+
                 cursor = (cursor+1) % total;
                 return path;
             }

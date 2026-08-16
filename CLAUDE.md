@@ -190,14 +190,23 @@ silently made the flag do nothing at all.
 - **No confirmation prompts** (`m_menu.c`). Quit, End Game, Nightmare skill, "already playing", and
   quicksave/quickload all take the "yes" path immediately. Only the savegame-slot `Delete Y/N?`
   survives, as it guards irreversible data loss.
-- **Idle-to-title timeout** (`g_game.c`). `last_input_tic` is stamped in `D_PostEvent`, checked once
-  per tic in `G_Ticker`'s `GS_LEVEL` case, and re-armed in `G_DoLoadLevel` so intermission time does
-  not carry over. Ends the game via `Command_ExitGame_f()` and warns beforehand through the existing
-  `HU_SetTip` centered-text mechanism, or restarts the program when a level pack is loaded (see the
-  game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime` (default 60s/15s, `0` disables).
-  Skipped in devmode and demo playback. **Local splitscreen sets `netgame`**, so the check tests
-  `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone meant no two player game ever timed
-  out, which is exactly when an unattended cabinet needs it.
+- **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
+  `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` so
+  intermission time does not carry over. Ends the game via `Command_ExitGame_f()` and warns
+  beforehand through the existing `HU_SetTip` centered-text mechanism, or restarts the program when
+  a level pack is loaded (see the game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime`
+  (default 60s/15s, `0` disables). Skipped in devmode and demo playback. **Local splitscreen sets
+  `netgame`**, so the check tests `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
+  meant no two player game ever timed out, which is exactly when an unattended cabinet needs it.
+
+  It runs in **`GS_LEVEL`, `GS_INTERMISSION` and `GS_FINALE`**, not just during play — both of the
+  other two wait *indefinitely* for a keypress the walk-away player never gives, so covering only
+  `GS_LEVEL` left the cabinet hung. The intermission stalls at `sp_state == 10` (`wi_stuff.c`)
+  once the counters finish; the finale stalls in `F_Ticker`'s `finalestage 0` (the Doom 2 text
+  screens need `keypressed`) and again in the cast call, which loops forever. `D_Display` calls
+  `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
+  two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
+  after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
 - **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
   selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
   player (move/turn/strafe/fire/use/weapon cycling) and rewrites them on change and on config load,
@@ -237,6 +246,12 @@ silently made the flag do nothing at all.
   separated field in `highscores.dat` *and* part of the demo filename, while pack names come from
   arbitrary filenames. Renaming a wad therefore starts a fresh table — the name is the identity.
 
+  Record demos are **captioned** during attract playback (`HS_DemoLabel()`, drawn by `HU_Drawer`)
+  with map, skill, category and time — `E1M1  ITYTD  MAX  4:32`. `HS_NextRecordDemoPath()` fills the
+  label as a side effect of handing out a path, and `D_DoAdvanceDemo` clears it before every page,
+  so a stock IWAD demo is never captioned with the previous record's text. Drawn on the **second**
+  text line (y=8), because item pickups still print messages at y=0 during playback.
+
   The attract page appears **after every demo**, skipped when the current combination has no times
   (`HS_Have_Records()`) so a fresh cabinet does not show an empty page repeatedly. It is interposed
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
@@ -249,6 +264,23 @@ silently made the flag do nothing at all.
   cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
   without closing it, so live recording continues after a record is saved.
 
+- **Kills/items/secrets on the HUD** (`st_stuff.c`, `ST_overlayDrawer`). The engine's status-bar
+  overlay is driven by the `overlay` cvar, a **string of one-letter element codes** — stock
+  `"kahmf"` is keys/ammo/health/armor/frags. Upstream already had `e` (kills) and `s` (secrets)
+  but neither was in the default and there was **no items element**; `i` is new. The three are
+  stacked top-right at `SCY(1/11/21)` with `K`/`I`/`S` labels, and the default is now
+  `"kahmfeis"`. This pairs with the high-score **max** category, which needs 100% kills and
+  secrets, so the player can see whether the run is still eligible.
+  - The overlay only draws when **`st_overlay_on`**, which `R_SetViewSize` (`r_main.c`) sets from
+    `cv_viewsize.value == 11` — the largest view size, no status bar. At any smaller viewsize the
+    classic status bar draws instead and none of this appears. The cabinet's `config.cfg` is at
+    `viewsize 11`.
+  - Skipped in splitscreen, like the upstream `e`/`s` cases: `killcount` is per player while
+    `totalkills` is the map's, so one corner cannot speak for both. High scores are single player
+    anyway.
+  - **`config.cfg` overrides the compiled default**, and only devmode rewrites it, so changing the
+    default in `st_stuff.c` does nothing on a machine with an existing config — the saved
+    `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
 - **Vanilla gameplay is forced** after the config load (`d_main.c`, unless `-devmode`): the Legacy
   extras above are set to 0 so the cabinet plays like Doom regardless of the config. Note these are
   single global `CV_NETVAR` cvars, not per-player — the two-player Options screen edits
@@ -266,6 +298,27 @@ as well as the files. Prefer them over deleting `highscores.dat` by hand: the ta
 memory while the game runs, so a later record writes the old entries straight back out.
 
 ### Gotchas found the hard way
+
+- **15 source files are ISO-8859, not UTF-8, and grep silently skips them.** A stray `°`, `é` or
+  similar in a comment makes the file invalid UTF-8, and grep treats it as binary — no match, no
+  warning, exit code as if the term simply is not there. The affected files include several
+  central ones: **`r_main.c`, `p_map.c`, `r_segs.c`, `r_splats.c`, `s_sound.c`, `console.c`,
+  `hardware/hw_main.c`, `hardware/hw_light.c`, `sdl/i_sound.c`, `sdl/ogl_sdl.c`,
+  `hardware/r_opengl/*.c`, `djgppdos/Vid_vesa.c`**. This produces **confidently wrong conclusions**
+  — searching for assignments to `st_overlay_on` returned nothing but the declaration, which reads
+  exactly like dead code, when in fact `r_main.c:894` sets it. Whenever a grep says a symbol is
+  declared/read but never written, re-check with something encoding-agnostic before believing it:
+  `nm ../objs/*.o | grep " symbol"` to find which object defines it, or
+  `python3 -c "...open(p, encoding='latin1')..."`. Re-list the affected files with:
+  ```
+  python3 -c "import os
+  for r,_,fs in os.walk('.'):
+   for f in fs:
+    if f.endswith(('.c','.h')):
+     p=os.path.join(r,f)
+     try: open(p,'rb').read().decode('utf-8')
+     except UnicodeDecodeError: print(p)"
+  ```
 
 - **Returning to the title screen resets very little.** State from the finished game leaks into the
   attract screen, which has produced two separate bugs: a loaded level pack left the built-in demos

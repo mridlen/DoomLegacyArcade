@@ -29,4 +29,11 @@ void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);
 
+// Caption for the record demo HS_NextRecordDemoPath last returned, e.g.
+// "E1M1  ITYTD  MAX  4:32", or NULL when the demo playing is not one of
+// ours.  D_DoAdvanceDemo clears it before every attract page, so it only
+// describes the demo actually on screen.
+void          HS_Clear_DemoLabel(void);
+const char *  HS_DemoLabel(void);
+
 #endif // HS_STUFF_H
