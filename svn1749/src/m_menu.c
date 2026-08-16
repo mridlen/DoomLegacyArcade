@@ -471,6 +471,12 @@ CV_PossibleValue_t menusound_cons_t[] =
 static void CV_menusound_OnChange(void);
 consvar_t cv_menusound = {"menusound", "1", CV_SAVE | CV_CALL, menusound_cons_t, CV_menusound_OnChange };
 
+// [Arcade] Whether the cabinet has a second set of controls at all.  An
+// operator setting, so it is only saved from a -devmode session; applied in
+// M_Configure because the config that carries it is not loaded until well
+// after M_Init.  Off hides Two Player Game and the player 2 config screens.
+consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
+
 static
 void CV_menusound_OnChange(void)
 {
@@ -2652,6 +2658,10 @@ menuitem_t MenuOptionsMenu[]=
 {
     {IT_STRING | IT_CVAR,0, "Menu Sounds"     , &cv_menusound     , 0},
     {IT_STRING | IT_CVAR,0, "Screens Link"    , &cv_screenslink   , 0},
+    // [Arcade] Operator setting; this whole menu is hidden from players, so
+    // it is only reachable under -devmode.  Appended rather than inserted --
+    // the lockdown addresses menu items by hardcoded index.
+    {IT_STRING | IT_CVAR,0, "Two Player Mode" , &cv_twoplayer     , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -7085,6 +7095,23 @@ void M_Configure (void)
         exmy_cons_t[36].strvalue = NULL;
     }
 
+    // [Arcade] Cabinets without a second set of controls hide two player
+    // play entirely.  Must be here, not in M_Init's lockdown: cv_twoplayer
+    // comes from config.cfg, which D_DoomMain does not load until long after
+    // M_Init runs, so the value would still be the default there.
+    if( ! devmode && ! cv_twoplayer.EV )
+    {
+        SingleMulti_Menu[1].status = IT_HIDDEN;  // Two Player Game
+        if( SingleMultiDef.lastOn == 1 )
+            SingleMultiDef.lastOn = 0;
+
+        // Player 2's config screen is unreachable in play and meaningless
+        // without a second panel, so take it down with the rest.
+        PlayerDirectorMenu[1].status = IT_HIDDEN;
+        if( PlayerDirectorDef.lastOn == 1 )
+            PlayerDirectorDef.lastOn = 0;
+    }
+
     // [Arcade] Only offer games whose IWAD is actually present.  Done here
     // because the doomwaddir search paths are not set up as early as M_Init.
     {
@@ -7537,6 +7564,7 @@ consvar_t * menu_command_cvar_list[] =
 // &cv_controlperkey2,
 
   &cv_screenslink,
+  &cv_twoplayer,        // [Arcade]
 
     // p_mobj.c
   &cv_itemrespawntime,

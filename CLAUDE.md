@@ -148,6 +148,18 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
+  for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
+  devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and
+  saved like any other setting: only a `-devmode` session writes it. When off, a player sees
+  neither *Two Player Game* on the New Game menu nor *Player2 config* under Options → Player.
+  - Applied in **`M_Configure`, not `M_Init`** — `config.cfg` is not loaded until `d_main.c:3181`,
+    long after `M_Init` runs at 2598, so the value there would always still be the compiled
+    default. Same rule as the game selector and the "Read This!" hiding.
+  - The menu entry is **appended** to `MenuOptionsMenu` rather than inserted, since the lockdown
+    addresses menu items by hardcoded index.
+  - Hiding *Two Player Game* removes the only player-reachable route to `TwoPlayerDef`; the other
+    entry point, `MultiPlayerMenu[0]`, is already behind the hidden Multiplayer item.
 - **Game selector** (`m_menu.c`, `M_SelectGame` / `GameSelectDef`, reached from Options). Lists the
   installed IWADs (Ultimate Doom, Doom II, Final Doom Plutonia and TNT) and then any level packs.
 
