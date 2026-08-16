@@ -270,11 +270,17 @@ silently made the flag do nothing at all.
     which re-stamps all ten immediately.
 - **Guided control setup** (`m_menu.c`, `M_Guided_Controls_P1`/`_P2`, under Options → Setup
   Controls, which is devmode-only). Prompts for the ten controls a cabinet panel needs, binding
-  each to whatever is pressed: **STICK UP / DOWN / LEFT / RIGHT**, then STRAFE LEFT, STRAFE RIGHT,
-  FIRE, USE / OPEN, NEXT WEAPON, PREVIOUS WEAPON — a 4-way stick plus six buttons. Everything else
-  stays on the ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing
-  as `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
+  each to whatever is pressed — a 4-way stick plus six buttons. Everything else stays on the
+  ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing as
+  `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
   joystick buttons arrive as `ev_keydown` with codes in the key space, so any panel wiring works.
+  - Order is **stick first, then the buttons by number**, each labelled with it:
+    `STICK UP / DOWN / LEFT / RIGHT`, then `BUTTON 1 - FIRE`, `BUTTON 2 - STRAFE LEFT`,
+    `BUTTON 3 - STRAFE RIGHT`, `BUTTON 4 - USE / OPEN`, `BUTTON 5 - WEAPON DOWN`,
+    `BUTTON 6 - WEAPON UP`. **Keep this in step with the recommended layout page** — the two are
+    meant to be read together, and an earlier version asked in a different order (strafe before
+    fire) while the page claimed otherwise. The numbers are only the recommendation; a panel wired
+    differently still works, the operator just presses what they want for that action.
   - **Recommended layout screen** (`M_Draw_RecLayout` / `RecLayoutDef`, same menu). An
     informational page showing the play-tested assignment on the standard six-button arrangement
     (1 2 3 top row, 4 5 6 bottom): 1 fire, 2/3 strafe left/right, 4 use/open, 5 weapon down,

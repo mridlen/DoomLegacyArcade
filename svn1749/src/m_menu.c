@@ -3520,7 +3520,7 @@ static void M_Draw_RecLayout( void )
     }
     else
     {
-        M_Centre_At( BASEVIDWIDTH/2, 174, 0, "GUIDED SETUP ASKS IN THIS ORDER" );
+        M_Centre_At( BASEVIDWIDTH/2, 174, 0, "SETUP ASKS STICK FIRST, THEN 1-6" );
     }
 }
 
@@ -3861,18 +3861,22 @@ typedef struct
     const char * label;
 } guided_step_t;
 
+// Stick first, then the six buttons in *button number* order, matching the
+// recommended layout page so an operator can follow it straight down.  The
+// numbers are only the recommendation -- a panel wired differently still
+// works, the operator just presses whatever they want for that action.
 static const guided_step_t  guided_steps[] =
 {
-    { CK_forward,      "STICK UP"        },
-    { CK_backward,     "STICK DOWN"      },
-    { CK_pair_a_left,  "STICK LEFT"      },
-    { CK_pair_a_right, "STICK RIGHT"     },
-    { CK_pair_b_left,  "STRAFE LEFT"     },
-    { CK_pair_b_right, "STRAFE RIGHT"    },
-    { CK_fire,         "FIRE"            },
-    { CK_use,          "USE / OPEN"      },
-    { CK_nextweapon,   "NEXT WEAPON"     },
-    { CK_prevweapon,   "PREVIOUS WEAPON" },
+    { CK_forward,      "STICK UP"                },
+    { CK_backward,     "STICK DOWN"              },
+    { CK_pair_a_left,  "STICK LEFT"              },
+    { CK_pair_a_right, "STICK RIGHT"             },
+    { CK_fire,         "BUTTON 1 - FIRE"         },
+    { CK_pair_b_left,  "BUTTON 2 - STRAFE LEFT"  },
+    { CK_pair_b_right, "BUTTON 3 - STRAFE RIGHT" },
+    { CK_use,          "BUTTON 4 - USE / OPEN"   },
+    { CK_prevweapon,   "BUTTON 5 - WEAPON DOWN"  },
+    { CK_nextweapon,   "BUTTON 6 - WEAPON UP"    },
 };
 
 #define GUIDED_NUM_STEPS  ((int)(sizeof(guided_steps)/sizeof(guided_steps[0])))
