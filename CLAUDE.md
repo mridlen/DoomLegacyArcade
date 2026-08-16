@@ -280,6 +280,12 @@ silently made the flag do nothing at all.
     (1 2 3 top row, 4 5 6 bottom): 1 fire, 2/3 strafe left/right, 4 use/open, 5 weapon down,
     6 weapon up, stick moves and turns. Modelled on the "Read This" screens — a custom
     `drawroutine` plus one `IT_SUBMENU | IT_NOTHING` item that backs out.
+  - **The guided setup opens on that page**, showing "PRESS ANY BUTTON TO BEGIN", so the operator
+    sees the target layout in the order they are about to be asked for it. `guided_intro` gates
+    the footer text, and `M_Responder` consumes the next `ev_keydown` **before** the generic menu
+    handling, so the page's own invisible item cannot swallow the press; ESC falls through to the
+    normal back-out. It has to be a separate screen rather than something drawn behind the
+    prompts, because `M_StartMessage` makes `MessageDef` the current menu.
   - **`hu_font` is proportional and space is only 4px**, so monospace ASCII art does not line up:
     `V_DrawString` advances by each character patch's own width. The layout screen therefore
     positions every element at an explicit x (`M_Centre_At`) instead of padding with spaces. Only

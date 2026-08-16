@@ -3457,6 +3457,11 @@ menu_t  MControlDef =
 // do not line up.  Only characters in '!'..'_' exist -- no '|', and
 // lowercase is folded to uppercase -- hence "V" for the down arrow.
 
+// True while the page is being shown as the guided setup's opening screen,
+// waiting for a button before the prompts start.  M_Responder consumes the
+// next keypress; see the guided setup block below.
+static boolean  guided_intro = false;
+
 static void  M_Centre_At( int cx, int y, int option, const char * s )
 {
     V_DrawString( cx - (V_StringWidth((char*)s) / 2), y, option, (char*)s );
@@ -3507,7 +3512,16 @@ static void M_Draw_RecLayout( void )
     }
 
     M_Centre_At( BASEVIDWIDTH/2, 158, 0, "STICK MOVES AND TURNS" );
-    M_Centre_At( BASEVIDWIDTH/2, 174, 0, "GUIDED SETUP ASKS IN THIS ORDER" );
+
+    if( guided_intro )
+    {
+        M_Centre_At( BASEVIDWIDTH/2, 174, V_WHITEMAP, "PRESS ANY BUTTON TO BEGIN" );
+        M_Centre_At( BASEVIDWIDTH/2, 186, 0, "ESC TO CANCEL" );
+    }
+    else
+    {
+        M_Centre_At( BASEVIDWIDTH/2, 174, 0, "GUIDED SETUP ASKS IN THIS ORDER" );
+    }
 }
 
 menuitem_t RecLayoutMenu[] =
@@ -3923,23 +3937,38 @@ static void M_Guided_Response( event_t * ev )
                      "Written to config.cfg when this\ndevmode session quits." );
 }
 
-// Menu entries; controls_player selects which panel is being wired.
+// Called from M_Responder when the intro page's "press any button" is
+// answered.  Split out so the page and the prompts stay separate screens:
+// M_StartMessage makes MessageDef the current menu, so the layout cannot be
+// shown behind the prompt box anyway.
+void M_Guided_Begin_Steps( void )
+{
+    guided_step = 0;
+    M_Guided_Prompt();
+}
+
+// Menu entries; controls_player selects which panel is being wired.  Both
+// open on the recommended-layout page so the operator can see what they are
+// about to be asked for, in the order they will be asked.
+static void M_Guided_Start( int pind )
+{
+    controls_player = pind;
+    setupcontrols = (pind == 0) ? gamecontrol : gamecontrol2;
+    guided_step = -1;
+    guided_intro = true;
+    Push_Setup_Menu( &RecLayoutDef );
+}
+
 static void M_Guided_Controls_P1( int choice )
 {
     (void)choice;
-    controls_player = 0;
-    setupcontrols = gamecontrol;
-    guided_step = 0;
-    M_Guided_Prompt();
+    M_Guided_Start( 0 );
 }
 
 static void M_Guided_Controls_P2( int choice )
 {
     (void)choice;
-    controls_player = 1;
-    setupcontrols = gamecontrol2;
-    guided_step = 0;
-    M_Guided_Prompt();
+    M_Guided_Start( 1 );
 }
 
 
@@ -6199,6 +6228,20 @@ boolean M_Responder (event_t* ev)
         // opening doors.
         if( menuactive && ! devmode )
             key = M_Cabinet_Menu_Key( key );
+
+        // [Arcade] The guided setup opens on the recommended-layout page and
+        // waits here for any button.  Taken before the generic menu handling
+        // so the page's own (invisible) item cannot swallow the press.
+        if( guided_intro )
+        {
+            guided_intro = false;
+            if( key != KEY_ESCAPE )
+            {
+                M_Guided_Begin_Steps();
+                return true;
+            }
+            // ESC falls through and backs out of the page as usual.
+        }
 
 #ifdef SDL2
         // SDL2 has separate ASCII event for translated char,
