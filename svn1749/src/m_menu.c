@@ -1770,20 +1770,6 @@ void M_SetupMultiPlayer_pind( byte pind )
     SetupMultiPlayerMenu[setupmultiplayer_color].itemaction = setupm_cvcolor;
     SetupMultiPlayerMenu[setupmultiplayer_scheme].itemaction = &cv_controlscheme[pind];  // [Arcade]
 
-    // [Arcade] Once the guided setup has wired this player's panel, the
-    // preset selector must go: picking "Look and Move" here would replace
-    // all ten bindings with keys the cabinet does not physically have, and
-    // this screen is player-reachable.  Decided per player, and here rather
-    // than in the M_Init lockdown, because the menu is shared between the
-    // two players and repointed on entry.
-    SetupMultiPlayerMenu[setupmultiplayer_scheme].status =
-        ( !devmode && (cv_controlscheme[pind].value == CS_custom) )
-          ? IT_HIDDEN
-          : (IT_CVAR | IT_STRING | IT_YOFFSET);
-    if( SetupMultiPlayerDef.lastOn == setupmultiplayer_scheme
-        && SetupMultiPlayerMenu[setupmultiplayer_scheme].status == IT_HIDDEN )
-        SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
-
     // PlayerOptionsMenu
     PlayerOptionsDef.menutitle = player_pind_str[pind];
     PlayerOptionsMenu[playeroption_usemouse].itemaction = &cv_usemouse[pind];
@@ -3762,40 +3748,51 @@ done:
 // and joystick buttons arrive as ev_keydown with codes in the key space, so
 // a panel wired through any of the three works without special handling.
 
+// Captured in "Look and Move" terms: the turn pair is pair A and the strafe
+// pair is pair B.  Selecting WASD afterwards swaps which pair does which, so
+// the panel only ever has to be taught once -- hence the note on those four
+// prompts, which is the only place the distinction is visible.
 typedef struct
 {
-    int          gc;        // gamecontrol index to bind
+    int          ck;        // CK_* slot in the key table
     const char * label;
+    const char * note;      // extra line, or NULL
 } guided_step_t;
+
+#define GUIDED_SWAPNOTE  "WASD mode swaps turn and strafe"
 
 static const guided_step_t  guided_steps[] =
 {
-    { gc_forward,     "MOVE FORWARD"    },
-    { gc_backward,    "MOVE BACKWARD"   },
-    { gc_turnleft,    "TURN LEFT"       },
-    { gc_turnright,   "TURN RIGHT"      },
-    { gc_strafeleft,  "STRAFE LEFT"     },
-    { gc_straferight, "STRAFE RIGHT"    },
-    { gc_fire,        "FIRE"            },
-    { gc_use,         "USE / OPEN"      },
-    { gc_nextweapon,  "NEXT WEAPON"     },
-    { gc_prevweapon,  "PREVIOUS WEAPON" },
+    { CK_forward,      "MOVE FORWARD",    NULL },
+    { CK_backward,     "MOVE BACKWARD",   NULL },
+    { CK_pair_a_left,  "TURN LEFT",       GUIDED_SWAPNOTE },
+    { CK_pair_a_right, "TURN RIGHT",      GUIDED_SWAPNOTE },
+    { CK_pair_b_left,  "STRAFE LEFT",     GUIDED_SWAPNOTE },
+    { CK_pair_b_right, "STRAFE RIGHT",    GUIDED_SWAPNOTE },
+    { CK_fire,         "FIRE",            NULL },
+    { CK_use,          "USE / OPEN",      NULL },
+    { CK_nextweapon,   "NEXT WEAPON",     NULL },
+    { CK_prevweapon,   "PREVIOUS WEAPON", NULL },
 };
 
 #define GUIDED_NUM_STEPS  ((int)(sizeof(guided_steps)/sizeof(guided_steps[0])))
 
 static int  guided_step = -1;   // -1 when not running
+static int  guided_keys[CK_NUMKEYS];
 
 static void M_Guided_Response(event_t * ev);
 
 static void M_Guided_Prompt( void )
 {
+    const guided_step_t * st = &guided_steps[guided_step];
+
     snprintf( msgtmp, MSGTMP_LEN,
               "PLAYER %d CONTROL SETUP\n\n"
-              "Press the control for\n%s\n\n"
+              "Press the control for\n%s\n%s\n"
               "%d of %d\nESC to cancel",
               controls_player + 1,
-              guided_steps[guided_step].label,
+              st->label,
+              st->note ? st->note : "",
               guided_step + 1, GUIDED_NUM_STEPS );
     msgtmp[MSGTMP_LEN-1] = '\0';
 
@@ -3804,7 +3801,7 @@ static void M_Guided_Prompt( void )
 
 static void M_Guided_Response( event_t * ev )
 {
-    int  ch, gc;
+    int  ch;
 
     // Only presses.  Without this the key-up of the very same press would
     // land on the next prompt and bind two actions to one button.
@@ -3813,18 +3810,16 @@ static void M_Guided_Response( event_t * ev )
 
     M_StopMessage(0);
 
-    // Cancel leaves the steps already done in place; they are just bindings.
-    // KEY_PAUSE is refused for the same reason M_ChangecontrolResponse does.
+    // Cancel abandons the whole table; a half-taught panel is worse than the
+    // one that was working before.  KEY_PAUSE is refused for the same reason
+    // M_ChangecontrolResponse refuses it.
     if( ch == KEY_ESCAPE || ch == KEY_PAUSE || ch == KEY_NULL )
     {
         guided_step = -1;
         return;
     }
 
-    gc = guided_steps[guided_step].gc;
-    G_CheckDoubleUsage( ch );   // honors cv_controlperkey, as the normal menu does
-    setupcontrols[gc][0] = ch;
-    setupcontrols[gc][1] = KEY_NULL;   // cabinet panels have no second binding
+    guided_keys[ guided_steps[guided_step].ck ] = ch;
 
     guided_step++;
     if( guided_step < GUIDED_NUM_STEPS )
@@ -3835,14 +3830,14 @@ static void M_Guided_Response( event_t * ev )
 
     guided_step = -1;
 
-    // Take this player off the built-in schemes.  ControlScheme_Apply owns
-    // exactly these ten actions and would stamp the preset back over all of
-    // them; CS_custom makes it step aside so the bindings persist as plain
-    // setcontrol lines in config.cfg.
-    CV_SetValue( &cv_controlscheme[controls_player], CS_custom );
+    // Hand the table to the scheme machinery rather than writing bindings
+    // directly: ControlScheme_Apply owns exactly these ten actions, and this
+    // way the "Look and Move" / "WASD" selector keeps working on the custom
+    // layout instead of overwriting it.
+    G_Save_CustomControls( controls_player, guided_keys );
 
     M_SimpleMessage( "Controls saved.\n\n"
-                     "They are written to config.cfg\nwhen this devmode session quits." );
+                     "Written to config.cfg when this\ndevmode session quits." );
 }
 
 // Menu entries; controls_player selects which panel is being wired.
@@ -7817,6 +7812,8 @@ consvar_t * menu_command_cvar_list[] =
   &cv_controlperkey,
   &cv_controlscheme[0],   // [Arcade]
   &cv_controlscheme[1],
+  &cv_customcontrols[0],  // [Arcade] guided setup key table
+  &cv_customcontrols[1],
 
     // s_sound.c
   &cv_soundvolume,

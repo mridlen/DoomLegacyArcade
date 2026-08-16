@@ -254,11 +254,13 @@ silently made the flag do nothing at all.
   `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
   two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
-- **Control schemes** (`g_input.c`). `cv_controlscheme[2]` per player — "Look and Move", "WASD", or
-  "Custom" (`CS_custom`) — selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()`
-  owns ten bindings per player (move/turn/strafe/fire/use/weapon cycling); everything else is left
-  alone. The two presets' keys are the characters the user's **Dvorak** layout produces — the
-  engine captures layout-aware SDL keycodes, not physical scancodes (`sdl/i_system.c`).
+- **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
+  selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
+  player (move/turn/strafe/fire/use/weapon cycling); everything else is left alone. The two schemes
+  differ **only** in which pair turns and which strafes — `pair_a` turns under "Look and Move" and
+  strafes under "WASD", `pair_b` the reverse. The built-in presets' keys are the characters the
+  user's **Dvorak** layout produces — the engine captures layout-aware SDL keycodes, not physical
+  scancodes (`sdl/i_system.c`).
   - `ControlScheme_Apply` is driven **only** by the cvar's `CV_CALL` OnChange — there is no other
     caller. It therefore fires *during* config load, at the `controlscheme` line, which
     `config.cfg` writes well **before** the `setcontrol` lines. So the `setcontrol` lines execute
@@ -273,18 +275,25 @@ silently made the flag do nothing at all.
   ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing as
   `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
   joystick buttons arrive as `ev_keydown` with codes in the key space, so any panel wiring works.
-  - Finishing sets that player's scheme to **`CS_custom`**, which makes `ControlScheme_Apply`
-    return immediately. That is the whole point of the value: without it, the next toggle of the
-    scheme selector would stamp a preset over all ten bindings. The captured keys then persist as
-    ordinary `setcontrol` lines — **the cabinet's control config lives in `config.cfg`, not in the
-    `scheme_keys[]` table**, which remains only as the two named presets.
+  - Finishing does **not** write bindings directly. It hands the ten captured keys to
+    `G_Save_CustomControls()`, which stores them in **`cv_customcontrols[2]`** — a `CV_SAVE` string
+    cvar per player holding ten space-separated key codes in `CK_*` order. `ControlScheme_Apply`
+    prefers that table over the compiled-in `scheme_keys[]` whenever it parses, so **the cabinet's
+    control layout lives in `config.cfg`** and the hardcoded table is only the fallback preset.
+    An empty or malformed string falls back silently.
+  - Going through the scheme machinery instead of writing `gamecontrol[]` is what keeps
+    **"Look and Move" / "WASD" working on a custom panel**: the panel is taught once, in
+    Look-and-Move terms (turn pair = pair A, strafe pair = pair B), and picking WASD afterwards
+    swaps which pair turns and which strafes. The four directional prompts say so on screen
+    (`GUIDED_SWAPNOTE`), since that is the only place the distinction is visible to an operator.
+    Verified headless with a distinct key per slot: under "Look and Move" turn was `a`/`e` and
+    strafe `t`/`n`; under "WASD" they traded, with forward and fire unmoved.
+  - `cv_customcontrols` is `CV_CALL` onto the same OnChange as the scheme cvar, so whichever of the
+    two lines config.cfg happens to list last still leaves the bindings correct.
   - Only `ev_keydown` is accepted. Taking `ev_keyup` too would let the release of one press land
     on the next prompt and bind two actions to the same button.
-  - Once a player is on `CS_custom`, the **"Control scheme" row is hidden** on that player's Setup
-    Player screen outside devmode (`M_SetupMultiPlayer_pind`) — the screen is player-reachable, and
-    selecting a preset there would replace the operator's bindings with keys the panel does not
-    physically have. Done there rather than in the `M_Init` lockdown because that menu is shared
-    between the two players and repointed on entry.
+  - ESC abandons the whole table rather than keeping a partial one — a half-taught panel is worse
+    than the layout that was already working.
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
   **(wad combination, map, skill, category)** for single player, shown on the intermission screen
   and as a page in the attract cycle.

@@ -77,14 +77,19 @@ CV_PossibleValue_t onecontrolperkey_cons_t[]={{1,"One"},{2,"Several"},{0,NULL}};
 // key pair turns and which strafes.
 void ControlScheme1_OnChange(void);
 void ControlScheme2_OnChange(void);
-// CS_custom is what the guided setup (m_menu.c) selects.  It is not a layout
-// of its own -- it means "leave these bindings alone", so whatever the
-// operator bound survives in config.cfg as ordinary setcontrol lines.
 CV_PossibleValue_t controlscheme_cons_t[] =
-  { {0,"Look and Move"}, {1,"WASD"}, {CS_custom,"Custom"}, {0,NULL} };
+  { {0,"Look and Move"}, {1,"WASD"}, {0,NULL} };
 consvar_t  cv_controlscheme[2] = {
   { "controlscheme",  "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme1_OnChange },
   { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange }
+};
+
+// [Arcade] Operator key table from the guided setup; empty = use the preset.
+// CV_CALL so that loading it from config re-applies the scheme, whichever
+// order the two lines happen to appear in the file.
+consvar_t  cv_customcontrols[2] = {
+  { "customcontrols",  "", CV_SAVE | CV_CALL, NULL, ControlScheme1_OnChange },
+  { "customcontrols2", "", CV_SAVE | CV_CALL, NULL, ControlScheme2_OnChange }
 };
 
 // mouse values are used once
@@ -669,20 +674,47 @@ static const controlkeys_t  scheme_keys[2] =
 };
 
 //  pind : 0 = player 1, 1 = player 2 (splitscreen)
+// [Arcade] Read cv_customcontrols[pind] into ck.  False when it is empty or
+// malformed, in which case the built-in preset is used instead.
+static boolean  Parse_CustomControls( int pind, controlkeys_t * ck )
+{
+    const char * s = cv_customcontrols[pind].string;
+
+    if( s == NULL || s[0] == 0 )  return false;
+
+    return ( sscanf( s, "%d %d %d %d %d %d %d %d %d %d",
+                     &ck->forward, &ck->backward, &ck->fire, &ck->use,
+                     &ck->nextweapon, &ck->prevweapon,
+                     &ck->pair_a_left, &ck->pair_a_right,
+                     &ck->pair_b_left, &ck->pair_b_right ) == CK_NUMKEYS );
+}
+
+
+void G_Save_CustomControls( int pind, const int * keys )
+{
+    char  buf[128];
+
+    snprintf( buf, sizeof(buf), "%d %d %d %d %d %d %d %d %d %d",
+              keys[CK_forward], keys[CK_backward], keys[CK_fire], keys[CK_use],
+              keys[CK_nextweapon], keys[CK_prevweapon],
+              keys[CK_pair_a_left], keys[CK_pair_a_right],
+              keys[CK_pair_b_left], keys[CK_pair_b_right] );
+
+    // CV_CALL fires ControlSchemeN_OnChange, which applies it right away.
+    CV_Set( &cv_customcontrols[pind], buf );
+}
+
+
 static void ControlScheme_Apply( int pind )
 {
-    const controlkeys_t * k = & scheme_keys[pind];
+    controlkeys_t  custom;
+    // [Arcade] An operator table from the guided setup takes the place of
+    // the compiled-in preset, but is swapped by the scheme exactly the same
+    // way -- so a cabinet still gets both "Look and Move" and "WASD".
+    const controlkeys_t * k = Parse_CustomControls(pind, &custom)
+                              ? &custom : &scheme_keys[pind];
     int (* gc)[2] = (pind == 0) ? gamecontrol : gamecontrol2;
     boolean wasd;
-
-    // [Arcade] Custom: the guided setup owns these ten bindings, so step
-    // aside entirely and let the config's setcontrol lines stand.  Without
-    // this, every config load would stamp the preset back over them --
-    // config.cfg lists controlscheme well before the setcontrol lines, but
-    // any later toggle of the scheme cvar would still wipe the operator's
-    // work, and the intent would be invisible in the file.
-    if( cv_controlscheme[pind].value == CS_custom )
-        return;
 
     wasd = (cv_controlscheme[pind].value != 0);
 
