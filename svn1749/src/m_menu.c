@@ -6607,10 +6607,13 @@ static void M_Draw_Unranked_Warning( void )
         && currentMenu != &AdvOption2Def )  return;
     if( HS_Ruleset_Is_Ranked() )  return;
 
-    // Under the item list, above the bottom edge.
-    V_DrawString( 8, BASEVIDHEIGHT-24, V_WHITEMAP,
+    // Under the item list, above the bottom edge.  All three menus start at
+    // y=40 and their lowest entry is an IT_YOFFSET at +130, so the item text
+    // ends at 178 -- the first line has to clear that, and the second line's
+    // 8-tall glyphs still have to land inside BASEVIDHEIGHT (200).
+    V_DrawString( 8, BASEVIDHEIGHT-20, V_WHITEMAP,
                   "SETTINGS CHANGED - NO HIGH SCORES" );
-    V_DrawString( 8, BASEVIDHEIGHT-14, 0,
+    V_DrawString( 8, BASEVIDHEIGHT-10, 0,
                   "OR RECORDINGS THIS GAME. END GAME TO RESET." );
 }
 
