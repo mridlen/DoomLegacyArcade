@@ -1591,7 +1591,7 @@ void ST_Change_DemoView (void)
 // [Arcade] Stock default is "kahmf"; e/i/s (kills/items/secrets) added so the
 // cabinet shows run progress out of the box.  Only takes effect at viewsize
 // 11, which is what sets st_overlay_on (r_main.c, R_SetViewSize).
-consvar_t cv_stbaroverlay = {"overlay","kahmfeis",CV_SAVE,NULL};
+consvar_t cv_stbaroverlay = {"overlay","kahmfeist",CV_SAVE,NULL};
 
 boolean   st_overlay_on;  // status overlay for Doom and Heretic
 
@@ -1809,6 +1809,50 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
                char buf[24];
                sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);
                V_DrawString(SCX(318-V_StringWidth(buf)), SCY(21,y0), 0, buf);
+           }
+           break;
+
+         // [Arcade] Level clock.  Counts down the remaining time when a
+         // time limit is set (deathmatch does, see M_StartServer) and counts
+         // elapsed time up otherwise, which is what a speed run wants.
+         // Unlike e/i/s above this is NOT skipped in splitscreen: the clock
+         // is a property of the level, not of one player, so it is correct
+         // in both halves -- and two player deathmatch is exactly the case
+         // that needs it.
+         //
+         // Low and left of centre, on the status number row.  The top of the
+         // screen is unusable: HU_Drawer prints pickup messages at y=0 and
+         // they cover it, the same reason HS_DemoLabel sits at y=8.  Dead
+         // centre is unusable too -- that is where the weapon sprite is drawn,
+         // which is what CLK_CX moves out from behind.
+         //
+         // Along lowerbar_y the free span is x 68..192: health's number is
+         // right-justified ending at 50 with its 16px SBOHEALT icon at 52, and
+         // ammo's is right-justified at 234, at most three 14px STTNUM digits,
+         // so it starts at 192.  The widest string this draws is "T 12:34" at
+         // 44px (measured against the real STCFN0xx lumps), so centred on
+         // CLK_CX it spans 82..126 and clears health by 14px.
+         //
+         // CLK_DY is capped by SPLITSCREEN, not by the full screen.  hu_font
+         // glyphs are 7 tall; in the upper half lowerbar_y is 319 and the half
+         // ends at row 383, so +9 puts the text bottom at 379 with 4px to
+         // spare while a full character down (+12) would bleed into player 2's
+         // view.  Single player has more room but uses the same offset so the
+         // two modes agree.  Re-check both if the row format changes.
+#define CLK_CX  104   // 160 minus ~9 characters at the ~6px average glyph width
+#define CLK_DY    9   // base units below lowerbar_y
+         case 't': // level time / time limit remaining
+           {
+               char buf[24];
+               int  sec;
+               if( timelimit_tics )
+                   sec = (timelimit_tics > leveltime)?
+                           (timelimit_tics - leveltime) / TICRATE : 0;
+               else
+                   sec = leveltime / TICRATE;
+               sprintf(buf, "T %d:%02d", sec/60, sec%60);
+               V_DrawString( SCX(CLK_CX - (V_StringWidth(buf) / 2)),
+                             lowerbar_y + (int)( CLK_DY * sf_dupy ), 0, buf );
            }
            break;
 

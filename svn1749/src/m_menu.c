@@ -1365,6 +1365,9 @@ consvar_t cv_wait_timeout = {"wait_timeout" ,"0",CV_HIDEN,wait_timeout_cons_t};
 
 static boolean StartSplitScreenGame = false;
 
+// [Arcade] Minutes on the clock for a deathmatch round.
+#define ARCADE_DM_TIMELIMIT   5
+
 // Called from ServerMenu
 void M_StartServer( int choice )
 {
@@ -1388,8 +1391,17 @@ void M_StartServer( int choice )
     D_WaitPlayer_Setup();
 
     // Before game start setup.
-    COM_BufAddText(va("stopdemo;splitscreen %d;deathmatch %d\n", 
-                      StartSplitScreenGame, cv_deathmatch_menu.value ) );
+    // [Arcade] Deathmatch rounds get a time limit, coop clears it.  An
+    // unattended cabinet has no other way out of a stalemate -- players
+    // cannot reach End Game, and the idle timeout only fires when nobody is
+    // touching the controls.  Applied per game start rather than as the
+    // cv_timelimit default, which would also cut single player levels short.
+    // In deathmatch_cons_t the DM modes are values 1..4; every coop variant
+    // is 0 or >= 0x10.
+    int  dmm = cv_deathmatch_menu.value;
+    int  tl  = (dmm >= 1 && dmm <= 4) ? ARCADE_DM_TIMELIMIT : 0;
+    COM_BufAddText(va("stopdemo;splitscreen %d;deathmatch %d;timelimit %d\n",
+                      StartSplitScreenGame, dmm, tl ) );
 
     // skin change
     if (StartSplitScreenGame

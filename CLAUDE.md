@@ -459,6 +459,58 @@ silently made the flag do nothing at all.
   - **`config.cfg` overrides the compiled default**, and only devmode rewrites it, so changing the
     default in `st_stuff.c` does nothing on a machine with an existing config — the saved
     `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
+- **Level clock on the HUD** — element code **`t`**, new, so the default is now `"kahmfeist"`.
+  Counts *down* the time remaining when a time limit is set and counts elapsed time *up* when one
+  is not, so it serves both a deathmatch round and a speed run. Format `T 4:59`.
+  - Drawn **low and left of centre on the status number row** — `SCX(CLK_CX - V_StringWidth/2)` at
+    `lowerbar_y + CLK_DY*sf_dupy`, with `CLK_CX` 104 and `CLK_DY` 9. **Two thirds of the screen are
+    unusable here, both learned by putting it there first:**
+    - The **top** is covered by `HU_Drawer`'s pickup messages at y=0 — the same reason
+      `HS_DemoLabel` sits at y=8. A top-left clock is invisible in play.
+    - **Dead centre** is where the **weapon sprite** draws, in every mode. `CLK_CX` is 160 minus
+      about nine characters (~6px average glyph width) to get out from behind it.
+    - Along `lowerbar_y` the free span is **x 68..192**: health's number is right-justified ending
+      at 50 with its 16px `SBOHEALT` icon at 52, and ammo's is right-justified at 234 with at most
+      three 14px `STTNUM` digits, so it starts at 192. The widest string is `T 12:34` at 44px, so
+      centred on 104 it spans 82..126 and clears health by 14px.
+    - **`CLK_DY` is capped by splitscreen, not by the full screen.** `hu_font` glyphs are **7** tall
+      (not 8 — measured). In the upper half `lowerbar_y` is 319 and the half ends at row 383, so
+      +9 leaves the text bottom at 379 with 4px spare, while a full character down (+12) would
+      bleed into player 2's view. Single player has more room but uses the same offset so the modes
+      agree. Offsets scale by `sf_dupy` and are *not* halved for splitscreen, matching how
+      `lowerbar_y` itself offsets from `SCY(198,y0)` — `SCY` already halves and adds `y0`, so each
+      half gets its own copy.
+    - Verified at 1366x768, text bottom vs limit: single 759/767, upper half 379/383, lower half
+      763/767; x spans 350..537 against a health edge at 290 and ammo at 819.
+  - **Not skipped in splitscreen**, unlike `e`/`i`/`s` — the clock belongs to the level rather than
+    to one player, so it is correct in both halves, and two player deathmatch is exactly the case
+    that wants it. `y0` already offsets it per half.
+  - Reads `timelimit_tics` (`g_game.c`, externed in `d_netcmd.h`), which `TimeLimit_OnChange`
+    derives from `cv_timelimit`; do not recompute from the cvar.
+  - Same `config.cfg` caveat as above — the cabinet's saved `overlay` line is `"kahmfeis"` and must
+    gain the `t` before the clock appears.
+- **Deathmatch defaults** — a DM round gets **`ARCADE_DM_TIMELIMIT` (5) minutes** on the clock, and
+  coop explicitly clears the limit, appended to the game-start command in `M_StartServer`
+  (`m_menu.c`). An unattended cabinet has no other way out of a DM stalemate: players cannot reach
+  End Game, and the idle timeout only fires when *nobody* is touching the controls. Applied per
+  game start rather than as the `cv_timelimit` default, which would also cut single player levels
+  short. In `deathmatch_cons_t` the DM modes are values **1..4**; every coop variant is 0 or ≥0x10.
+  - The mode itself already defaulted to what was wanted: `cv_deathmatch_menu` ("dmm") is `"3"` =
+    **`DM_both`**, items respawn *and* placed weapons respawn immediately.
+  - **`Deathmatch_OnChange` is now called unconditionally from `G_InitNew`** (`g_game.c`), which is
+    what actually made respawn work. It is the function that derives `deathmatch`,
+    `weapon_persist` and `cv_itemrespawn` from `cv_deathmatch` — but as an OnChange it only ran
+    when the cvar *changed*, and **`CV_Set` returns early on an unchanged value**
+    (`command.c:1582`). Meanwhile `HS_Apply_Ranked_Ruleset` pins `cv_itemrespawn` back to 0 on the
+    way out to the attract screen (it is in `hs_ranked_rules[]`). So the **first** deathmatch after
+    boot had item respawn and every **later** one at the same setting silently did not — which
+    reads exactly like "the default is wrong". Verified headless: with `+deathmatch 3` already set
+    and `+respawnitem 0` forced afterwards, `G_InitNew` now recovers `itemrespawn=1`,
+    `weapon_persist=1`, while single player still reports `itemrespawn=0`.
+  - **This is the general trap, not a one-off**: any cvar whose OnChange has side effects on *other*
+    cvars will silently skip them when re-set to the value it already holds. If something else pins
+    those other cvars in between (the ranked ruleset does), they stay pinned. Re-apply the mapping
+    at the point of use rather than relying on the change notification.
 - **The ranked ruleset** (`hs_stuff.c`, `hs_ranked_rules[]`). **Game options are not multiplayer
   only.** DoomLegacy has no separate single-player path — solo play runs the same client/server
   simulation — and every gameplay setting is a single global `CV_NETVAR`, so anything reachable

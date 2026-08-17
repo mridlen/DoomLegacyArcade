@@ -3255,6 +3255,16 @@ void G_InitNew (skill_e skill, const char* mapname, boolean resetplayer)
 #endif
     }
 
+    // [Arcade] Re-derive the deathmatch mode settings at every game start.
+    // Deathmatch_OnChange is what turns cv_deathmatch into weapon_persist
+    // and cv_itemrespawn, but as an OnChange it only runs when the cvar
+    // actually *changes* -- CV_Set returns early on an unchanged value
+    // (command.c).  Meanwhile HS_Apply_Ranked_Ruleset pins cv_itemrespawn
+    // back to 0 on the way out to the attract screen.  So the first DM game
+    // after boot had item respawn and every later one at the same setting
+    // silently did not.  Calling it here makes the mapping authoritative.
+    Deathmatch_OnChange();
+
     // for internal maps only
     if (FIL_CheckExtension(mapname))
     {
