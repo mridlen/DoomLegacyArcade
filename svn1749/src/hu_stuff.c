@@ -699,9 +699,14 @@ void HU_Drawer(void)
     // player who changed a setting is not surprised at the intermission.
     if( !demoplayback && !devmode && !HS_Run_Is_Ranked() )
     {
+        // Name the reason when it was a death: "UNRANKED" alone reads as a
+        // settings problem, and the player needs to know the retry they are
+        // about to play is no longer being scored.  Measured against the
+        // real STCFN0xx widths: 158px of 320, so it centers without clipping.
+        const char * mark = HS_Run_Died() ? "PLAYER DIED - UNRANKED" : "UNRANKED";
         V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-        V_DrawString( (BASEVIDWIDTH - V_StringWidth("UNRANKED")) / 2, 0,
-                      V_WHITEMAP, "UNRANKED" );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,
+                      V_WHITEMAP, (char*) mark );
     }
 
     HU_Draw_Tip();

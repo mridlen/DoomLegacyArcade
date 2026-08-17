@@ -345,6 +345,27 @@ silently made the flag do nothing at all.
   latches false on the first level exited short; from then on only the speed record can be beaten
   for the rest of that run. Each category keeps its **own** record demo.
 
+  **A death voids the rest of the run** (`HS_Player_Died`, called from `P_KillMobj` in `p_inter.c`
+  right after `playerstate = PST_DEAD`). Levels already finished keep the records they earned —
+  each was written to disk by its own `HS_LevelExit` before the fatal level was entered — but
+  nothing after the death scores, and the background recording is closed with `G_CheckDemoStatus`
+  since it can no longer produce anything. The HUD marker becomes **`PLAYER DIED - UNRANKED`**
+  (`hu_stuff.c`); `UNRANKED` alone reads as a settings problem, and the player needs to know the
+  retry they are about to play is not being scored.
+  - Implemented by clearing `hs_run_ranked`, exactly as an altered ruleset does, so the "no further
+    scores" half falls out of the existing early return in `HS_LevelExit`. The separate
+    `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
+  - Hooked at the moment of death rather than at `G_DoReborn`, so a player who dies and walks away
+    still voids the run and releases the demo buffer.
+  - **Guarded on `demoplayback`** like `HS_LevelExit` is. Attract-mode record demos can contain a
+    death, and replaying one must not void the cabinet's live run or close its recorder.
+  - This closed a real hole rather than just adding a rule. Doom traditionally lets you retry a
+    level, and the engine does that by *reloading* it — `G_DoReborn` → `G_DoLoadLevel(true)` →
+    `P_SetupLevel`, which sets `leveltime = 0`. Since `HS_LevelExit` accumulates `leveltime`, the
+    failed attempt used to cost the score **nothing at all**, making death a free reset button.
+    Scores set before this change may include death-assisted runs; the cabinet's table was left in
+    place deliberately (judged clean), so `clearhighscores` was **not** run.
+
   Both tables are laid out by hand against the surrounding graphics, so **the numbers matter**.
   `HS_Draw_IntermissionTable(x, y)` draws its column header 14 *above* the `y` it is passed, and
   right-justifies each category's times at `x + HS_COL_TIME + cat*HS_COL_STEP` (90 and 62), so the
@@ -355,6 +376,25 @@ silently made the flag do nothing at all.
   The call site's `+ 12` centers header-plus-five-rows in that 70px gap. **If a row is ever added
   or the font changes, re-check both ends** — the drawer only bails at `BASEVIDHEIGHT`, so it will
   happily paint over the Time/Par row.
+
+  A blinking **`NEW RECORD`** is drawn by the same function when the level just finished beat a
+  time. `hs_new_record[HS_NUMCAT]` records which categories were beaten; it is cleared at the top
+  of every `HS_LevelExit` — *before* the unranked/died early returns, so a voided exit cannot leave
+  the previous level's marker on screen — and set alongside each `saved = true`. One marker covers
+  both categories.
+  - **It went in the horizontal space, not the vertical**, because the band above is already full:
+    header-plus-rows spans `y-14 .. y+48` (102..164 at the call site's y of 116) inside a free band
+    of only 98..168. The table itself occupies just `x .. x+152` (156..308), so everything left of
+    `x` in that band is free. The text is centred there and on the table block's midpoint
+    (`(y-14 + y+48)/2 = y+17`, glyphs 8 tall, so top edge `y+13`) — landing at x=39, y=129.
+  - Width comes from `V_StringWidth` at runtime, not the measured 77px, so the centering follows
+    the string if it is ever reworded. The 77px was read from the real `STCFN0xx` lumps, per the
+    rule above about not eyeballing this font.
+  - Blink is `gametic & 16`, matching the cadence `wi_stuff.c` uses for its own flashing "you are
+    here" pointer. `gametic` (not `leveltime`) because only `gametic` advances during the
+    intermission; `bcnt`, which `wi_stuff.c` blinks from, is static to that file.
+  - Drawn with option **`0`, which is red** — it was white at first and disappeared against the
+    grey intermission background. See the `V_DrawString` colour note below.
 
   The **wad combination** is `HS_GameId()`: the game's short name plus any loaded level pack, such
   as `doom2` or `doomu+mapsofchaos`. Both parts are needed — Doom 2, Plutonia and TNT all have a
@@ -397,7 +437,8 @@ silently made the flag do nothing at all.
   Records demos in the background and saves the run that set each record. Hooks:
   `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),
   `HS_NewGame` from the menu skill-select handlers (**must** precede `G_DeferedInitNew`, see below),
-  `HS_LevelExit` from `WI_Init_Stats` (already the single-player-only branch of `WI_Start`), and new
+  `HS_LevelExit` from `WI_Init_Stats` (already the single-player-only branch of `WI_Start`),
+  `HS_Player_Died` from `P_KillMobj` (`p_inter.c`), and new
   cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
   without closing it, so live recording continues after a record is saved.
 
@@ -486,6 +527,21 @@ as well as the files. Prefer them over deleting `highscores.dat` by hand: the ta
 memory while the game runs, so a later record writes the old entries straight back out.
 
 ### Gotchas found the hard way
+
+- **`V_DrawString` text is red by default; `V_WHITEMAP` makes it grey, and there is no red flag.**
+  This reads backwards, so it is easy to get wrong. `V_WHITEMAP` (`v_video.h`) is the *only* colour
+  flag `V_DrawString` understands — there is no `V_REDMAP`/`V_GREENMAP` — because Doom's `hu_font`
+  (`STCFN0xx`) is drawn in reds already: its glyphs are palette indices 168..192, verified as
+  177..187 for the letters in "NEW RECORD", running from `rgb(255,0,0)` into darker reds.
+  `CON_SetupBackColormap` (`console.c:334-350`) builds `whitemap` by remapping exactly that
+  168..192 red band onto 80..104, which the palette shows as greys (`239,239,239` … `79,79,79`),
+  with hand-patched entries for indices 45 and 47. So **passing `0` gives red and passing
+  `V_WHITEMAP` gives grey/white** — the opposite of what "whitemap" suggests to anyone expecting a
+  plain white. A white-on-grey label that "doesn't show up" is this. `graymap` (a darker remap) and
+  `greenmap` exist alongside it but are not reachable through `V_DrawString`'s option flags; they
+  need `V_DrawMappedPatch` directly. Confirm colours by reading `PLAYPAL` and the glyph lumps out
+  of the IWAD rather than trusting the source comments — the `EN_heretic` branch above this one
+  remaps to a *different* red range (145..168) and the comments in that function describe both.
 
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them.** A stray `°`, `é` or
   similar in a comment makes the file invalid UTF-8, and grep treats it as binary — no match, no

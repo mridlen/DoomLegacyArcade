@@ -99,6 +99,7 @@
 #include "r_main.h"
 #include "st_stuff.h"
 #include "infoext.h"
+#include "hs_stuff.h"   // [Arcade] HS_Player_Died
 
 #define BONUSADD        6
 #define PICKUP_FLASH_TICS     10
@@ -2306,6 +2307,10 @@ void P_KillMobj ( mobj_t*  target,
         target_player->powers[pw_weaponlevel2] = 0;
         target_player->playerstate = PST_DEAD;
         P_DropWeapon (target_player);                  // put weapon away
+
+        // [Arcade] A death ends scoring for the rest of the run.  Guarded
+        // for single player and live play inside HS_Player_Died.
+        HS_Player_Died();
 
         if( target_player == consoleplayer_ptr )
         {

@@ -212,13 +212,26 @@ static boolean hs_run_is_max = true;   // every level maxed so far this run
 // Latched false the moment the ruleset does not match the ranked baseline,
 // so changing a setting mid-run voids it rather than only the levels after.
 static boolean hs_run_ranked = true;
+// Latched true by HS_Player_Died.  Only distinguishes the *reason* the run
+// went unranked, for the HUD marker and the log line; the voiding itself is
+// done by clearing hs_run_ranked, exactly as an altered ruleset does.
+static boolean hs_run_died = false;
 
 boolean  HS_Run_Is_Ranked( void )
 {
     return hs_run_ranked;
 }
+
+boolean  HS_Run_Died( void )
+{
+    return hs_run_died;
+}
 static char    hs_last_exit_mapname[9] = "";
 static skill_e hs_last_exit_skill = sk_baby;
+// Which categories the level just exited actually beat, for the blinking
+// intermission marker.  Recomputed by every scored HS_LevelExit, so it only
+// ever describes the level whose intermission is on screen.
+static boolean hs_new_record[HS_NUMCAT];
 
 static char    hs_scorefile[MAX_WADPATH];
 static char    hs_demodir[MAX_WADPATH];
@@ -462,6 +475,8 @@ void HS_NewGame( void )
 {
     hs_cumulative_time = 0;
     hs_run_is_max = true;   // still eligible until a level is exited short
+    hs_run_died = false;
+    memset( hs_new_record, 0, sizeof(hs_new_record) );
 
     // An altered ruleset makes the run unscoreable, so do not spend the
     // demo buffer on it either -- nothing would ever be saved from it.
@@ -492,6 +507,41 @@ void HS_NewGame( void )
 }
 
 
+// [Arcade] Called the moment a player avatar is killed (P_KillMobj), not at
+// respawn: someone who dies and walks away must void the run too.
+//
+// Doom traditionally lets you retry the level, and the engine does that by
+// reloading it -- which resets leveltime (P_SetupLevel), so the failed
+// attempt used to cost the score nothing at all.  A death now ends scoring
+// for the rest of the run instead.  Levels already finished keep their
+// records: each was written to disk by its own HS_LevelExit before this
+// level was ever entered.
+void HS_Player_Died( void )
+{
+    // Same guards as HS_LevelExit.  demoplayback matters most: attract-mode
+    // record demos can contain a death, and replaying one must not void the
+    // cabinet's live run or close its recorder.
+    if( netgame || multiplayer || deathmatch )  return;
+    if( demoplayback )  return;
+    if( hs_run_died )  return;   // already latched, nothing left to do
+
+    hs_run_died = true;
+
+    if( hs_run_ranked )
+    {
+        GenPrintf( EMSG_info,
+                   "Run is unranked: the player died.\n" );
+        hs_run_ranked = false;
+    }
+
+    // The run can no longer set a record, so stop spending the demo buffer
+    // on it.  Records earned earlier are unaffected -- G_SnapshotDemo copied
+    // each one to its own file at the level exit that earned it.
+    if( demorecording )
+        G_CheckDemoStatus();
+}
+
+
 void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed )
 {
@@ -499,6 +549,10 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // Never score a replay: attract-mode demo playback re-runs level exits.
     if( demoplayback )  return;
     if( skill < 0 || skill >= HS_NUMSKILLS )  return;
+
+    // Clear before any of the early returns below, so an unranked or
+    // death-voided exit leaves no marker from the previous level behind.
+    memset( hs_new_record, 0, sizeof(hs_new_record) );
 
     hs_cumulative_time += leveltime;
 
@@ -545,6 +599,7 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
         rec->has_record[cat][skill] = true;
         rec->besttime[cat][skill]   = hs_cumulative_time;
         saved = true;
+        hs_new_record[cat] = true;
 
         if( demorecording )
         {
@@ -610,6 +665,41 @@ void HS_Draw_IntermissionTable( int x, int y )
         row_y += 10;
         if( row_y >= BASEVIDHEIGHT )
             break;
+    }
+
+    // Blinking "NEW RECORD" for the level just finished.
+    //
+    // There is no vertical room left beside the table: the free band on the
+    // single player intermission runs from the bottom of the Secrets row
+    // (98) to SP_TIMEY (168), and the header plus five skill rows already
+    // spans y-14 .. y+48, which is 102..164 at the call site's y of 116.
+    // So this goes in the horizontal space instead -- the table itself only
+    // occupies x .. x+152 (HS_COL_TIME + (HS_NUMCAT-1)*HS_COL_STEP), which
+    // is 156..308, leaving everything left of x free in that band.
+    //
+    // Centred in that free region and vertically on the table block, whose
+    // midpoint is ((y-14) + (y+48))/2 = y+17; the glyphs are 8 tall, so the
+    // top edge is y+13.  Width is taken from V_StringWidth rather than the
+    // measured 77px so the placement follows the string if it ever changes.
+    boolean any_new = false;
+    for( cat=0; cat<HS_NUMCAT; cat++ )
+    {
+        if( hs_new_record[cat] )  any_new = true;
+    }
+
+    // gametic advances through the intermission (d_clisrv.c), so it drives
+    // the blink; & 16 matches the cadence wi_stuff.c uses for its own
+    // flashing "you are here" pointer.
+    if( any_new && (gametic & 16) )
+    {
+        // Option 0, not V_WHITEMAP: hu_font is already red in Doom (these
+        // glyphs are palette 177..187, pure red fading dark), and V_WHITEMAP
+        // is precisely what greys it out -- console.c builds that table by
+        // remapping the font's reds 168..192 onto the greys 80..104.  There
+        // is no V_REDMAP flag because red is the untranslated colour.
+        const char * msg = "NEW RECORD";
+        V_DrawString( (x - V_StringWidth(msg)) / 2, y + 13,
+                      0, (char*) msg );
     }
 }
 

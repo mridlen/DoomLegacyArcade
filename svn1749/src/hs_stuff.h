@@ -29,6 +29,11 @@ const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
 void  HS_Init(void);
 void  Command_ClearHighScores_f(void);   // console: clearhighscores
 void  HS_NewGame(void);
+// [Arcade] A death voids the rest of the run: no further level exit scores,
+// and the background recording is closed.  Levels finished before it keep
+// the records they already earned.  Called from P_KillMobj.
+void  HS_Player_Died(void);
+boolean  HS_Run_Died(void);   // was this run voided by a death?
 // maxed: this level was exited with 100% kills and 100% secrets (items are
 // not required).  A run stays eligible for the "max" record only while every
 // level of it has been maxed; the "speed" record ignores this entirely.
