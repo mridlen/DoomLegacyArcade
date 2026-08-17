@@ -15,11 +15,11 @@ You supply the game data — no copyrighted content is included here.
 
 ## Use of AI disclaimer
 
-This project was almost entirely vibe-coded using Claude. Of course the original Doom Legacy this
-is based off of is probably not.
+The arcade customisations in this repository were almost entirely vibe-coded using Claude. The
+original DoomLegacy underneath them, of course, was not.
 
-Promoting this software in places such as the Doomworld forums or the UZDoom discord is likely to
-get you banned.
+Be aware that promoting AI-assisted software in places such as the Doomworld forums or the ZDoom
+Discord is likely to get you banned.
 
 ## What's different from stock DoomLegacy
 
@@ -37,6 +37,8 @@ get you banned.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.
+- **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
+  in, so the cabinet can offer several games from one menu.
 
 **For the operator**
 
@@ -44,8 +46,6 @@ get you banned.
   launch. Only an operator session writes the config.
 - **A guided control setup** that asks for each control in turn and binds whatever you press —
   stick, buttons, or anything else your panel is wired to.
-- **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
-  in, so the cabinet can offer several games from one menu.
 - **A fixed competitive ruleset.** Gameplay settings are pinned to a vanilla baseline so scores are
   comparable. A run played outside it still plays, but is marked `UNRANKED` and records nothing.
 - **Portable install.** The whole configuration lives next to the binary, so the cabinet is one
@@ -139,6 +139,9 @@ behave identically. You can launch it by absolute path from anywhere; it locates
 
 To move the cabinet to another machine, copy that one directory.
 
+Building a dedicated machine? See [Keeping the cabinet running](#keeping-the-cabinet-running) in the
+operator guide for the restart-loop wrapper you'll want.
+
 ---
 
 ## Playing
@@ -152,15 +155,15 @@ launch.
 
 ### Controls
 
-It is recommended to use a leverless controller (also known as a hitbox or "all button" controller).
-This is because an arcade stick cannot switch from left to right or forward to backward fast enough.
+**What to build the panel from.** A leverless controller — a hitbox, or "all button" pad — is the
+better choice, because an arcade stick can't switch from left to right, or forward to back, fast
+enough for Doom. That said, most people are realistically going to use an arcade joystick, and it
+works fine.
 
-However, I think most people are probably going to be using this with an arcade joystick (aka a "lever").
+**How many buttons.** Six is the minimum for full control. If your panel has eight, consider
+binding a run button on one of the spares and turning autorun off.
 
-To play this properly, you'll need to bind at least six buttons. However, if you have 8 buttons, you
-might want to consider binding a run button and disabling autorun.
-
-The default cabinet layout, on a stick and six buttons:
+**The default layout**, on a stick and six buttons:
 
 ```
           [1]  [2]  [3]          1  Fire
@@ -171,13 +174,16 @@ The default cabinet layout, on a stick and six buttons:
                                  6  Weapon up
 ```
 
-The stick moves and turns. Two schemes are offered per player under Options → Player →
-Player setup — **Look and Move** and **WASD** — which swap which pair of controls turns and which
-strafes. That's a player preference; both work on the same wiring. In my experience, the "look
-and move" control scheme is the predominant joystick or digital gamepad configuration.
+The stick both moves and turns. Binding all of this is an operator job — see
+[Setting up a control panel](#setting-up-a-control-panel), which needs `-devmode`.
 
-In the menus: stick up/down moves the cursor, left/right changes a setting, **fire** selects,
-**use** backs out.
+**Two schemes** are offered per player under Options → Player → Player setup: **Look and Move** and
+**WASD**. They swap which pair of controls turns and which strafes, and both work on the same
+wiring, so it's purely a player preference. Look and Move matches how most joysticks and digital
+gamepads are normally set up, and is the better default.
+
+**In the menus**, the same buttons navigate: stick up/down moves the cursor, left/right changes a
+setting, **fire** selects, **use** backs out. No keyboard is needed.
 
 ### High scores
 
@@ -197,12 +203,12 @@ the run: levels already finished keep their records, but nothing after counts, a
 Scores are per game *and* level pack — Doom II's `MAP01` and Plutonia's `MAP01` are different
 levels and keep separate records.
 
-### Level packs and IWADS
+### Level packs and IWADs
 
-Drop any `.wad` level pack into `legacyhome/levels/`. These can optionally be loaded during runtime.
-It appears under **Options → Select Game** as `<game> wad: <name>`. Selecting one loads it; its maps
-then replace the IWAD's, and the normal One or Two Player flow plays it. Selecting it again unloads it.
-One pack at a time.
+Drop any `.wad` level pack into `legacyhome/levels/` and it appears under **Options → Select Game**
+as `<game> wad: <name>`, alongside the installed games. Packs are loaded on demand rather than at
+startup: selecting one loads it, its maps replace the IWAD's, and the normal One or Two Player flow
+then plays it. Selecting it again unloads it. One pack at a time.
 
 Packs are filtered by the game they suit — a `MAPxx` pack shows under Doom II, an `ExMy` pack under
 Ultimate Doom — so a mismatched pack can't be loaded by accident.
@@ -237,6 +243,27 @@ sessions then start from that baseline every time.
 then asks for each control in turn — stick directions first, then the six buttons by number —
 binding whatever you press. Works with keyboards, joysticks, encoders, anything that reports as a
 button. Press ESC to abandon and keep the previous layout.
+
+### Keeping the cabinet running
+
+On a dedicated machine, launch the game from a wrapper script that restarts it in a loop, with an
+escape hatch on a key that is **not** wired to any cabinet button. Players can then quit the game —
+or it can crash — and the cabinet comes straight back up on the attract screen instead of dropping
+someone to a desktop.
+
+```bash
+#!/bin/bash
+cd /path/to/bin || exit 1
+while :; do
+    ./doomlegacy
+    # Escape hatch. Press this key during the pause to stop the loop.
+    # Choose something no cabinet button is bound to.
+    read -r -t 3 -n 1 key && [ "$key" = "q" ] && break
+done
+```
+
+Because player sessions never write the config, every relaunch starts from the operator's baseline
+regardless of what the last player changed.
 
 ### Resetting the high scores
 
