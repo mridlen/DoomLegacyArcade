@@ -292,6 +292,12 @@ silently made the flag do nothing at all.
     handling, so the page's own invisible item cannot swallow the press; ESC falls through to the
     normal back-out. It has to be a separate screen rather than something drawn behind the
     prompts, because `M_StartMessage` makes `MessageDef` the current menu.
+  - Both wizard exits (finished, and ESC part way) call `M_Guided_Leave_Intro_Page()` to
+    `Pop_Menu()` that page off the stack first. `M_StartMessage` records
+    `message_menu_back = currentMenu` and `M_StopMessage` returns there, so without the pop the
+    closing "Controls saved" message drops the operator back onto the layout diagram instead of
+    the controls menu. **Any flow that opens a page and then raises messages has this same
+    trap.**
   - **`hu_font` is proportional and space is only 4px**, so monospace ASCII art does not line up:
     `V_DrawString` advances by each character patch's own width. The layout screen therefore
     positions every element at an explicit x (`M_Centre_At`) instead of padding with spaces. Only

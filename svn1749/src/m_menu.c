@@ -3900,6 +3900,17 @@ static void M_Guided_Prompt( void )
     M_StartMessage( msgtmp, M_Guided_Response, MM_EVENTHANDLER );
 }
 
+// The wizard opens by pushing RecLayoutDef, so on the way out that page is
+// still the menu the message system will restore to -- leaving the operator
+// staring at the diagram again instead of back at the controls menu.  Drop
+// it off the stack.  Guarded because M_StopMessage has already restored
+// currentMenu by the time this runs, and only that page should be popped.
+static void M_Guided_Leave_Intro_Page( void )
+{
+    if( currentMenu == &RecLayoutDef )
+        Pop_Menu();
+}
+
 static void M_Guided_Response( event_t * ev )
 {
     int  ch;
@@ -3917,6 +3928,7 @@ static void M_Guided_Response( event_t * ev )
     if( ch == KEY_ESCAPE || ch == KEY_PAUSE || ch == KEY_NULL )
     {
         guided_step = -1;
+        M_Guided_Leave_Intro_Page();
         return;
     }
 
@@ -3936,6 +3948,10 @@ static void M_Guided_Response( event_t * ev )
     // way the "Look and Move" / "WASD" selector keeps working on the custom
     // layout instead of overwriting it.
     G_Save_CustomControls( controls_player, guided_keys );
+
+    // Pop before raising the message, so the message restores to the
+    // controls menu rather than to the layout page we came in on.
+    M_Guided_Leave_Intro_Page();
 
     M_SimpleMessage( "Controls saved.\n\n"
                      "Written to config.cfg when this\ndevmode session quits." );
