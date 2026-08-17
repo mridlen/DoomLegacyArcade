@@ -77,21 +77,23 @@ state, the attract cycle and level setup. This has caught real bugs that would o
 needed a play session:
 
 ```
-RD=/tmp/rundir            # NOT the build tree; needs the IWADs + legacy.wad
+RD=/tmp/rundir            # NOT svn1749/bin -- that is the live cabinet now
 mkdir -p "$RD" && cp svn1749/bin/doomlegacy "$RD"/
+cp -a svn1749/bin/legacyhome "$RD"/               # a COPY of the live home
 ln -sf /home/mridlen/games/doom/* "$RD"/          # DOOM.WAD, DOOM2.WAD, legacy.wad, ...
-SH=/tmp/fakehome && mkdir -p "$SH/.doomlegacy"
-cp ~/.doomlegacy/config.cfg "$SH/.doomlegacy/"    # see the crash note below
-cd "$RD" && HOME="$SH" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+cd "$RD" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
     timeout 40 ./doomlegacy -game doom2 -skill 5 -warp 1 > out.txt 2>&1
 sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color escapes
 ```
 
-- **Always set `HOME` to a scratch directory.** `legacyhome` comes from `$HOME`, so a plain run
-  reads *and can write* the cabinet's live `~/.doomlegacy/highscores.dat` and `demos/` —
-  `HS_Save()` and `G_SnapshotDemo()` fire from `HS_LevelExit` whenever a record is beaten. A
-  no-input run cannot reach a level exit so in practice it writes nothing, but that is luck.
-- **Copy the real `config.cfg` into the scratch home.** With no config the software renderer
+- **Isolating `HOME` is no longer enough, and running from `svn1749/bin` is now dangerous.** Since
+  the portable install landed, `legacyhome` is found *next to the binary* and `$HOME` is never
+  consulted — so `HOME=/tmp/fakehome` protects nothing, and running `svn1749/bin/doomlegacy` reads
+  and writes the **cabinet's live scores, demos and config**. Always copy the binary *and*
+  `legacyhome/` into a scratch directory, as above. (The cabinet's old `~/.doomlegacy` has been
+  renamed to `~/.doomlegacy-backup` and is no longer read by anything.)
+- **The scratch home needs a real `config.cfg`.** Copying `legacyhome/` wholesale covers this; if
+  you build one by hand instead, put a config in it. With no config the software renderer
   segfaults in `R_DrawColumn_32` ← `R_DrawPlayerSprites` after `Change Graphics failed: err=-100`
   — the dummy driver never set a real mode. That is a harness artifact, not a fresh-install bug,
   but it looks alarming and wastes time.
@@ -475,9 +477,10 @@ silently made the flag do nothing at all.
   overlay is driven by the `overlay` cvar, a **string of one-letter element codes** — stock
   `"kahmf"` is keys/ammo/health/armor/frags. Upstream already had `e` (kills) and `s` (secrets)
   but neither was in the default and there was **no items element**; `i` is new. The three are
-  stacked top-right at `SCY(1/11/21)` with `K`/`I`/`S` labels, and the default is now
-  `"kahmfeis"`. This pairs with the high-score **max** category, which needs 100% kills and
-  secrets, so the player can see whether the run is still eligible.
+  stacked top-right at `SCY(1/11/21)` with `K`/`I`/`S` labels. This pairs with the high-score
+  **max** category, which needs 100% kills and secrets, so the player can see whether the run is
+  still eligible. The compiled default is now **`"kahmfeist"`** — `eis` for these three plus `t`
+  for the level clock below.
   - The overlay only draws when **`st_overlay_on`**, which `R_SetViewSize` (`r_main.c`) sets from
     `cv_viewsize.value == 11` — the largest view size, no status bar. At any smaller viewsize the
     classic status bar draws instead and none of this appears. The cabinet's `config.cfg` is at
@@ -516,8 +519,10 @@ silently made the flag do nothing at all.
     that wants it. `y0` already offsets it per half.
   - Reads `timelimit_tics` (`g_game.c`, externed in `d_netcmd.h`), which `TimeLimit_OnChange`
     derives from `cv_timelimit`; do not recompute from the cvar.
-  - Same `config.cfg` caveat as above — the cabinet's saved `overlay` line is `"kahmfeis"` and must
-    gain the `t` before the clock appears.
+  - Same `config.cfg` caveat as above. This one **did** bite: the clock did not appear at all until
+    the `t` was added to the saved `overlay` line, because the config value overrides the compiled
+    default and only a devmode session rewrites it. The cabinet's line is now `"kahmfeist"`, but
+    any *other* install still needs the letter added by hand.
 - **Deathmatch defaults** — a DM round gets **`ARCADE_DM_TIMELIMIT` (5) minutes** on the clock, and
   coop explicitly clears the limit, appended to the game-start command in `M_StartServer`
   (`m_menu.c`). An unattended cabinet has no other way out of a DM stalemate: players cannot reach
