@@ -614,6 +614,27 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
 }
 
 
+// [Arcade] Cumulative time for the run so far, drawn under the intermission's
+// Time row.  It already includes the level just finished: WI_Init_Stats calls
+// HS_LevelExit, which adds this level's leveltime, before the intermission
+// draws.  Shown whatever the run's state -- an unranked or death-voided run
+// still has a meaningful elapsed time, it just is not going to be recorded.
+//
+// label_x is the left edge of the caption and time_right_x the right edge of
+// the value, so the caller can line both up with the Time row above.  Drawn
+// in option 0, the font's native red: this screen's background is largely
+// grey and V_WHITEMAP text disappears into it (see the V_DrawString colour
+// note in CLAUDE.md).
+void HS_Draw_TotalTime( int label_x, int time_right_x, int y )
+{
+    char timebuf[16];
+
+    HS_FormatTime( hs_cumulative_time, timebuf, sizeof(timebuf) );
+    V_DrawString( label_x, y, 0, "TOTAL" );
+    V_DrawString( time_right_x - V_StringWidth(timebuf), y, 0, timebuf );
+}
+
+
 void HS_Draw_IntermissionTable( int x, int y )
 {
     hs_maprecord_t * rec;

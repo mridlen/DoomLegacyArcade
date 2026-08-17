@@ -103,6 +103,18 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   bug and the high-score page timing were both pinned down. Remove it before committing.
 - **Before blaming a run for changed files, compare mtimes against the run times.** The cabinet is
   played between turns, and those writes belong to the user, not the test.
+- **A headless run can reach the intermission**, which used to be written off as needing a play
+  session. There is a **`wait`** console command (used by the bot code, `d_main.c`), and
+  `D_DoomLoop` execs `legacyhome/autoexec.cfg`, so dropping this into the *scratch* home drives a
+  level exit on its own:
+  ```
+  printf 'wait 105\nexitlevel\n' > "$SH/.doomlegacy/autoexec.cfg"
+  ```
+  That is enough to exercise `WI_Init_Stats`, `HS_LevelExit`, the whole intermission drawer and the
+  high-score write — it produced a real `highscores.dat` line (`doom2 MAP01 2 104 speed`) and let
+  the Time/TOTAL layout be checked numerically instead of guessed. `exitlevel` alone will not do:
+  a bare `+exitlevel` runs before the level exists. Combine with `wait` for **anything gated behind
+  actually finishing a level**.
 
 ## Compile-time feature flags
 
@@ -395,6 +407,23 @@ silently made the flag do nothing at all.
     intermission; `bcnt`, which `wi_stuff.c` blinks from, is static to that file.
   - Drawn with option **`0`, which is red** — it was white at first and disappeared against the
     grey intermission background. See the `V_DrawString` colour note below.
+
+  **Cumulative run time** is shown under the intermission's Time row by `HS_Draw_TotalTime`, as
+  `TOTAL` plus `hs_cumulative_time`. It already includes the level just finished — `WI_Init_Stats`
+  calls `HS_LevelExit`, which adds that level's `leveltime`, before the intermission draws. Shown
+  whatever the run's state: an unranked or death-voided run still has a meaningful elapsed time.
+  - Layout, all measured: `WITIME` and the `WINUM` digits are both **12** tall and start at
+    `SP_TIMEY` (168), so that row ends at 180; the call site's `+ 16` leaves a 4px gap, putting the
+    text at 184 and — `hu_font` glyphs being 7 tall — its bottom at 191 of `BASEVIDHEIGHT` 200.
+    The caption sits at `SP_TIMEX` (16) spanning 16..56, and the value is right-justified at
+    `BASEVIDWIDTH/2 - SP_TIMEX` (144), at most 39px wide for a `123:45`, so it starts no further
+    left than 105. Only the Par row shares that band and it is right of centre.
+  - Drawn in **option 0 (red)**, not `V_WHITEMAP` — this screen's background is largely grey and
+    white text vanishes into it, the same lesson as the `NEW RECORD` marker.
+  - `hs_cumulative_time` is reset by `HS_NewGame`, which only the menu skill-select handlers call.
+    A game started from the command line (`-warp`) never resets it, so the total can carry over
+    from a previous run in that case. Not reachable from the cabinet's menus, but worth knowing
+    when testing.
 
   The **wad combination** is `HS_GameId()`: the game's short name plus any loaded level pack, such
   as `doom2` or `doomu+mapsofchaos`. Both parts are needed — Doom 2, Plutonia and TNT all have a

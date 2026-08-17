@@ -40,6 +40,9 @@ boolean  HS_Run_Died(void);   // was this run voided by a death?
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed);
 void  HS_Draw_IntermissionTable(int x, int y);
+// Cumulative run time under the intermission's Time row.  label_x is the left
+// edge of the caption, time_right_x the right edge of the value.
+void  HS_Draw_TotalTime(int label_x, int time_right_x, int y);
 // The attract page shows one map at a time and steps through every map that
 // has a time before handing back to the demo cycle.  Seconds each map is on
 // screen; the whole page lasts this times HS_Attract_Page_Count().

@@ -2169,6 +2169,13 @@ static void WI_Draw_Stats(void)
     if (draw_pars)
         WI_Draw_Time(BASEVIDWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
 
+    // [Arcade] Cumulative run time, tucked under the Time row and aligned to
+    // its columns.  WITIME and the WINUM digits are both 12 tall and start at
+    // SP_TIMEY, so that row ends at SP_TIMEY + 12; the + 16 leaves a 4px gap.
+    // hu_font glyphs are 7 tall, so this occupies 184..191 of the 200 high
+    // screen.  Only the Par row shares this band and it is right of centre.
+    HS_Draw_TotalTime( SP_TIMEX, BASEVIDWIDTH/2 - SP_TIMEX, SP_TIMEY + 16 );
+
     // [Arcade] Best-time-per-skill table for the map just exited, centered in
     // the gap between the Secrets row and the Time row.  The +12 is needed
     // because the table draws its own header 14 above the y given here, which
