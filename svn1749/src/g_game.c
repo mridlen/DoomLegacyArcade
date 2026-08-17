@@ -4720,6 +4720,11 @@ void G_DoPlayDemo (const char *defdemoname)
 
     demoplayback = true;
 
+    // [Arcade] The replay is its own run for the intermission's purposes.
+    // Set after demoplayback so HS_LevelExit takes the replay path, and
+    // before G_InitNew below, which reaches the first level.
+    HS_Demo_Start();
+
     // don't spend a lot of time in loadlevel
     if(demoversion<127 || boomdemo)
     {

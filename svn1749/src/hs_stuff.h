@@ -29,6 +29,10 @@ const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
 void  HS_Init(void);
 void  Command_ClearHighScores_f(void);   // console: clearhighscores
 void  HS_NewGame(void);
+// [Arcade] Reset the intermission's per-run display state when a demo starts.
+// A replayed record demo spans several levels and passes through real level
+// exits, so it needs its own running total rather than the last live game's.
+void  HS_Demo_Start(void);
 // [Arcade] A death voids the rest of the run: no further level exit scores,
 // and the background recording is closed.  Levels finished before it keep
 // the records they already earned.  Called from P_KillMobj.

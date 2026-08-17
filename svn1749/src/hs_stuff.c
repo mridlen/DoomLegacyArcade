@@ -542,19 +542,46 @@ void HS_Player_Died( void )
 }
 
 
+// [Arcade] A demo replay is its own run as far as the intermission is
+// concerned.  Called when playback starts (G_DoPlayDemo) so the running total
+// counts up from zero across the demo's own levels rather than continuing
+// whatever the last live game reached, and so no stale NEW RECORD or
+// best-times table from that game shows on the replay's first intermission.
+// Live games get the same reset from HS_NewGame.
+void HS_Demo_Start( void )
+{
+    hs_cumulative_time = 0;
+    hs_last_exit_mapname[0] = 0;
+    memset( hs_new_record, 0, sizeof(hs_new_record) );
+}
+
+
 void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed )
 {
     if( netgame || multiplayer || deathmatch )  return;
-    // Never score a replay: attract-mode demo playback re-runs level exits.
-    if( demoplayback )  return;
     if( skill < 0 || skill >= HS_NUMSKILLS )  return;
 
-    // Clear before any of the early returns below, so an unranked or
-    // death-voided exit leaves no marker from the previous level behind.
+    // [Arcade] Everything the intermission draws is derived here, and it must
+    // be updated for demo playback too.  A record demo spans several levels,
+    // so replaying one passes through these same level exits -- and when this
+    // block sat below the demoplayback guard the replay's intermission showed
+    // the *previous live game's* state: its running total, its best-times
+    // table, and a NEW RECORD that could still be latched from it.
+    // HS_Demo_Start clears these when a demo begins, so a replay counts up
+    // from zero across its own levels.
+    //
+    // Deliberately does not call HS_FindOrAddRecord: that would add a table
+    // entry, and a replay must not touch the table at all.  Setting the map
+    // name alone is safe -- HS_Draw_IntermissionTable simply finds no record
+    // and draws nothing.
     memset( hs_new_record, 0, sizeof(hs_new_record) );
-
     hs_cumulative_time += leveltime;
+    dl_strncpy( hs_last_exit_mapname, G_BuildMapName(episode, map), 8 );
+    hs_last_exit_skill = skill;
+
+    // Never score a replay.  Everything below this writes to the table.
+    if( demoplayback )  return;
 
     // One level short of 100% ends the max run for the rest of the game;
     // the speed run is unaffected and keeps accumulating.
@@ -582,9 +609,6 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     const char * mapname = G_BuildMapName(episode, map);
     hs_maprecord_t * rec = HS_FindOrAddRecord(HS_GameId(), mapname);
     if( rec == NULL )  return;   // table full
-
-    dl_strncpy(hs_last_exit_mapname, mapname, 8);
-    hs_last_exit_skill = skill;
 
     int cat;
     boolean saved = false;
