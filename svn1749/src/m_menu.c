@@ -3961,7 +3961,7 @@ static void M_Guided_Response( event_t * ev )
 // answered.  Split out so the page and the prompts stay separate screens:
 // M_StartMessage makes MessageDef the current menu, so the layout cannot be
 // shown behind the prompt box anyway.
-void M_Guided_Begin_Steps( void )
+static void M_Guided_Begin_Steps( void )
 {
     guided_step = 0;
     M_Guided_Prompt();

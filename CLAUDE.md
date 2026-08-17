@@ -303,7 +303,12 @@ silently made the flag do nothing at all.
     positions every element at an explicit x (`M_Centre_At`) instead of padding with spaces. Only
     `'!'`..`'_'` exist and lowercase folds to uppercase — there is **no `|`** — which is why the
     stick's down arrow is the letter `V`. Extents were checked against the real `STCFN0xx` widths
-    read out of the IWAD rather than estimated; the widest line is 212px of 320.
+    read out of the IWAD rather than estimated; the widest line is 214px of 320. Re-check with a
+    script that reads those lumps if any string here changes — do not eyeball it.
+  - The three new entries sit at the **top** of `MControlMenu`, which is safe only because nothing
+    indexes that menu by position and `MControlDef.lastOn` is never assigned (verified) — so the
+    cursor lands on "Guided setup P1", which is the point. The rest of the lockdown does address
+    menu items by hardcoded index, so this is the exception, not the pattern.
   - The prompts deliberately name the **physical control, not the game action**. They first said
     "TURN LEFT" with a note that WASD mode swaps turn and strafe, which reads as confusing to
     someone actually wiring a panel: they know they are pushing the stick left and should not have
