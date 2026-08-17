@@ -1427,7 +1427,44 @@ ifndef MAKE_OPTIONS_PRESENT
 endif
 
 # ALL, compile and link
-all:	 $(BIN)/$(EXENAME)  $(SUPPORT_EXE)
+all:	 $(BIN)/$(EXENAME)  $(SUPPORT_EXE)  cabinet_home
+
+
+# [Arcade] Portable install.
+# The engine prefers a "legacyhome" directory sitting next to the binary over
+# the one in $HOME (d_main.c), so staging the repo's tracked config there makes
+# a freshly built tree run with no command line arguments at all.
+#
+# CABINET_HOME is the tracked source of truth; $(BIN)/legacyhome is the live
+# copy the game actually reads and writes.  bin/ is gitignored, so edits an
+# operator makes in a -devmode session land in an untracked file -- run
+# "make cabinet_save" to bring them back to the tracked copy and see them as a
+# git diff.
+#
+# Recipes are prefixed with "-" and guarded, so a platform without a POSIX
+# shell just skips this rather than failing the build.
+CABINET_HOME := ../../cabinet/legacyhome
+
+.PHONY: cabinet_home cabinet_save
+
+# Stage the tracked config beside the binary, without ever clobbering a live
+# one.  cp -n leaves an existing config.cfg alone, so a running cabinet does
+# not have its settings reset by a rebuild.
+cabinet_home:
+	-@if [ -d "$(CABINET_HOME)" ]; then \
+	  mkdir -p "$(BIN)/legacyhome" && \
+	  cp -n "$(CABINET_HOME)/config.cfg" "$(BIN)/legacyhome/" 2>/dev/null; \
+	  echo "Portable legacyhome staged at $(BIN)/legacyhome"; \
+	fi
+
+# Copy the live config back over the tracked one, for committing.
+cabinet_save:
+	-@if [ -f "$(BIN)/legacyhome/config.cfg" ]; then \
+	  cp "$(BIN)/legacyhome/config.cfg" "$(CABINET_HOME)/config.cfg" && \
+	  echo "Saved $(BIN)/legacyhome/config.cfg -> $(CABINET_HOME)/config.cfg"; \
+	else \
+	  echo "No live config at $(BIN)/legacyhome/config.cfg"; \
+	fi
 
 
 # Directly using $(error) prevents the output of the other commands.

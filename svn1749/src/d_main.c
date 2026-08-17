@@ -2790,8 +2790,43 @@ restart_command:
         // example: "/home/user/"
         sprintf(legacyhome, "%s/", userhome);
 #else
+        // [Arcade] Portable install.  A legacyhome directory sitting next to
+        // the binary takes priority over the one in $HOME, so a checked-out
+        // tree runs from its own tracked config.cfg with no command line
+        // arguments at all.  The *presence of the directory is the switch*:
+        // without it nothing below changes, so an existing ~/.doomlegacy
+        // install is untouched until one is deliberately created.
+        //
+        // progdir comes from readlink("/proc/self/exe") on Linux
+        // (I_Get_Prog_Dir, sdl/i_system.c), so this follows the executable
+        // rather than the working directory -- launching from a menu entry or
+        // a service unit finds the same files as launching from a shell.
+        //
+        // Kept in a local rather than testing legacyhome directly, because
+        // D_DoomMain can re-run this block via the launcher's restart path
+        // and legacyhome may already hold the previous pass's value.
+        char * portable_home = NULL;
+        if( progdir )   // NULL when I_Get_Prog_Dir failed
+        {
+            char dirpath[ MAX_WADPATH ];
+
+            // Trailing slash matters: savegamename concatenates directly onto
+            // legacyhome, and cat_filename only separates dir from name, so it
+            // will not supply one at the end.
+            cat_filename( dirpath, progdir, DEFHOME SLASH );
+            if( access(dirpath, R_OK) == 0 )  // portable home found
+            {
+                portable_home = strdup( dirpath );  // malloc
+                GenPrintf(EMSG_ver, "Portable legacyhome= %s\n", portable_home );
+            }
+        }
+
         // Find the legacyhome directory
-        if (userhome)
+        if( portable_home )
+        {
+            legacyhome = portable_home;
+        }
+        else if (userhome)
         {
             // [WDJ] find directory, .doomlegacy, or .legacy
             char dirpath[ MAX_WADPATH ];

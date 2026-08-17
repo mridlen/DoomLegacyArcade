@@ -1,0 +1,8 @@
+# [Arcade] The live portable home is staged next to the binary and holds player
+# data and content alongside this tracked config.  If anything ever gets copied
+# back here, keep it out of git: high scores and demos churn on every record and
+# want backups rather than history, and the level packs are tens of megabytes.
+highscores.dat
+demos/
+levels/
+config.cfg.bak

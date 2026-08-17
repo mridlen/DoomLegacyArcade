@@ -596,7 +596,40 @@ silently made the flag do nothing at all.
     desync a record demo. All three are pinned by the ruleset, which is now the only thing keeping
     them consistent. Worth remembering if a demo ever desyncs mysteriously.
 
-Runtime data lives in `~/.doomlegacy/`: `config.cfg`, `highscores.dat` (plain text,
+### Portable install (`legacyhome` next to the binary)
+
+**A `legacyhome/` directory sitting beside the executable overrides `~/.doomlegacy` entirely** —
+config, high scores, demos, level packs and savegames. This is what lets a checked-out tree run
+with its own tracked `config.cfg` and **no command line arguments**, which is the point: the config
+is otherwise unversioned state the build silently depends on.
+
+- Implemented in `d_main.c`, just above the `if (userhome)` legacyhome search. The engine already
+  had `progdir` and a `progdir/DEFHOME` fallback; that path was **dead code**, because `$HOME` is
+  always set on Linux and was tested first. The change only reorders the priority.
+- **Presence of the directory is the switch.** Without one, nothing changes and an existing
+  `~/.doomlegacy` install behaves exactly as before. Verified both ways.
+- `progdir` comes from `readlink("/proc/self/exe")` (`I_Get_Prog_Dir`, `sdl/i_system.c`), so it
+  follows the **executable, not the working directory** — a menu entry or service unit finds the
+  same files as a shell. Verified by running from `/` with an absolute path.
+- **The trailing slash is required.** `savegamename` concatenates directly onto `legacyhome`, and
+  `cat_filename` only separates *dir from name* — it does not append one at the end. So the new
+  branch passes `DEFHOME SLASH`, matching the `DEFAULTDIR1 SLASH` the userhome branch uses. The
+  pre-existing `progdir` fallback below does **not** do this, which is a latent bug in a path that
+  is only reachable when `$HOME` is unset.
+- Kept in a local (`portable_home`) rather than testing `legacyhome` directly, because
+  `D_DoomMain` re-runs this block via the launcher restart path and `legacyhome` may still hold
+  the previous pass's value.
+
+The tracked copy lives at **`cabinet/legacyhome/config.cfg`** (see `cabinet/README.md`). `make`
+stages it into `svn1749/bin/legacyhome/` via the `cabinet_home` target, using `cp -n` so a rebuild
+**never resets a running cabinet's settings**. Since `bin/` is gitignored, an operator's `-devmode`
+edits land in an untracked file — **`make cabinet_save`** copies the live config back over the
+tracked one so the change shows up as a reviewable `git diff`. Player data and `levels/` stay
+untracked by design: high scores and demos churn on every record and want backups rather than
+history, and the level packs are ~26MB of wads.
+
+Runtime data lives in the active legacyhome — `~/.doomlegacy/` unless a portable one is found:
+`config.cfg`, `highscores.dat` (plain text,
 `<wadcombo> map skill tics <category>`), `demos/<wadcombo>_<map>_sk<N>_<category>.lmp`, and
 `levels/` for selectable level packs. `<wadcombo>` is `HS_GameId()`, e.g. `doom2` or
 `doomu+mapsofchaos`; `<category>` is `speed` or `max`. The category is written **last** so a
