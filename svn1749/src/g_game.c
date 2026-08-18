@@ -1970,7 +1970,15 @@ main_actions:
 
         G_Synclog_Tic();   // [Arcade] demo desync diagnostic, -synclog
 
-        G_Idle_Timeout_Check( false );   // [Arcade]
+        // [Arcade] demoplayback && menuactive means an attract demo is running
+        // behind an open menu -- gamestate is GS_LEVEL there, not
+        // GS_DEMOSCREEN, and the plain check bails on demoplayback, so without
+        // this the menu only timed out during the attract screen's *title*
+        // pages and appeared not to work at all while a demo was on.
+        // A real game with the menu open has demoplayback false and still
+        // takes the normal path, which ends the game rather than just closing
+        // the menu.
+        G_Idle_Timeout_Check( demoplayback && menuactive );   // [Arcade]
         break;
 
       case GS_INTERMISSION:

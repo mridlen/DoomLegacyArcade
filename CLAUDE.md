@@ -359,7 +359,16 @@ silently made the flag do nothing at all.
     underneath. `last_input_tic` is re-armed so it cannot re-fire on the next tic.
   - No countdown warning is shown for this case: `D_Display` only calls `HU_Drawer` for `GS_LEVEL`,
     so `HU_SetTip` would draw nothing on the attract screen.
-  - Verified headless with `idletimeout 8`: fired once at exactly 280 tics.
+  - **`GS_DEMOSCREEN` is not enough on its own.** While an attract *demo* is playing behind the
+    menu the gamestate is `GS_LEVEL`, not `GS_DEMOSCREEN`, and the plain check bails on
+    `demoplayback` — so the menu only timed out during the attract screen's *title* pages and
+    looked broken whenever a demo happened to be on. The `GS_LEVEL` call therefore passes
+    `demoplayback && menuactive`. A real game with the menu open has `demoplayback` false and still
+    takes the normal path, ending the game rather than merely closing the menu.
+  - **It does nothing in devmode**, like every other idle timeout (`if( devmode || ... ) return`).
+    An operator session will never see a menu time out; that is intentional, but it is the first
+    thing to check when it "doesn't work".
+  - Verified headless with `idletimeout 8` and `10`: fired once at exactly 280 and 350 tics.
 
   It runs in **`GS_LEVEL`, `GS_INTERMISSION` and `GS_FINALE`**, not just during play — both of the
   other two wait *indefinitely* for a keypress the walk-away player never gives, so covering only
