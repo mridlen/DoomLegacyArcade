@@ -1909,6 +1909,52 @@ boolean  Check_wad_filenames( int gmi, /*OUT*/ char * pathbuf_p )
 
 // May be called again after command restart
 static
+// [Arcade] The operator's boot game, as a game_desc_table idstr ("doomu",
+// "doom2", ...), or empty for none.
+char  default_game_idstr[16] = "";
+
+// [Arcade] Read cv_defaultgame's value straight out of config.cfg.
+//
+// It cannot be read as a cvar: M_LoadConfig does not run until several hundred
+// lines after IdentifyVersion has already chosen the IWAD, so by the time the
+// cvar holds anything it is far too late to act on it.  This is the same
+// ordering trap that forces the menu's game-dependent setup into M_Configure.
+//
+// A targeted parse of one line is deliberately preferred over moving the
+// config load earlier, which would change startup ordering for everything.
+static void D_Read_Default_Game( void )
+{
+    FILE * f;
+    char line[256];
+
+    default_game_idstr[0] = '\0';
+
+    if( ! configfile_main )  return;
+    f = fopen( configfile_main, "r" );
+    if( ! f )  return;   // no config yet; first run
+
+    while( fgets( line, sizeof(line), f ) )
+    {
+        char * p, * e;
+
+        // The cvar's PossibleValue strings are the idstr names themselves, so
+        // the quoted value can be used as-is.  Config writes: defaultgame "doom2"
+        if( strncmp( line, "defaultgame", 11 ) != 0 )  continue;
+
+        p = strchr( line, '"' );
+        if( ! p )  break;
+        e = strchr( ++p, '"' );
+        if( ! e )  break;
+        *e = '\0';
+
+        if( strcmp( p, "None" ) != 0 )
+            dl_strncpy( default_game_idstr, p, sizeof(default_game_idstr) );
+        break;
+    }
+    fclose( f );
+}
+
+
 void IdentifyVersion()
 {
     char pathiwad[_MAX_PATH + 16];
@@ -2001,12 +2047,44 @@ void IdentifyVersion()
     // Earlier did direct test of -devparm, do not overwrite it.
     devgame = M_CheckParm("-devgame");
     // [WDJ] search for one of the listed GDESC_ forcing switches
-    if ( devgame || M_CheckParm("-game") )
+    boolean have_game_parm = ( devgame || M_CheckParm("-game") );
 #else
-    if( M_CheckParm("-game") )
+    boolean have_game_parm = ( M_CheckParm("-game") != 0 );
 #endif
+
+    // [Arcade] With no -game switch, boot the game the operator chose
+    // (cv_defaultgame, read out of config.cfg by D_Read_Default_Game before
+    // this runs -- the config proper is not loaded until long after the IWAD
+    // has been picked, so the cvar itself is useless here).
+    //
+    // Validated *before* entering the block below rather than inside it: the
+    // block's game_switch_found label lives inside its own braces, and an
+    // unrecognized value there takes a fatal error path.  A default naming a
+    // game that has since been uninstalled must not stop the cabinet booting,
+    // so anything wrong here just warns and drops through to the normal
+    // search.  An explicit -iwad also wins over the default.
+    const char * boot_game = NULL;
+    if( ! have_game_parm && ! M_CheckParm("-iwad") && default_game_idstr[0] )
     {
-        char *temp = M_GetNextParm();
+        int  bi;
+        for( bi=0; bi<GDESC_other; bi++ )
+        {
+            if( !strcmp(default_game_idstr, game_desc_table[bi].idstr) )  break;
+        }
+        if( bi >= GDESC_other )
+            GenPrintf( EMSG_warn, "Boot game \"%s\" not recognized, using normal search.\n",
+                       default_game_idstr );
+        else if( ! D_Game_Available( default_game_idstr ) )
+            GenPrintf( EMSG_warn, "Boot game \"%s\" is not installed, using normal search.\n",
+                       default_game_idstr );
+        else
+            boot_game = default_game_idstr;
+    }
+
+    if ( have_game_parm || boot_game )
+    {
+        // boot_game is already known good; only the switch can be malformed.
+        char *temp = boot_game ? (char*) boot_game : M_GetNextParm();
         if( temp == NULL )
         {
 #ifdef DEVPARM_LOADING
@@ -2932,6 +3010,10 @@ restart_command:
     }
 
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
+
+    // [Arcade] Must be after legacyhome/configfile_main are resolved and
+    // before IdentifyVersion below, which is what acts on it.
+    D_Read_Default_Game();
 
     // [Arcade] -clearhighscores : wipe the times and record demos at startup,
     // for a cabinet reset without needing the console.

@@ -162,6 +162,29 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
+  **Options → Menu Options** as "Boot Game" beside `cv_twoplayer`, so it is operator-only. Picks
+  which game the cabinet starts in instead of whichever IWAD the search finds first.
+  - **It cannot be read as a cvar.** `IdentifyVersion()` chooses the IWAD at `d_main.c:3030`;
+    `M_LoadConfig` does not run until **3216**. So `D_Read_Default_Game()` parses the single
+    `defaultgame "..."` line straight out of `config.cfg` beforehand, called next to `HS_Init` —
+    after `legacyhome`/`configfile_main` are resolved, before `IdentifyVersion`. A targeted parse
+    was chosen over moving the config load earlier, which would reorder startup for everything.
+  - The cvar's `PossibleValue` strings are **the `game_desc_table` idstrs themselves** (`doomu`,
+    `doom2`, `plutonia`, `tnt`) rather than pretty labels, because config stores a cvar's *label*
+    and that hand-parse needs the stored text usable as-is. They are also exactly what `-game`
+    accepts, which makes the setting self-documenting.
+  - Validated **before** entering the `-game` block in `IdentifyVersion`, not inside it: that
+    block's `game_switch_found` label sits within its own braces and an unrecognized value there
+    takes a fatal path. A boot game that is unrecognized, or whose IWAD has since been uninstalled
+    (`D_Game_Available`), must never stop the cabinet booting — both cases warn and fall through to
+    the normal search.
+  - `-game` and `-iwad` on the command line both override it.
+  - Verified headless across all six paths: unset → normal search; `doomu`/`tnt` → those games;
+    `-game doom2` overriding a `tnt` default; `"banana"` → warns, normal search; and `plutonia`
+    with the IWAD genuinely unreachable → warns, normal search. That last one needs `HOME` isolated
+    as well as the wad removed from the run directory, or `~/games/doom` still satisfies the
+    search and the test silently passes for the wrong reason.
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and

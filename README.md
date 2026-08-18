@@ -157,8 +157,12 @@ launch.
 
 **What to build the panel from.** A leverless controller — a hitbox, or "all button" pad — is the
 better choice, because an arcade stick can't switch from left to right, or forward to back, fast
-enough for Doom. That said, most people are realistically going to use an arcade joystick, and it
-works fine.
+enough for Doom. You might consider getting a drop in WASD controller to replace the joysticks,
+such as the Mixbox or T-Spin. This is probably the most ideal for responsive control, but take care that
+children don't run off with your keycaps!
+
+That said, most people are realistically going to use an arcade joystick, and it works, just not
+as well.
 
 **How many buttons.** Six is the minimum for full control. If your panel has eight, consider
 binding a run button on one of the spares and turning autorun off. Sticks that offer a mode switch
@@ -265,6 +269,18 @@ done
 
 Because player sessions never write the config, every relaunch starts from the operator's baseline
 regardless of what the last player changed.
+
+### Choosing which game the cabinet boots into
+
+**Options → Menu Options → Boot Game** (devmode only). By default the cabinet starts in whichever
+IWAD the search happens to find first, which is rarely the one you want. Set this to `doomu`,
+`doom2`, `plutonia` or `tnt` and it boots there every time; `None` restores the default behaviour.
+
+The names are the same ones `-game` takes. A `-game` or `-iwad` on the command line overrides the
+setting, and if the chosen game is ever uninstalled the cabinet warns and falls back to the normal
+search rather than refusing to start.
+
+Like every operator setting, it is only saved from a `-devmode` session.
 
 ### Resetting the high scores
 

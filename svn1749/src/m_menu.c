@@ -477,6 +477,23 @@ consvar_t cv_menusound = {"menusound", "1", CV_SAVE | CV_CALL, menusound_cons_t,
 // after M_Init.  Off hides Two Player Game and the player 2 config screens.
 consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
 
+// [Arcade] Which game the cabinet boots into, instead of whichever IWAD the
+// engine's search happens to find first.  Also an operator setting, saved only
+// from a -devmode session.
+//
+// The PossibleValue strings are the game_desc_table idstr names on purpose:
+// config.cfg stores a cvar's *label*, and D_Read_Default_Game has to parse
+// that line out of the file by hand long before the config is loaded, so the
+// stored text needs to be usable as-is.  They are also exactly what -game
+// takes, which makes the setting self-documenting for an operator.
+//
+// Not filtered by which IWADs are installed -- the list is fixed and startup
+// falls back to the normal search if the chosen game is missing, which keeps
+// this menu independent of the wad search.
+CV_PossibleValue_t defaultgame_cons_t[] = {
+  {0, "None"}, {1, "doomu"}, {2, "doom2"}, {3, "plutonia"}, {4, "tnt"}, {0, NULL} };
+consvar_t cv_defaultgame = {"defaultgame", "None", CV_SAVE, defaultgame_cons_t };
+
 static
 void CV_menusound_OnChange(void)
 {
@@ -2678,6 +2695,7 @@ menuitem_t MenuOptionsMenu[]=
     // it is only reachable under -devmode.  Appended rather than inserted --
     // the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Two Player Mode" , &cv_twoplayer     , 0},
+    {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -7881,6 +7899,7 @@ consvar_t * menu_command_cvar_list[] =
 
   &cv_screenslink,
   &cv_twoplayer,        // [Arcade]
+  &cv_defaultgame,      // [Arcade]
 
     // p_mobj.c
   &cv_itemrespawntime,
