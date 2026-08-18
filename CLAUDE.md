@@ -232,8 +232,22 @@ silently made the flag do nothing at all.
   rebinding. Turn and strafe both map to left/right on purpose: the two schemes only swap which
   side pair is turning, so mapping both makes the `,aoe` diamond behave identically either way.
   Only applied while `menuactive` — otherwise "use" would open the menu during play instead of
-  opening doors — and skipped in devmode so the keyboard behaves normally.
-  Note the menu is still *opened* with Escape, which is not on the panel.
+  opening doors. Note the menu is still *opened* with Escape, which is not on the panel.
+  - **The devmode exemption is for the keyboard only** (`key >= KEY_JOY0BUT0` is still translated).
+    An operator typing must not have letters bound to movement turn into arrow keys; joystick input
+    has no such concern. Skipping joystick keys in devmode left the panel at the mercy of
+    **upstream's hardcoded `KEY_JOY0BUT0` → `KEY_ENTER` and `KEY_JOY0BUT1` → `KEY_BACKSPACE`**
+    (`M_Responder`'s virtual-key `switch`), which selects and cancels by button *index*.
+  - That upstream mapping is why **a stick's mode switch changed which buttons work the menus**. On
+    a Mayflash F300, DirectInput/PS3 happened to put fire and use on buttons 0 and 1 and so looked
+    correct, while XInput put A and B there — so A selected, B cancelled, and the operator's own
+    fire button did nothing. Nothing was wrong with the bindings; the hardcoded indices simply
+    pointed at different physical buttons.
+  - **Bindings are stored by button index, so they do not survive that toggle.** Switching between
+    XInput and DirectInput renumbers the buttons, and every `setcontrol`/guided-setup binding then
+    refers to a different physical button. Pick a mode and re-run the guided setup in it.
+  - `M_key_is_control` checks `gamecontrol[]` *and* `gamecontrol2[]`, so either player's panel
+    drives the menus.
 - **Menu letter shortcuts are disabled** outside devmode (`m_menu.c`, `M_Responder`'s `default:`
   case returns before the `alphaKey` search). The cabinet is buttons-only and several of those
   buttons are letters that collided with the shortcuts — player 1's turn-right button (`e`) on the

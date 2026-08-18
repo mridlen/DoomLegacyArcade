@@ -6258,7 +6258,18 @@ boolean M_Responder (event_t* ev)
         // [Arcade] Drive the menus from the cabinet buttons.  Only while a
         // menu is up, or "use" would open the menu during play instead of
         // opening doors.
-        if( menuactive && ! devmode )
+        //
+        // Devmode is exempt so the *keyboard* behaves normally for an
+        // operator -- letters bound to movement must not turn into arrow keys
+        // while typing.  Joystick input has no such concern, and skipping it
+        // there left the panel at the mercy of upstream's hardcoded
+        // KEY_JOY0BUT0 -> ENTER / KEY_JOY0BUT1 -> BACKSPACE mapping further
+        // down.  That mapping is by button *index*, so which physical buttons
+        // select and cancel changed with the stick's mode switch -- on a
+        // Mayflash F300, DirectInput happened to put fire and use on buttons
+        // 0 and 1 and so appeared correct, while XInput put A and B there and
+        // the operator's own fire button did nothing.
+        if( menuactive && (! devmode || key >= KEY_JOY0BUT0) )
             key = M_Cabinet_Menu_Key( key );
 
         // [Arcade] The guided setup opens on the recommended-layout page and
