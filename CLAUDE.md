@@ -291,8 +291,22 @@ silently made the flag do nothing at all.
     no repeated keydowns, no orphan keyups, nothing left stuck.
   - Deadzone is half range (`JOYAXIS_DEADZONE` 16384). An arcade stick reports full deflection, so
     this only has to clear noise; it also stops a diagonal registering until genuinely committed.
-  - Only axes 0/1. Axes 2 and 5 are the Xbox triggers, handled above and `break`ing early so a
-    trigger is never read as a direction; the right stick is left alone.
+  - Only axes 0/1. Axes 2 and 5 are the triggers, handled above and `break`ing early so a trigger
+    is never read as a direction; the right stick (3/4) is left alone.
+  - **The triggers had the same disease and the same cure.** `LT`/`RT` arrive as axes 2 and 5, and
+    their handler was gated on that identical `check_Joystick_Xbox[]` name test, so they were dead
+    on the F300 too. The gate is gone; the axes are read on any joystick. That is safe because
+    `KEY_JOY0LEFTTRIGGER`/`RIGHTTRIGGER` are distinct codes, unbound by default, and already have
+    `setcontrol` names (`Joy0 lt`, `Joy0 rt`) — so a pad using those axes for something else costs
+    nothing unless a player binds them.
+    - Threshold is `> 0`, **not** `JOYAXIS_DEADZONE`: triggers rest at full *negative* on the Linux
+      `xpad` driver and at zero on others, so positive means pressed under both conventions.
+    - `previous_jtrigger[joystick][2]` latches the pressed state. Upstream posted a keydown on
+      *every* axis event while a trigger was held past the threshold, which is a stream of them for
+      an analog trigger; now only transitions post. Verified against both resting conventions, with
+      LT and RT independent.
+    - `check_Joystick_Xbox[]` is now **assigned but never read**. Left in place (it is upstream
+      code, and harmless) rather than removed.
 - **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
   selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
   player (move/turn/strafe/fire/use/weapon cycling); everything else is left alone. The two schemes

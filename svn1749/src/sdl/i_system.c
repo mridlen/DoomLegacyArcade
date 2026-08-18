@@ -434,6 +434,12 @@ Uint8 previous_jhat[2] = {0, 0};
 // [joystick][axis] so two panels do not clear each other's state.
 Uint8 previous_jaxis[MAX_JOYSTICKS][JOYAXIS_DIRS] = {{0}};
 
+// [Arcade] Trigger pressed state, [joystick][0=left(axis 2), 1=right(axis 5)].
+// Upstream posted a keydown on *every* axis event while a trigger was held
+// past the threshold, so holding one produced a stream of them; this latches
+// so only the transitions are posted.
+Uint8 previous_jtrigger[MAX_JOYSTICKS][XBOXTRIGGERS] = {{0}};
+
 
 // MOUSE2_NIX dependent upon DoomLegacy headers.
 #ifdef MOUSE2_NIX
@@ -786,28 +792,35 @@ void I_GetEvent(void)
         // analog axis was silently discarded.
         case SDL_JOYAXISMOTION:
 #ifdef XBOX_CONTROLLER
-          // Xbox-like controller triggers.  [Leonardo Montenegro]
-          if(check_Joystick_Xbox[inputEvent.jaxis.which])
+          // Triggers, on axes 2 and 5.  Originally [Leonardo Montenegro].
+          //
+          // [Arcade] No longer gated on check_Joystick_Xbox[], which required
+          // the joystick's *name* to equal one of two literal strings -- the
+          // same brittle test that hid the analog axes.  A Mayflash F300
+          // reports as "Generic X-Box pad" and so had no working triggers.
+          // The key codes are distinct and unbound by default, so reading
+          // these axes on a pad that happens to use them for something else
+          // costs nothing unless the player binds them.
+          if(inputEvent.jaxis.axis == 2 || inputEvent.jaxis.axis == 5)
           {
-              if(inputEvent.jaxis.axis == 2 || inputEvent.jaxis.axis == 5)
+              Uint8 twhich = inputEvent.jaxis.which;
+              Uint8 tidx   = (inputEvent.jaxis.axis == 2) ? 0 : 1;
+              // Threshold at 0 rather than the direction deadzone: triggers
+              // rest at full negative on the Linux xpad driver and at zero on
+              // others, so positive means pressed under both.
+              Uint8 pressed = (inputEvent.jaxis.value > 0);
+
+              if( twhich >= MAX_JOYSTICKS )  break;   // state array bound
+
+              if( pressed != previous_jtrigger[twhich][tidx] )
               {
                   event.data2 = 0;
-                  if(inputEvent.jaxis.value > 0)
-                  {
-                      // Trigger pressed
-                      event.type = ev_keydown;
-                      event.data1 = Translate_Xbox_controller_Trigger(inputEvent.jaxis.which, inputEvent.jaxis.axis);
-                      D_PostEvent(&event);
-                  }
-                  else
-                  {
-                      // Trigger released
-                      event.type = ev_keyup;
-                      event.data1 = Translate_Xbox_controller_Trigger(inputEvent.jaxis.which, inputEvent.jaxis.axis);
-                      D_PostEvent(&event);
-                  }
-                  break;   // trigger axes are not directions
+                  event.type  = pressed ? ev_keydown : ev_keyup;
+                  event.data1 = Translate_Xbox_controller_Trigger(twhich, inputEvent.jaxis.axis);
+                  D_PostEvent(&event);
+                  previous_jtrigger[twhich][tidx] = pressed;
               }
+              break;   // trigger axes are not directions
           }
 #endif
           // [Arcade] Left stick as a hat.  See previous_jaxis above.
