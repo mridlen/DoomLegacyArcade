@@ -188,8 +188,14 @@ silently made the flag do nothing at all.
 - **Single Level mode** (`m_menu.c`, `SingleLevelMenu`/`SingleLevelDef`, from a new main menu entry
   using the locally added **`M_SINLVL`** graphic). Plays one chosen map and returns to its own menu,
   with a separate high score table.
-  - The main menu entry is **appended**, like every other addition there: `MM_readthis` (4) and
-    `MM_quitdoom` (5) are hardcoded indices and the lockdown addresses items by position.
+  - The main menu entry is **inserted at index 1**, giving New Game / Single Level / Options / Quit.
+    This is the one place that addition by index was unavoidable, so everything addressing this menu
+    by position moved with it: `MM_readthis` 4→**5**, `MM_quitdoom` 5→**6**, and the lockdown's
+    Load/Save hiding 1,2→**2,3**. Those four sites are the complete set. Verified by dumping the
+    menu at the *end* of `M_Configure` — dumping at the top shows a misleading pre-fixup state,
+    since Doom 2's `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--` and the Doom 1
+    Read This hiding both run later. Final result: Doom 2 gets 6 items with Quit at 5; Ultimate
+    Doom gets 7 with Read This hidden.
   - Reuses `cv_nextmap` / `cv_nextepmap` / `cv_skill` from the Start Game screen rather than
     building a level list — `M_Configure` already trims `exmy_cons_t` to the episodes present. The
     per-gamemode swap (`SingleLevelMenu_Map` vs `_EpisodeMap`) is done **in `M_Configure`**, not on

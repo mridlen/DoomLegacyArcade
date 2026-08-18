@@ -1142,23 +1142,25 @@ static void M_QuitDOOM(int choice);
 
 enum
 {
-    MM_readthis = 4,	// referenced
-    MM_quitdoom = 5,	// referenced
+    // [Arcade] 5 and 6, not 4 and 5: Single Level is inserted at index 1.
+    MM_readthis = 5,	// referenced
+    MM_quitdoom = 6,	// referenced
 } main_e;
 
 // Compatible with modifications to original graphics
 menuitem_t MainMenu[]=
 {
     {IT_SUBMENU | IT_PATCH,"M_NGAME" ,"NEW GAME" ,&SingleMultiDef,'n'},
+    // [Arcade] Inserted here rather than appended, so the player sees
+    // New Game / Single Level / Options / Quit.  Everything that addresses
+    // this menu by index was shifted to match: MM_readthis and MM_quitdoom
+    // above, and the Load/Save hiding in the lockdown below.
+    {IT_SUBMENU | IT_PATCH,"M_SINLVL","SINGLE LEVEL",&SingleLevelDef,'s'},
     {IT_CALL    | IT_PATCH,"M_LOADG" ,"LOAD GAME",M_Loadgame,'l'},
     {IT_CALL    | IT_PATCH,"M_SAVEG" ,"SAVE GAME",M_Savegame,'s'},
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"  ,&OptionsDef,'o'},
     {IT_SUBMENU | IT_PATCH,"M_RDTHIS","INFO"     ,&ReadDef1  ,'r'},  // Another hickup with Special edition.
-    {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'},
-    // [Arcade] Appended, never inserted: MM_readthis/MM_quitdoom above are
-    // hardcoded indices and the lockdown addresses items by position.
-    // M_SINLVL is a locally added graphic in legacy.wad.
-    {IT_SUBMENU | IT_PATCH,"M_SINLVL","SINGLE LEVEL",&SingleLevelDef,'s'}
+    {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'}
 };
 
 void HereticMainMenuDrawer(void)
@@ -7379,9 +7381,9 @@ void M_Init (void)
         if( TwoPlayerDef.lastOn == 4 )
             TwoPlayerDef.lastOn = 0;
 
-        MainMenu[1].status = IT_HIDDEN;  // Load Game
-        MainMenu[2].status = IT_HIDDEN;  // Save Game
-        if( MainDef.lastOn >= 1 && MainDef.lastOn <= 2 )
+        MainMenu[2].status = IT_HIDDEN;  // Load Game  (2/3 since Single Level
+        MainMenu[3].status = IT_HIDDEN;  // Save Game   took index 1)
+        if( MainDef.lastOn >= 2 && MainDef.lastOn <= 3 )
             MainDef.lastOn = 0;
 
         // Options stays reachable, but pared down to the few settings a
