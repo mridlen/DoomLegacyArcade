@@ -161,7 +161,8 @@ enough for Doom. That said, most people are realistically going to use an arcade
 works fine.
 
 **How many buttons.** Six is the minimum for full control. If your panel has eight, consider
-binding a run button on one of the spares and turning autorun off.
+binding a run button on one of the spares and turning autorun off. Sticks that offer a mode switch
+(analog / d-pad, often marked LS / DP) work either way — both are read as directions.
 
 **The default layout**, on a stick and six buttons:
 

@@ -268,6 +268,31 @@ silently made the flag do nothing at all.
   `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
   two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
+- **Analog joystick axes are translated to hat keys** (`sdl/i_system.c`, the `SDL_JOYAXISMOTION`
+  case). Upstream produced **no bindable input from any analog axis**: the only handling was for
+  Xbox triggers, gated on `check_Joystick_Xbox[]`, which requires the joystick's *name* to match
+  one of two literal strings (`"Xbox 360 Wireless Receiver (XBOX)"` / `"Microsoft X-Box 360 pad"`)
+  and covers only axes 2 and 5. An arcade stick in analog mode was therefore completely dead, while
+  the same stick on its d-pad setting worked, because `SDL_JOYHATMOTION` *is* translated
+  generically. Diagnosed on a Mayflash F300, which enumerates as `Generic X-Box pad` — 6 axes,
+  11 buttons, 1 hat — and so fails that name test.
+  - Axes 0 and 1 now emit the **same `KEY_JOY0HAT*` codes as the hat**, via the existing
+    `Translate_Joyhat`. That is the point: analog and d-pad modes become interchangeable and every
+    existing binding keeps working. Emitting *new* key codes would have needed rebinding.
+  - **It has to be key events, not `bindjoyaxis`.** The engine does have an analog axis path
+    (`bindjoyaxis`, `joybinding_t`, `ja_move`/`ja_turn`/`ja_strafe`/`ja_pitch`), but those drive
+    movement only. Menu navigation (`M_Cabinet_Menu_Key`) reads `gamecontrol[]` *by key*, so an
+    analog-bound stick could never move the menu cursor.
+  - The `case` was moved **out of** `#ifdef XBOX_CONTROLLER`. It was previously inside it, so
+    without that define there was no `SDL_JOYAXISMOTION` case at all.
+  - `previous_jaxis[joystick][axis]` latches the current direction so jitter inside a direction
+    does not re-post keydowns, and a straight left-to-right flick releases the old direction before
+    pressing the new one. Verified against a synthetic trace (jitter, flick, diagonal, deadzone):
+    no repeated keydowns, no orphan keyups, nothing left stuck.
+  - Deadzone is half range (`JOYAXIS_DEADZONE` 16384). An arcade stick reports full deflection, so
+    this only has to clear noise; it also stops a diagonal registering until genuinely committed.
+  - Only axes 0/1. Axes 2 and 5 are the Xbox triggers, handled above and `break`ing early so a
+    trigger is never read as a direction; the right stick is left alone.
 - **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
   selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
   player (move/turn/strafe/fire/use/weapon cycling); everything else is left alone. The two schemes

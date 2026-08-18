@@ -410,6 +410,30 @@ Uint8 jhat_directions[8] = {
 };
 Uint8 previous_jhat[2] = {0, 0};
 
+// [Arcade] Analog stick treated as a second hat.
+//
+// SDL_JOYAXISMOTION otherwise produces no bindable input at all: the only
+// handling is the Xbox trigger case below, which is gated on the joystick
+// *name* matching one of two literal strings.  So an arcade stick left in its
+// analog mode (a Mayflash F300 on "LS", for example) is completely dead, while
+// the same stick on "DP" works because hats are translated generically.
+//
+// These translate axes 0 and 1 into the *same* KEY_JOY0HAT* codes the hat
+// emits, so analog and d-pad modes become interchangeable and every existing
+// binding keeps working -- including menu navigation, which reads key bindings
+// and so could never have been driven by the analog-axis path in g_input.c.
+//
+// Only axes 0/1 (the left stick).  Axes 2 and 5 are the Xbox triggers handled
+// separately, and the right stick is left alone.
+#define JOYAXIS_DIRS      2       // axes 0 and 1
+// Deadzone as a fraction of the 32767 range.  An arcade stick in analog mode
+// reports full deflection, so this only has to clear noise; half range also
+// keeps a diagonal from registering until it is genuinely committed.
+#define JOYAXIS_DEADZONE  16384
+// Current direction each axis is latched into, or 0 for centred.  Indexed
+// [joystick][axis] so two panels do not clear each other's state.
+Uint8 previous_jaxis[MAX_JOYSTICKS][JOYAXIS_DIRS] = {{0}};
+
 
 // MOUSE2_NIX dependent upon DoomLegacy headers.
 #ifdef MOUSE2_NIX
@@ -757,9 +781,12 @@ void I_GetEvent(void)
           break;
 
 #ifdef JOYSTICK_SUPPORT
+        // [Arcade] The case itself is no longer inside XBOX_CONTROLLER --
+        // without it there was no SDL_JOYAXISMOTION handling at all, so every
+        // analog axis was silently discarded.
+        case SDL_JOYAXISMOTION:
 #ifdef XBOX_CONTROLLER
-        case SDL_JOYAXISMOTION: // Adding event for mapping triggers for Xbox-like controllers
-          // [Leonardo Montenegro]
+          // Xbox-like controller triggers.  [Leonardo Montenegro]
           if(check_Joystick_Xbox[inputEvent.jaxis.which])
           {
               if(inputEvent.jaxis.axis == 2 || inputEvent.jaxis.axis == 5)
@@ -779,10 +806,51 @@ void I_GetEvent(void)
                       event.data1 = Translate_Xbox_controller_Trigger(inputEvent.jaxis.which, inputEvent.jaxis.axis);
                       D_PostEvent(&event);
                   }
+                  break;   // trigger axes are not directions
+              }
+          }
+#endif
+          // [Arcade] Left stick as a hat.  See previous_jaxis above.
+          if(inputEvent.jaxis.axis < JOYAXIS_DIRS)
+          {
+              Uint8 which = inputEvent.jaxis.which;
+              Uint8 axis  = inputEvent.jaxis.axis;
+              Uint8 dir   = 0;   // 0 = centred
+
+              if( which >= MAX_JOYSTICKS )  break;   // state array bound
+
+              if(inputEvent.jaxis.value <= -JOYAXIS_DEADZONE)
+                  dir = axis ? SDL_HAT_UP : SDL_HAT_LEFT;
+              else if(inputEvent.jaxis.value >= JOYAXIS_DEADZONE)
+                  dir = axis ? SDL_HAT_DOWN : SDL_HAT_RIGHT;
+
+              // Only act on a change, otherwise every tick of analog jitter
+              // inside a direction re-posts a keydown.
+              if(dir != previous_jaxis[which][axis])
+              {
+                  event.data2 = 0;
+
+                  // Release the direction this axis was holding, if any.  Done
+                  // first so a straight left-to-right flick cannot leave both
+                  // directions down at once.
+                  if(previous_jaxis[which][axis] != 0)
+                  {
+                      event.type = ev_keyup;
+                      event.data1 = Translate_Joyhat(which, previous_jaxis[which][axis]);
+                      D_PostEvent(&event);
+                  }
+
+                  if(dir != 0)
+                  {
+                      event.type = ev_keydown;
+                      event.data1 = Translate_Joyhat(which, dir);
+                      D_PostEvent(&event);
+                  }
+
+                  previous_jaxis[which][axis] = dir;
               }
           }
           break;
-#endif
 #endif
  
         case SDL_QUIT:
