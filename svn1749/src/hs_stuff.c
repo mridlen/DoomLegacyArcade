@@ -821,7 +821,11 @@ static boolean  HS_Entry_Eligible( const hs_maprecord_t * rec )
 {
     int  sk, cat;
 
-    if( strncmp(rec->game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+    // [Arcade] HS_GameId_Mode(false), not HS_GameId(): this feeds the attract
+    // page, which must always show campaign times no matter what mode the
+    // cabinet was last left in.  Otherwise single-level times leak onto the
+    // attract screen whenever single_level_mode happens to still be set.
+    if( strncmp(rec->game, HS_GameId_Mode(false), HS_GAMEID_LEN-1) != 0 )
         return false;
 
     for( cat=0; cat<HS_NUMCAT; cat++ )
@@ -1137,7 +1141,9 @@ const char * HS_NextRecordDemoPath( void )
         // Only demos from the running game: the same map name is a
         // different level in Doom 2, Plutonia and TNT, so replaying another
         // game's demo would desync immediately.
-        if( strncmp(hs_table[mi].game, HS_GameId(), HS_GAMEID_LEN-1) != 0 )
+        // [Arcade] Campaign only, for the same reason as HS_Entry_Eligible:
+        // the attract cycle must not start replaying single-level demos.
+        if( strncmp(hs_table[mi].game, HS_GameId_Mode(false), HS_GAMEID_LEN-1) != 0 )
             continue;
         if( hs_table[mi].has_record[cat][sk] )
         {

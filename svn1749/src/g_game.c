@@ -4892,6 +4892,15 @@ boolean G_CheckDemoStatus (void)
         if (singledemo)
             I_Quit();  // No return
         G_StopDemo();
+
+        // [Arcade] A record demo watched from the Single Level menu returns
+        // there rather than dropping into the attract cycle.
+        if( single_level_mode )
+        {
+            M_SingleLevel_Finished();
+            return true;
+        }
+
         D_AdvanceDemo ();
         return true;
     }

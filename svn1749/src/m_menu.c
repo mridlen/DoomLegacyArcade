@@ -379,8 +379,6 @@ typedef enum {
   IT_HIDDEN =     (IT_SPACE  | IT_NODRAW),
 } menu_control_e;
 
-
-
 typedef void (*menufunc_t)(int choice);
 
 // [smite] dirty hack, contains a second parameter to IT_KEYHANDLER functions
@@ -666,8 +664,6 @@ void M_DrawMenuTitle(void)
         V_DrawString(xtitle, ytitle, 0, currentMenu->menutitle);
     }
 }
-
-
 
 static
 void M_DrawGenericMenu(void)
@@ -1066,8 +1062,6 @@ void  create_initial_drawmode_config( void )
     M_Set_configfile_drawmode_present();
     M_SaveConfig( CFG_drawmode, configfile_drawmode );
 }
-
-
 
 //===========================================================================
 // All ready playing, quit current game
@@ -1625,14 +1619,17 @@ static void  M_SingleLevel_PlayDemo( int cat )
                             cat, true, path ) )
         return;   // item should have been disabled
 
+    // NOT singledemo: that makes G_CheckDemoStatus call I_Quit() when the
+    // demo ends, which quit DoomLegacy the moment the exit switch was hit.
+    // single_level_mode instead routes the end of the demo back to this menu,
+    // the same way finishing a played level does.
+    single_level_mode = 1;
     M_Clear_Menus( true );
-    singledemo = true;          // return to the title when it ends
     G_DeferedPlayDemo( path );
 }
 
 static void  M_SingleLevel_WatchSpeed( int choice )  { M_SingleLevel_PlayDemo(0); }
 static void  M_SingleLevel_WatchMax  ( int choice )  { M_SingleLevel_PlayDemo(1); }
-
 
 // Called from G_DoWorldDone when the chosen level is finished: drop back to
 // this menu with the times refreshed, so a player grinding one map can go
@@ -1940,8 +1937,6 @@ menu_t  SetupMultiPlayerDef =
     27,40,
     0,
 };
-
-
 
 static  int       multi_tics;
 static  state_t*  multi_state;
@@ -4417,8 +4412,6 @@ menu_t  VideoModeDef =
     0                   // lastOn
 };
 
-
-
 typedef struct
 {
     modenum_t  modenum; // video mode number in format of setmodeneeded
@@ -5492,8 +5485,6 @@ menu_t  SaveDef =
     0
 };
 
-
-
 //
 // Draw border for the savegame description
 //
@@ -5613,8 +5604,6 @@ void M_DoSavegame(int slot)
 }
 #endif
 
-
-
 // Called when desc editing is done
 static
 void M_SaveEditDone( void )
@@ -5647,8 +5636,6 @@ void M_SaveSelect(int choice)
     edit_done_callback = M_SaveEditDone;
     edit_enable = 1;
 }
-
-
 
 
 //
@@ -5734,8 +5721,6 @@ pick_slot:
     M_Savegame( -2 );
     return;
 }
-
-
 
 //
 // M_QuickLoad
@@ -5875,8 +5860,6 @@ void M_QuitResponse(int ch)
     }
     I_Quit();  // No return
 }
-
-
 
 static
 void M_QuitDOOM(int choice)
@@ -6385,8 +6368,6 @@ boolean M_Change_cvar_string(int key, char ch)
     }
     return false;
 }
-
-
 
 //
 // M_Responder
@@ -7079,8 +7060,6 @@ ret_updown:
     S_StartSound(menu_sfx_updown);
     return true;
 }
-
-
 
 //
 //      Find string height from hu_font chars
@@ -8048,8 +8027,6 @@ void M_HandleFogColor(int key)
 
 #endif
 
-
-
 //===========================================================================
 // Register Menu cv_ commands that do not have another Init to use.
 
@@ -8286,8 +8263,6 @@ void CV_game_OnChange(void)
     cv_game.string = Z_StrDup( rs );
     return;
 }
-
-
 
 static
 void M_LaunchCont( void )

@@ -214,6 +214,17 @@ silently made the flag do nothing at all.
     `single_level_mode`**, because that function deliberately clears it.
   - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the
     page does not change height as the player scrolls maps.
+  - **Never set `singledemo` to play a demo from a menu.** `G_CheckDemoStatus` reacts to it with
+    `I_Quit()` — no return, the program exits. It made watching a record demo quit DoomLegacy the
+    moment the exit switch was hit. The replay items set `single_level_mode` instead, and the
+    `demoplayback` branch of `G_CheckDemoStatus` routes back to the menu via
+    `M_SingleLevel_Finished()`.
+  - `HS_Entry_Eligible` and `HS_NextRecordDemoPath` use **`HS_GameId_Mode(false)`**, not
+    `HS_GameId()`. Both feed the attract cycle, which must show campaign times and replay campaign
+    demos whatever mode the cabinet was last left in — otherwise single-level entries leak onto the
+    attract screen any time `single_level_mode` is still set (for example while the player is
+    sitting on the Single Level page). Level exit and the intermission table deliberately still
+    follow the current mode.
   - Verified headless: a single-level run wrote `doom2-sl MAP01 2 103 speed` and
     `doom2-sl_MAP01_sk2_speed.lmp`, did not advance to MAP02, and left the campaign table intact.
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
