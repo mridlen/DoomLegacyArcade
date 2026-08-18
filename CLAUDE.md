@@ -538,6 +538,18 @@ silently made the flag do nothing at all.
   with no time are skipped (`HS_Entry_Eligible()`); a skill with no times gets no page at all.
   Pages are numbered linearly across (skill, chunk) and resolved by `HS_Resolve_Page()`,
   recomputed from the table each time rather than stored, since the table grows during a session.
+  - The skill is shown as the **New Game menu's own graphic** (`hs_skillpatch[]` —
+    `M_JKILL`/`M_ROUGH`/`M_HURT`/`M_ULTRA`/`M_NMARE`, matching `ITYTD`/`HNTR`/`HMP`/`UV`/`NM`),
+    not the short text name, so it reads from across a room. Falls back to the text if the lump is
+    missing, since those are the Doom names and Heretic differs.
+    - **Bottom aligned** on `HS_PG_SKILL_BOT` (42), not top aligned: the patches are 15..19 tall
+      (`M_NMARE` is the tall one), so aligning tops would make the baseline jump as pages cycle.
+      The band is tight — "HIGH SCORES" ends at 21, column headers start at 44 — leaving the
+      tallest at y=23 with 2px either side. Widths reach 248 (`M_ROUGH`), still centred in 320.
+      Verified in a live attract cycle: `M_JKILL` 246x15 landed at x=37, y=27.
+  - **`HS_PAGE_SECS` is 8**, up from the 3 left over from the original one-map-per-page scheme.
+    A page is now two columns of twelve, which cannot be read in three seconds. Raise it further if
+    it still feels rushed; the only cost is a longer gap between attract demos.
   - **`HS_MapOrder()` sorts by the order a player actually reaches the maps, not by name.** Doom 2
     hides MAP31/32 behind MAP15's secret exit and returns to MAP16 afterwards, so the run is
     **15 -> 31 -> 32 -> 16**; plain numeric order would list them fifteen levels from where they

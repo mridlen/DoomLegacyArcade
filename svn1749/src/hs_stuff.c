@@ -21,6 +21,7 @@
 #include "p_spec.h"     // cv_zerotags
 #include "d_netcmd.h"   // cv_itemrespawn, cv_respawnmonsters
 #include "s_sound.h"    // cv_rndsoundpitch
+#include "z_zone.h"     // PU_CACHE, for the attract page skill graphic
 #include "hs_stuff.h"
 
 #define HS_MAX_MAPS      64
@@ -914,6 +915,14 @@ void HS_Attract_Reset_Pages( void )
 #define HS_PG_MAX     138      // right edge of the max time, from origin
 #define HS_PG_ROW0     58      // first row baseline
 #define HS_PG_ROWSTEP  10
+// Bottom edge of the skill graphic.  The patches vary in height, so they are
+// bottom aligned on this; 42 leaves 2px above the column headers at 44.
+#define HS_PG_SKILL_BOT  42
+
+// The New Game menu's skill graphics, indexed by skill.  Doom names; Heretic
+// differs, hence the VALID_LUMP check at the draw site.
+static const char * hs_skillpatch[HS_NUMSKILLS] =
+  { "M_JKILL", "M_ROUGH", "M_HURT", "M_ULTRA", "M_NMARE" };
 
 static void  HS_Draw_Row( int x, int y, const hs_maprecord_t * rec, int sk )
 {
@@ -962,8 +971,35 @@ void HS_Draw_AttractTable( void )
     }
 
     // The skill this page is for -- the whole point of grouping this way.
-    V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)hs_skillnames[sk]))/2,
-                  28, V_WHITEMAP, (char*) hs_skillnames[sk] );
+    // Drawn as the New Game menu's own skill graphic rather than the short
+    // text name, so it reads at a glance from across a room.
+    //
+    // *Bottom* aligned on HS_PG_SKILL_BOT, not top aligned: the five patches
+    // are 15..19 tall (M_NMARE is the tall one), so aligning their tops would
+    // leave the baseline jumping as the page cycles.  The band is tight --
+    // "HIGH SCORES" ends at 21 and the column headers start at 44 -- so the
+    // tallest lands at y=23 with 2px clear above and 2px below.  Widths run to
+    // 248 (M_ROUGH) which still centres inside 320.
+    //
+    // Falls back to the text name if the lump is missing: these are the Doom
+    // names, and Heretic uses different ones.
+    {
+        lumpnum_t  sklump = W_CheckNumForName( (char*) hs_skillpatch[sk] );
+
+        if( VALID_LUMP( sklump ) )
+        {
+            patch_t * skp = W_CachePatchName( (char*) hs_skillpatch[sk], PU_CACHE );
+            int  pw = V_patch(skp)->width;
+            int  ph = V_patch(skp)->height;
+
+            V_DrawScaledPatch( (BASEVIDWIDTH - pw)/2, HS_PG_SKILL_BOT - ph, skp );
+        }
+        else
+        {
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)hs_skillnames[sk]))/2,
+                          28, V_WHITEMAP, (char*) hs_skillnames[sk] );
+        }
+    }
 
     // Column headers over both columns.  A "max" run additionally requires
     // 100% kills and secrets on every level, so its times are always >= speed.

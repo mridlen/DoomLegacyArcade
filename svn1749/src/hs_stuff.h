@@ -47,10 +47,15 @@ void  HS_Draw_IntermissionTable(int x, int y);
 // Cumulative run time under the intermission's Time row.  label_x is the left
 // edge of the caption, time_right_x the right edge of the value.
 void  HS_Draw_TotalTime(int label_x, int time_right_x, int y);
-// The attract page shows one map at a time and steps through every map that
-// has a time before handing back to the demo cycle.  Seconds each map is on
-// screen; the whole page lasts this times HS_Attract_Page_Count().
-#define HS_PAGE_SECS  3
+// The attract page steps through one page per skill (up to 24 maps each) before
+// handing back to the demo cycle.  Seconds each page is on screen; the whole
+// sequence lasts this times HS_Attract_Page_Count().
+//
+// 3 was left over from the original one-map-per-page scheme, where each page
+// held a single line.  A full page is now two columns of twelve, which nobody
+// can read in three seconds -- this is the number to raise if it still feels
+// rushed, and the only cost is a longer gap between attract demos.
+#define HS_PAGE_SECS  8
 
 void  HS_Attract_Reset_Pages(void);   // back to the first map
 void  HS_Attract_Advance_Page(void);  // next map, wrapping
