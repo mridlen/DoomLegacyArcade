@@ -243,7 +243,13 @@ static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV"
 // The key identifying what is being played, used in the score file and in
 // record demo names: the game's short name, plus the loaded level pack.
 // Recomputed each call because a pack can be loaded mid-session.
-static const char * HS_GameId( void )
+// [Arcade] "single" gives the single-level table its own key, which is all
+// that is needed to keep those runs from mixing with campaign ones: records,
+// record demo filenames and the attract page are all selected by this id.
+// The attract cycle asks for the *current* mode, and single_level_mode is
+// cleared on the way back to the title, so single-level times never appear
+// there -- which is the point, they would double the number of pages.
+static const char * HS_GameId_Mode( boolean single )
 {
     static char  id[HS_GAMEID_LEN];
     const char * game = ( gamedesc.idstr && gamedesc.idstr[0] )
@@ -252,9 +258,9 @@ static const char * HS_GameId( void )
     char * p;
 
     if( pack )
-        snprintf( id, sizeof(id), "%s+%s", game, pack );
+        snprintf( id, sizeof(id), "%s+%s%s", game, pack, single? "-sl" : "" );
     else
-        snprintf( id, sizeof(id), "%s", game );
+        snprintf( id, sizeof(id), "%s%s", game, single? "-sl" : "" );
 
     // Keep it a single filename-safe word: this is a space separated field
     // in highscores.dat and part of the record demo filename, and pack names
@@ -266,6 +272,12 @@ static const char * HS_GameId( void )
             *p = '_';
     }
     return id;
+}
+
+
+static const char * HS_GameId( void )
+{
+    return HS_GameId_Mode( single_level_mode );
 }
 
 
@@ -657,6 +669,56 @@ void HS_Draw_TotalTime( int label_x, int time_right_x, int y )
     HS_FormatTime( hs_cumulative_time, timebuf, sizeof(timebuf) );
     V_DrawString( label_x, y, 0, "TOTAL" );
     V_DrawString( time_right_x - V_StringWidth(timebuf), y, 0, timebuf );
+}
+
+
+// [Arcade] Best time for one map/skill/category in a chosen mode, for the
+// Single Level menu.  Takes the mode explicitly rather than reading
+// single_level_mode: the menu shows single-level times while the cabinet is
+// still sitting in campaign mode, before any game has started.
+boolean  HS_Best_For( const char * mapname, skill_e skill, int cat,
+                      boolean single, /*OUT*/ tic_t * out )
+{
+    const char * gid = HS_GameId_Mode( single );
+    int i;
+
+    if( skill < 0 || skill >= HS_NUMSKILLS )  return false;
+    if( cat < 0 || cat >= HS_NUMCAT )  return false;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].mapname, mapname, 8) != 0 )  continue;
+        if( strncmp(hs_table[i].game, gid, HS_GAMEID_LEN-1) != 0 )  continue;
+        if( ! hs_table[i].has_record[cat][skill] )  return false;
+        if( out )  *out = hs_table[i].besttime[cat][skill];
+        return true;
+    }
+    return false;
+}
+
+
+// [Arcade] Path of the saved record demo for one map/skill/category, or false
+// when there is none to play.  Used by the Single Level menu's replay items.
+boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
+                           boolean single, /*OUT*/ char * dest )
+{
+    char path[MAX_WADPATH];
+
+    if( skill < 0 || skill >= HS_NUMSKILLS )  return false;
+    if( cat < 0 || cat >= HS_NUMCAT )  return false;
+
+    HS_BuildDemoPath( path, HS_GameId_Mode(single), mapname, skill, cat );
+    if( access( path, R_OK ) != 0 )  return false;
+
+    if( dest )  dl_strncpy( dest, path, MAX_WADPATH );
+    return true;
+}
+
+
+// [Arcade] Format helper for the menu, which has no access to HS_FormatTime.
+void  HS_Format_Time_Str( tic_t tics, char * buf, size_t bufsize )
+{
+    HS_FormatTime( tics, buf, bufsize );
 }
 
 

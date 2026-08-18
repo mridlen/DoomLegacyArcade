@@ -677,6 +677,13 @@ CV_PossibleValue_t deathmatch_cons_t[] = {
   {4, "DM"}, {1, "DM_weapons"}, {2, "DM_items"}, {3, "DM_both"}, {0, NULL} };
 consvar_t cv_deathmatch = { "deathmatch", "0", CV_NETVAR | CV_CALL, deathmatch_cons_t, Deathmatch_OnChange };
 
+// [Arcade] Single Level mode: play one chosen map and return to its menu
+// rather than continuing into the next map.  Also selects a separate high
+// score table (HS_GameId_Mode), so these runs never mix with campaign ones.
+// Cleared by Command_ExitGame_f, the single funnel back to the attract
+// screen, so the attract page always shows campaign times.
+byte  single_level_mode = 0;
+
 byte  deathmatch;
 byte  weapon_persist;         // deathmatch weapon pickup multiple times
 
@@ -2967,6 +2974,19 @@ void G_NextLevel (void)
 
 void G_DoWorldDone (void)
 {
+    // [Arcade] Single Level mode plays exactly one map.  The intermission has
+    // already been shown (and HS_LevelExit has already scored the run) by the
+    // time this runs, so ending here is all that is needed -- everything below
+    // is about choosing and loading the *next* map.
+    //
+    // Not applied during demo playback: a record demo replays through real
+    // level exits, and cutting it short here would truncate it.
+    if( single_level_mode && ! demoplayback )
+    {
+        M_SingleLevel_Finished();
+        return;
+    }
+
     if( demoversion<129 )
     {
         gamemap = wminfo.lev_next+1;

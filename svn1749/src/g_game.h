@@ -74,6 +74,10 @@ typedef struct {
     char * name;  // always allocated string
 } PACKED_ATTR  team_info_t;
 
+// [Arcade] Playing a single chosen level rather than a campaign.  Selects a
+// separate high score table and returns to the Single Level menu at exit.
+extern byte  single_level_mode;
+
 extern team_info_t*  team_info[MAXTEAMS];
 extern byte          num_teams;  // limited to MAXTEAMS (32)
 

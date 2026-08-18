@@ -44,6 +44,15 @@ boolean  HS_Run_Died(void);   // was this run voided by a death?
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed);
 void  HS_Draw_IntermissionTable(int x, int y);
+// [Arcade] Single Level menu support.  "single" selects which table to read,
+// explicitly rather than from single_level_mode, because the menu shows
+// single-level times while the cabinet is still in campaign mode.
+// cat: 0 = speed, 1 = max.
+boolean  HS_Best_For(const char * mapname, skill_e skill, int cat,
+                     boolean single, tic_t * out);
+boolean  HS_Demo_Path_For(const char * mapname, skill_e skill, int cat,
+                          boolean single, char * dest);
+void     HS_Format_Time_Str(tic_t tics, char * buf, size_t bufsize);
 // Cumulative run time under the intermission's Time row.  label_x is the left
 // edge of the caption, time_right_x the right edge of the value.
 void  HS_Draw_TotalTime(int label_x, int time_right_x, int y);

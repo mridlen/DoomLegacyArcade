@@ -1061,6 +1061,11 @@ void Command_ExitGame_f(void)
     if( ! devmode )
         HS_Apply_Ranked_Ruleset();
 
+    // [Arcade] Leave single-level mode on the way out.  The attract page and
+    // the background recorder both key off HS_GameId(), which follows this
+    // flag -- left set, the attract screen would show single-level times.
+    single_level_mode = 0;
+
     D_StartTitle();
 }
 

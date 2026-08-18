@@ -190,6 +190,17 @@ gamepads are normally set up, and is the better default.
 **In the menus**, the same buttons navigate: stick up/down moves the cursor, left/right changes a
 setting, **fire** selects, **use** backs out. No keyboard is needed.
 
+### Single Level
+
+**Single Level** on the main menu plays one map and comes straight back to the same page, so you can
+retry immediately. Pick the map and skill and the best speed and max times for that exact map are
+shown right there. If a record demo exists you can watch it with **Watch speed run** or **Watch max
+run**; those are greyed out when nothing has been recorded yet.
+
+Single Level keeps its **own high score table**, separate from campaign runs — a one-map time isn't
+comparable to a run that reached the same map from level one. Those times appear only on this page,
+not in the attract cycle.
+
 ### High scores
 
 The table tracks the best **cumulative** time from the first level of a run to the exit of each

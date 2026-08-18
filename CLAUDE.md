@@ -185,6 +185,31 @@ silently made the flag do nothing at all.
     with the IWAD genuinely unreachable → warns, normal search. That last one needs `HOME` isolated
     as well as the wad removed from the run directory, or `~/games/doom` still satisfies the
     search and the test silently passes for the wrong reason.
+- **Single Level mode** (`m_menu.c`, `SingleLevelMenu`/`SingleLevelDef`, from a new main menu entry
+  using the locally added **`M_SINLVL`** graphic). Plays one chosen map and returns to its own menu,
+  with a separate high score table.
+  - The main menu entry is **appended**, like every other addition there: `MM_readthis` (4) and
+    `MM_quitdoom` (5) are hardcoded indices and the lockdown addresses items by position.
+  - Reuses `cv_nextmap` / `cv_nextepmap` / `cv_skill` from the Start Game screen rather than
+    building a level list — `M_Configure` already trims `exmy_cons_t` to the episodes present. The
+    per-gamemode swap (`SingleLevelMenu_Map` vs `_EpisodeMap`) is done **in `M_Configure`**, not on
+    menu open: the main menu reaches this page with `IT_SUBMENU`, which has no handler to hook.
+  - **Separate scoring falls out of `HS_GameId_Mode()`**, which appends `-sl`. Records, record demo
+    filenames and the attract page are all selected by that id, so one change covers all three.
+  - **Single-level times never reach the attract cycle**, which is the point — they would double the
+    number of pages. `Command_ExitGame_f` clears `single_level_mode` on the way to the title, and
+    the attract page asks for the *current* mode. The menu's own display therefore cannot use the
+    flag either, so `HS_Best_For`/`HS_Demo_Path_For` take the mode as a parameter.
+  - Ending after one map is done in **`G_DoWorldDone`**, which is where the next map is chosen. The
+    intermission and `HS_LevelExit` have both already run by then, so returning early is all that is
+    needed. Guarded on `! demoplayback`: a record demo replays through real level exits and would
+    otherwise be truncated.
+  - `M_SingleLevel_Finished()` calls `Command_ExitGame_f()` for the teardown and then **re-sets
+    `single_level_mode`**, because that function deliberately clears it.
+  - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the
+    page does not change height as the player scrolls maps.
+  - Verified headless: a single-level run wrote `doom2-sl MAP01 2 103 speed` and
+    `doom2-sl_MAP01_sk2_speed.lmp`, did not advance to MAP02, and left the campaign table intact.
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and

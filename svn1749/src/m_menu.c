@@ -617,6 +617,8 @@ menu_t MainDef, SoundDef, EpiDef, NewDef,
   NetOptionDef, ConnectOptionDef, ServerOptionsDef,
   MPOptionDef;
 
+extern menu_t  SingleLevelDef;   // [Arcade]
+
 
 //===========================================================================
 //Generic Stuffs (more easy to create menus :))
@@ -1152,7 +1154,11 @@ menuitem_t MainMenu[]=
     {IT_CALL    | IT_PATCH,"M_SAVEG" ,"SAVE GAME",M_Savegame,'s'},
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"  ,&OptionsDef,'o'},
     {IT_SUBMENU | IT_PATCH,"M_RDTHIS","INFO"     ,&ReadDef1  ,'r'},  // Another hickup with Special edition.
-    {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'}
+    {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'},
+    // [Arcade] Appended, never inserted: MM_readthis/MM_quitdoom above are
+    // hardcoded indices and the lockdown addresses items by position.
+    // M_SINLVL is a locally added graphic in legacy.wad.
+    {IT_SUBMENU | IT_PATCH,"M_SINLVL","SINGLE LEVEL",&SingleLevelDef,'s'}
 };
 
 void HereticMainMenuDrawer(void)
@@ -1475,6 +1481,164 @@ menuitem_t  ServerMenu_Map =
     {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap          ,0};
 menuitem_t  ServerMenu_EpisodeMap =
     {IT_STRING | IT_CVAR,0,"Episode Map"     ,&cv_nextepmap        ,0};
+
+//===========================================================================
+//                          SINGLE LEVEL  [Arcade]
+//===========================================================================
+// Play one chosen map and come back here, with its own high score table.
+// Deliberately reuses the Start Game screen's cvars -- cv_nextmap /
+// cv_nextepmap already hold the per-gamemode map lists, and M_Configure
+// already trims exmy_cons_t down to the episodes actually present.
+
+static void M_SingleLevel_Start(int choice);
+static void M_SingleLevel_WatchSpeed(int choice);
+static void M_SingleLevel_WatchMax(int choice);
+static void M_Draw_SingleLevel(void);
+
+// Item indices, used by the enable/disable pass below.
+enum { SL_map = 0, SL_skill, SL_start, SL_speeddemo, SL_maxdemo, SL_numitems };
+
+menuitem_t  SingleLevelMenu[]=
+{
+    {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap    ,0},
+    {IT_STRING | IT_CVAR,0,"Skill"           ,&cv_skill      ,0},
+    {IT_WHITESTRING | IT_CALL | IT_YOFFSET,
+                         0,"Start"           ,M_SingleLevel_Start      ,50},
+    {IT_WHITESTRING | IT_CALL,
+                         0,"Watch speed run" ,M_SingleLevel_WatchSpeed ,0},
+    {IT_WHITESTRING | IT_CALL,
+                         0,"Watch max run"   ,M_SingleLevel_WatchMax   ,0},
+};
+
+// Swapped in by M_Configure, exactly as ServerMenu does: Doom 2 has a flat
+// MAPxx list, the Doom 1 games are episode+map.
+menuitem_t  SingleLevelMenu_Map =
+    {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap    ,0};
+menuitem_t  SingleLevelMenu_EpisodeMap =
+    {IT_STRING | IT_CVAR,0,"Episode Map"     ,&cv_nextepmap  ,0};
+
+menu_t  SingleLevelDef =
+{
+    "M_SINLVL",  // in legacy.wad
+    "Single Level",
+    SingleLevelMenu,
+    M_Draw_SingleLevel,
+    NULL,
+    sizeof(SingleLevelMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+
+// The map name the menu is currently pointing at, in the engine's own form.
+// cv_nextmap is a flat 1..32 for Doom 2; cv_nextepmap encodes episode*10+map.
+static const char *  M_SingleLevel_MapName( void )
+{
+    if( gamemode == doom2_commercial )
+        return G_BuildMapName( 1, cv_nextmap.value );
+
+    return G_BuildMapName( cv_nextepmap.value / 10, cv_nextepmap.value % 10 );
+}
+
+
+// Grey out the two replay items when no demo has been recorded for the
+// selection.  IT_DISABLED rather than IT_HIDDEN so the page does not change
+// height as the player scrolls through maps, which looks broken.
+static void  M_SingleLevel_Update_Items( void )
+{
+    const char * mn = M_SingleLevel_MapName();
+    skill_e sk = (skill_e) cv_skill.value;
+
+    SingleLevelMenu[SL_speeddemo].status =
+        HS_Demo_Path_For( mn, sk, 0, true, NULL )
+        ? (IT_WHITESTRING | IT_CALL) : (IT_WHITESTRING | IT_DISABLED);
+
+    SingleLevelMenu[SL_maxdemo].status =
+        HS_Demo_Path_For( mn, sk, 1, true, NULL )
+        ? (IT_WHITESTRING | IT_CALL) : (IT_WHITESTRING | IT_DISABLED);
+}
+
+
+static void  M_Draw_SingleLevel( void )
+{
+    char  buf[64], tbuf[16];
+    const char * mn;
+    tic_t t;
+    int   y;
+
+    M_SingleLevel_Update_Items();
+    M_DrawGenericMenu();
+
+    mn = M_SingleLevel_MapName();
+
+    // Best times for the current selection, between the cvar rows and Start.
+    // The generic drawer lays items out from currentMenu->y at itemheight
+    // steps; this sits in the gap the Start item's IT_YOFFSET opens up.
+    y = SingleLevelDef.y + 30;
+
+    snprintf( buf, sizeof(buf), "BEST FOR %s", mn );
+    V_DrawString( SingleLevelDef.x, y, V_WHITEMAP, buf );
+
+    if( HS_Best_For( mn, (skill_e) cv_skill.value, 0, true, &t ) )
+        HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
+    else
+        dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
+    snprintf( buf, sizeof(buf), "SPEED %s", tbuf );
+    V_DrawString( SingleLevelDef.x, y+10, 0, buf );
+
+    if( HS_Best_For( mn, (skill_e) cv_skill.value, 1, true, &t ) )
+        HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
+    else
+        dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
+    snprintf( buf, sizeof(buf), "MAX   %s", tbuf );
+    V_DrawString( SingleLevelDef.x + 110, y+10, 0, buf );
+}
+
+
+static void  M_SingleLevel_Start( int choice )
+{
+    if( M_already_playing(0) )  return;
+
+    single_level_mode = 1;
+
+    // Same ordering rule as M_ChooseSkill: HS_NewGame must precede
+    // G_DeferedInitNew so the player-create and map netxcmds land in the
+    // demo stream.  It reads HS_GameId(), which now follows single_level_mode
+    // -- hence setting that first.
+    HS_NewGame();
+    G_DeferedInitNew( (skill_e) cv_skill.value, M_SingleLevel_MapName(), true );
+    M_Clear_Menus( true );
+}
+
+
+static void  M_SingleLevel_PlayDemo( int cat )
+{
+    char path[MAX_WADPATH];
+
+    if( ! HS_Demo_Path_For( M_SingleLevel_MapName(), (skill_e) cv_skill.value,
+                            cat, true, path ) )
+        return;   // item should have been disabled
+
+    M_Clear_Menus( true );
+    singledemo = true;          // return to the title when it ends
+    G_DeferedPlayDemo( path );
+}
+
+static void  M_SingleLevel_WatchSpeed( int choice )  { M_SingleLevel_PlayDemo(0); }
+static void  M_SingleLevel_WatchMax  ( int choice )  { M_SingleLevel_PlayDemo(1); }
+
+
+// Called from G_DoWorldDone when the chosen level is finished: drop back to
+// this menu with the times refreshed, so a player grinding one map can go
+// straight round again.  The idle timeout still rescues an abandoned cabinet.
+void  M_SingleLevel_Finished( void )
+{
+    Command_ExitGame_f();       // tears the game down and starts the title
+    single_level_mode = 1;      // ExitGame cleared it; we are staying in it
+    M_StartControlPanel();
+    Push_Setup_Menu( &SingleLevelDef );
+}
+
 
 menu_t  ServerDef =
 {
@@ -7381,6 +7545,15 @@ void M_Configure (void)
 
     if(dedicated)
         return;
+
+    // [Arcade] The Single Level page's map list depends on the gamemode, which
+    // is not known at M_Init -- IdentifyVersion runs later.  Doom 2 has a flat
+    // MAPxx list, the Doom 1 games are episode+map.  Done here rather than on
+    // menu open because the main menu reaches SingleLevelDef with IT_SUBMENU,
+    // which has no handler to hook.
+    SingleLevelMenu[SL_map] = (gamemode==doom2_commercial)?
+         SingleLevelMenu_Map
+       : SingleLevelMenu_EpisodeMap;
 
     // Here we could catch other version dependencies,
     //  like HELP1/2, and four episodes.

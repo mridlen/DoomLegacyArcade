@@ -81,6 +81,9 @@ const char * M_LevelPack_LoadedName( void );
 // does nothing if menu is already up.
 void M_StartControlPanel (void);
 
+// [Arcade] Single Level mode finished its one map; return to its menu.
+void  M_SingleLevel_Finished(void);
+
 
 // Draws a box with a texture inside as background for messages
 void M_DrawTextBox (int x, int y, int width, int lines);
