@@ -6259,17 +6259,30 @@ boolean M_Responder (event_t* ev)
         // menu is up, or "use" would open the menu during play instead of
         // opening doors.
         //
-        // Devmode is exempt so the *keyboard* behaves normally for an
-        // operator -- letters bound to movement must not turn into arrow keys
-        // while typing.  Joystick input has no such concern, and skipping it
-        // there left the panel at the mercy of upstream's hardcoded
-        // KEY_JOY0BUT0 -> ENTER / KEY_JOY0BUT1 -> BACKSPACE mapping further
-        // down.  That mapping is by button *index*, so which physical buttons
-        // select and cancel changed with the stick's mode switch -- on a
-        // Mayflash F300, DirectInput happened to put fire and use on buttons
-        // 0 and 1 and so appeared correct, while XInput put A and B there and
-        // the operator's own fire button did nothing.
-        if( menuactive && (! devmode || key >= KEY_JOY0BUT0) )
+        // Applied in devmode too.  It used to be skipped there so an
+        // operator's keyboard behaved normally, but that left a keyboard-mode
+        // panel (a leverless/hitbox controller is just a keyboard) unable to
+        // work the menus while configuring it, and left joystick panels at the
+        // mercy of upstream's hardcoded KEY_JOY0BUT0 -> ENTER /
+        // KEY_JOY0BUT1 -> BACKSPACE mapping further down.  That mapping is by
+        // button *index*, so which physical buttons select and cancel changed
+        // with an arcade stick's mode switch -- on a Mayflash F300,
+        // DirectInput happened to put fire and use on buttons 0 and 1 and so
+        // appeared correct, while XInput put A and B there and the operator's
+        // own fire button did nothing.
+        //
+        // The cost is that in devmode a letter bound to a control no longer
+        // reaches the menu's letter-shortcut search, since the translation
+        // claims it first.
+        //
+        // *Text entry must be excluded.*  IT_KEYHANDLER items -- the name and
+        // skin fields on the Setup Player screens -- are dispatched much later
+        // in this function, so without this guard the translation would eat
+        // their characters first: with "use" on 'a', typing a name would exit
+        // the menu instead of typing an A.
+        if( menuactive
+            && ! ( currentMenu
+                   && (currentMenu->menuitems[itemOn].status & IT_TYPE) == IT_KEYHANDLER ) )
             key = M_Cabinet_Menu_Key( key );
 
         // [Arcade] The guided setup opens on the recommended-layout page and

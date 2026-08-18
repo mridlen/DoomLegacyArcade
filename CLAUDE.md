@@ -233,11 +233,16 @@ silently made the flag do nothing at all.
   side pair is turning, so mapping both makes the `,aoe` diamond behave identically either way.
   Only applied while `menuactive` — otherwise "use" would open the menu during play instead of
   opening doors. Note the menu is still *opened* with Escape, which is not on the panel.
-  - **The devmode exemption is for the keyboard only** (`key >= KEY_JOY0BUT0` is still translated).
-    An operator typing must not have letters bound to movement turn into arrow keys; joystick input
-    has no such concern. Skipping joystick keys in devmode left the panel at the mercy of
-    **upstream's hardcoded `KEY_JOY0BUT0` → `KEY_ENTER` and `KEY_JOY0BUT1` → `KEY_BACKSPACE`**
-    (`M_Responder`'s virtual-key `switch`), which selects and cancels by button *index*.
+  - **Applied in devmode too, with text entry excluded.** There is no longer a devmode exemption:
+    a leverless/hitbox panel is *just a keyboard*, so exempting keyboard keys left such a panel
+    unable to work the menus while an operator was configuring it. The guard is now on the focused
+    item being an **`IT_KEYHANDLER`** (the name and skin fields), because that dispatch happens far
+    later in `M_Responder` — without it, "use" on `a` would exit the menu instead of typing an A.
+    The cost is that in devmode a letter bound to a control no longer reaches the letter-shortcut
+    search, since the translation claims it first.
+  - Skipping joystick keys in devmode had left the panel at the mercy of **upstream's hardcoded
+    `KEY_JOY0BUT0` → `KEY_ENTER` and `KEY_JOY0BUT1` → `KEY_BACKSPACE`** (`M_Responder`'s
+    virtual-key `switch`), which selects and cancels by button *index*.
   - That upstream mapping is why **a stick's mode switch changed which buttons work the menus**. On
     a Mayflash F300, DirectInput/PS3 happened to put fire and use on buttons 0 and 1 and so looked
     correct, while XInput put A and B there — so A selected, B cancelled, and the operator's own
@@ -253,7 +258,11 @@ silently made the flag do nothing at all.
   buttons are letters that collided with the shortcuts — player 1's turn-right button (`e`) on the
   New Game menu jumped to END GAME, one Enter from ending the run now that prompts are gone. Done
   at the dispatch point rather than by clearing `alphaKey` per menu, so it covers every menu.
-  Text entry is unaffected: `IT_KEYHANDLER` items consume the key earlier in `M_Responder`.
+  Text entry is unaffected *by this*, because the `IT_KEYHANDLER` dispatch (line ~6582) comes
+  before the `default:` case. **Note the dispatch is not early in `M_Responder` generally** — an
+  earlier version of this file said `IT_KEYHANDLER` items "consume the key earlier", which is only
+  true relative to the letter shortcuts. Anything acting on the key *above* line 6582 sees it
+  first, which is exactly the trap the cabinet menu translation had to be guarded against.
 - **Settings do not persist** (`m_misc.c`, `M_SaveAllConfig` returns early unless `devmode`).
   Anything a player changes lasts only for that session; every launch reloads the baseline from
   `config.cfg`. The operator sets that baseline by running with `-devmode`, which is the **only**
