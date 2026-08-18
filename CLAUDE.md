@@ -348,6 +348,19 @@ silently made the flag do nothing at all.
   `netgame`**, so the check tests `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
   meant no two player game ever timed out, which is exactly when an unattended cabinet needs it.
 
+  It also runs in **`GS_DEMOSCREEN` when `menuactive`** — a menu left open on the attract screen
+  would otherwise sit there for ever, since the states below only cover an abandoned *game*. That
+  case takes a `in_menu` argument and differs twice:
+  - The **`demoplayback` early-out is skipped**. A demo playing on its own *is* the attract screen
+    working normally, so playback usually means "not idle" — but an attract demo is still running
+    behind an open menu, so with that guard in place the menu case could never fire.
+  - The action is just `M_Clear_Menus()` plus clearing `single_level_mode`, not
+    `Command_ExitGame_f()`: there is no game to tear down and the attract cycle is already running
+    underneath. `last_input_tic` is re-armed so it cannot re-fire on the next tic.
+  - No countdown warning is shown for this case: `D_Display` only calls `HU_Drawer` for `GS_LEVEL`,
+    so `HU_SetTip` would draw nothing on the attract screen.
+  - Verified headless with `idletimeout 8`: fired once at exactly 280 tics.
+
   It runs in **`GS_LEVEL`, `GS_INTERMISSION` and `GS_FINALE`**, not just during play — both of the
   other two wait *indefinitely* for a keypress the walk-away player never gives, so covering only
   `GS_LEVEL` left the cabinet hung. The intermission stalls at `sp_state == 10` (`wi_stuff.c`)

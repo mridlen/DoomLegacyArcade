@@ -586,7 +586,9 @@ static void M_DrawSlider (int x, int y, int range);
 static void M_CentreText(int y, char* string); //added:30-01-98:writetext centered
 
 static void M_StopMessage(int choice);
-static void M_Clear_Menus (boolean callexitmenufunc);
+// [Arcade] Not static: the idle timeout closes menus from g_game.c.
+// The definition below was already non-static; only this declaration said so.
+void M_Clear_Menus (boolean callexitmenufunc);
 static int  M_StringHeight(char* string);
 static void M_GameOption(int choice);
 static void M_AdvOption(int choice);
@@ -7161,7 +7163,6 @@ void M_StartControlPanel (void)
 //
 // M_Clear_Menus
 //
-static
 void M_Clear_Menus (boolean callexitmenufunc)
 {
 #ifdef CONFIG_MENU_PAGE

@@ -1755,12 +1755,21 @@ void G_Synclog_Tic( void )
 // explicitly -- otherwise a two player game on the cabinet would never
 // return to the attract screen.  Only a real network game, which this build
 // cannot reach without -devmode, is exempt.
-static void G_Idle_Timeout_Check( void )
+// in_menu: called for a menu left open on the attract screen, rather than
+// for an abandoned game.  See the two differences below.
+static void G_Idle_Timeout_Check( boolean in_menu )
 {
     static int last_warn_secs_shown = -1;
     tic_t idle_tics, timeout_tics, warn_tics;
 
-    if( devmode || demoplayback || cv_idletimeout.value <= 0 )  return;
+    if( devmode || cv_idletimeout.value <= 0 )  return;
+
+    // [Arcade] A demo playing on its own *is* the attract screen doing its
+    // job, so playback normally means "not idle".  But an attract demo is
+    // still running behind an open menu, so when a menu is up that guard has
+    // to be dropped or the menu case could never fire.
+    if( demoplayback && ! in_menu )  return;
+
     if( netgame && ! cv_splitscreen.EV )  return;
 
     idle_tics    = gametic - last_input_tic;
@@ -1772,6 +1781,20 @@ static void G_Idle_Timeout_Check( void )
     if( idle_tics >= timeout_tics )
     {
         last_warn_secs_shown = -1;
+
+        // [Arcade] A menu abandoned on the attract screen just needs closing
+        // -- the attract cycle is already running behind it.  There is no
+        // game to tear down, and calling Command_ExitGame_f here would
+        // restart the title needlessly.  single_level_mode is cleared for the
+        // same reason it is cleared there: the attract page keys off it.
+        if( in_menu )
+        {
+            M_Clear_Menus( true );
+            single_level_mode = 0;
+            last_input_tic = gametic;   // do not re-fire on the next tic
+            return;
+        }
+
         // A level pack overrides the IWAD maps, so the attract screen's
         // built-in demos would play back against the wrong levels, and the
         // splitscreen state would persist.  Restart for a clean attract
@@ -1781,8 +1804,10 @@ static void G_Idle_Timeout_Check( void )
 
         Command_ExitGame_f();
     }
-    else if( idle_tics >= warn_tics )
+    else if( idle_tics >= warn_tics && ! in_menu )
     {
+        // Not warned for the menu case: D_Display only calls HU_Drawer for
+        // GS_LEVEL, so on the attract screen HU_SetTip would draw nothing.
         int remain_secs = cv_idletimeout.value - (int)(idle_tics / TICRATE);
         if( remain_secs != last_warn_secs_shown )
         {
@@ -1945,7 +1970,7 @@ main_actions:
 
         G_Synclog_Tic();   // [Arcade] demo desync diagnostic, -synclog
 
-        G_Idle_Timeout_Check();   // [Arcade]
+        G_Idle_Timeout_Check( false );   // [Arcade]
         break;
 
       case GS_INTERMISSION:
@@ -1953,7 +1978,7 @@ main_actions:
         // [Arcade] The tally screen waits forever for a keypress once the
         // counters finish (wi_stuff.c, sp_state == 10), so the cabinet must
         // be able to time out here too.
-        G_Idle_Timeout_Check();
+        G_Idle_Timeout_Check( false );
         break;
 
       case GS_FINALE:
@@ -1961,11 +1986,15 @@ main_actions:
         // [Arcade] Same for the end-of-episode text (F_Ticker's finalestage
         // 0 needs keypressed under doom2_commercial) and for the cast call,
         // which loops indefinitely.
-        G_Idle_Timeout_Check();
+        G_Idle_Timeout_Check( false );
         break;
 
       case GS_DEMOSCREEN:
         D_PageTicker ();
+        // [Arcade] A menu left open on the attract screen would otherwise sit
+        // there for ever -- the timeouts above only cover an abandoned game.
+        if( menuactive )
+            G_Idle_Timeout_Check( true );
         break;
 
       case GS_WAITINGPLAYERS:

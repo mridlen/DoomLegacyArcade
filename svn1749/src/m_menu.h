@@ -84,6 +84,9 @@ void M_StartControlPanel (void);
 // [Arcade] Single Level mode finished its one map; return to its menu.
 void  M_SingleLevel_Finished(void);
 
+// Close all open menus.  callexitmenufunc runs the menu's quitroutine.
+void  M_Clear_Menus(boolean callexitmenufunc);
+
 
 // Draws a box with a texture inside as background for messages
 void M_DrawTextBox (int x, int y, int width, int lines);
