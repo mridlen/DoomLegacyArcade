@@ -1606,7 +1606,11 @@ static void  M_SingleLevel_Start( int choice )
     // demo stream.  It reads HS_GameId(), which now follows single_level_mode
     // -- hence setting that first.
     HS_NewGame();
-    G_DeferedInitNew( (skill_e) cv_skill.value, M_SingleLevel_MapName(), true );
+    // false = not a splitscreen game.  That third argument is
+    // StartSplitScreenGame, *not* resetplayer -- it feeds straight into the
+    // "splitscreen %d" command G_DeferedInitNew issues.  Single Level is
+    // always one player; passing true launched it in two player splitscreen.
+    G_DeferedInitNew( (skill_e) cv_skill.value, M_SingleLevel_MapName(), false );
     M_Clear_Menus( true );
 }
 
