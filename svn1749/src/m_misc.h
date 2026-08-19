@@ -101,6 +101,10 @@ void Command_LoadConfig_f (void);
 void Command_ChangeConfig_f (void);
 
 void M_Set_configfile_main( const char * filename );
+
+// [Arcade] Report config lines that did not take effect.  Run at load, and
+// from the "cfgcheck" console command.
+void M_Verify_Config( const char * cfgfile );
 void M_Set_configfile_drawmode( byte drawmode );
 byte M_Have_configfile_drawmode( void );
 void M_Set_configfile_drawmode_present( void );

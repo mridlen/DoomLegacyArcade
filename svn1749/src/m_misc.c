@@ -479,6 +479,78 @@ void M_ClearConfig( byte cfg )
 // Load a config file
 //
 //   cfg : cv_config_e, source config file ident
+// [Arcade] Report any config line that did not take effect.
+//
+// Config lines are handed to the console as an "exec", so by the time they
+// run the line numbers are gone and a line that fails is silent: an unknown
+// setting name does nothing, and CV_Set rejects a value that is not one of a
+// cvar's PossibleValues without a word.  Either way the cvar silently keeps
+// its compiled default, which is exactly how a config appears to have been
+// "half loaded".
+//
+// So rather than instrument the command buffer, re-read the file afterwards
+// and check the result: every "name value" line should have left that cvar
+// holding that value.  Anything else is named, with its line number.
+void  M_Verify_Config( const char * cfgfile )
+{
+    FILE * fr;
+    char   line[1024];
+    int    lineno = 0, checked = 0, problems = 0;
+
+    if( ! cfgfile )  return;
+    fr = fopen( cfgfile, "r" );
+    if( ! fr )  return;
+
+    while( fgets( line, sizeof(line), fr ) )
+    {
+        char name[128], value[512];
+        consvar_t * cv;
+
+        lineno++;
+
+        // Config lines are written as:  name "value"
+        if( sscanf( line, " %127s \"%511[^\"]\"", name, value ) != 2 )
+            continue;
+        if( name[0] == '/' || name[0] == '#' )  continue;   // comment
+
+        cv = CV_FindVar( name );
+        if( ! cv )
+        {
+            // setcontrol, bindjoyaxis and friends are commands, not cvars.
+            if( COM_Exists( name ) )  continue;
+            GenPrintf( EMSG_warn,
+                "config line %d: unknown setting \"%s\" (value \"%s\") -- ignored\n",
+                lineno, name, value );
+            problems++;
+            continue;
+        }
+
+        checked++;
+        if( cv->string && strcasecmp( cv->string, value ) != 0 )
+        {
+            GenPrintf( EMSG_warn,
+                "config line %d: \"%s\" did not take -- file says \"%s\", value is \"%s\"\n",
+                lineno, name, value, cv->string );
+            problems++;
+        }
+    }
+    fclose( fr );
+
+    if( problems )
+    {
+        GenPrintf( EMSG_warn,
+            "config %s: %d of %d settings did not apply (%d lines read).\n",
+            cfgfile, problems, checked, lineno );
+    }
+    else
+    {
+        GenPrintf( EMSG_info,
+            "config %s: %d settings applied, %d lines read.\n",
+            cfgfile, checked, lineno );
+    }
+}
+
+
 void M_LoadConfig( byte cfg, const char * cfgfile )
 {
     FILE * fr;
@@ -502,6 +574,9 @@ void M_LoadConfig( byte cfg, const char * cfgfile )
     CONS_Printf("\n");
     COM_BufInsertText (va("exec \"%s\"\n", cfgfile));
     COM_BufExecute( cfg );       // make sure initial settings are done
+
+    // [Arcade] Say which lines, if any, failed to apply.
+    M_Verify_Config( cfgfile );
 
     // make sure I_Quit() will write back the correct config
     // (do not write back the config if it crash before)

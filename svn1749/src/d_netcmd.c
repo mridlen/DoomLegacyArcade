@@ -184,6 +184,7 @@ void Command_Save_f(void);
 void Command_ExitGame_f(void);
 
 void Command_Kill(void);
+void Command_CfgCheck_f(void);   // [Arcade]
 
 
 // =========================================================================
@@ -331,6 +332,7 @@ void D_Register_ClientCommands(void)
     COM_AddCommand("chatmacro", Command_Chatmacro_f, CC_chat);   // hu_stuff.c
     COM_AddCommand("setcontrol", Command_Setcontrol_f, CC_control);
     COM_AddCommand("setcontrol2", Command_Setcontrol2_f, CC_control);
+    COM_AddCommand("cfgcheck", Command_CfgCheck_f, CC_command);  // [Arcade]
     COM_AddCommand("setcontrol3", Command_Setcontrol3_f, CC_control);  // [Arcade]
     COM_AddCommand("setcontrol4", Command_Setcontrol4_f, CC_control);  // [Arcade]
     COM_AddCommand("bindjoyaxis", Command_BindJoyaxis_f, CC_control);
@@ -1115,6 +1117,14 @@ void Got_NetXCmd_UseArtifact(xcmd_t * xc)
     // Format: artifact  byte.
     byte art = READBYTE(xc->curpos);
     P_PlayerUseArtifact(&players[xc->playernum], art);
+}
+
+// [Arcade] Re-check the config file against the running values, naming any
+// line that did not take effect.  Also run automatically at load; this is for
+// asking again later, or after changing something.
+void Command_CfgCheck_f(void)
+{
+    M_Verify_Config( configfile_main );
 }
 
 void Command_Kill(void)

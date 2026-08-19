@@ -260,6 +260,9 @@ consvar_t *  CV_Iterator( consvar_t * cv );
 
 consvar_t * CV_FindVar (const char * name);
 
+// True when name is a registered console command (as opposed to a cvar).
+boolean COM_Exists (const char * com_name);
+
 // Return the string value of the config var, current or pushed.
 // Return NULL if not found.
 const char *  CV_Get_Config_string( consvar_t * cvar, byte c_config );

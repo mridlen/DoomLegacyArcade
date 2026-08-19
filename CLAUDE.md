@@ -1114,6 +1114,22 @@ is otherwise unversioned state the build silently depends on.
   `D_DoomMain` re-runs this block via the launcher restart path and `legacyhome` may still hold
   the previous pass's value.
 
+**Config lines that fail are reported.** `M_Verify_Config` (`m_misc.c`) runs right after the load
+and again on demand from the **`cfgcheck`** console command. Config lines are handed to the console
+as an `exec`, so by the time they run the line numbers are gone and a failure is *silent*: an
+unrecognised setting name does nothing, and `CV_Set` rejects a value that is not one of a cvar's
+`PossibleValue`s without a word. Either way the cvar keeps its compiled default, which is exactly
+how a config appears to have been "half loaded". Rather than instrument the command buffer, the
+check re-reads the file afterwards and verifies each `name "value"` line actually left that cvar
+holding that value, naming the line number when it did not.
+
+Two sources of *expected* reports, so read the output with them in mind:
+- **A headless run flags every video setting** — `scr_width`, `scr_height`, `scr_depth`,
+  `drawmode`, `viewsize`, `gr_*` — because the dummy driver cannot set the real mode. The list is
+  much shorter on the cabinet, which is where it is worth reading.
+- **The ranked ruleset legitimately overrides the config** in a player session (see
+  `hs_ranked_rules[]`), so those cvars report as not taking. That is the ruleset working.
+
 **Every config save keeps one generation** as `config.cfg.bak`, written by `M_SaveConfig`
 (`m_misc.c`) just before the new file. A cabinet's config is hand-tuned, only a `-devmode` session
 writes it, and the settings exist nowhere else on the machine — so a bad write is rare but

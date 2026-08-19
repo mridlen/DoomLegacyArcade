@@ -77,7 +77,7 @@
 //========
 // protos.
 //========
-static boolean COM_Exists (const char * com_name);
+
 static void    COM_ExecuteString (const char * text, boolean script, byte cfg);
 
 static void    COM_Alias_f (void);
@@ -472,7 +472,8 @@ void COM_AddCommand( const char * name, com_func_t func, byte command_type )
 
 //  Returns true if a command by the name given exists
 //
-static boolean COM_Exists (const char * com_name)
+// [Arcade] Not static: M_Verify_Config needs to tell a command from a cvar.
+boolean COM_Exists (const char * com_name)
 {
     xcommand_t * cmd;
 
