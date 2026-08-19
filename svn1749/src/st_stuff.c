@@ -1735,37 +1735,48 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     byte  num_views = D_NumViews();
     byte  col   = (num_views >= 4) ? (vind & 1) : 0;
     byte  row   = (num_views >= 4) ? (vind >> 1) : vind;
-    byte  xdiv  = (num_views >= 4) ? 2 : 1;
-    byte  ydiv  = (num_views >= 2) ? 2 : 1;
+    // [Arcade] With the 2x2 grid the global draw scale is halved below, which
+    // shrinks positions as well as art, so no extra divisor is wanted here.
+    // The two-view split keeps its old behaviour: full size art at halved y.
+    byte  xdiv  = 1;
+    byte  ydiv  = (num_views == 2) ? 2 : 1;
     int   x0    = col * (vid.width / 2);
     int   y0    = row * (vid.height / 2);
     int  lowerbar_y;
+    // [Arcade] Global draw scale, saved so the quarter-screen halving below
+    // can be undone before returning.
+    byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
+    float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
 
     // Draw screen0, scaled, abs position
-    V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
-
-    // [Arcade] Shrink the artwork to match a quarter-screen view.  The HUD is
-    // 320x200 base art multiplied by vid.dupx/dupy, so halving the draw scale
-    // gives a quadrant the same HUD-to-view proportions the full screen has.
-    // Only for the 2x2 grid: the two-view split has always drawn full size
-    // art at halved positions, and changing that would move a working layout.
+    // [Arcade] Shrink the whole overlay to match a quarter-screen view.  The
+    // HUD is 320x200 base art multiplied by vid.dupx/dupy, not fixed-size
+    // graphics, so halving that scale gives a quadrant the same HUD-to-view
+    // proportions the full screen has.
+    //
+    // It must be the *global* vid scale, not drawinfo's copy of it:
+    // ST_drawOverlayNum and V_DrawScalePic_Num call V_SetupDraw themselves,
+    // which re-reads vid.dupx/dupy, and ST_drawOverlayNum also uses vid.dupx
+    // directly for the digit advance.  Halving only drawinfo was therefore
+    // undone for exactly the health, ammo and armor numbers, while the keys
+    // -- drawn without a re-setup -- did shrink.  Restored at the end of the
+    // function, which has a single exit.
+    //
+    // Halve the floats and round the integers to them, rather than halving
+    // the integers: at 1366x768 dup is 4,3, and integer halving gives 2,1 --
+    // art twice as wide as tall.  Rounding gives 2,2.
     if( num_views >= 4 )
     {
-        // Halve the float scales, then round the integer ones to them rather
-        // than dividing the integers: at 1366x768 dup is 4,3, and integer
-        // halving gives 2,1 -- art twice as wide as tall.  Rounding the
-        // halved floats gives 2,2, which keeps the proportions the full
-        // screen has (the hardware renderer uses the floats either way).
-        drawinfo.fdupx = drawinfo.fdupx / 2.0f;
-        drawinfo.fdupy = drawinfo.fdupy / 2.0f;
-        drawinfo.dupx  = (byte)(drawinfo.fdupx + 0.5f);
-        drawinfo.dupy  = (byte)(drawinfo.fdupy + 0.5f);
-        if( drawinfo.dupx < 1 )  drawinfo.dupx = 1;
-        if( drawinfo.dupy < 1 )  drawinfo.dupy = 1;
-        drawinfo.ybytes = drawinfo.dupy * vid.ybytes;
-        drawinfo.xbytes = drawinfo.dupx * vid.bytepp;
-        sf_dupy /= 2.0f;   // the offsets below follow the art
+        vid.fdupx = sv_fdupx / 2.0f;
+        vid.fdupy = sv_fdupy / 2.0f;
+        vid.dupx  = (byte)(vid.fdupx + 0.5f);
+        vid.dupy  = (byte)(vid.fdupy + 0.5f);
+        if( vid.dupx < 1 )  vid.dupx = 1;
+        if( vid.dupy < 1 )  vid.dupy = 1;
+        sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy;
     }
+
+    V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
 
     lowerbar_y = SCY(198,y0,ydiv) - (int)( 16 * sf_dupy );
     // x, y are already scaled.
@@ -1912,4 +1923,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            */
        }
     }
+
+    // [Arcade] Undo the quarter-screen scale.  Unconditional: cheap, and it
+    // cannot be left applied if the halving above is ever made conditional
+    // on something else.
+    vid.dupx  = sv_dupx;   vid.dupy  = sv_dupy;
+    vid.fdupx = sv_fdupx;  vid.fdupy = sv_fdupy;
 }

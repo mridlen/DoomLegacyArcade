@@ -428,11 +428,21 @@ silently made the flag do nothing at all.
       `ST_overlayDrawer` takes a view index instead of a 0/1 "status position", and `ST_Drawer`
       loops over the views, taking each player from `localplayer[]`.
     - **The HUD art shrinks for a quadrant, and can be**: it is 320x200 base art multiplied by
-      `vid.dupx`/`dupy`, not fixed-size, so halving `drawinfo.dupx/dupy` (and `fdupx/fdupy`, plus
-      the derived `xbytes`/`ybytes`) after `V_SetupDraw` gives a quarter-screen view the same
+      `vid.dupx`/`dupy`, not fixed-size, so halving that scale gives a quarter-screen view the same
       HUD-to-view proportions the full screen has. **Round the halved floats rather than dividing
       the integers**: at 1366x768 dup is 4,3, and integer halving gives 2,1 — art twice as wide as
       tall. Rounding gives 2,2. The hardware renderer uses the floats either way.
+    - **Halve the global `vid` scale, not `drawinfo`'s copy of it**, and restore it at the end of
+      `ST_overlayDrawer` (which has a single exit). `ST_drawOverlayNum` and `V_DrawScalePic_Num`
+      call `V_SetupDraw` *themselves*, which re-reads `vid.dupx/dupy`, and `ST_drawOverlayNum` also
+      uses `vid.dupx` directly for the digit advance. Halving only `drawinfo` was silently undone
+      for exactly **health, ammo and armor**, while the keys — drawn without a re-setup — did
+      shrink. That split symptom is the giveaway: **if some overlay elements scale and others do
+      not, the ones that do not are re-entering `V_SetupDraw`.**
+    - With the global scale halved, positions shrink with the art, so `SCX`/`SCY` take divisor 1
+      for the 2x2 case; only the two-view split still passes `ydiv = 2`.
+    - Digit width measured: 14px base art draws at `wfv` 56 for one or two views (`dup` 4,3) and 28
+      for four (`dup` 2,2) — half, matching the half-width cell.
     - Only the 2x2 grid rescales. **The two-view split still draws full size art at halved
       positions**, deliberately: that layout is measured and working, and rescaling it would move
       everything. Verified byte-identical — `lowerbar_y` is still exactly 319 for the upper half.
