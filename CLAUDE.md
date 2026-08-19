@@ -443,6 +443,21 @@ silently made the flag do nothing at all.
       for the 2x2 case; only the two-view split still passes `ydiv = 2`.
     - Digit width measured: 14px base art draws at `wfv` 56 for one or two views (`dup` 4,3) and 28
       for four (`dup` 2,2) — half, matching the half-width cell.
+    - **The deathmatch rankings are per view too** (`hu_stuff.c`). `playerdeadview` and
+      `hu_showscores` were single globals, so one player dying painted the score table across
+      *everyone's* screen at full size — including in an ordinary two player game.
+      `HU_Draw_DeathmatchRankings` now takes a view index, halves the scale and draws in that
+      view's cell, and `HU_Drawer` asks per view via `HU_Rankings_For_View`: that view's own
+      player's death, or that panel's own `gamecontrol_pl[vind][gc_scores]` key.
+    - **Its offsets are derived from pixels after `V_SetupDraw`**, then converted back to base
+      units — not guessed as multiples of `BASEVIDWIDTH`/`BASEVIDHEIGHT`. Two things break the
+      naive version: `V_CENTERHORZ` has already centred the block using the *integer* `dupx`, and
+      with `dup` rounded to 2 a 200 unit block is 400px tall in a 384px cell, so stepping a row by
+      `BASEVIDHEIGHT` pushes the lower row 16px below its cell and off the screen bottom.
+    - Verified numerically at 1366x768. Two views: block x 363..1003 centred, row offsets 0 and
+      **384** (the cell top, not 400). Four views: x 21..661 and 703..1343 — inside cells 0..683
+      and 683..1366 with even margins — at row offsets 0 and 384. Only the dead player's view
+      draws: killing player 0 produced a table for view 0 alone.
     - Only the 2x2 grid rescales. **The two-view split still draws full size art at halved
       positions**, deliberately: that layout is measured and working, and rescaling it would move
       everything. Verified byte-identical — `lowerbar_y` is still exactly 319 for the upper half.

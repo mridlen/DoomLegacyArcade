@@ -165,7 +165,19 @@ static byte  hu_HWR_patchstore;  // the HWR_patchstore setting used by fonts.
 // -------
 // protos.
 // -------
-static void  HU_Draw_DeathmatchRankings( void );
+static void  HU_Draw_DeathmatchRankings( byte vind );
+
+// [Arcade] Should this view show the ranking overlay?  Each panel answers for
+// itself: its own player's death, or its own scores key.  gamecontrol_pl[vind]
+// rather than gamecontrol, or every panel would follow player 1's key.
+static boolean  HU_Rankings_For_View( byte vind, byte pn )
+{
+    if( gamekeydown[gamecontrol_pl[vind][gc_scores][0]]
+        || gamekeydown[gamecontrol_pl[vind][gc_scores][1]] )
+        return ! chat_on;
+
+    return ( players[pn].playerstate == PST_DEAD );
+}
 static void  HU_Draw_Crosshair( void );
 // HU_Draw_Tip is declared in hu_stuff.h -- [Arcade] the intermission and
 // finale call it directly for the idle-timeout countdown.
@@ -676,8 +688,21 @@ void HU_Drawer(void)
         HU_Draw_Chat ();
 
     // draw deathmatch rankings
-    if (hu_showscores)
-        HU_Draw_DeathmatchRankings ();
+    // [Arcade] One ranking overlay per view, drawn only for a player who is
+    // actually dead (or holding his own scores key).  It used to be a single
+    // global test painted across the whole screen, so one player dying took
+    // the view away from everyone else on the cabinet.
+    if( deathmatch )
+    {
+        byte vind, num_views = D_NumViews();
+        for( vind=0; vind<num_views; vind++ )
+        {
+            byte pn = localplayer[vind];
+            if( pn >= MAXPLAYERS )  continue;   // panel with no player
+            if( HU_Rankings_For_View( vind, pn ) )
+                HU_Draw_DeathmatchRankings( vind );
+        }
+    }
 
     // draw the crosshair, not when viewing demos nor with chasecam
     if (!automapactive && !demoplayback && !cv_chasecam.value)
@@ -1139,7 +1164,12 @@ int HU_Create_TeamFragTbl(fragsort_t *fragtab,
 //  draw Deathmatch Rankings
 //
 static
-void HU_Draw_DeathmatchRankings (void)
+// [Arcade] Draw the rankings inside one view's cell, at half scale, instead
+// of once across the whole screen.  A dead player's team-mates should not
+// lose their view to his score table -- see HU_Drawer, which now asks per
+// view whether that player is dead.
+//   vind : which view, 0 .. D_NumViews()-1
+void HU_Draw_DeathmatchRankings ( byte vind )
 {
     fragsort_t   fragtab[MAXPLAYERS];
     int          i;
@@ -1149,11 +1179,54 @@ void HU_Draw_DeathmatchRankings (void)
     char*	 title;
     boolean	 large;
 
+    byte  num_views = D_NumViews();
+    byte  col   = (num_views >= 4) ? (vind & 1) : 0;
+    byte  row   = (num_views >= 4) ? (vind >> 1) : vind;
+    int   offx  = 0, offy = 0;   // in base units, at the scale set below
+    // Global draw scale, restored at the end (single exit).
+    byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
+    float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
+
+    // Halve the scale uniformly so the 320x200 ranking block covers a quarter
+    // of the screen, which is exactly a 2x2 cell and half of a 2-view cell.
+    // V_SCALESTART takes its start-coordinate scale from vid.dupx/dupy too,
+    // so these four fields cover both the art and the positions.
+    if( num_views >= 2 )
+    {
+        vid.fdupx = sv_fdupx / 2.0f;
+        vid.fdupy = sv_fdupy / 2.0f;
+        vid.dupx  = (byte)(vid.fdupx + 0.5f);
+        vid.dupy  = (byte)(vid.fdupy + 0.5f);
+        if( vid.dupx < 1 )  vid.dupx = 1;
+        if( vid.dupy < 1 )  vid.dupy = 1;
+
+    }
+
     // Draw screen0, scaled, centered
     V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART | V_CENTERHORZ );
 
+    // Offsets are derived from actual pixels, after V_SetupDraw has settled
+    // the scale and the centering, then converted back to base units -- not
+    // guessed as whole multiples of BASEVIDWIDTH/HEIGHT.  Rounding makes the
+    // difference matter: at 1366x768 the integer scale is 2, so a 200 unit
+    // block is 400px tall in a 384px cell, and stepping a row by BASEVIDHEIGHT
+    // would push the lower row 16px below its cell and off the screen bottom.
+    if( num_views >= 2 )
+    {
+        int cell_w = vid.width / ((num_views >= 4) ? 2 : 1);
+        int cell_h = vid.height / 2;
+        int start_px = drawinfo.start_offset / vid.bytepp;   // V_CENTERHORZ
+        int block_w  = BASEVIDWIDTH * vid.dupx;
+
+        // Centre the block in its own cell horizontally.  For two views the
+        // cell is full width and V_CENTERHORZ has already done this, so the
+        // result comes out as 0.
+        offx = ((col * cell_w) + ((cell_w - block_w) / 2) - start_px) / vid.dupx;
+        offy = (row * cell_h) / vid.dupy;
+    }
+
     // draw the ranking title panel
-    if(!cv_splitscreen.value)
+    if( num_views < 2 )
     {
         patch_t*  p = W_CachePatchName("RANKINGS",PU_CACHE);  // endian fix
         V_DrawScaledPatch ((BASEVIDWIDTH-p->width)/2, 5, p);
@@ -1180,10 +1253,10 @@ void HU_Draw_DeathmatchRankings (void)
 
     if (scorelines>9)
         scorelines = 9; //dont draw past bottom of screen, show the best only
-    else if (cv_splitscreen.value && scorelines > 4)
+    else if ((num_views >= 2) && scorelines > 4)
         scorelines = 4;
 
-    if(cv_splitscreen.value)
+    if( num_views >= 2 )
     {
         y = (100 - (12 * (scorelines + 1) / 2)) + 15;
         title = "Rankings";
@@ -1197,7 +1270,7 @@ void HU_Draw_DeathmatchRankings (void)
     }
 
     if(cv_teamplay.EV==0)
-        WI_Draw_Ranking(title, 80, y, fragtab, scorelines, large, whiteplayer, 32);
+        WI_Draw_Ranking(title, 80 + offx, y + offy, fragtab, scorelines, large, whiteplayer, 32);
     else
     {
         // draw the frag to the right
@@ -1206,8 +1279,12 @@ void HU_Draw_DeathmatchRankings (void)
         scorelines = HU_Create_TeamFragTbl(fragtab,NULL,NULL);
 
         // and the team frag to the left
-        WI_Draw_Ranking("Teams", 80, y, fragtab, scorelines, large, players[whiteplayer].skincolor, 32);
+        WI_Draw_Ranking("Teams", 80 + offx, y + offy, fragtab, scorelines, large, players[whiteplayer].skincolor, 32);
     }
+
+    // [Arcade] Undo the half scale.
+    vid.dupx  = sv_dupx;   vid.dupy  = sv_dupy;
+    vid.fdupx = sv_fdupx;  vid.fdupy = sv_fdupy;
 }
 
 
