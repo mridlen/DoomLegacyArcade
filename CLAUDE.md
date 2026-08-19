@@ -200,6 +200,27 @@ silently made the flag do nothing at all.
     building a level list — `M_Configure` already trims `exmy_cons_t` to the episodes present. The
     per-gamemode swap (`SingleLevelMenu_Map` vs `_EpisodeMap`) is done **in `M_Configure`**, not on
     menu open: the main menu reaches this page with `IT_SUBMENU`, which has no handler to hook.
+  - **`cv_skill` is 1-based and `skill_e` is 0-based** — `skill_cons_t` numbers the five skills
+    1..5, because that is what the `map ... -skill %d` console command wants (`Command_Map_f` does
+    `atoi()-1`), and `M_StartServer` passes `cv_skill.value` straight into that command. But
+    `G_DeferedInitNew` and every `HS_*` entry point take a 0-based `skill_e` — `M_ChooseSkill`
+    feeds `G_DeferedInitNew` the New Game menu's *item index*. Single Level handed them
+    `cv_skill.value` raw, so it launched and scored **one skill too hard**: picking Ultra violence
+    ran `sk_nightmare`, which is fast monsters (imp fireball speed 20 instead of 10) plus
+    respawning. `M_SingleLevel_Skill()` now does the conversion in one place, used by all five
+    sites — the launch, the two `HS_Best_For` displays, the replay-item enable and the
+    `HS_Demo_Path_For` lookup. **All five have to move together**, since `HS_LevelExit` records
+    `gameskill`, so the menu's lookup key must be the same number the launch produced.
+    - The shift was self-consistent, which is why it hid: the run recorded under the shifted skill
+      and the menu looked it up under the same shifted skill, so the table and the "Watch run"
+      items always agreed. Only the difficulty actually played was wrong.
+    - **Existing single-level records stay where they are**, and that is correct — they were
+      genuinely played at the harder skill. They simply move one row down in the menu's view
+      (an ITYTD-labelled run reappears under HNTR, which is what it was).
+    - Verified headless end to end via a temporary console hook onto `M_SingleLevel_Start`:
+      cv_skill 1/3/4/5 now launch `skill_e` 0/2/3/4, with `cv_fastmonsters` EV 0 and imp fireball
+      speed 10 for Ultra violence and EV 1 / speed 20 only for Nightmare. A full UV run wrote
+      `doom2-sl MAP01 3 31 speed` and `doom2-sl_MAP01_sk3_speed.lmp`.
   - **Separate scoring falls out of `HS_GameId_Mode()`**, which appends `-sl`. Records, record demo
     filenames and the attract page are all selected by that id, so one change covers all three.
   - **Single-level times never reach the attract cycle**, which is the point — they would double the

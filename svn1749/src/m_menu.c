@@ -1539,13 +1539,26 @@ static const char *  M_SingleLevel_MapName( void )
 }
 
 
+// cv_skill is the *menu* skill cvar and skill_cons_t numbers it 1..5, which
+// is what the "map ... -skill %d" command wants (Command_Map_f does atoi()-1)
+// and what M_StartServer passes straight through.  G_DeferedInitNew and
+// HS_* take a 0-based skill_e instead -- M_ChooseSkill hands it the New Game
+// menu's item index.  Passing cv_skill.value to those raw launched and scored
+// one skill too hard: picking Ultra violence ran sk_nightmare, with fast
+// monsters and respawning, which is how this was noticed.
+static skill_e  M_SingleLevel_Skill( void )
+{
+    return (skill_e)(cv_skill.value - 1);
+}
+
+
 // Grey out the two replay items when no demo has been recorded for the
 // selection.  IT_DISABLED rather than IT_HIDDEN so the page does not change
 // height as the player scrolls through maps, which looks broken.
 static void  M_SingleLevel_Update_Items( void )
 {
     const char * mn = M_SingleLevel_MapName();
-    skill_e sk = (skill_e) cv_skill.value;
+    skill_e sk = M_SingleLevel_Skill();
 
     SingleLevelMenu[SL_speeddemo].status =
         HS_Demo_Path_For( mn, sk, 0, true, NULL )
@@ -1577,14 +1590,14 @@ static void  M_Draw_SingleLevel( void )
     snprintf( buf, sizeof(buf), "BEST FOR %s", mn );
     V_DrawString( SingleLevelDef.x, y, V_WHITEMAP, buf );
 
-    if( HS_Best_For( mn, (skill_e) cv_skill.value, 0, true, &t ) )
+    if( HS_Best_For( mn, M_SingleLevel_Skill(), 0, true, &t ) )
         HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
     else
         dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
     snprintf( buf, sizeof(buf), "SPEED %s", tbuf );
     V_DrawString( SingleLevelDef.x, y+10, 0, buf );
 
-    if( HS_Best_For( mn, (skill_e) cv_skill.value, 1, true, &t ) )
+    if( HS_Best_For( mn, M_SingleLevel_Skill(), 1, true, &t ) )
         HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
     else
         dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
@@ -1608,7 +1621,7 @@ static void  M_SingleLevel_Start( int choice )
     // StartSplitScreenGame, *not* resetplayer -- it feeds straight into the
     // "splitscreen %d" command G_DeferedInitNew issues.  Single Level is
     // always one player; passing true launched it in two player splitscreen.
-    G_DeferedInitNew( (skill_e) cv_skill.value, M_SingleLevel_MapName(), false );
+    G_DeferedInitNew( M_SingleLevel_Skill(), M_SingleLevel_MapName(), false );
     M_Clear_Menus( true );
 }
 
@@ -1617,7 +1630,7 @@ static void  M_SingleLevel_PlayDemo( int cat )
 {
     char path[MAX_WADPATH];
 
-    if( ! HS_Demo_Path_For( M_SingleLevel_MapName(), (skill_e) cv_skill.value,
+    if( ! HS_Demo_Path_For( M_SingleLevel_MapName(), M_SingleLevel_Skill(),
                             cat, true, path ) )
         return;   // item should have been disabled
 
