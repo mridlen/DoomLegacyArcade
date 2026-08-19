@@ -364,6 +364,13 @@ typedef char localplayer_init_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 
 byte  D_NumLocalPlayers( void )
 {
     int n = cv_localplayers.EV;
+
+    // cv_splitscreen means at least two players, and it is the *only* thing
+    // the Two Player Game menu sets -- that menu predates cv_localplayers and
+    // still just turns the split on.  Without this, asking for two players
+    // from the menu joined only one, because cv_localplayers defaults to 1.
+    if( cv_splitscreen.EV && (n < 2) )  n = 2;
+
     if( n < 1 )  n = 1;
     if( n > MAXSPLITSCREENPLAYERS )  n = MAXSPLITSCREENPLAYERS;
     return (byte) n;
