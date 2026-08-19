@@ -259,10 +259,14 @@ silently made the flag do nothing at all.
       tearing the level down is safe; `G_Ticker` dispatches `gameaction` a few lines later, which
       is the same route an ordinary level exit already takes to that function. The dispatch loop
       terminates because `Command_ExitGame_f` → `D_StartTitle` sets `gameaction = ga_nothing`.
-    - Guarded on `! demoplayback`, like the rest: a record demo can contain a death, and replaying
-      one must not tear the game down around it. That covers a demo watched from this menu *and*
-      an attract demo playing while the player sits on the Single Level page, where
-      `single_level_mode` is still set.
+    - Guarded on `! demoplayback`, like the rest, so replaying a demo cannot tear the game down
+      around it — but note the guard is **defensive rather than load-bearing, and cannot be
+      exercised**. A saved record demo never contains a death: `HS_Player_Died` closes the
+      recording through `G_CheckDemoStatus`, and the snapshots are written at record-setting level
+      exits, so every saved demo ends at an exit. Stock IWAD demos *can* contain a death (the
+      Ultimate Doom E4M2 one does), but those only play on the attract screen, where
+      `single_level_mode` is 0 and the guard's first condition already fails. Do not go looking for
+      a test case for this; there isn't one to build.
     - Placed in the `(!multiplayer && !deathmatch)` branch, which is the retry path. The other
       branch is coop/DM respawn, and `P_SetupLevel`'s own `G_DoReborn` call is deathmatch-only, so
       neither can reach this.
