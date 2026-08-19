@@ -1394,6 +1394,8 @@ void M_StartServer( int choice )
 {
     M_Clear_Menus(true);
 
+    single_level_mode = 0;   // [Arcade] campaign game, see M_ChooseSkill
+
     // [WDJ] May have been client.
     server = true;
     netgame = true;
@@ -1651,8 +1653,17 @@ static void  M_SingleLevel_WatchMax  ( int choice )  { M_SingleLevel_PlayDemo(1)
 // straight round again.  The idle timeout still rescues an abandoned cabinet.
 void  M_SingleLevel_Finished( void )
 {
+    // Command_ExitGame_f clears single_level_mode, and it is left cleared.
+    // The flag means "a single level run is in progress", not "the player is
+    // looking at the Single Level menu" -- M_SingleLevel_Start and
+    // M_SingleLevel_PlayDemo each set it again for the run they begin, and
+    // this page's own display passes the mode to HS_Best_For /
+    // HS_Demo_Path_For explicitly rather than reading it.
+    //
+    // It used to be re-set here, which left it stuck on for everything that
+    // followed: a New Game started afterwards inherited it, so the campaign
+    // ended after one map and a death dropped the player onto this page.
     Command_ExitGame_f();       // tears the game down and starts the title
-    single_level_mode = 1;      // ExitGame cleared it; we are staying in it
     M_StartControlPanel();
     Push_Setup_Menu( &SingleLevelDef );
 }
@@ -2367,6 +2378,12 @@ static
 void M_ChooseSkill(int choice)
 {
     // [Arcade] Nightmare starts without the "are you sure" confirmation.
+
+    // [Arcade] This is a campaign game, so say so.  G_DeferedInitNew does not
+    // funnel through Command_ExitGame_f, which is what normally clears the
+    // flag, so starting a New Game from the menu *during* a single level run
+    // would otherwise carry single_level_mode into the campaign.
+    single_level_mode = 0;
 
     // [Arcade] Reset cumulative timer and begin background recording.
     // Must precede G_DeferedInitNew so the player-create and map netxcmds

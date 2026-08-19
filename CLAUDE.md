@@ -270,8 +270,27 @@ silently made the flag do nothing at all.
       then setting `PST_REBORN` (what `P_DeathThink` does on `BT_USE`) logged
       `G_DoReborn -> single level menu` followed by `G_DoWorldDone -> M_SingleLevel_Finished`, with
       no level reload and no hang. The same sequence without single level mode still reloaded.
-  - `M_SingleLevel_Finished()` calls `Command_ExitGame_f()` for the teardown and then **re-sets
-    `single_level_mode`**, because that function deliberately clears it.
+  - **`single_level_mode` means "a single level run is in progress"**, not "the player is looking
+    at the Single Level page". It is set by `M_SingleLevel_Start` and `M_SingleLevel_PlayDemo` for
+    the run each begins, and cleared by `Command_ExitGame_f` — which every route back to the title
+    passes through. The page's own display never reads it: `HS_Best_For`/`HS_Demo_Path_For` take
+    the mode as a parameter, and the menu passes `true` literally.
+    - `M_SingleLevel_Finished()` used to **re-set the flag** after `Command_ExitGame_f` cleared it,
+      on the reasoning that the cabinet was "staying in" single level mode. That left it stuck on
+      for everything that followed: a New Game started afterwards inherited it, so **the campaign
+      ended after one map** and (once a death also ended a run) a death dropped the player onto the
+      Single Level page. The symptom only appears after playing Single Level at least once in the
+      session, which is what makes it look like the *campaign* is wired wrong. It is not re-set any
+      more.
+    - `M_ChooseSkill` and `M_StartServer` **clear it explicitly** at a campaign start.
+      `G_DeferedInitNew` does not funnel through `Command_ExitGame_f`, so starting a New Game from
+      the menu *during* a single level run would otherwise carry the flag straight into the
+      campaign. Any future game-start path needs the same line.
+    - Verified headless both ways: with the re-set restored, the flag reads 1 after
+      `M_SingleLevel_Finished` and stays 1 through `M_ChooseSkill`; with the fix it reads 0 at both
+      points. End to end, a campaign level entered after a single level run ended took
+      `G_DoReborn -> RELOAD LEVEL` on death, while a run with the flag genuinely set still took
+      `G_DoReborn -> SINGLE LEVEL MENU`.
   - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the
     page does not change height as the player scrolls maps.
   - **Never set `singledemo` to play a demo from a menu.** `G_CheckDemoStatus` reacts to it with
