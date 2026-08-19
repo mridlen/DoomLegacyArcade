@@ -449,15 +449,26 @@ silently made the flag do nothing at all.
       `HU_Draw_DeathmatchRankings` now takes a view index, halves the scale and draws in that
       view's cell, and `HU_Drawer` asks per view via `HU_Rankings_For_View`: that view's own
       player's death, or that panel's own `gamecontrol_pl[vind][gc_scores]` key.
-    - **Its offsets are derived from pixels after `V_SetupDraw`**, then converted back to base
-      units — not guessed as multiples of `BASEVIDWIDTH`/`BASEVIDHEIGHT`. Two things break the
-      naive version: `V_CENTERHORZ` has already centred the block using the *integer* `dupx`, and
-      with `dup` rounded to 2 a 200 unit block is 400px tall in a 384px cell, so stepping a row by
-      `BASEVIDHEIGHT` pushes the lower row 16px below its cell and off the screen bottom.
-    - Verified numerically at 1366x768. Two views: block x 363..1003 centred, row offsets 0 and
-      **384** (the cell top, not 400). Four views: x 21..661 and 703..1343 — inside cells 0..683
-      and 683..1366 with even margins — at row offsets 0 and 384. Only the dead player's view
-      draws: killing player 0 produced a table for view 0 alone.
+    - **`V_CENTERHORZ` must be off for the multi-view case, and this is a trap worth knowing.**
+      It puts its centering into `drawinfo.start_offset`, and in hardware mode **`V_DrawString`
+      does not apply that** — it positions text as `x * drawfont.fdupx0` with no start offset,
+      while `V_DrawScaledFill` and the patches do apply it. The two therefore disagree by exactly
+      `start_offset`. At full scale that is 43px and nobody noticed; with a half-width block it
+      becomes 363px, which threw the ranking text clean off the left of the screen while the
+      colour bars stayed put. The block is placed by explicit coordinates instead, so text and
+      fills share an origin. **Any overlay mixing `V_DrawString` with fills or patches under
+      `V_CENTERHORZ` has this bug latent in it.**
+    - **The float and integer scales must be pinned equal too.** Fills and patches position by the
+      integer `dupx0`, `V_DrawString` by the float `fdupx0`; 2 versus 2.13 slid a name 35px off
+      the colour bar it belongs on — more than half the bar's width. `vid.fdupx/fdupy` are set to
+      `(float)vid.dupx/dupy` for this overlay; 6% of scale is the cheaper loss.
+    - Offsets are derived from pixels, not as multiples of `BASEVIDWIDTH`/`BASEVIDHEIGHT`: with
+      `dup` rounded to 2 a 200 unit block is 400px tall in a 384px cell, so stepping a row by
+      `BASEVIDHEIGHT` would push the lower row off the screen bottom.
+    - Verified numerically at 1366x768, with fill and text positions printed side by side and
+      required to match. Two views: both at x 522, rows at y 194 and 578 (cells 0..384, 384..768).
+      Four views: both at x 180 and 864 (cells 0..683, 683..1366), rows at y 170 and 554. Only the
+      dead player's view draws: killing player 0 produced a table for view 0 alone.
     - Only the 2x2 grid rescales. **The two-view split still draws full size art at halved
       positions**, deliberately: that layout is measured and working, and rescaling it would move
       everything. Verified byte-identical — `lowerbar_y` is still exactly 319 for the upper half.

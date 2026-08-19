@@ -1200,28 +1200,40 @@ void HU_Draw_DeathmatchRankings ( byte vind )
         if( vid.dupx < 1 )  vid.dupx = 1;
         if( vid.dupy < 1 )  vid.dupy = 1;
 
+        // Pin the float scale to the integer one.  V_DrawScaledFill and the
+        // patches position by the integer dupx0 while V_DrawString uses the
+        // float fdupx0, so 2 vs 2.13 lets a name slide off the colour bar it
+        // belongs on -- 35px at the x this block sits at, more than half the
+        // bar's width.  Losing 6% of scale is the smaller price.
+        vid.fdupx = (float) vid.dupx;
+        vid.fdupy = (float) vid.dupy;
     }
 
-    // Draw screen0, scaled, centered
-    V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART | V_CENTERHORZ );
+    // Draw screen0, scaled.
+    //
+    // V_CENTERHORZ deliberately only for the single full-screen view.  It
+    // puts its centering into drawinfo.start_offset, and in hardware mode
+    // V_DrawString does NOT apply that -- it positions text as
+    // x * drawfont.fdupx0 with no start offset, while V_DrawScaledFill and
+    // the patches do apply it.  The two therefore disagree by exactly
+    // start_offset.  At full scale that was 43px and went unnoticed; with a
+    // half-width block it becomes 363px, which threw the text right off the
+    // left of the screen while the colour bars stayed put.  Placing the block
+    // by explicit coordinates instead keeps text and fills on the same origin.
+    V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART
+                 | ((num_views < 2) ? V_CENTERHORZ : 0) );
 
-    // Offsets are derived from actual pixels, after V_SetupDraw has settled
-    // the scale and the centering, then converted back to base units -- not
-    // guessed as whole multiples of BASEVIDWIDTH/HEIGHT.  Rounding makes the
-    // difference matter: at 1366x768 the integer scale is 2, so a 200 unit
-    // block is 400px tall in a 384px cell, and stepping a row by BASEVIDHEIGHT
-    // would push the lower row 16px below its cell and off the screen bottom.
+    // Centre the block in its own cell, in base units.  Derived from pixels
+    // rather than as multiples of BASEVIDWIDTH/HEIGHT: with dup rounded to 2
+    // at 1366x768 a 200 unit block is 400px tall in a 384px cell, so stepping
+    // a row by BASEVIDHEIGHT would push the lower row off the screen bottom.
     if( num_views >= 2 )
     {
         int cell_w = vid.width / ((num_views >= 4) ? 2 : 1);
         int cell_h = vid.height / 2;
-        int start_px = drawinfo.start_offset / vid.bytepp;   // V_CENTERHORZ
-        int block_w  = BASEVIDWIDTH * vid.dupx;
+        int block_w = BASEVIDWIDTH * vid.dupx;
 
-        // Centre the block in its own cell horizontally.  For two views the
-        // cell is full width and V_CENTERHORZ has already done this, so the
-        // result comes out as 0.
-        offx = ((col * cell_w) + ((cell_w - block_w) / 2) - start_px) / vid.dupx;
+        offx = ((col * cell_w) + ((cell_w - block_w) / 2)) / vid.dupx;
         offy = (row * cell_h) / vid.dupy;
     }
 
