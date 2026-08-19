@@ -1810,8 +1810,8 @@ static void WI_update_NetgameStats(void)
         if (accelerate_stage)
         {
             S_StartSound(sfx_sgcock);
-            if ( gamemode == doom2_commercial )
-                WI_Init_NoState();
+            if ( gamemode == doom2_commercial || finale_after_intermission )
+                WI_Init_NoState();   // [Arcade] no next location, see WI_update_Stats
             else
                 WI_Init_ShowNextLoc();
         }
@@ -2089,7 +2089,11 @@ static void WI_update_Stats(void)
         {
             S_StartSound(sfx_sgcock);
 
-            if (gamemode == doom2_commercial)
+            // [Arcade] finale_after_intermission: the episode's last level
+            // has no next location, so showing the "Entering ..." map would
+            // point at E?M1.  Go straight to NoState, which is what
+            // doom2_commercial already does.
+            if (gamemode == doom2_commercial || finale_after_intermission)
                 WI_Init_NoState();
             else
                 WI_Init_ShowNextLoc();
@@ -2222,6 +2226,7 @@ static void WI_checkForAccelerate(void)
 // Updates stuff each client tick.
 void WI_Ticker(void)
 {
+
     // counter for general background animation
     bcnt++;
 

@@ -508,6 +508,18 @@ player_t *      displayplayer2_ptr = NULL;  // NULL when not in use
 tic_t           gametic;
 tic_t           levelstarttic;          // gametic at level start
 tic_t           last_input_tic;         // gametic of last player input event
+
+// [Arcade] The episode's last level owes a finale once its intermission is
+// done.  Vanilla skips the intermission entirely on those maps and jumps
+// straight to the finale, which cost the cabinet both the summary page and
+// the HS_LevelExit call that scores the run -- a time on E?M8 could not be
+// recorded at all.  Doom II already does it the other way round for MAP30:
+// intermission first, finale started afterwards from G_NextLevel.  Setting
+// this in G_Start_Intermission makes the Doom 1 / Heretic / Chex maps behave
+// the same, and lets wi_stuff skip the "Entering ..." screen, for which
+// there is no next location.  Decided in one place rather than recomputed,
+// so the UMAPINFO override above it stays authoritative.
+boolean         finale_after_intermission = false;
 // [WDJ] Derived from PrBoom basetic.
 // A tic that always starts at 0, and only runs while the demo runs.
 tic_t           game_comp_tic;  // gametic - basetic
@@ -2776,6 +2788,8 @@ void G_Start_Intermission( void )
 {
     int  i;
 
+    finale_after_intermission = false;
+
 #ifdef ENABLE_UMAPINFO   
     // [MB] 2023-01-22: Moved to beginning for G_DoUMapInfo()
     // wminfo is 0 based
@@ -2802,14 +2816,10 @@ void G_Start_Intermission( void )
             else
             {
                 // also for heretic
-                // disconnect from network
-                CL_Reset();
-#ifdef ENABLE_UMAPINFO	       
-                F_StartFinale(secretexit);  // [MB] 2023-03-04: Parameter added
-#else
-                F_StartFinale();
-#endif
-                return;
+                // [Arcade] Show the intermission first and start the finale
+                // from G_NextLevel, the way Doom II already handles MAP30.
+                // CL_Reset moves there with it.
+                finale_after_intermission = true;
             }
             break; // [WDJ] 4/11/2012  map 8 is not secret level, and prboom and boom do not fall thru here.
           case 9:
@@ -2826,15 +2836,7 @@ void G_Start_Intermission( void )
             if( deathmatch )
                 wminfo.lev_next = 0;
             else
-            {
-                CL_Reset();
-#ifdef ENABLE_UMAPINFO	       
-                F_StartFinale(secretexit);  // [MB] 2023-03-04: Parameter added
-#else
-                F_StartFinale();
-#endif
-                return;
-            }
+                finale_after_intermission = true;   // [Arcade] as for map 8
         }
     }
 
@@ -2965,6 +2967,35 @@ void G_NextLevel (void)
     gameaction = ga_worlddone;
     if (secretexit)
         consoleplayer_ptr->GF_flags |= GF_didsecret;
+
+    // [Arcade] Single Level mode plays one map and returns to its own menu
+    // from G_DoWorldDone, so it must never be diverted into a finale: those
+    // do not come back on their own (the Doom 2 cast call loops for ever,
+    // and the text screens wait for a keypress), and a player who picked one
+    // level should not end up watching the credits.  Leaving gameaction as
+    // ga_worlddone is all that is needed.  Not during demo playback, where
+    // a record demo replays through real level exits.
+    if( single_level_mode && ! demoplayback )
+    {
+        finale_after_intermission = false;
+        return;
+    }
+
+    // [Arcade] The episode's last level deferred its finale until after the
+    // intermission (see G_Start_Intermission).  This is the Doom 1, Heretic
+    // and Chex equivalent of the doom2_commercial block below.
+    if( finale_after_intermission )
+    {
+        finale_after_intermission = false;
+        CL_Reset();        // end of game, disconnect from server
+        gameaction = ga_nothing;
+#ifdef ENABLE_UMAPINFO
+        F_StartFinale (secretexit);
+#else
+        F_StartFinale ();
+#endif
+        return;
+    }
 
 #ifdef ENABLE_UMAPINFO   
     // [MB] 2023-04-01: Support for UMAPINFO added

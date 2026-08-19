@@ -156,6 +156,12 @@ extern  tic_t     levelstarttic;
 // [Arcade lockdown] gametic of last player input event (see D_PostEvent)
 extern  tic_t     last_input_tic;
 
+// [Arcade] Set by G_Start_Intermission when the map that just ended owes a
+// finale once its intermission is over (Doom 1 / Heretic E?M8, Chex E1M5).
+// Read by wi_stuff.c, to skip the "Entering ..." screen, and by G_NextLevel,
+// which starts the finale.
+extern  boolean   finale_after_intermission;
+
 extern consvar_t  cv_showmessages;
 extern consvar_t  cv_pickupflash;
 extern consvar_t  cv_oof_2s;         // Boom 2s line

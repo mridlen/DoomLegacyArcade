@@ -232,6 +232,10 @@ silently made the flag do nothing at all.
     intermission and `HS_LevelExit` have both already run by then, so returning early is all that is
     needed. Guarded on `! demoplayback`: a record demo replays through real level exits and would
     otherwise be truncated.
+  - **`G_NextLevel` needs the same guard**, or a map that ends an episode never reaches
+    `G_DoWorldDone` at all: it starts a finale and sets `gameaction = ga_nothing` instead. A single
+    level run of MAP30 dropped into the cast call, which loops for ever, and only the idle timeout
+    rescued the cabinet. Single Level now returns to its menu from every map, ending map included.
   - `M_SingleLevel_Finished()` calls `Command_ExitGame_f()` for the teardown and then **re-sets
     `single_level_mode`**, because that function deliberately clears it.
   - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the
@@ -709,6 +713,32 @@ silently made the flag do nothing at all.
   `HS_Player_Died` from `P_KillMobj` (`p_inter.c`), and new
   cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
   without closing it, so live recording continues after a record is saved.
+
+- **The episode's last level gets an intermission** (`g_game.c` `G_Start_Intermission` /
+  `G_NextLevel`, `wi_stuff.c`). Vanilla skips it on those maps and jumps straight to the finale, so
+  **E1M8 / E2M8 / E3M8 / E4M8 showed no summary page and never reached `HS_LevelExit`** — a time on
+  an episode-ending map was impossible to record. Doom II already did it the other way round: MAP30
+  gets its intermission and the finale is started afterwards from `G_NextLevel`. The Doom 1,
+  Heretic and Chex maps now follow that same order, which is why one flag was enough to get both
+  the stats page and the scoring.
+  - **`finale_after_intermission`** (`g_game.c`, declared in `g_game.h`) carries the decision.
+    `G_Start_Intermission` clears it at the top and sets it in place of the old
+    `CL_Reset(); F_StartFinale(); return;`; `G_NextLevel` does the `CL_Reset` and the
+    `F_StartFinale`. Decided in one place rather than recomputed from `gamemode`/`gamemap` at each
+    site, because **UMAPINFO can override the ending** — its block runs first and `goto`s past the
+    map-8 case entirely, so a pack that gives E1M8 a next map keeps a real next map.
+  - Only the **non-deathmatch** path changes. In deathmatch map 8 already wrapped to `lev_next = 0`
+    and went through the intermission.
+  - **`wi_stuff.c` must skip `ShowNextLoc`** for these maps, in both `WI_update_Stats` and
+    `WI_update_NetgameStats`. There is no next location, so the "Entering ..." screen would point
+    at E?M1. `WI_Init_NoState()` instead — exactly what `doom2_commercial` already does there.
+  - **Doom II needed no change at all**: MAP30 (and the 6/11/20 text maps) already showed the
+    summary and scored. Confirmed by test, not assumed.
+  - Verified headless, `-warp` plus `wait`/`exitlevel`, with the intermission's keypress forced:
+    E1M8/E2M8/E3M8/E4M8 each went stats → NoState → `F_StartFinale` and wrote a record
+    (`doomu E4M8 2 98 speed`); E1M1 and Doom II MAP01/MAP30 were unchanged controls
+    (`finale_pending=0`, `ShowNextLoc` still shown for E1M1). A **single level** run of E4M8 wrote
+    `doomu-sl E4M8 3 31 speed` with its demo and returned to the menu with the finale skipped.
 
 - **Kills/items/secrets on the HUD** (`st_stuff.c`, `ST_overlayDrawer`). The engine's status-bar
   overlay is driven by the `overlay` cvar, a **string of one-letter element codes** — stock
