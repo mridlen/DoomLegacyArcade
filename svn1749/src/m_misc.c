@@ -566,6 +566,19 @@ void  M_Verify_Config( const char * cfgfile )
 
         checked++;
 
+        // First ask the config system what it recorded for this cvar.  Video
+        // and sound settings belong to a different config class and their
+        // values are *pushed* into that slot rather than applied to the live
+        // cvar, so the live cvar still reads as its default while the setting
+        // is genuinely in force -- which is why drawmode reported as
+        // "Software 8bit" on a cabinet visibly running OpenGL.  If the config
+        // holds what the file says, the line applied.
+        {
+            const char * cfgval = CV_Get_Config_string( cv, CFG_main );
+            if( cfgval && strcasecmp( cfgval, value ) == 0 )
+                continue;
+        }
+
         // Compare the way the engine resolves a cvar, not by its string.
         // cv->string is only the text last *set*; the value actually in force
         // lives in .EV, or in .value for CV_VALUE/CV_FLOAT cvars -- which is

@@ -1114,6 +1114,16 @@ is otherwise unversioned state the build silently depends on.
   `D_DoomMain` re-runs this block via the launcher restart path and `legacyhome` may still hold
   the previous pass's value.
 
+**The command buffer sizes the config.** `exec` pushes a whole file into `com_text` in one go, and
+`COM_BUF_SIZE` (`command.c`) caps it. At the stock **8192** the cabinet's config outgrew it — 8195
+bytes — and `VS_Print` failed, dropping the remaining lines **in silence**. Those cvars kept their
+compiled defaults, and the next `-devmode` session wrote the defaults back over the file: that is
+how a hand-tuned config "blows away on its own". The four player work is what pushed it over
+(`setcontrol3` and `setcontrol4` are 38 lines each). Raised to **65536**, and the overflow is now
+an `EMSG_error` naming the consequence rather than a `CONS_Printf` that scrolls past. **A four
+panel config is ~8.5K, so watch this if the config grows much further** — and if settings ever stop
+sticking, look for "Command buffer full" first.
+
 **Config lines that fail are reported.** `M_Verify_Config` (`m_misc.c`) runs right after the load
 and again on demand from the **`cfgcheck`** console command. Config lines are handed to the console
 as an `exec`, so by the time they run the line numbers are gone and a failure is *silent*: an
@@ -1136,8 +1146,10 @@ their settings, so `scr_width`, `drawmode` and friends still read as defaults an
 reported as failed.
 
 Two sources of *expected* reports remain, so read the output with them in mind:
-- **A headless run still flags every video setting**, because the dummy driver never sets a real
-  mode. The list is much shorter on the cabinet, which is where it is worth reading.
+- **`botrandom`** is a random seed and always differs.
+- A clean cabinet config reports exactly **four**: `botrandom` plus the three ruleset cvars below.
+  Anything else is worth investigating. (The video settings used to appear here too; that was the
+  command buffer overflow above, not the dummy driver.)
 - **The ranked ruleset legitimately overrides the config** in a player session (see
   `hs_ranked_rules[]`), so `monstergravity`, `monsterfriction` and `voodoo_mode` report as not
   taking. That is the ruleset working, and matches the three documented above.

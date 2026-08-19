@@ -101,7 +101,17 @@ CV_PossibleValue_t CV_uint16[]=   {{0,"MIN"}, {0xFFFF,"MAX"}, {0,NULL}};
 CV_PossibleValue_t CV_Unsigned[]=   {{0,"MIN"}, {999999999,"MAX"}, {0,NULL}};
 CV_PossibleValue_t CV_byte[]=   {{0,"MIN"}, {255,"MAX"}, {0,NULL}};
 
-#define COM_BUF_SIZE    8192   // command buffer size
+// [Arcade] Was 8192, which the cabinet's config.cfg outgrew: "exec" pushes
+// the whole file into this buffer at once, and at 8195 bytes it no longer
+// fitted.  VS_Print then failed and the remaining lines were dropped in
+// silence, so those cvars kept their compiled defaults -- and the next
+// -devmode session wrote those defaults back over the file.  That is how a
+// hand-tuned config appears to "blow away" on its own.
+//
+// The four player work is what pushed it over: setcontrol3 and setcontrol4
+// are 38 lines each.  A four panel config is around 8.5K, so leave real room
+// rather than nudging the limit.
+#define COM_BUF_SIZE    65536  // command buffer size
 
 static int com_wait;       // one command per frame (for cmd sequences)
 
@@ -131,7 +141,12 @@ static vsbuf_t com_text;     // variable sized buffer
 void COM_BufAddText (const char * text)
 {
   if (!VS_Print(&com_text, text))
-    CONS_Printf ("Command buffer full!\n");
+  {
+    // [Arcade] Loud: dropping text here silently loses config settings.
+    GenPrintf (EMSG_error,
+      "Command buffer full (%d bytes): text dropped, settings may be lost.\n",
+      COM_BUF_SIZE);
+  }
 }
 
 
@@ -162,7 +177,11 @@ void COM_BufInsertText (const char * text)
     if (templen)
     {
       if (!VS_Print(&com_text, temp))
-        CONS_Printf ("Command buffer full!!\n");
+      {
+        GenPrintf (EMSG_error,
+          "Command buffer full (%d bytes) on insert: text dropped, settings may be lost.\n",
+          COM_BUF_SIZE);
+      }
 
       Z_Free (temp);
     }
