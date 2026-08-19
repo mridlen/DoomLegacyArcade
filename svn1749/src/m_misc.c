@@ -479,6 +479,45 @@ void M_ClearConfig( byte cfg )
 // Load a config file
 //
 //   cfg : cv_config_e, source config file ident
+// [Arcade] One complaint line, so the wording lives in a single place.
+static void  M_Config_Complain( int lineno, const char * name,
+                                const char * want, const char * have )
+{
+    GenPrintf( EMSG_warn,
+        "config line %d: \"%s\" did not take -- file says \"%s\", value is \"%s\"\n",
+        lineno, name, want, have );
+}
+
+// [Arcade] Turn a config file's text into the number the cvar would hold.
+// Config stores the PossibleValue label ("On", "OpenGL", "32 bits"), so the
+// label table is tried first, then a plain number.  False when neither works,
+// in which case there is nothing meaningful to compare.
+static boolean  M_Config_Resolve( consvar_t * cv, const char * str, int * out )
+{
+    CV_PossibleValue_t * pv;
+    const char * s = str;
+
+    for( pv = cv->PossibleValue; pv && pv->strvalue; pv++ )
+    {
+        if( strcasecmp( pv->strvalue, str ) == 0 )
+        {
+            *out = pv->value;
+            return true;
+        }
+    }
+
+    // A plain number, possibly signed.
+    if( *s == '-' || *s == '+' )  s++;
+    if( *s == 0 )  return false;
+    for( ; *s; s++ )
+    {
+        if( *s < '0' || *s > '9' )  return false;
+    }
+    *out = atoi( str );
+    return true;
+}
+
+
 // [Arcade] Report any config line that did not take effect.
 //
 // Config lines are handed to the console as an "exec", so by the time they
@@ -526,11 +565,53 @@ void  M_Verify_Config( const char * cfgfile )
         }
 
         checked++;
-        if( cv->string && strcasecmp( cv->string, value ) != 0 )
+
+        // Compare the way the engine resolves a cvar, not by its string.
+        // cv->string is only the text last *set*; the value actually in force
+        // lives in .EV, or in .value for CV_VALUE/CV_FLOAT cvars -- which is
+        // why a naive string compare reported settings as failing that were
+        // plainly in effect, drawmode among them.  Config files also store a
+        // cvar's PossibleValue *label* ("On", "OpenGL", "32 bits"), so the
+        // file's text has to be resolved through that table before comparing.
+        if( cv->flags & CV_STRING )
         {
-            GenPrintf( EMSG_warn,
-                "config line %d: \"%s\" did not take -- file says \"%s\", value is \"%s\"\n",
-                lineno, name, value, cv->string );
+            if( cv->string && strcasecmp( cv->string, value ) != 0 )
+                M_Config_Complain( lineno, name, value, cv->string );
+            else
+                continue;
+            problems++;
+            continue;
+        }
+
+        {
+            int want, have;
+            char havebuf[32];
+
+            // Resolve the file's text to a number.
+            if( ! M_Config_Resolve( cv, value, &want ) )
+                continue;   // cannot resolve: not something to judge
+
+            have = ( cv->flags & (CV_FLOAT | CV_VALUE) ) ? cv->value : (int) cv->EV;
+            if( cv->flags & CV_FLOAT )
+                want = want * FRACUNIT;
+
+            if( want == have )  continue;
+
+            // Name the value it actually holds, by label where there is one.
+            {
+                const char * lbl = NULL;
+                CV_PossibleValue_t * pv;
+                for( pv = cv->PossibleValue; pv && pv->strvalue; pv++ )
+                {
+                    if( pv->value == have )  { lbl = pv->strvalue; break; }
+                }
+                if( ! lbl )
+                {
+                    snprintf( havebuf, sizeof(havebuf), "%d", have );
+                    lbl = havebuf;
+                }
+                M_Config_Complain( lineno, name, value, lbl );
+            }
             problems++;
         }
     }
@@ -574,9 +655,6 @@ void M_LoadConfig( byte cfg, const char * cfgfile )
     CONS_Printf("\n");
     COM_BufInsertText (va("exec \"%s\"\n", cfgfile));
     COM_BufExecute( cfg );       // make sure initial settings are done
-
-    // [Arcade] Say which lines, if any, failed to apply.
-    M_Verify_Config( cfgfile );
 
     // make sure I_Quit() will write back the correct config
     // (do not write back the config if it crash before)

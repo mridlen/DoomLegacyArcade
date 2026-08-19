@@ -1123,12 +1123,24 @@ how a config appears to have been "half loaded". Rather than instrument the comm
 check re-reads the file afterwards and verifies each `name "value"` line actually left that cvar
 holding that value, naming the line number when it did not.
 
-Two sources of *expected* reports, so read the output with them in mind:
-- **A headless run flags every video setting** — `scr_width`, `scr_height`, `scr_depth`,
-  `drawmode`, `viewsize`, `gr_*` — because the dummy driver cannot set the real mode. The list is
-  much shorter on the cabinet, which is where it is worth reading.
+**Comparing by `cv->string` is wrong**, and produced a page of alarming false reports the first
+time — `drawmode` "did not take" on a cabinet visibly running OpenGL. `cv->string` is only the text
+last *set*; the value in force is `.EV`, or `.value` for `CV_VALUE`/`CV_FLOAT`. Config files also
+store a cvar's PossibleValue **label** ("On", "OpenGL", "32 bits"), so the file's text must be
+resolved through that table before comparing. This is the same trap as the `cv_fastmonsters`
+investigation: **resolve labels and read `.EV`/.`value`, never compare the strings.**
+
+**Timing matters as much as the comparison.** The check runs from `D_DoomLoop`, not from
+`M_LoadConfig`: at load time the video mode is not set and several subsystems have not applied
+their settings, so `scr_width`, `drawmode` and friends still read as defaults and every one is
+reported as failed.
+
+Two sources of *expected* reports remain, so read the output with them in mind:
+- **A headless run still flags every video setting**, because the dummy driver never sets a real
+  mode. The list is much shorter on the cabinet, which is where it is worth reading.
 - **The ranked ruleset legitimately overrides the config** in a player session (see
-  `hs_ranked_rules[]`), so those cvars report as not taking. That is the ruleset working.
+  `hs_ranked_rules[]`), so `monstergravity`, `monsterfriction` and `voodoo_mode` report as not
+  taking. That is the ruleset working, and matches the three documented above.
 
 **Every config save keeps one generation** as `config.cfg.bak`, written by `M_SaveConfig`
 (`m_misc.c`) just before the new file. A cabinet's config is hand-tuned, only a `-devmode` session

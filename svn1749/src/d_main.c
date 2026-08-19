@@ -1067,6 +1067,13 @@ void D_DoomLoop(void)
     char acbuf[_MAX_PATH ];
     tic_t oldentertics, entertic, realtics, rendertimeout = -1;
 
+    // [Arcade] Check the config here, not from M_LoadConfig.  At load time
+    // the video mode has not been set and several subsystems have not applied
+    // their settings yet, so scr_width, drawmode and friends still read as
+    // defaults and every one of them was reported as having failed.  By the
+    // time the loop starts the values have settled.
+    M_Verify_Config( configfile_main );
+
     if (demorecording)
         G_BeginRecording();
 
