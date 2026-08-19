@@ -479,6 +479,25 @@ silently made the flag do nothing at all.
     does not trigger a rebuild**. This bit during this work: `console.o` kept a stale
     `gamecontrol` symbol and failed at link. After editing any header, `make clean && make`.
 
+- **Player config for panels 3 and 4** (`m_menu.c`). Options → Player now lists four, and Options →
+  Setup Controls four guided setups. **No menu graphics were needed**: that operator route is plain
+  text (`"Player3 config >>"`). The `M_SETUPA`/`M_SETUPB` patches ("SETUP PLAYER 1/2") belong to the
+  upstream *Two Player Game* and *Multiplayer* screens, which the lockdown hides from players, and
+  those were left alone.
+  - Very little had to change, because `M_SetupMultiPlayer_pind(pind)` already repointed every
+    per-player cvar from the arrays. Panels 3 and 4 needed their own thin entry points and entries
+    in `M_SetupMultiPlayer[]`, `M_Setup_P_Controls[]` and the three label tables, all widened to
+    `MAXSPLITSCREENPLAYERS`.
+  - `M_Guided_Start` and `M_Setup_P*_Controls` took `(pind == 0) ? gamecontrol : gamecontrol2`;
+    they index `gamecontrol_pl[pind]` now.
+  - **`cv_usemouse` stays `[2]`** — there are two mouse devices, not four — so the three mouse rows
+    (Use Mouse, Mouse Move, Always MouseLook) are **hidden for panels 3 and 4** rather than
+    inventing a `use_mouse3`. An arcade panel has no mouse anyway. The compiler caught this as an
+    out-of-bounds read; the other per-player cvars had already been widened.
+  - Entries for panels that do not exist are hidden in **`M_Configure`**, keyed on
+    `cv_localplayers`, for the same reason as `cv_twoplayer`: config.cfg is not loaded when
+    `M_Init` runs.
+
 - **Join screen** (`m_menu.c`, `M_Join_*`, `JoinDef`). After the skill is chosen and before the
   game starts, each control panel presses fire to be counted in. Laid out as the view grid it is
   about to become, so a player presses and watches **their own cell** claim itself.

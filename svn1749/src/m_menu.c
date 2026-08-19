@@ -1868,17 +1868,36 @@ static byte menu_multiplayer = 0;
 static void M_SetupMultiPlayer_pind( byte pind );
 static void M_SetupMultiPlayer1(int choice);
 static void M_SetupMultiPlayer2(int choice);
+static void M_SetupMultiPlayer3(int choice);   // [Arcade] third panel
+static void M_SetupMultiPlayer4(int choice);   // [Arcade] fourth panel
 static void M_Setup_P1_Controls(int choice);
 static void M_Setup_P2_Controls(int choice);
+static void M_Setup_P3_Controls(int choice);   // [Arcade]
+static void M_Setup_P4_Controls(int choice);   // [Arcade]
 // [Arcade] guided panel setup, defined next to M_ChangeControl
 static void M_Guided_Controls_P1(int choice);
 static void M_Guided_Controls_P2(int choice);
+static void M_Guided_Controls_P3(int choice);
+static void M_Guided_Controls_P4(int choice);
 
-static menufunc_t M_SetupMultiPlayer[2] = { M_SetupMultiPlayer1, M_SetupMultiPlayer2 };
-static menufunc_t M_Setup_P_Controls[2] = { M_Setup_P1_Controls, M_Setup_P2_Controls };
-static const char *  player_pind_str[2] = { "Player1", "Player2" };
-static const char *  player_setup_str[2] = { "Player1 setup >>", "Player2 setup >>" };
-static const char *  player_controls_str[2] = { "Player1 controls >>", "Player2 controls >>" };
+// [Arcade] Widened to MAXSPLITSCREENPLAYERS.  The menu itself was already
+// written against a pind (M_SetupMultiPlayer_pind repoints every cvar from
+// the per-player arrays), so panels 3 and 4 needed only their own entries
+// here and their own thin entry points.
+static menufunc_t M_SetupMultiPlayer[MAXSPLITSCREENPLAYERS] =
+  { M_SetupMultiPlayer1, M_SetupMultiPlayer2, M_SetupMultiPlayer3, M_SetupMultiPlayer4 };
+static menufunc_t M_Setup_P_Controls[MAXSPLITSCREENPLAYERS] =
+  { M_Setup_P1_Controls, M_Setup_P2_Controls, M_Setup_P3_Controls, M_Setup_P4_Controls };
+static const char *  player_pind_str[MAXSPLITSCREENPLAYERS] =
+  { "Player1", "Player2", "Player3", "Player4" };
+static const char *  player_setup_str[MAXSPLITSCREENPLAYERS] =
+  { "Player1 setup >>", "Player2 setup >>", "Player3 setup >>", "Player4 setup >>" };
+static const char *  player_controls_str[MAXSPLITSCREENPLAYERS] =
+  { "Player1 controls >>", "Player2 controls >>",
+    "Player3 controls >>", "Player4 controls >>" };
+static const char *  player_config_str[MAXSPLITSCREENPLAYERS] =
+  { "Player1 config >>", "Player2 config >>",
+    "Player3 config >>", "Player4 config >>" };
 
 // Customized by M_SetupMultiPlayer1 and M_SetupMultiPlayer2
 menuitem_t  PlayerOptionsMenu[] =
@@ -1934,7 +1953,13 @@ static void M_PlayerDirectorChoice(int choice)
 menuitem_t  PlayerDirectorMenu[] =
 {
     {IT_CALL | IT_WHITESTRING, 0,"Player1 config >>", M_PlayerDirectorChoice, '1'},
-    {IT_CALL | IT_WHITESTRING, 0,"Player2 config >>", M_PlayerDirectorChoice, '2'}
+    {IT_CALL | IT_WHITESTRING, 0,"Player2 config >>", M_PlayerDirectorChoice, '2'},
+    // [Arcade] Plain text, like the two above -- no menu graphic needed.  The
+    // M_SETUPA/M_SETUPB patches live on the upstream Two Player and
+    // Multiplayer screens, which the lockdown hides from players anyway.
+    // Shown only when the cabinet has that many panels; see M_Configure.
+    {IT_CALL | IT_WHITESTRING, 0,"Player3 config >>", M_PlayerDirectorChoice, '3'},
+    {IT_CALL | IT_WHITESTRING, 0,"Player4 config >>", M_PlayerDirectorChoice, '4'}
 };
 
 menu_t  PlayerDirectorDef =
@@ -2042,7 +2067,19 @@ void M_SetupMultiPlayer_pind( byte pind )
 
     // PlayerOptionsMenu
     PlayerOptionsDef.menutitle = player_pind_str[pind];
-    PlayerOptionsMenu[playeroption_usemouse].itemaction = &cv_usemouse[pind];
+    // [Arcade] cv_usemouse is genuinely [2] -- there are two mouse devices,
+    // not four -- and an arcade panel has no mouse at all, so the three mouse
+    // rows are hidden for panels 3 and 4 rather than inventing a use_mouse3.
+    {
+        boolean has_mouse = (pind < 2);
+        uint16_t mouse_status = has_mouse ? (IT_STRING | IT_CVAR) : IT_HIDDEN;
+
+        PlayerOptionsMenu[playeroption_usemouse].itemaction =
+            &cv_usemouse[ has_mouse ? pind : 0 ];
+        PlayerOptionsMenu[playeroption_usemouse].status  = mouse_status;
+        PlayerOptionsMenu[playeroption_mousemove].status = mouse_status;
+        PlayerOptionsMenu[playeroption_mouselook].status = mouse_status;
+    }
     PlayerOptionsMenu[playeroption_mouselook].itemaction = &cv_alwaysfreelook[pind];
     PlayerOptionsMenu[playeroption_mousemove].itemaction = &cv_mouse_move[pind];
     PlayerOptionsMenu[playeroption_alwaysrun].itemaction = &cv_autorun[pind];
@@ -2084,6 +2121,37 @@ void M_SetupMultiPlayer2 (int choice)
     SetupMultiPlayerDef.numitems = setupmulti_end;          //activate the setup controls for player 2
    
     Push_Setup_Menu (&SetupMultiPlayerDef);
+}
+
+
+// [Arcade] Panels 3 and 4.  There is no display pointer for them -- that
+// concept only ever covered the second of two views -- so the player comes
+// from localplayer[], and is NULL when nobody has joined on that panel, which
+// only costs the animated skin preview.
+static
+void M_SetupMultiPlayer_extra( byte pind )
+{
+    byte pn = localplayer[pind];
+    setupm_player = (pn < MAXPLAYERS) ? &players[pn] : NULL;
+    M_SetupMultiPlayer_pind( pind );
+
+    SetupMultiPlayerMenu[setupmultiplayer_options].text =
+        (char*) player_config_str[pind];
+    SetupMultiPlayerDef.numitems = setupmulti_end;
+
+    Push_Setup_Menu (&SetupMultiPlayerDef);
+}
+
+static
+void M_SetupMultiPlayer3 (int choice)
+{
+    M_SetupMultiPlayer_extra( 2 );
+}
+
+static
+void M_SetupMultiPlayer4 (int choice)
+{
+    M_SetupMultiPlayer_extra( 3 );
 }
 
 
@@ -3928,6 +3996,9 @@ menuitem_t MControlMenu[]=
     // menu by position (the lockdown hides its whole Options entry instead).
     {IT_CALL | IT_WHITESTRING, 0,"Guided setup P1", M_Guided_Controls_P1, 0},
     {IT_CALL | IT_WHITESTRING, 0,"Guided setup P2", M_Guided_Controls_P2, 0},
+    // [Arcade] Shown only when the cabinet has that many panels; M_Configure.
+    {IT_CALL | IT_WHITESTRING, 0,"Guided setup P3", M_Guided_Controls_P3, 0},
+    {IT_CALL | IT_WHITESTRING, 0,"Guided setup P4", M_Guided_Controls_P4, 0},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Recommended layout", &RecLayoutDef, 0},
     {IT_STRING | IT_CVAR, 0,"Control per key" ,&cv_controlperkey   ,0},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Mouse Options >>" ,&MouseOptionsDef   , 'm'},
@@ -4177,6 +4248,24 @@ void M_Setup_P2_Controls(int choice)
     // set the gamecontrols to be edited
     controls_player = 1;
     setupcontrols = gamecontrol2;
+    currentMenu->lastOn = itemOn;
+    Push_Setup_Menu(&ControlDef);
+}
+
+// [Arcade] Panels 3 and 4.  gamecontrol_pl is the indexed table the old
+// gamecontrol / gamecontrol2 names are macros onto.
+void M_Setup_P3_Controls(int choice)
+{
+    controls_player = 2;
+    setupcontrols = gamecontrol_pl[2];
+    currentMenu->lastOn = itemOn;
+    Push_Setup_Menu(&ControlDef);
+}
+
+void M_Setup_P4_Controls(int choice)
+{
+    controls_player = 3;
+    setupcontrols = gamecontrol_pl[3];
     currentMenu->lastOn = itemOn;
     Push_Setup_Menu(&ControlDef);
 }
@@ -4480,7 +4569,7 @@ static void M_Guided_Begin_Steps( void )
 static void M_Guided_Start( int pind )
 {
     controls_player = pind;
-    setupcontrols = (pind == 0) ? gamecontrol : gamecontrol2;
+    setupcontrols = gamecontrol_pl[pind];   // [Arcade] was a 0/1 choice
     guided_step = -1;
     guided_intro = true;
     Push_Setup_Menu( &RecLayoutDef );
@@ -4496,6 +4585,18 @@ static void M_Guided_Controls_P2( int choice )
 {
     (void)choice;
     M_Guided_Start( 1 );
+}
+
+static void M_Guided_Controls_P3( int choice )   // [Arcade]
+{
+    (void)choice;
+    M_Guided_Start( 2 );
+}
+
+static void M_Guided_Controls_P4( int choice )   // [Arcade]
+{
+    (void)choice;
+    M_Guided_Start( 3 );
 }
 
 
@@ -7922,6 +8023,33 @@ void M_Configure (void)
         PlayerDirectorMenu[1].status = IT_HIDDEN;
         if( PlayerDirectorDef.lastOn == 1 )
             PlayerDirectorDef.lastOn = 0;
+    }
+
+    // [Arcade] Panels 3 and 4 exist only on a cabinet configured for them.
+    // Hidden rather than removed, like the rest of the lockdown, because
+    // several menus are indexed by position.  Applied here in M_Configure,
+    // not in M_Init: cv_localplayers comes from config.cfg, which is not
+    // loaded until long after M_Init runs -- the same rule as cv_twoplayer
+    // and the game selector.
+    {
+        byte panels = cv_localplayers.EV;
+        byte i;
+
+        if( panels > MAXSPLITSCREENPLAYERS )  panels = MAXSPLITSCREENPLAYERS;
+
+        for( i=2; i<MAXSPLITSCREENPLAYERS; i++ )
+        {
+            if( i < panels )  continue;   // this panel exists, leave it shown
+
+            PlayerDirectorMenu[i].status = IT_HIDDEN;
+            if( PlayerDirectorDef.lastOn == i )
+                PlayerDirectorDef.lastOn = 0;
+
+            // Guided setup P3/P4 sit at MControlMenu[2] and [3].
+            MControlMenu[i].status = IT_HIDDEN;
+            if( MControlDef.lastOn == i )
+                MControlDef.lastOn = 0;
+        }
     }
 
     // [Arcade] Only offer games whose IWAD is actually present.  Done here
