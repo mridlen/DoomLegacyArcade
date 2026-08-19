@@ -246,9 +246,11 @@ static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV"
 // [Arcade] "single" gives the single-level table its own key, which is all
 // that is needed to keep those runs from mixing with campaign ones: records,
 // record demo filenames and the attract page are all selected by this id.
-// The attract cycle asks for the *current* mode, and single_level_mode is
-// cleared on the way back to the title, so single-level times never appear
-// there -- which is the point, they would double the number of pages.
+// The two attract-screen consumers deliberately disagree about it:
+// HS_Entry_Eligible takes campaign only, so the score *pages* stay campaign
+// times whatever mode the cabinet was last left in (and do not double in
+// number), while HS_NextRecordDemoPath replays both -- a one map demo is
+// just a demo, and captioning it costs the cycle nothing.
 static const char * HS_GameId_Mode( boolean single )
 {
     static char  id[HS_GAMEID_LEN];
@@ -825,6 +827,8 @@ static boolean  HS_Entry_Eligible( const hs_maprecord_t * rec )
     // page, which must always show campaign times no matter what mode the
     // cabinet was last left in.  Otherwise single-level times leak onto the
     // attract screen whenever single_level_mode happens to still be set.
+    // Note HS_NextRecordDemoPath does NOT filter this way -- single-level
+    // *demos* are replayed, only the score pages are campaign only.
     if( strncmp(rec->game, HS_GameId_Mode(false), HS_GAMEID_LEN-1) != 0 )
         return false;
 
@@ -1125,11 +1129,19 @@ const char * HS_NextRecordDemoPath( void )
 {
     static char path[MAX_WADPATH];
     static int  cursor = 0;
+    // HS_GameId_Mode returns a pointer to one static buffer, so both ids
+    // have to be copied out before the second call overwrites the first.
+    char campaign_id[HS_GAMEID_LEN];
+    char single_id[HS_GAMEID_LEN];
     int  total;
     int  tries;
     int  mi, sk, cat;
+    boolean is_single;
 
     if( hs_table_count == 0 )  return NULL;
+
+    dl_strncpy( campaign_id, HS_GameId_Mode(false), HS_GAMEID_LEN-1 );
+    dl_strncpy( single_id,   HS_GameId_Mode(true),  HS_GAMEID_LEN-1 );
 
     total = hs_table_count * HS_NUMSKILLS * HS_NUMCAT;
 
@@ -1141,10 +1153,19 @@ const char * HS_NextRecordDemoPath( void )
         // Only demos from the running game: the same map name is a
         // different level in Doom 2, Plutonia and TNT, so replaying another
         // game's demo would desync immediately.
-        // [Arcade] Campaign only, for the same reason as HS_Entry_Eligible:
-        // the attract cycle must not start replaying single-level demos.
-        if( strncmp(hs_table[mi].game, HS_GameId_Mode(false), HS_GAMEID_LEN-1) != 0 )
+        // [Arcade] Both modes are replayed.  A single-level demo is an
+        // ordinary one map recording -- nothing about playing it back is
+        // mode specific -- so it is captioned rather than skipped.  This
+        // deliberately differs from HS_Entry_Eligible, which still keeps
+        // single-level times off the score *pages*: a demo costs the cycle
+        // nothing extra, while those entries would double the page count.
+        if( strncmp(hs_table[mi].game, campaign_id, HS_GAMEID_LEN-1) == 0 )
+            is_single = false;
+        else if( strncmp(hs_table[mi].game, single_id, HS_GAMEID_LEN-1) == 0 )
+            is_single = true;
+        else
             continue;
+
         if( hs_table[mi].has_record[cat][sk] )
         {
             HS_BuildDemoPath(path, hs_table[mi].game, hs_table[mi].mapname,
@@ -1154,9 +1175,15 @@ const char * HS_NextRecordDemoPath( void )
                 char timebuf[16];
                 HS_FormatTime(hs_table[mi].besttime[cat][sk],
                               timebuf, sizeof(timebuf));
-                // e.g. "E1M1  ITYTD  MAX  4:32"
+                // e.g. "E1M1  ITYTD  MAX  4:32", or
+                // "SINGLE LEVEL: MAP01  ITYTD  SPEED  4:32".  Widest
+                // realistic caption is 275px of BASEVIDWIDTH 320, measured
+                // against the STCFN lumps; HU_Drawer centres it on
+                // V_StringWidth, so it follows any rewording.
                 snprintf(hs_demo_label, sizeof(hs_demo_label),
-                         "%s  %s  %s  %s", hs_table[mi].mapname,
+                         "%s%s  %s  %s  %s",
+                         is_single? "Single Level: " : "",
+                         hs_table[mi].mapname,
                          hs_skillnames[sk], hs_catname[cat], timebuf);
                 strupr(hs_demo_label);
 

@@ -223,10 +223,11 @@ silently made the flag do nothing at all.
       `doom2-sl MAP01 3 31 speed` and `doom2-sl_MAP01_sk3_speed.lmp`.
   - **Separate scoring falls out of `HS_GameId_Mode()`**, which appends `-sl`. Records, record demo
     filenames and the attract page are all selected by that id, so one change covers all three.
-  - **Single-level times never reach the attract cycle**, which is the point — they would double the
-    number of pages. `Command_ExitGame_f` clears `single_level_mode` on the way to the title, and
-    the attract page asks for the *current* mode. The menu's own display therefore cannot use the
-    flag either, so `HS_Best_For`/`HS_Demo_Path_For` take the mode as a parameter.
+  - **Single-level times never reach the attract score *pages*** — they would double the number of
+    pages. `Command_ExitGame_f` clears `single_level_mode` on the way to the title, and the attract
+    page asks for the *current* mode. The menu's own display therefore cannot use the flag either,
+    so `HS_Best_For`/`HS_Demo_Path_For` take the mode as a parameter. **Single-level record
+    *demos*, by contrast, are replayed in the attract cycle** — see `HS_NextRecordDemoPath` below.
   - Ending after one map is done in **`G_DoWorldDone`**, which is where the next map is chosen. The
     intermission and `HS_LevelExit` have both already run by then, so returning early is all that is
     needed. Guarded on `! demoplayback`: a record demo replays through real level exits and would
@@ -240,14 +241,30 @@ silently made the flag do nothing at all.
     moment the exit switch was hit. The replay items set `single_level_mode` instead, and the
     `demoplayback` branch of `G_CheckDemoStatus` routes back to the menu via
     `M_SingleLevel_Finished()`.
-  - `HS_Entry_Eligible` and `HS_NextRecordDemoPath` use **`HS_GameId_Mode(false)`**, not
-    `HS_GameId()`. Both feed the attract cycle, which must show campaign times and replay campaign
-    demos whatever mode the cabinet was last left in — otherwise single-level entries leak onto the
-    attract screen any time `single_level_mode` is still set (for example while the player is
-    sitting on the Single Level page). Level exit and the intermission table deliberately still
-    follow the current mode.
+  - **The two attract-screen consumers deliberately disagree about mode.** Neither may use
+    `HS_GameId()`, because `single_level_mode` is whatever the cabinet was last left in (it is
+    still set while the player sits on the Single Level page, with the attract cycle running
+    behind the menu) — so both resolve the mode explicitly instead:
+    - `HS_Entry_Eligible` takes **`HS_GameId_Mode(false)`**, campaign only. The score pages stay
+      campaign times, and do not double in number.
+    - `HS_NextRecordDemoPath` accepts **both ids** and captions the single-level ones
+      `SINGLE LEVEL: E1M1  HNTR  SPEED  0:13`. A single-level demo is an ordinary one map
+      recording — nothing about replaying it is mode specific — and it adds no pages, just another
+      demo in a rotation that already exists. It sets `is_single` from which id matched rather
+      than reading the flag.
+    - `HS_GameId_Mode` returns a pointer to **one static buffer**, so the two ids must be copied
+      into locals before the second call overwrites the first.
+    - Caption width was measured against the real `STCFN` lumps, per the font rule below: the
+      widest realistic caption (`SINGLE LEVEL: MAP01  ITYTD  SPEED  888:88`) is **275px of 320**,
+      and `HU_Drawer` centres on `V_StringWidth` so it follows any rewording.
+    - Level exit and the intermission table deliberately still follow the current mode.
   - Verified headless: a single-level run wrote `doom2-sl MAP01 2 103 speed` and
     `doom2-sl_MAP01_sk2_speed.lmp`, did not advance to MAP02, and left the campaign table intact.
+    Attract replay was verified with a **trimmed `highscores.dat`** holding one campaign row and
+    one `-sl` row — the full cabinet table is large enough that a two minute run does not reach a
+    given row, which reads as "it didn't work". The trimmed table alternated
+    `doomu_E1M1_sk0_speed.lmp` and `doomu-sl_E1M1_sk1_speed.lmp`, the latter captioned
+    `SINGLE LEVEL: E1M1  HNTR  SPEED  0:13`.
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and
