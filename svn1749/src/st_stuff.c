@@ -1036,7 +1036,7 @@ void ST_Invalidate(void)
     st_card = 0;
 }
 
-static void ST_overlayDrawer ( byte status_position, player_t * plyr );
+static void ST_overlayDrawer ( byte vind, player_t * plyr );
 
 // Doom and Heretic.
 // For player, and both splitscreen players.
@@ -1097,17 +1097,21 @@ void ST_Drawer ( boolean refresh )
         // Overlay status over screen.
         // Any minimal state kept, must be per splitscreen (see hardware).
         // Does not use stlib.
-        if( cv_splitscreen.EV )
+        // [Arcade] One overlay per view.  Players come from localplayer[],
+        // not displayplayer2_ptr, which only ever named the second of two.
+        byte num_views = D_NumViews();
+        if( num_views >= 2 )
         {
+            byte vind;
+
             if((vid.drawmode != DRAW8PAL) && st_palette != 0 )
                 ST_Palette0();
 
-            // player 1 is upper
-            ST_overlayDrawer ( 1, displayplayer_ptr );
-            if( displayplayer2_ptr )
+            for( vind=0; vind<num_views; vind++ )
             {
-                // player 2 is lower
-                ST_overlayDrawer( 0, displayplayer2_ptr );
+                byte pn = localplayer[vind];
+                if( pn >= MAXPLAYERS )  continue;   // panel with no player
+                ST_overlayDrawer( vind, &players[pn] );
             }
         }
         else if( !playerdeadview )
@@ -1653,25 +1657,30 @@ void ST_drawOverlayNum (int x, int y,
         V_DrawScaledPatch(x - (8*vid.dupx), y, numpat[10]);
 }
 
-//  y : status position normally
-//  y0 : status base position as modified for splitscreen
-static inline int SCY( int y, int y0 )
+//  y : status position in 320x200 space
+//  y0 : top edge of this player's view, in screen pixels
+//  ydiv : 2 when the view is half the screen height, else 1
+// [Arcade] Was hardcoded to the two-view split (cv_splitscreen, y0 only).
+// A 2x2 grid halves both axes and needs an x origin as well, so both
+// scalers now take the view's rectangle.
+static inline int SCY( int y, int y0, byte ydiv )
 { 
     //31/10/99: fixed by Hurdler so it _works_ also in hardware mode
     // do not scale to resolution for hardware accelerated
     // because these modes always scale by default
     y = (int)( y * vid.fdupy );     // scale to resolution
-    if( cv_splitscreen.EV ) {
-        y >>= 1; // half sized screens
-        y += y0; // base position of upper or lower screen
-    }
-    return y;
+    if( ydiv > 1 )
+        y /= ydiv;   // this view is a fraction of the screen height
+    return y + y0;   // base position of this view
 }
 
 
-static inline int SCX( int x )
+static inline int SCX( int x, int x0, byte xdiv )
 {
-    return x * vid.fdupx;
+    int sx = (int)( x * vid.fdupx );
+    if( xdiv > 1 )
+        sx /= xdiv;
+    return sx + x0;
 }
 
 static
@@ -1710,20 +1719,55 @@ void  ST_drawOverlayKeys( int x, int y, player_t * plyr )
 //  Draw the status bar overlay, customisable : the user choose which
 //  kind of information to overlay
 //
-//   status_position : 0=lower, 1=upper
+//   vind : which view, 0 .. D_NumViews()-1
 static
-void ST_overlayDrawer ( byte status_position, player_t * plyr )
+void ST_overlayDrawer ( byte vind, player_t * plyr )
 {
     const char *  cmds;
     char   c;
     int    i;
     // [WDJ] 8/2012 fix opengl overlay position to use fdupy
     float  sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy ;
-    int  y0 = status_position ? 0 : vid.height / 2;
-    int  lowerbar_y = SCY(198,y0) - (int)( 16 * sf_dupy );
+
+    // [Arcade] This view's cell of the screen, matching the viewport grid in
+    // hw_main.c: 2 views stack, 4 views are a 2x2 read left-to-right then
+    // top-to-bottom.
+    byte  num_views = D_NumViews();
+    byte  col   = (num_views >= 4) ? (vind & 1) : 0;
+    byte  row   = (num_views >= 4) ? (vind >> 1) : vind;
+    byte  xdiv  = (num_views >= 4) ? 2 : 1;
+    byte  ydiv  = (num_views >= 2) ? 2 : 1;
+    int   x0    = col * (vid.width / 2);
+    int   y0    = row * (vid.height / 2);
+    int  lowerbar_y;
 
     // Draw screen0, scaled, abs position
     V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
+
+    // [Arcade] Shrink the artwork to match a quarter-screen view.  The HUD is
+    // 320x200 base art multiplied by vid.dupx/dupy, so halving the draw scale
+    // gives a quadrant the same HUD-to-view proportions the full screen has.
+    // Only for the 2x2 grid: the two-view split has always drawn full size
+    // art at halved positions, and changing that would move a working layout.
+    if( num_views >= 4 )
+    {
+        // Halve the float scales, then round the integer ones to them rather
+        // than dividing the integers: at 1366x768 dup is 4,3, and integer
+        // halving gives 2,1 -- art twice as wide as tall.  Rounding the
+        // halved floats gives 2,2, which keeps the proportions the full
+        // screen has (the hardware renderer uses the floats either way).
+        drawinfo.fdupx = drawinfo.fdupx / 2.0f;
+        drawinfo.fdupy = drawinfo.fdupy / 2.0f;
+        drawinfo.dupx  = (byte)(drawinfo.fdupx + 0.5f);
+        drawinfo.dupy  = (byte)(drawinfo.fdupy + 0.5f);
+        if( drawinfo.dupx < 1 )  drawinfo.dupx = 1;
+        if( drawinfo.dupy < 1 )  drawinfo.dupy = 1;
+        drawinfo.ybytes = drawinfo.dupy * vid.ybytes;
+        drawinfo.xbytes = drawinfo.dupx * vid.bytepp;
+        sf_dupy /= 2.0f;   // the offsets below follow the art
+    }
+
+    lowerbar_y = SCY(198,y0,ydiv) - (int)( 16 * sf_dupy );
     // x, y are already scaled.
 
     cmds = cv_stbaroverlay.string;
@@ -1735,11 +1779,11 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
        switch (c)
        {
          case 'h': // draw health
-           ST_drawOverlayNum(SCX(50), lowerbar_y,
+           ST_drawOverlayNum(SCX(50, x0, xdiv), lowerbar_y,
                              plyr->health,
                              tallnum, NULL, plyr->health_pickup);
 
-           V_DrawScalePic_Num (SCX(52), lowerbar_y, sbo_health);
+           V_DrawScalePic_Num (SCX(52, x0, xdiv), lowerbar_y, sbo_health);
            break;
 
          case 'f': // draw frags
@@ -1747,11 +1791,11 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
 
            if( deathmatch )
            {
-               ST_drawOverlayNum(SCX(300), SCY(2,y0),
+               ST_drawOverlayNum(SCX(300, x0, xdiv), SCY(2, y0, ydiv),
                                  st_fragscount,
                                  tallnum, NULL, 0);
 
-               V_DrawScalePic_Num (SCX(302), SCY(2,y0), sbo_frags);
+               V_DrawScalePic_Num (SCX(302, x0, xdiv), SCY(2, y0, ydiv), sbo_frags);
            }
            break;
 
@@ -1759,24 +1803,24 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
            i = sbo_ammo[plyr->readyweapon];
            if (i)
            {
-               ST_drawOverlayNum(SCX(234), lowerbar_y,
+               ST_drawOverlayNum(SCX(234, x0, xdiv), lowerbar_y,
                                  plyr->ammo[plyr->weaponinfo[plyr->readyweapon].ammo],
                                  tallnum, NULL, plyr->ammo_pickup);
 
-               V_DrawScalePic_Num (SCX(236), lowerbar_y, i);
+               V_DrawScalePic_Num (SCX(236, x0, xdiv), lowerbar_y, i);
            }
            break;
 
          case 'k': // draw keys
-           ST_drawOverlayKeys( SCX(318), lowerbar_y - (8 * sf_dupy), plyr );
+           ST_drawOverlayKeys( SCX(318, x0, xdiv), lowerbar_y - (8 * sf_dupy), plyr );
            break;
 
          case 'm': // draw armor
-           ST_drawOverlayNum(SCX(300), lowerbar_y,
+           ST_drawOverlayNum(SCX(300, x0, xdiv), lowerbar_y,
                              plyr->armorpoints,
                              tallnum, NULL, plyr->armor_pickup);
 
-           V_DrawScalePic_Num (SCX(302), lowerbar_y, sbo_armor);
+           V_DrawScalePic_Num (SCX(302, x0, xdiv), lowerbar_y, sbo_armor);
            break;
 
          // added by Hurdler for single player only (or coop netplay)
@@ -1790,7 +1834,7 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
            {
                char buf[24];
                sprintf(buf, "K %d/%d", plyr->killcount, totalkills);
-               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(1,y0), 0, buf);
+               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(1, y0, ydiv), 0, buf);
            }
            break;
 
@@ -1799,7 +1843,7 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
            {
                char buf[24];
                sprintf(buf, "I %d/%d", plyr->itemcount, totalitems);
-               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(11,y0), 0, buf);
+               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(11, y0, ydiv), 0, buf);
            }
            break;
 
@@ -1808,7 +1852,7 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
            {
                char buf[24];
                sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);
-               V_DrawString(SCX(318-V_StringWidth(buf)), SCY(21,y0), 0, buf);
+               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(21, y0, ydiv), 0, buf);
            }
            break;
 
@@ -1851,7 +1895,7 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
                else
                    sec = leveltime / TICRATE;
                sprintf(buf, "T %d:%02d", sec/60, sec%60);
-               V_DrawString( SCX(CLK_CX - (V_StringWidth(buf) / 2)),
+               V_DrawString( SCX(CLK_CX - (V_StringWidth(buf) / 2), x0, xdiv),
                              lowerbar_y + (int)( CLK_DY * sf_dupy ), 0, buf );
            }
            break;
@@ -1862,7 +1906,7 @@ void ST_overlayDrawer ( byte status_position, player_t * plyr )
                char buf[8];
                int framerate = 35;
                sprintf(buf, "%d FPS", framerate);
-               V_DrawString(SCX(2), SCY(4,y0), 0, buf);
+               V_DrawString(SCX(2, x0, xdiv), SCY(4, y0, ydiv), 0, buf);
            }
            break;
            */

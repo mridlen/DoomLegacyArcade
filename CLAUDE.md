@@ -422,9 +422,23 @@ silently made the flag do nothing at all.
       1 view `0,0 1366x768`; 2 views `0,0` and `0,384`, each 1366x384; 4 views `0,0` `683,0`
       `0,384` `683,384`, each 683x384 — tiling the screen exactly. Three players give the first
       three of those.
-    - Still to do for a finished 4 player cabinet: the **HUD and status bar** are still placed
-      against the 2-view split (`st_stuff.c` `lowerbar_y`, `CLK_DY`), so they are not yet
-      re-derived for quadrants.
+    - **The HUD follows the same grid** (`st_stuff.c`). `SCY(y, y0)` used to halve for
+      `cv_splitscreen` and add a row offset; it and `SCX` now both take the view's origin and a
+      per-axis divisor, so a quadrant halves *both* axes and shifts into its column.
+      `ST_overlayDrawer` takes a view index instead of a 0/1 "status position", and `ST_Drawer`
+      loops over the views, taking each player from `localplayer[]`.
+    - **The HUD art shrinks for a quadrant, and can be**: it is 320x200 base art multiplied by
+      `vid.dupx`/`dupy`, not fixed-size, so halving `drawinfo.dupx/dupy` (and `fdupx/fdupy`, plus
+      the derived `xbytes`/`ybytes`) after `V_SetupDraw` gives a quarter-screen view the same
+      HUD-to-view proportions the full screen has. **Round the halved floats rather than dividing
+      the integers**: at 1366x768 dup is 4,3, and integer halving gives 2,1 — art twice as wide as
+      tall. Rounding gives 2,2. The hardware renderer uses the floats either way.
+    - Only the 2x2 grid rescales. **The two-view split still draws full size art at halved
+      positions**, deliberately: that layout is measured and working, and rescaling it would move
+      everything. Verified byte-identical — `lowerbar_y` is still exactly 319 for the upper half.
+    - Verified numerically at 1366x768, four views: cells 683x384, `lowerbar_y` 350 (top row) and
+      734 (bottom), health x at 106/789, ammo at 499/1182 — every element inside its own cell,
+      with `dup=2,2`.
   - **There are no dep files for most objects** (`svn1749/dep` holds about 16), so **a header edit
     does not trigger a rebuild**. This bit during this work: `console.o` kept a stale
     `gamecontrol` symbol and failed at link. After editing any header, `make clean && make`.
