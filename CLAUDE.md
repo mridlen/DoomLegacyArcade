@@ -1114,6 +1114,15 @@ is otherwise unversioned state the build silently depends on.
   `D_DoomMain` re-runs this block via the launcher restart path and `legacyhome` may still hold
   the previous pass's value.
 
+**Every config save keeps one generation** as `config.cfg.bak`, written by `M_SaveConfig`
+(`m_misc.c`) just before the new file. A cabinet's config is hand-tuned, only a `-devmode` session
+writes it, and the settings exist nowhere else on the machine — so a bad write is rare but
+expensive. There *is* a `config_loaded` guard above that code, but it does not prevent a session
+which started without reading the file from writing a full set of defaults over it: verified, a
+devmode run with no `config.cfg` present writes 345 lines of pure defaults. The `.bak` makes any
+such loss one `cp` from recovery. **A defaults-write is recognisable** by `name` being your Unix
+login and `name2` being the compiled default `"big b"`.
+
 The tracked copy lives at **`cabinet/legacyhome/config.cfg`** (see `cabinet/README.md`). `make`
 stages it into `svn1749/bin/legacyhome/` via the `cabinet_home` target, using `cp -n` so a rebuild
 **never resets a running cabinet's settings**. Since `bin/` is gitignored, an operator's `-devmode`

@@ -533,6 +533,34 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
         && ! CV_Config_check( cfg ) ) // NOT any of the cfg is (current or pushed).
         return;
 
+    // [Arcade] Keep one generation of the previous config alongside the new
+    // one.  A cabinet's config is hand-tuned and only a -devmode session ever
+    // writes it, so a bad write is both rare and expensive: the settings
+    // exist nowhere else on the machine.  There is a config_loaded guard
+    // above, but it did not prevent a session that started without reading
+    // the file from writing a full set of defaults over it.
+    //
+    // A copy rather than a rename, so the live file is never briefly absent.
+    {
+        FILE * fr = fopen( cfgfile, "r" );
+        if( fr )
+        {
+            char bakname[MAX_WADPATH];
+            FILE * fb;
+            snprintf( bakname, sizeof(bakname), "%s.bak", cfgfile );
+            fb = fopen( bakname, "w" );
+            if( fb )
+            {
+                char cbuf[4096];
+                size_t got;
+                while( (got = fread(cbuf, 1, sizeof(cbuf), fr)) > 0 )
+                    fwrite(cbuf, 1, got, fb);
+                fclose(fb);
+            }
+            fclose(fr);
+        }
+    }
+
     fw = fopen (cfgfile, "w");
     if (!fw)
     {
