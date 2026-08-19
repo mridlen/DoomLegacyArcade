@@ -598,6 +598,12 @@ extern byte      localplayer[MAXSPLITSCREENPLAYERS];  // client player number
 // [Arcade] Players sharing this machine, 1..MAXSPLITSCREENPLAYERS.
 byte  D_NumLocalPlayers( void );
 byte  D_NumViews( void );   // 1, 2 or 4 viewports
+
+// [Arcade] Grid cell for a local player, so a panel's screen area matches
+// where the player is standing rather than the order they joined.
+byte  D_View_Cell( byte pind );
+void  D_Set_View_Cell( byte pind, byte cell );
+void  D_Reset_View_Cells( void );
 void  CL_Init_localplayer( void );
 
 

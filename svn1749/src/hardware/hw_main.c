@@ -4410,8 +4410,9 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // left-to-right then top-to-bottom, so panel order matches screen order.
     {
         byte num_views = D_NumViews();
-        byte col = (num_views >= 4) ? (pind & 1) : 0;
-        byte row = (num_views >= 4) ? (pind >> 1) : pind;
+        byte cell = D_View_Cell(pind);   // [Arcade] panel's cell, not join order
+        byte col = (num_views >= 4) ? (cell & 1) : 0;
+        byte row = (num_views >= 4) ? (cell >> 1) : cell;
 
         gr_centery = gr_basecentery;
         gr_viewwindowx = gr_baseviewwindowx;

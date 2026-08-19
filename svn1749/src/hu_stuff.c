@@ -1180,8 +1180,9 @@ void HU_Draw_DeathmatchRankings ( byte vind )
     boolean	 large;
 
     byte  num_views = D_NumViews();
-    byte  col   = (num_views >= 4) ? (vind & 1) : 0;
-    byte  row   = (num_views >= 4) ? (vind >> 1) : vind;
+    byte  cell  = D_View_Cell(vind);   // [Arcade] panel's cell, not join order
+    byte  col   = (num_views >= 4) ? (cell & 1) : 0;
+    byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
     int   offx  = 0, offy = 0;   // in base units, at the scale set below
     // Global draw scale, restored at the end (single exit).
     byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;

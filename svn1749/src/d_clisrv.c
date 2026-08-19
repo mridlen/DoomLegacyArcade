@@ -145,6 +145,7 @@
 #include "keys.h"
 #include "m_argv.h"
 #include "m_menu.h"
+#include "r_main.h"   // R_SetViewSize, when the view grid changes
 #include "console.h"
 #include "byteptr.h"
 
@@ -377,6 +378,55 @@ byte  D_NumLocalPlayers( void )
 }
 
 
+// [Arcade] Which cell of the view grid each local player occupies.  Players
+// join in sequence -- panel 3 joining while panel 2 sits out still becomes
+// local player 1 -- but on a cabinet your screen area should match where you
+// are standing, so the join screen records the panel each player pressed and
+// the drawing code asks here rather than using the join order.
+//
+// Identity by default, which is exactly the old behaviour when every panel
+// joins in order.  Deliberately an indirection rather than making the join
+// itself claim a slot: SV_commit_player hands out pind sequentially and the
+// protocol sends a player *count*, so non-contiguous joins would have meant
+// changing the netcode, while the draw loops already skip empty cells.
+static byte  localplayer_cell[MAXSPLITSCREENPLAYERS] = { 0, 1, 2, 3 };
+
+typedef char localplayer_cell_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 : -1 ];
+
+byte  D_View_Cell( byte pind )
+{
+    return (pind < MAXSPLITSCREENPLAYERS) ? localplayer_cell[pind] : pind;
+}
+
+// Called by the join screen: local player 'pind' plays in grid cell 'cell'.
+// R_SetViewSize because moving a player between cells can change how the
+// screen is carved up (two players at panels 1 and 3 need the 2x2, not the
+// stacked halves), and the viewport sizes are only recomputed on request --
+// otherwise the new cell keeps the old cell's width.
+void  D_Set_View_Cell( byte pind, byte cell )
+{
+    if( pind < MAXSPLITSCREENPLAYERS && cell < MAXSPLITSCREENPLAYERS
+        && localplayer_cell[pind] != cell )
+    {
+        localplayer_cell[pind] = cell;
+        R_SetViewSize();
+    }
+}
+
+// Back to join order, for a game started without the join screen.
+void  D_Reset_View_Cells( void )
+{
+    byte pind;
+    boolean changed = false;
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        if( localplayer_cell[pind] != pind )  changed = true;
+        localplayer_cell[pind] = pind;
+    }
+    if( changed )  R_SetViewSize();
+}
+
+
 // [Arcade] How many viewports are drawn, and so how the screen is carved up:
 //   1 -> whole screen
 //   2 -> two stacked halves, as splitscreen has always been
@@ -387,10 +437,20 @@ byte  D_NumLocalPlayers( void )
 // the 2 view split it needs no projection fix.
 byte  D_NumViews( void )
 {
-    byte n = D_NumLocalPlayers();
+    byte pind, n = D_NumLocalPlayers();
+    byte top = 0;   // highest cell any local player occupies
+
     if( n <= 1 )  return 1;
-    if( n == 2 )  return 2;
-    return 4;
+
+    for( pind=0; pind<n && pind<MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        byte c = D_View_Cell(pind);
+        if( c > top )  top = c;
+    }
+
+    // Two players sitting at panels 1 and 3 need the 2x2, not the stacked
+    // halves, or the second of them has no cell to be drawn in.
+    return (top >= 2) ? 4 : 2;
 }
 
 

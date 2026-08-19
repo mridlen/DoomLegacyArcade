@@ -1733,8 +1733,9 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     // hw_main.c: 2 views stack, 4 views are a 2x2 read left-to-right then
     // top-to-bottom.
     byte  num_views = D_NumViews();
-    byte  col   = (num_views >= 4) ? (vind & 1) : 0;
-    byte  row   = (num_views >= 4) ? (vind >> 1) : vind;
+    byte  cell  = D_View_Cell(vind);   // [Arcade] panel's cell, not join order
+    byte  col   = (num_views >= 4) ? (cell & 1) : 0;
+    byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
     // [Arcade] With the 2x2 grid the global draw scale is halved below, which
     // shrinks positions as well as art, so no extra divisor is wanted here.
     // The two-view split keeps its old behaviour: full size art at halved y.
