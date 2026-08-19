@@ -62,11 +62,11 @@
 extern consvar_t   cv_splitscreen;
 
 // main player and splitscreen player
-extern consvar_t   cv_playername[2];
-extern consvar_t   cv_playercolor[2];
-extern consvar_t   cv_skin[2];
-extern consvar_t   cv_autoaim[2];
-extern consvar_t   cv_weaponpref[2];
+extern consvar_t   cv_playername[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_playercolor[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_skin[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_autoaim[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_weaponpref[MAXSPLITSCREENPLAYERS];
 
 extern consvar_t   cv_controlperkey;
 

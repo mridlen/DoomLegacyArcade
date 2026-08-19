@@ -452,6 +452,16 @@
 // Limit MAXPLAYERS (and others) to 250.
 // TODO: ... more!!!
 #define MAXPLAYERS              32
+
+// [Arcade] Players sharing one machine: a multicade panel has up to four.
+// This lived in d_net.h as a 2 that nothing ever referenced -- every limit
+// was a separate hardcoded literal instead.  It is the real knob now, so it
+// belongs beside MAXPLAYERS where anything can see it.  Raising it alone is
+// not enough to add a view: the renderer splits into at most two (see
+// r_main.c, r_draw.c), so players past the second exist and are controllable
+// but are not drawn yet.
+#define MAXSPLITSCREENPLAYERS   4
+
 #define MAXSKINS                128
 #define PLAYERSMASK             (MAXPLAYERS-1)
 #define MAXPLAYERNAME           21

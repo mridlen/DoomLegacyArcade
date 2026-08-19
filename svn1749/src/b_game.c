@@ -382,7 +382,7 @@ void B_Send_bot_NameColor( byte pn )
 {
     // From botinfo sources
     bot_info_t * bip = & botinfo[pn];
-    Send_NameColor_pn( pn, botnames[bip->name_index], bip->colour, bot_skinname(bip->skinrand), 2 );  // server channel
+    Send_NameColor_pn( pn, botnames[bip->name_index], bip->colour, bot_skinname(bip->skinrand), TEXTCMD_PIND_SERVER );  // server channel
 }
 
 // By Server.

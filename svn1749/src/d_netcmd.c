@@ -204,6 +204,29 @@ void Send_NameColor2(void)
     Send_NameColor_pind(1);
 }
 
+// [Arcade] Panels 3 and 4.  One OnChange per player because consvar_t has no
+// way to tell the callback which cvar fired.
+static
+void Send_NameColor3(void)
+{
+    Send_NameColor_pind(2);
+}
+static
+void Send_NameColor4(void)
+{
+    Send_NameColor_pind(3);
+}
+static
+void Send_WeaponPref3(void)
+{
+    Send_WeaponPref_pind(2);
+}
+static
+void Send_WeaponPref4(void)
+{
+    Send_WeaponPref_pind(3);
+}
+
 static
 void Send_WeaponPref1(void)
 {
@@ -217,35 +240,50 @@ void Send_WeaponPref2(void)
 
 // Has CV_CFG1 where does not have support for insert into drawmode config file.
 // these are just meant to be saved to the config
-consvar_t cv_playername[2] = {
+// [Arcade] One entry per local player.  The first two console names are
+// unchanged ("name"/"name2" and so on), so an existing config.cfg still loads
+// exactly as before; panels 3 and 4 add "name3"/"name4".
+consvar_t cv_playername[MAXSPLITSCREENPLAYERS] = {
   { "name", NULL, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_NameColor1 },
-  { "name2", "big b", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_NameColor2 }
+  { "name2", "big b", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_NameColor2 },
+  { "name3", "player 3", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_NameColor3 },
+  { "name4", "player 4", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_NameColor4 }
 };
 
-consvar_t cv_playercolor[2] = {
+consvar_t cv_playercolor[MAXSPLITSCREENPLAYERS] = {
   { "color", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, Color_cons_t, Send_NameColor1 },
-  { "color2", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, Color_cons_t, Send_NameColor2 }
+  { "color2", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, Color_cons_t, Send_NameColor2 },
+  { "color3", "2", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, Color_cons_t, Send_NameColor3 },
+  { "color4", "3", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, Color_cons_t, Send_NameColor4 }
 };
 
 // player's skin, saved for commodity, when using a favorite skins wad..
-consvar_t cv_skin[2] = {
+consvar_t cv_skin[MAXSPLITSCREENPLAYERS] = {
   { "skin", DEFAULTSKIN, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL /*skin_cons_t */ , Send_NameColor1 },
-  { "skin2", DEFAULTSKIN, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL /*skin_cons_t */ , Send_NameColor2 }
+  { "skin2", DEFAULTSKIN, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL /*skin_cons_t */ , Send_NameColor2 },
+  { "skin3", DEFAULTSKIN, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL /*skin_cons_t */ , Send_NameColor3 },
+  { "skin4", DEFAULTSKIN, CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, NULL /*skin_cons_t */ , Send_NameColor4 }
 };
 
-consvar_t cv_autoaim[2] = {
+consvar_t cv_autoaim[MAXSPLITSCREENPLAYERS] = {
   { "autoaim",  "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref1 },
-  { "autoaim2", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 }
+  { "autoaim2", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 },
+  { "autoaim3", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref3 },
+  { "autoaim4", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref4 }
 };
 
-consvar_t cv_weaponpref[2] = {
+consvar_t cv_weaponpref[MAXSPLITSCREENPLAYERS] = {
   { "weaponpref", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref1 },
   { "weaponpref2", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref2 },
+  { "weaponpref3", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref3 },
+  { "weaponpref4", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref4 },
 };
 
-consvar_t cv_originalweaponswitch[2] = {
+consvar_t cv_originalweaponswitch[MAXSPLITSCREENPLAYERS] = {
   { "originalweaponswitch", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref1 },
-  { "originalweaponswitch2", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 }
+  { "originalweaponswitch2", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 },
+  { "originalweaponswitch3", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref3 },
+  { "originalweaponswitch4", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref4 }
 };
    
 
@@ -293,6 +331,8 @@ void D_Register_ClientCommands(void)
     COM_AddCommand("chatmacro", Command_Chatmacro_f, CC_chat);   // hu_stuff.c
     COM_AddCommand("setcontrol", Command_Setcontrol_f, CC_control);
     COM_AddCommand("setcontrol2", Command_Setcontrol2_f, CC_control);
+    COM_AddCommand("setcontrol3", Command_Setcontrol3_f, CC_control);  // [Arcade]
+    COM_AddCommand("setcontrol4", Command_Setcontrol4_f, CC_control);  // [Arcade]
     COM_AddCommand("bindjoyaxis", Command_BindJoyaxis_f, CC_control);
 
     COM_AddCommand("version", Command_Version_f, CC_info);
@@ -315,21 +355,22 @@ void D_Register_ClientCommands(void)
     if (cv_playername[0].defaultvalue == NULL)
         cv_playername[0].defaultvalue = "gi john";
 
-    // Main player
-    CV_RegisterVar(&cv_playername[0]);
-    CV_RegisterVar(&cv_playercolor[0]);
-    CV_RegisterVar(&cv_skin[0]);  // r_things.c (skin NAME)
-    CV_RegisterVar(&cv_autoaim[0]);
-    CV_RegisterVar(&cv_weaponpref[0]);
-    CV_RegisterVar(&cv_originalweaponswitch[0]);
-
-    // Splitscreen player
-    CV_RegisterVar(&cv_playername[1]);
-    CV_RegisterVar(&cv_playercolor[1]);
-    CV_RegisterVar(&cv_skin[1]);
-    CV_RegisterVar(&cv_autoaim[1]);
-    CV_RegisterVar(&cv_weaponpref[1]);
-    CV_RegisterVar(&cv_originalweaponswitch[1]);
+    // [Arcade] Every local player, not just the first two.  An unregistered
+    // consvar_t has a NULL string, and Send_NameColor_pind hands that
+    // straight to the netxcmd packer -- so a third panel joining used to
+    // segfault the moment the server announced it.
+    {
+        byte pind;
+        for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
+        {
+            CV_RegisterVar(&cv_playername[pind]);
+            CV_RegisterVar(&cv_playercolor[pind]);
+            CV_RegisterVar(&cv_skin[pind]);  // r_things.c (skin NAME)
+            CV_RegisterVar(&cv_autoaim[pind]);
+            CV_RegisterVar(&cv_weaponpref[pind]);
+            CV_RegisterVar(&cv_originalweaponswitch[pind]);
+        }
+    }
    
     //misc
     CV_RegisterVar(&cv_netstat);

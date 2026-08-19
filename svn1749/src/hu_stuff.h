@@ -58,7 +58,7 @@
 #define HU_FONTSIZE     (HU_FONTEND - HU_FONTSTART + 1)
 
 
-extern consvar_t  cv_crosshair[2];
+extern consvar_t  cv_crosshair[MAXSPLITSCREENPLAYERS];
 //extern consvar_t  cv_crosshairscale;
 
 extern char*   shiftxform;   // french/english translation shift table

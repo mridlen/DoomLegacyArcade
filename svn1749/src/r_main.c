@@ -336,7 +336,7 @@ void SplitScreen_OnChange(void)
         CL_Splitscreen_Player_Manager();
 
         if(server && !netgame)
-            multiplayer = cv_splitscreen.EV;
+            multiplayer = (D_NumLocalPlayers() > 1);  // [Arcade] not just the split
     }
     else
     {

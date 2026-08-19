@@ -55,8 +55,8 @@
 // Node connection storage, and send. Limited to 254 (byte).
 #define MAX_CON_NETNODE (MAXNETNODES+2)
 
-// Maximum number of players on a single computer.
-#define MAXSPLITSCREENPLAYERS   2
+// Maximum number of players on a single computer: MAXSPLITSCREENPLAYERS,
+// now defined in doomdef.h beside MAXPLAYERS.  [Arcade]
 
 // The periodic updating of net stats.
 #define STAT_PERIOD  (TICRATE*2)

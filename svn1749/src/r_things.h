@@ -142,7 +142,7 @@ typedef struct
 
 extern int       numskins;
 extern skin_t *  skins[MAXSKINS+1];
-extern consvar_t cv_skin[2];
+extern consvar_t cv_skin[MAXSPLITSCREENPLAYERS];
 
 void    SetPlayerSkin_by_index( player_t * player, int index );
 void    SetPlayerSkin(int playernum, const char *skinname);

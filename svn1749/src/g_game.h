@@ -214,8 +214,8 @@ void G_BuildTiccmd (ticcmd_t* cmd, int realtics, byte pind);
 angle_t G_ClipAimingPitch(angle_t aiming);
 
 // [0]=main player [1]=splitscreen player
-extern angle_t localangle[2];
-extern angle_t localaiming[2]; // should be a angle_t but signed
+extern angle_t localangle[MAXSPLITSCREENPLAYERS];
+extern angle_t localaiming[MAXSPLITSCREENPLAYERS]; // should be a angle_t but signed
 
 extern int extramovefactor;		// Extra speed to move at
 

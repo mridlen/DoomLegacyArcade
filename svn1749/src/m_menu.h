@@ -116,6 +116,11 @@ void M_QuitResponse(int ch);
 
 void M_Register_Menu_Controls( void );
 
+// [Arcade] How many sets of controls this cabinet has, 1..4.  Read by
+// d_clisrv.c to decide how many players join on this machine.  See
+// D_NumLocalPlayers(), which clamps it to MAXSPLITSCREENPLAYERS.
+extern consvar_t cv_localplayers;
+
 #ifdef LAUNCHER
 void M_LaunchMenu( void );
 #endif

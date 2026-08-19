@@ -288,7 +288,7 @@ static nnode_state_e   nnode_state[MAXNETNODES];  // easier debugging
 static byte     nnode_state[MAXNETNODES];  // nnode_state_e
 #endif
 // Index by pind, [0]=main player [1]=splitscreen player
-static byte     nnode_to_player[2][MAXNETNODES];  // 255= unused
+static byte     nnode_to_player[MAXSPLITSCREENPLAYERS][MAXNETNODES];  // 255= unused
 static byte     playerpernode[MAXNETNODES]; // used specialy for splitscreen
 static byte     join_waiting[MAXNETNODES];  // num of players waiting to join
 static byte     consistency_faults[MAXNETNODES];
@@ -345,9 +345,40 @@ static byte     cl_server_state = NOS_idle; // nnode_state_e, client view of ser
 
 // Client maketic
 // [0]=main player [1]=splitscreen player
-byte              localplayer[2] = {255,255};  // client player number
-static ticcmd_t   localcmds[2];
-static textbuf_t  localtextcmd[2];
+// 255 = unused.  [Arcade] This MUST be a static initializer, not a runtime
+// one: M_LoadConfig runs long before D_Init_ClientServer, and the config's
+// player name/skin lines reach Send_NameColor2, which tests
+// localplayer[1] < MAXPLAYERS.  Left zeroed, that reads as "player 0" and
+// sends a netxcmd with no server behind it -- an immediate segfault at
+// startup, before any game exists.
+byte              localplayer[MAXSPLITSCREENPLAYERS] = { 255, 255, 255, 255 };
+
+// Guard rail for the list above: raising MAXSPLITSCREENPLAYERS must extend it,
+// or the new slots default to 0, which is a valid player number.  Deliberately
+// a compile error rather than a runtime surprise.
+typedef char localplayer_init_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 : -1 ];
+
+// [Arcade] How many players share this machine.  Clamped to the compiled
+// limit so a hand-edited config cannot ask for more slots than exist, and to
+// at least 1 -- a cabinet with no local player would never spawn anybody.
+byte  D_NumLocalPlayers( void )
+{
+    int n = cv_localplayers.EV;
+    if( n < 1 )  n = 1;
+    if( n > MAXSPLITSCREENPLAYERS )  n = MAXSPLITSCREENPLAYERS;
+    return (byte) n;
+}
+
+
+// [Arcade] Mark every local player slot unused.
+void CL_Init_localplayer( void )
+{
+    byte pind;
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
+        localplayer[pind] = 255;
+}
+static ticcmd_t   localcmds[MAXSPLITSCREENPLAYERS];
+static textbuf_t  localtextcmd[MAXSPLITSCREENPLAYERS];
 
 // engine
 // Server packet state
@@ -569,7 +600,9 @@ void Register_NetXCmd(netxcmd_e cmd_id, void (*cmd_f) (xcmd_t * xc))
 
 // Server NetXCmd need to transit the network logic, even when there
 // is no server player. This used to be done by unexplained kludges.
-// A server pind = 2, is used for routing.
+// A server pind of TEXTCMD_PIND_SERVER is used for routing.  [Arcade] that
+// was the literal 2, which is a real player index once a cabinet has more
+// than two panels.
 
 // The NetXCmd must be executed in all clients during a specific gametic.
 // The current system has all movement commands and NetXCmd for one tick
@@ -628,12 +661,12 @@ void Send_NetXCmd_pind( byte cmd_id, void *param, int param_len, byte pind )
 //  param : parameter strings
 //  param_len : number of parameter strings
 //  textcmd_pind : the textcmd channel to use
-//  pn : player textcmd dest, when textcmd_pind is 2
+//  pn : player textcmd dest, when textcmd_pind is TEXTCMD_PIND_SERVER
 void Send_NetXCmd_auto( byte cmd_id, void *param, int param_len, byte textcmd_pind, byte pn )
 {
     // Client on server can just as well use server channel too,
     // as long as textcmd ends up in correct textcmd channel.
-    if( server || (textcmd_pind >= 2) || (pn == SERVER_PID) )  // routing
+    if( server || (textcmd_pind >= TEXTCMD_PIND_SERVER) || (pn == SERVER_PID) )  // routing
     {
         if( server )
         {
@@ -1350,9 +1383,10 @@ static boolean  CL_Send_Join( void )
     netbuffer->u.clientcfg.flags = flg;
 
     // Declare how many players at this node.
+    // [Arcade] The panel's control sets, not the render split: cv_splitscreen
+    // only says whether two *views* are drawn.
     netbuffer->u.clientcfg.num_node_players =
-        (cl_drone)? 0
-      : ( (cv_splitscreen.value)? 2 : 1 );
+        (cl_drone)? 0 : D_NumLocalPlayers();
 
     byte errcode = HSendPacket( cl_servernode, SP_reliable|SP_queue|SP_error_handler, 0, sizeof(clientconfig_pak_t) );
     return  (errcode < NE_fail);
@@ -3446,8 +3480,13 @@ static void CL_RemovePlayer( byte playernum )
 
     playeringame[playernum] = false;
     player_state[playernum] = PS_unused;
-    if( localplayer[0] == playernum )   localplayer[0] = 255;
-    if( localplayer[1] == playernum )   localplayer[1] = 255;
+    {
+        byte pind;   // [Arcade] any of the local slots may hold this player
+        for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
+        {
+            if( localplayer[pind] == playernum )   localplayer[pind] = 255;
+        }
+    }
     player_to_nnode[playernum] = 255;
 
     // we should use a reset player but there is not such function
@@ -3637,6 +3676,10 @@ void D_Init_ClientServer (void)
 
     network_state = NETS_idle;
     cl_drone = false;
+
+    // [Arcade] localplayer[] has no static initializer -- zero would read as
+    // player 0 in every slot -- so mark them unused before anything joins.
+    CL_Init_localplayer();
 
     // drone server generating the left view of three screen view
     if(M_CheckParm("-left"))
@@ -3849,7 +3892,7 @@ byte SV_commit_player( byte nnode, byte new_state )
     // Search for a free playernum.
     // New players will have playeringame set as a result of XCmd AddPlayer.
     pind = playerpernode[nnode];  // next pind
-    if( pind > 1 )
+    if( pind >= MAXSPLITSCREENPLAYERS )   // [Arcade] was hardcoded 2
         return 255;
     
     newplayernum = SV_get_player_num();
@@ -4099,12 +4142,16 @@ void Got_NetXCmd_AddPlayer(xcmd_t * xc)
             displayplayer=newplayernum;
             displayplayer_ptr = consoleplayer_ptr = &players[newplayernum];
         }
-        else
+        else if( pind == 1 )
         {
             // splitscreen
             displayplayer2=newplayernum;
             displayplayer2_ptr = &players[displayplayer2];
         }
+        // [Arcade] pind 2 and 3 join and play but get no viewport: the
+        // renderer has only the two halves.  Deliberately not assigned to
+        // displayplayer2, which would hand the second view to the last
+        // player to join.
 
         if( sendconfigtic == gametic )
         {
@@ -4377,8 +4424,11 @@ void SV_StopServer( void )
 
     gamestate = wipegamestate = GS_NULL;
 
-    localtextcmd[0].len = 0;  // text len
-    localtextcmd[1].len = 0; // text len
+    {
+        byte pind;   // [Arcade] one channel per local player
+        for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
+            localtextcmd[pind].len = 0;  // text len
+    }
 
     for(i=0; i<BACKUPTICS; i++)
         D_Clear_ticcmd(i);
@@ -4401,7 +4451,9 @@ void SV_StartSinglePlayerServer(void)
     // no more tic the game with this settings !
     SV_StopServer();
 
-    if( cv_splitscreen.value )
+    // [Arcade] More than one player on this machine is a multiplayer game,
+    // whether or not the screen is split for them.
+    if( D_NumLocalPlayers() > 1 )
         multiplayer    = true;
 }
 
@@ -4879,22 +4931,19 @@ static void CL_Send_ClientCmd (void)
         int btic = BTIC_INDEX( gametic );
         netbuffer->u.clientpak.consistency = LE_SWAP16_FAST(consistency[btic]);
 
-        // Mainplayer
-        TicCmdCopy( &netbuffer->u.clientpak.cmd[0], /*src*/ &localcmds[0] );
-
-        if (cv_splitscreen.value)
+        // [Arcade] One ticcmd per local player on this machine.  The packet
+        // already carried a pind_mask and was sized to "use only what is
+        // needed", so widening past two players fits the existing format --
+        // only the hardcoded 0x03 / cmd[1] had to go.
+        byte pind, nlocal = D_NumLocalPlayers();
+        byte mask = 0;
+        for( pind=0; pind<nlocal; pind++ )
         {
-            // Splitscreen player
-            TicCmdCopy( &netbuffer->u.clientpak.cmd[1], /*src*/ &localcmds[1] );
-            netbuffer->u.clientpak.pind_mask = 0x03;
-            packetsize = sizeof(clientcmd_pak_t);
+            TicCmdCopy( &netbuffer->u.clientpak.cmd[pind], /*src*/ &localcmds[pind] );
+            mask |= (1<<pind);
         }
-        else
-        {
-            // only one player
-            netbuffer->u.clientpak.pind_mask = 0x01;
-            packetsize = offsetof(clientcmd_pak_t, cmd[1]);
-        }
+        netbuffer->u.clientpak.pind_mask = mask;
+        packetsize = offsetof(clientcmd_pak_t, cmd) + (nlocal * sizeof(ticcmd_t));
         
         HSendPacket( cl_servernode, 0, 0, packetsize );  // msg lost when too busy
     }
@@ -4960,9 +5009,9 @@ static void client_cmd_handler( byte netcmd, byte nnode )
 
     // Copy the ticcmd
     btic = BTIC_INDEX( maketic );
-    // This packet may have 1 or 2 players
+    // This packet may carry up to MAXSPLITSCREENPLAYERS players
     byte pind_mask = netbuffer->u.clientpak.pind_mask;
-    for( pind=0; pind<2; pind++ )
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
     {
         if( (pind_mask & (1<<pind)) == 0 )  continue;
         byte pn = nnode_to_player[pind][nnode];
@@ -5640,10 +5689,18 @@ static void Local_Maketic(int realtics)
 {
     rendergametic=gametic;
     // translate inputs (keyboard/mouse/joystick) into game controls
-    G_BuildTiccmd(&localcmds[0], realtics, 0);
-    // [WDJ] requires splitscreen and player2 present
-    if (cv_splitscreen.value && displayplayer2_ptr )
-      G_BuildTiccmd(&localcmds[1], realtics, 1);
+    // [Arcade] One per local player.  Gated on the player actually having
+    // joined (localplayer[pind] valid) rather than on cv_splitscreen and
+    // displayplayer2_ptr, which only ever described the second of two: a
+    // third or fourth panel has controls and a player but no view.
+    {
+        byte pind, nlocal = D_NumLocalPlayers();
+        for( pind=0; pind<nlocal; pind++ )
+        {
+            if( pind > 0 && localplayer[pind] >= MAXPLAYERS )  continue;
+            G_BuildTiccmd(&localcmds[pind], realtics, pind);
+        }
+    }
 
 #ifdef CLIENTPREDICTION2
     if( !paused && localgametic<gametic+BACKUPTICS)

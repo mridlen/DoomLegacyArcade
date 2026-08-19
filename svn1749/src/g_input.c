@@ -77,19 +77,25 @@ CV_PossibleValue_t onecontrolperkey_cons_t[]={{1,"One"},{2,"Several"},{0,NULL}};
 // key pair turns and which strafes.
 void ControlScheme1_OnChange(void);
 void ControlScheme2_OnChange(void);
+void ControlScheme3_OnChange(void);   // [Arcade] third panel
+void ControlScheme4_OnChange(void);   // [Arcade] fourth panel
 CV_PossibleValue_t controlscheme_cons_t[] =
   { {0,"Look and Move"}, {1,"WASD"}, {0,NULL} };
-consvar_t  cv_controlscheme[2] = {
+consvar_t  cv_controlscheme[MAXSPLITSCREENPLAYERS] = {
   { "controlscheme",  "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme1_OnChange },
-  { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange }
+  { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange },
+  { "controlscheme3", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme3_OnChange },
+  { "controlscheme4", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme4_OnChange }
 };
 
 // [Arcade] Operator key table from the guided setup; empty = use the preset.
 // CV_CALL so that loading it from config re-applies the scheme, whichever
 // order the two lines happen to appear in the file.
-consvar_t  cv_customcontrols[2] = {
+consvar_t  cv_customcontrols[MAXSPLITSCREENPLAYERS] = {
   { "customcontrols",  "", CV_SAVE | CV_CALL, NULL, ControlScheme1_OnChange },
-  { "customcontrols2", "", CV_SAVE | CV_CALL, NULL, ControlScheme2_OnChange }
+  { "customcontrols2", "", CV_SAVE | CV_CALL, NULL, ControlScheme2_OnChange },
+  { "customcontrols3", "", CV_SAVE | CV_CALL, NULL, ControlScheme3_OnChange },
+  { "customcontrols4", "", CV_SAVE | CV_CALL, NULL, ControlScheme4_OnChange }
 };
 
 // mouse values are used once
@@ -169,8 +175,9 @@ byte  gamekeytapped[NUMINPUTS]; // True if the key has been pressed since the la
 
 
 // two key codes (or virtual key) per game control
-int  gamecontrol[num_gamecontrols][2];
-int  gamecontrol2[num_gamecontrols][2];        // secondary splitscreen player
+// [Arcade] One control table per local player; see g_input.h for why the
+// gamecontrol / gamecontrol2 names survive as macros onto rows 0 and 1.
+int  gamecontrol_pl[MAXSPLITSCREENPLAYERS][num_gamecontrols][2];
 
 
 // FIXME: this can be simplified to two bytes
@@ -667,13 +674,24 @@ typedef struct {
     int  pair_b_left, pair_b_right;
 } controlkeys_t;
 
-static const controlkeys_t  scheme_keys[2] =
+// [Arcade] Panels 3 and 4 have no keyboard preset, deliberately: the two
+// presets below are the characters a Dvorak keyboard produces, chosen so a
+// bare keyboard can drive two players, and there is no third or fourth set of
+// keys that would not collide with them.  A third or fourth panel is wired
+// with the guided setup instead, which fills cv_customcontrols[pind]; until
+// that is done these stay KEY_NULL, i.e. unbound, rather than silently
+// sharing player 2's keys.
+static const controlkeys_t  scheme_keys[MAXSPLITSCREENPLAYERS] =
 {
     { ',', 'o', 'h', KEY_SPACE, 'w', 'v',   'a','e',   't','n' },  // player 1
-    { 'y', 'i', 'g', 'l',       '/', '=',   'u','d',   'c','r' }   // player 2
+    { 'y', 'i', 'g', 'l',       '/', '=',   'u','d',   'c','r' },  // player 2
+    { KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL,
+      KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL },                    // player 3
+    { KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL,
+      KEY_NULL, KEY_NULL, KEY_NULL, KEY_NULL }                     // player 4
 };
 
-//  pind : 0 = player 1, 1 = player 2 (splitscreen)
+//  pind : local player index, 0 .. MAXSPLITSCREENPLAYERS-1
 // [Arcade] Read cv_customcontrols[pind] into ck.  False when it is empty or
 // malformed, in which case the built-in preset is used instead.
 static boolean  Parse_CustomControls( int pind, controlkeys_t * ck )
@@ -713,7 +731,7 @@ static void ControlScheme_Apply( int pind )
     // way -- so a cabinet still gets both "Look and Move" and "WASD".
     const controlkeys_t * k = Parse_CustomControls(pind, &custom)
                               ? &custom : &scheme_keys[pind];
-    int (* gc)[2] = (pind == 0) ? gamecontrol : gamecontrol2;
+    int (* gc)[2] = gamecontrol_pl[pind];   // [Arcade] was a 0/1 choice
     boolean wasd;
 
     wasd = (cv_controlscheme[pind].value != 0);
@@ -739,6 +757,8 @@ static void ControlScheme_Apply( int pind )
 
 void ControlScheme1_OnChange(void)  { ControlScheme_Apply(0); }
 void ControlScheme2_OnChange(void)  { ControlScheme_Apply(1); }
+void ControlScheme3_OnChange(void)  { ControlScheme_Apply(2); }
+void ControlScheme4_OnChange(void)  { ControlScheme_Apply(3); }
 
 
 void G_Controldefault(void)
@@ -804,30 +824,30 @@ void G_SaveKeySetting(FILE *f)
 {
     int i;
 
-    for(i=1;i<num_gamecontrols;i++)
+    // [Arcade] One block per local player: "setcontrol", "setcontrol2",
+    // "setcontrol3", "setcontrol4".  The first two names are unchanged, so an
+    // existing config still loads exactly as before.
+    byte pind;
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )
     {
-        fprintf(f,"setcontrol \"%s\" \"%s\"",
-                gamecontrolname[i],
-                G_KeynumToString(gamecontrol[i][0]));
-
-        if(gamecontrol[i][1])
-            fprintf(f," \"%s\"\n",
-                        G_KeynumToString(gamecontrol[i][1]));
+        char cmdname[16];
+        if( pind == 0 )
+            snprintf(cmdname, sizeof(cmdname), "setcontrol");
         else
-            fprintf(f,"\n");
-    }
+            snprintf(cmdname, sizeof(cmdname), "setcontrol%d", pind+1);
 
-    for(i=1;i<num_gamecontrols;i++)
-    {
-        fprintf(f, "setcontrol2 \"%s\" \"%s\"",
-                gamecontrolname[i],
-                G_KeynumToString(gamecontrol2[i][0]));
+        for(i=1;i<num_gamecontrols;i++)
+        {
+            fprintf(f,"%s \"%s\" \"%s\"", cmdname,
+                    gamecontrolname[i],
+                    G_KeynumToString(gamecontrol_pl[pind][i][0]));
 
-        if(gamecontrol2[i][1])
-            fprintf(f, " \"%s\"\n",
-                    G_KeynumToString(gamecontrol2[i][1]));
-        else
-            fprintf(f,"\n");
+            if(gamecontrol_pl[pind][i][1])
+                fprintf(f," \"%s\"\n",
+                        G_KeynumToString(gamecontrol_pl[pind][i][1]));
+            else
+                fprintf(f,"\n");
+        }
     }
 
 #ifdef JOYSTICK_SUPPORT    
@@ -898,6 +918,16 @@ void setcontrol(int (*gc)[2], const char * cstr)
 void Command_Setcontrol_f(void)
 {
     setcontrol(gamecontrol, "");
+}
+
+void Command_Setcontrol3_f(void)   // [Arcade] third panel
+{
+    setcontrol(gamecontrol_pl[2], "3");
+}
+
+void Command_Setcontrol4_f(void)   // [Arcade] fourth panel
+{
+    setcontrol(gamecontrol_pl[3], "4");
 }
 
 void Command_Setcontrol2_f(void)

@@ -475,6 +475,19 @@ consvar_t cv_menusound = {"menusound", "1", CV_SAVE | CV_CALL, menusound_cons_t,
 // after M_Init.  Off hides Two Player Game and the player 2 config screens.
 consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
 
+// [Arcade] How many sets of controls the cabinet physically has, 1..4.  A
+// multicade panel may have three or four.  Operator setting, saved only from
+// a -devmode session, like cv_twoplayer above.
+//
+// This is the count of players that *join* on this machine, which is a
+// separate thing from cv_splitscreen, the two-view render toggle.  Players
+// past the second currently join, take controls and play, but have no
+// viewport of their own -- the renderer splits into at most two halves (see
+// r_main.c "rdraw_viewheight >>= 1" and r_draw.c's ylookup1/ylookup2).
+// Raising this past 2 is only useful once that is addressed.
+CV_PossibleValue_t localplayers_cons_t[] = {{1,"1"},{2,"2"},{3,"3"},{4,"4"},{0,NULL}};
+consvar_t cv_localplayers = {"localplayers", "1", CV_SAVE, localplayers_cons_t };
+
 // [Arcade] Which game the cabinet boots into, instead of whichever IWAD the
 // engine's search happens to find first.  Also an operator setting, saved only
 // from a -devmode session.
@@ -8086,6 +8099,7 @@ consvar_t * menu_command_cvar_list[] =
 
   &cv_screenslink,
   &cv_twoplayer,        // [Arcade]
+  &cv_localplayers,     // [Arcade]
   &cv_defaultgame,      // [Arcade]
 
     // p_mobj.c

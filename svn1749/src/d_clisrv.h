@@ -221,7 +221,7 @@ typedef struct {
 // aligned to 2 bytes
    byte        pad1;
 #endif
-   ticcmd_t    cmd[2]; // use only what is needed
+   ticcmd_t    cmd[MAXSPLITSCREENPLAYERS]; // use only what is needed
 } clientcmd_pak_t;
 
 
@@ -425,7 +425,7 @@ typedef struct {
    byte        ver1, ver2, ver3;  // reserve for future version
 // align to 4 bytes
    uint32_t    subversion; // build version
-   byte        num_node_players; // 0,1,2
+   byte        num_node_players; // 0 .. MAXSPLITSCREENPLAYERS
    byte        mode;
    byte        flags;  // NF_drone, NF_download_savegame
 } clientconfig_pak_t;
@@ -593,7 +593,11 @@ extern uint16_t  software_MAXPACKETLENGTH;
 extern byte      num_wait_game_start;  // waiting until next game
 extern boolean   cl_drone;  // is a drone client
 extern byte      cl_servernode;  // client send to server net node, 251=none (client nnode space)
-extern byte      localplayer[2];  // client player number
+extern byte      localplayer[MAXSPLITSCREENPLAYERS];  // client player number
+
+// [Arcade] Players sharing this machine, 1..MAXSPLITSCREENPLAYERS.
+byte  D_NumLocalPlayers( void );
+void  CL_Init_localplayer( void );
 
 
 typedef struct xcmd_s {
@@ -620,6 +624,12 @@ void    Send_NetXCmd_auto( byte cmd_id, void *param, int param_len, byte textcmd
 // Server textcmd uses separate channel, SERVER_PID.
 // This appears in Demo 1.48, must be above MAXPLAYERS.
 #define SERVER_PID   250
+
+// [Arcade] The textcmd channel index that means "server", as opposed to a
+// local player's channel.  It was the literal 2 -- one past the two local
+// players -- so a third or fourth panel would have been routed as if it were
+// the server.  Named and tied to the player count so the two cannot collide.
+#define TEXTCMD_PIND_SERVER   MAXSPLITSCREENPLAYERS
 // default, always SERVER_PID
 void    SV_Send_NetXCmd(byte cmd_id, void *param, int param_len);
 //  pn : SERVER_PID, or player pid (bots)

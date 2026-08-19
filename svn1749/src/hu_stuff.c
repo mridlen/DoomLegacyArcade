@@ -136,9 +136,11 @@ consvar_t*   chat_macros[10];
 
 static
 CV_PossibleValue_t crosshair_cons_t[] = {{0,"Off"},{1,"Cross"},{2,"Angle"},{3,"Point"},{0,NULL}};
-consvar_t cv_crosshair[2] = {
+consvar_t cv_crosshair[MAXSPLITSCREENPLAYERS] = {
   {"crosshair"   ,"0",CV_SAVE,crosshair_cons_t},
-  {"crosshair2"   ,"0",CV_SAVE,crosshair_cons_t}
+  {"crosshair2"   ,"0",CV_SAVE,crosshair_cons_t},
+  {"crosshair3"   ,"0",CV_SAVE,crosshair_cons_t},
+  {"crosshair4"   ,"0",CV_SAVE,crosshair_cons_t}
 };
 //consvar_t cv_crosshairscale   = {"crosshairscale","0",CV_SAVE,CV_YesNo};
 

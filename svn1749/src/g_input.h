@@ -115,13 +115,13 @@ extern consvar_t   cv_grabinput;
 
 // Player control
 // [0]=main player [1]=splitscreen player
-extern consvar_t   cv_autorun[2];
-extern consvar_t   cv_usemouse[2];
-extern consvar_t   cv_mouse_move[2];
-extern consvar_t   cv_alwaysfreelook[2];
+extern consvar_t   cv_autorun[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_usemouse[2];   // mouse hardware, still two
+extern consvar_t   cv_mouse_move[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_alwaysfreelook[MAXSPLITSCREENPLAYERS];
 
 // [Arcade] Selectable control scheme, per player (see ControlScheme_Apply)
-extern consvar_t   cv_controlscheme[2];
+extern consvar_t   cv_controlscheme[MAXSPLITSCREENPLAYERS];
 
 // [Arcade] The ten controls a cabinet panel needs, in the order the guided
 // setup captures them and the order they are stored in cv_customcontrols.
@@ -145,7 +145,7 @@ enum {
 // setup as ten space separated key codes.  Empty means "use the built-in
 // scheme_keys[] preset".  This is what moves a cabinet's control layout out
 // of the hardcoded table and into config.cfg.
-extern consvar_t   cv_customcontrols[2];
+extern consvar_t   cv_customcontrols[MAXSPLITSCREENPLAYERS];
 
 // Store keys[CK_NUMKEYS] into cv_customcontrols[pind] and apply immediately.
 void  G_Save_CustomControls( int pind, const int * keys );
@@ -208,9 +208,16 @@ extern int             dclicks2;
 extern byte  gamekeydown[NUMINPUTS];
 extern byte  gamekeytapped[NUMINPUTS];
 
-// two key codes (or virtual key) per game control
-extern  int     gamecontrol[num_gamecontrols][2];
-extern  int     gamecontrol2[num_gamecontrols][2];    // secondary splitscreen player
+// two key codes (or virtual key) per game control, per local player.
+// [Arcade] Was a pair of separate arrays, gamecontrol and gamecontrol2, which
+// could not express a third or fourth panel.  It is one indexed table now.
+// The two old names are kept as macros so the ~47 existing references, spread
+// over a dozen files, keep working unchanged and mean exactly what they did;
+// new code that needs an arbitrary panel indexes gamecontrol_pl[pind].
+extern  int     gamecontrol_pl[MAXSPLITSCREENPLAYERS][num_gamecontrols][2];
+
+#define gamecontrol    gamecontrol_pl[0]
+#define gamecontrol2   gamecontrol_pl[1]
 
 // peace to my little coder fingers!
 // check a gamecontrol being active or not
@@ -226,6 +233,8 @@ int   G_KeyStringtoNum(char *keystr);
 void  G_Clear_ControlKeys (int (*setupcontrols)[2], int control);
 void  Command_Setcontrol_f(void);
 void  Command_Setcontrol2_f(void);
+void  Command_Setcontrol3_f(void);   // [Arcade] third panel
+void  Command_Setcontrol4_f(void);   // [Arcade] fourth panel
 void  G_Controldefault(void);
 void  G_SaveKeySetting(FILE *f);
 void  G_CheckDoubleUsage(int keynum);

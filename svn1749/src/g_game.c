@@ -565,17 +565,24 @@ CV_PossibleValue_t showmessages_cons_t[]={{0,"Off"},{1,"Minimal"},{2,"Play"},{3,
 CV_PossibleValue_t pickupflash_cons_t[]   ={{0,"Off"},{1,"Status"},{2,"Half"},{3,"Vanilla"},{0,NULL}};
 
 // [0]=main player [1]=splitscreen player
-consvar_t cv_autorun[2] = {
+// [Arcade] One per local player; entries 3 and 4 are the extra panels.
+consvar_t cv_autorun[MAXSPLITSCREENPLAYERS] = {
   {"autorun"     ,"0",CV_SAVE,CV_OnOff},
-  {"autorun2"    ,"0",CV_SAVE,CV_OnOff}
+  {"autorun2"    ,"0",CV_SAVE,CV_OnOff},
+  {"autorun3"    ,"0",CV_SAVE,CV_OnOff},
+  {"autorun4"    ,"0",CV_SAVE,CV_OnOff}
 };
-consvar_t cv_alwaysfreelook[2] = {
+consvar_t cv_alwaysfreelook[MAXSPLITSCREENPLAYERS] = {
   {"alwaysmlook" ,"0",CV_SAVE,CV_OnOff},
-  {"alwaysmlook2","0",CV_SAVE,CV_OnOff}
+  {"alwaysmlook2","0",CV_SAVE,CV_OnOff},
+  {"alwaysmlook3","0",CV_SAVE,CV_OnOff},
+  {"alwaysmlook4","0",CV_SAVE,CV_OnOff}
 };
-consvar_t cv_mouse_move[2] = {
+consvar_t cv_mouse_move[MAXSPLITSCREENPLAYERS] = {
   {"mousemove"   ,"1",CV_SAVE,CV_OnOff},
-  {"mousemove2"  ,"1",CV_SAVE,CV_OnOff}
+  {"mousemove2"  ,"1",CV_SAVE,CV_OnOff},
+  {"mousemove3"  ,"1",CV_SAVE,CV_OnOff},
+  {"mousemove4"  ,"1",CV_SAVE,CV_OnOff}
 };
 
 consvar_t cv_mouse_invert     = {"invertmouse" ,"0",CV_SAVE,CV_OnOff};
@@ -971,8 +978,8 @@ angle_t G_ClipAimingPitch(angle_t aiming)
 // set displayplayer2_ptr to build player 2's ticcmd in splitscreen mode
 //
 //  [0]=main player, [1]=splitscreen player
-angle_t localaiming[2];
-angle_t localangle[2];
+angle_t localaiming[MAXSPLITSCREENPLAYERS];
+angle_t localangle[MAXSPLITSCREENPLAYERS];
 
 //added:06-02-98: mouseaiming (looking up/down with the mouse or keyboard)
 #define KB_LOOKSPEED    (1<<25)
@@ -1165,14 +1172,22 @@ void G_BuildTiccmd(ticcmd_t* cmd, int realtics, byte pind)
 
     angle_t pitch;
 
+    // [Arcade] Take the player from localplayer[pind], not from a display
+    // pointer.  This used to read displayplayer2_ptr, which is about the
+    // second *view*: it is NULL whenever the screen is not split, so a panel
+    // with a player but no viewport dereferenced NULL here.  Views and local
+    // players are separate things once a cabinet has more than two panels.
     if( pind == 0 )
     {
       this_player = consoleplayer_ptr;
-      gcc = gamecontrol;
-    } else {
-      this_player = displayplayer2_ptr;
-      gcc = gamecontrol2;
     }
+    else
+    {
+      byte pn = localplayer[pind];
+      if( pn >= MAXPLAYERS )  goto done;   // this panel has no player
+      this_player = &players[pn];
+    }
+    gcc = gamecontrol_pl[pind];
     pitch = localaiming[pind];
 
     // Exit now if locked

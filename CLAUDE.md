@@ -353,6 +353,56 @@ silently made the flag do nothing at all.
     21 distinct demos with no duplicate, no immediate repeat anywhere including at the two bag
     boundaries, and a second run produced a different order. A separate run confirmed a MAP02
     record set mid-session appeared in the rotation immediately after that level exit.
+- **Local players: up to four (Phase 1 — no viewports yet)**. A multicade panel may have three or
+  four sets of controls. The engine was hardcoded to two *everywhere*: `d_net.h` even defined
+  `MAXSPLITSCREENPLAYERS 2`, but **nothing referenced it** — every limit was its own literal. That
+  constant now lives in `doomdef.h` beside `MAXPLAYERS`, is **4**, and is the real knob.
+  - **`cv_localplayers`** ("localplayers", 1..4, default 1, `CV_SAVE`) is how many players join on
+    this machine — an operator setting like `cv_twoplayer`. It is **not** `cv_splitscreen`, which
+    is only the two-view render toggle. `D_NumLocalPlayers()` clamps it.
+  - **Players 3 and 4 play but are not drawn.** The renderer splits into at most two stacked
+    halves (`r_main.c` `rdraw_viewheight >>= 1`, and `r_draw.c` has exactly `ylookup1`/`ylookup2`,
+    view 2 at `vid.height>>1`). A 2x2 split needs per-view *horizontal* offsets, which have no
+    precedent in the code — that is Phase 2, along with re-deriving the HUD placement.
+  - What Phase 1 changed, and why each was load-bearing:
+    - `SV_commit_player` refused a third player outright (`if( pind > 1 ) return 255`).
+    - **The protocol already anticipated this.** `clientcmd_pak_t` carries a `pind_mask` and is
+      sized to "use only what is needed", so the send/receive paths generalised cleanly; only the
+      hardcoded `0x03` and `cmd[1]` had to go.
+    - **`pind == 2` was a sentinel meaning "the server"**, not a player index (`Send_NetXCmd_auto`
+      routing, used by bots). A third panel would have been routed as the server. It is
+      **`TEXTCMD_PIND_SERVER`** now, tied to `MAXSPLITSCREENPLAYERS` so the two cannot collide.
+    - `gamecontrol` / `gamecontrol2` became one table, `gamecontrol_pl[pind]`. **The two old names
+      survive as macros onto rows 0 and 1**, so all ~47 existing references across a dozen files
+      keep working untouched. `setcontrol3`/`setcontrol4` bind the new panels and the config saves
+      all four.
+    - The whole per-player cvar family widened to `MAXSPLITSCREENPLAYERS`: name, color, skin,
+      autoaim, weaponpref, originalweaponswitch, autorun, alwaysmlook, mousemove, crosshair,
+      controlscheme, customcontrols. First two console names are unchanged, so **an existing
+      `config.cfg` still loads exactly as before**; panels 3/4 add `name3`, `skin4` and so on.
+    - **Registration is a loop now.** Only players 0 and 1 were registered; an unregistered
+      `consvar_t` has a NULL string, which `Send_NameColor_pind` hands straight to the netxcmd
+      packer — a third panel segfaulted the instant the server announced it.
+    - `G_BuildTiccmd` took its player from **`displayplayer2_ptr`**, a *view* pointer that is NULL
+      whenever the screen is not split. It reads `localplayer[pind]` now. **This is the general
+      lesson: views and local players are different things**, and anything that conflates them
+      breaks the moment a panel has a player but no viewport.
+    - `scheme_keys[]` has no preset for panels 3/4 **on purpose** — the two presets are Dvorak
+      characters chosen so one keyboard can drive two players, and there is no third set that
+      would not collide. Panels 3/4 stay unbound until the guided setup fills
+      `cv_customcontrols[pind]`.
+    - `localplayer[]` **must keep a static initializer**: `M_LoadConfig` runs long before
+      `D_Init_ClientServer`, and the config's name/skin lines reach `Send_NameColor2`, which tests
+      `localplayer[1] < MAXPLAYERS`. Zeroed, that reads as "player 0" and sends a netxcmd with no
+      server — an immediate startup segfault. A `typedef` guard fails the build if the initializer
+      stops covering every slot.
+  - Verified headless: `localplayers` 1/2/3/4 each joined exactly that many players, filling slots
+    0..3 with real mobjs and surviving. Controls: `splitscreen 1` still gives the normal two player
+    split (`multiplayer=1`), and the stock default is untouched at one player.
+  - **There are no dep files for most objects** (`svn1749/dep` holds about 16), so **a header edit
+    does not trigger a rebuild**. This bit during this work: `console.o` kept a stale
+    `gamecontrol` symbol and failed at link. After editing any header, `make clean && make`.
+
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and
