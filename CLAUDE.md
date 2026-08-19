@@ -117,6 +117,19 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   the Time/TOTAL layout be checked numerically instead of guessed. `exitlevel` alone will not do:
   a bare `+exitlevel` runs before the level exists. Combine with `wait` for **anything gated behind
   actually finishing a level**.
+- **A command that starts a game does not start it where it appears in the script.**
+  `G_DeferedInitNew` issues its `map` command with `COM_BufAddText`, which *appends* — so anything
+  still queued behind it in `autoexec.cfg` runs first, and the level only loads once the buffer
+  drains. A script reading `wait 35 / <start a game> / wait 250 / die` runs `die` with no level
+  loaded and `players[].mo` still NULL. It looks like the start failed; it has not happened yet.
+  (`exitlevel` survives this because it is applied once a level exists, which is why the earlier
+  single-level tests scored despite the same ordering — note their tiny 31-tic times.) **To drive
+  something that needs a live level, start it from the command line** (`-warp`) and set only the
+  mode flag from the script.
+- **`kill` segfaults with no player** — stock `Command_Kill` (`d_netcmd.c`) dereferences
+  `players[consoleplayer].mo` unguarded, so typing it at the title screen or from an autoexec that
+  runs too early dumps core in `P_KillMobj`. Pre-existing, not worth confusing with a real crash:
+  check `mo` before blaming the change under test.
 
 ## Compile-time feature flags
 
@@ -236,6 +249,27 @@ silently made the flag do nothing at all.
     `G_DoWorldDone` at all: it starts a finale and sets `gameaction = ga_nothing` instead. A single
     level run of MAP30 dropped into the cast call, which loops for ever, and only the idle timeout
     rescued the cabinet. Single Level now returns to its menu from every map, ending map included.
+  - **A death ends the run too** (`G_DoReborn`). The player watches the corpse as normal; it is the
+    *"use" press* that would retry the level which returns to the menu instead. Doom retries by
+    **reloading** the map (`G_DoReborn` → `G_DoLoadLevel(true)`), which for a scored cabinet is a
+    free second attempt — `HS_Player_Died` has already voided the run, so the reload would hand out
+    an unscored do-over of the same map with no indication why.
+    - It sets **`gameaction = ga_worlddone`** rather than calling `M_SingleLevel_Finished()`
+      directly. `G_DoReborn` runs from `G_Ticker`'s reborn loop, which is *above* the point where
+      tearing the level down is safe; `G_Ticker` dispatches `gameaction` a few lines later, which
+      is the same route an ordinary level exit already takes to that function. The dispatch loop
+      terminates because `Command_ExitGame_f` → `D_StartTitle` sets `gameaction = ga_nothing`.
+    - Guarded on `! demoplayback`, like the rest: a record demo can contain a death, and replaying
+      one must not tear the game down around it. That covers a demo watched from this menu *and*
+      an attract demo playing while the player sits on the Single Level page, where
+      `single_level_mode` is still set.
+    - Placed in the `(!multiplayer && !deathmatch)` branch, which is the retry path. The other
+      branch is coop/DM respawn, and `P_SetupLevel`'s own `G_DoReborn` call is deathmatch-only, so
+      neither can reach this.
+    - Verified headless: with `single_level_mode` set on a running level, killing the player and
+      then setting `PST_REBORN` (what `P_DeathThink` does on `BT_USE`) logged
+      `G_DoReborn -> single level menu` followed by `G_DoWorldDone -> M_SingleLevel_Finished`, with
+      no level reload and no hang. The same sequence without single level mode still reloaded.
   - `M_SingleLevel_Finished()` calls `Command_ExitGame_f()` for the teardown and then **re-sets
     `single_level_mode`**, because that function deliberately clears it.
   - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the

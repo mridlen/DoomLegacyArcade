@@ -2609,6 +2609,30 @@ void G_DoReborn (int playernum)
     //                 all this kind of hiden variable must be removed
     if( (! multiplayer) && (! deathmatch) )
     {
+        // [Arcade] In Single Level mode a death ends the run.  The player
+        // still watches the corpse as usual -- this is the "use" press that
+        // would normally retry the level (P_DeathThink sets PST_REBORN), and
+        // it returns to the Single Level menu instead.  The run has already
+        // been voided by HS_Player_Died, so reloading would only hand out a
+        // silent fresh attempt at the same map.
+        //
+        // Deferred through gameaction rather than calling
+        // M_SingleLevel_Finished() from here: this runs inside G_Ticker's
+        // reborn loop, above the point where tearing the level down is safe.
+        // G_Ticker dispatches gameaction a few lines later, which is the same
+        // route an ordinary level exit already takes to that function.
+        //
+        // Not during demo playback: a record demo can contain a death, and
+        // replaying one must not tear down the game around it.  That covers
+        // both a demo watched from this menu and an attract demo playing
+        // while the player sits on the Single Level page, where
+        // single_level_mode is still set.
+        if( single_level_mode && ! demoplayback )
+        {
+            gameaction = ga_worlddone;
+            return;
+        }
+
         // reload the level from scratch
         G_DoLoadLevel (true);
     }
@@ -3048,10 +3072,13 @@ void G_NextLevel (void)
 
 void G_DoWorldDone (void)
 {
-    // [Arcade] Single Level mode plays exactly one map.  The intermission has
-    // already been shown (and HS_LevelExit has already scored the run) by the
-    // time this runs, so ending here is all that is needed -- everything below
-    // is about choosing and loading the *next* map.
+    // [Arcade] Single Level mode plays exactly one map.  Everything below is
+    // about choosing and loading the *next* map, so returning here is all
+    // that is needed.  Two routes arrive:
+    //   - a finished level, where the intermission has been shown and
+    //     HS_LevelExit has already scored the run;
+    //   - a death, where G_DoReborn redirects the retry here instead of
+    //     reloading the map (HS_Player_Died has voided the run).
     //
     // Not applied during demo playback: a record demo replays through real
     // level exits, and cutting it short here would truncate it.
