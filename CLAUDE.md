@@ -340,8 +340,9 @@ silently made the flag do nothing at all.
   quicksave/quickload all take the "yes" path immediately. Only the savegame-slot `Delete Y/N?`
   survives, as it guards irreversible data loss.
 - **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
-  `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` so
-  intermission time does not carry over. Ends the game via `Command_ExitGame_f()` and warns
+  `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` (but
+  **not during `demoplayback`**, see below) so intermission time does not carry over. Ends the
+  game via `Command_ExitGame_f()` and warns
   beforehand through the existing `HU_SetTip` centered-text mechanism, or restarts the program when
   a level pack is loaded (see the game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime`
   (default 60s/15s, `0` disables). Skipped in devmode and demo playback. **Local splitscreen sets
@@ -368,7 +369,17 @@ silently made the flag do nothing at all.
   - **It does nothing in devmode**, like every other idle timeout (`if( devmode || ... ) return`).
     An operator session will never see a menu time out; that is intentional, but it is the first
     thing to check when it "doesn't work".
-  - Verified headless with `idletimeout 8` and `10`: fired once at exactly 280 and 350 tics.
+  - **The `G_DoLoadLevel` re-arm had to be skipped during `demoplayback`**, or the menu case could
+    not fire at the real 60s default. Every attract demo starts through `G_DoLoadLevel`, and the
+    attract cycle starts one roughly every 30-45s, so each one reset `last_input_tic` and the count
+    never reached 2100 tics — a menu left open on the attract screen sat there indefinitely. The
+    earlier `idletimeout 8`/`10` verification passed only because those fire before the first demo
+    reload. Re-arming is pointless during playback anyway: the check's own `demoplayback` guard
+    means the only case that gets there is the open menu.
+  - Verified headless at `idletimeout 20` and at the cabinet's `60`, with `in_menu` forced true to
+    stand in for an open menu: fires at exactly 700/1400/2100/2800/3500/4200 (20s) — including
+    across a demo load at 2250 — and at 2100 (60s). The same build with the re-arm unconditional
+    never fired in 115s at 60, which is the reported symptom exactly.
 
   It runs in **`GS_LEVEL`, `GS_INTERMISSION` and `GS_FINALE`**, not just during play — both of the
   other two wait *indefinitely* for a keypress the walk-away player never gives, so covering only

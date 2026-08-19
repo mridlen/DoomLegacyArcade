@@ -1482,7 +1482,13 @@ void G_DoLoadLevel (boolean resetplayer)
     int             i;
 
     levelstarttic = gametic;        // for time calculation
-    last_input_tic = gametic;       // re-arm idle timer for new level
+    // [Arcade] Re-arm the idle timer for a new level, so intermission time
+    // does not carry over.  NOT during demo playback: the attract cycle
+    // starts a new demo every ~30-45s, and each one came through here and
+    // reset the timer -- so a menu left open on the attract screen could
+    // never accumulate the 60s the timeout wants, and appeared to be broken.
+    if( ! demoplayback )
+        last_input_tic = gametic;
     // [WDJ] Derived from PrBoom, gametic demosync.
     if( EN_boom && !EN_mbf )
         game_comp_tic = 0;  // Boom demos start at tic 0
