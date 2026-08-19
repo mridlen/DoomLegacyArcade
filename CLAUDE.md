@@ -465,6 +465,13 @@ silently made the flag do nothing at all.
     - Offsets are derived from pixels, not as multiples of `BASEVIDWIDTH`/`BASEVIDHEIGHT`: with
       `dup` rounded to 2 a 200 unit block is 400px tall in a 384px cell, so stepping a row by
       `BASEVIDHEIGHT` would push the lower row off the screen bottom.
+    - **`WI_Draw_Ranking` takes a `y_limit`.** It used to stop on `y >= BASEVIDHEIGHT` — "do not
+      draw past the bottom of the screen" — which is right for the intermission but wrong for a
+      block offset into a viewport cell: a bottom-row cell starts at base y 277, already past 200,
+      so it drew **one row and broke out**. Sorted highest-first, that left only the leader
+      showing, which reads as "the players on 0 points are missing". The overlay passes
+      `offy + BASEVIDHEIGHT`; every other caller passes `BASEVIDHEIGHT` and is unchanged.
+      **Any drawing offset into a cell has to re-examine limits expressed in base units.**
     - Verified numerically at 1366x768, with fill and text positions printed side by side and
       required to match. Two views: both at x 522, rows at y 194 and 578 (cells 0..384, 384..768).
       Four views: both at x 180 and 864 (cells 0..683, 683..1366), rows at y 170 and 554. Only the

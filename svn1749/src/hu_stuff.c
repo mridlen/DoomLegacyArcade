@@ -1286,7 +1286,8 @@ void HU_Draw_DeathmatchRankings ( byte vind )
     }
 
     if(cv_teamplay.EV==0)
-        WI_Draw_Ranking(title, 80 + offx, y + offy, fragtab, scorelines, large, whiteplayer, 32);
+        WI_Draw_Ranking(title, 80 + offx, y + offy, fragtab, scorelines, large,
+                        whiteplayer, 32, offy + BASEVIDHEIGHT);
     else
     {
         // draw the frag to the right
@@ -1295,7 +1296,8 @@ void HU_Draw_DeathmatchRankings ( byte vind )
         scorelines = HU_Create_TeamFragTbl(fragtab,NULL,NULL);
 
         // and the team frag to the left
-        WI_Draw_Ranking("Teams", 80 + offx, y + offy, fragtab, scorelines, large, players[whiteplayer].skincolor, 32);
+        WI_Draw_Ranking("Teams", 80 + offx, y + offy, fragtab, scorelines, large,
+                        players[whiteplayer].skincolor, 32, offy + BASEVIDHEIGHT);
     }
 
     // [Arcade] Undo the half scale.

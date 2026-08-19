@@ -66,8 +66,11 @@ boolean teamingame(int teamnum);
 
 // draw rankings
 //  colwidth : column width
+// y_limit : base-unit y to stop at; BASEVIDHEIGHT unless the block has been
+// offset into a viewport cell.  [Arcade]
 void WI_Draw_Ranking(const char *title, int x, int y, fragsort_t *fragtable,
-                    int scorelines, boolean large, int white, int colwidth);
+                    int scorelines, boolean large, int white, int colwidth,
+                    int y_limit);
 
 // For startup wait, and deathmatch wait.
 extern int  wait_game_start_timer;  // subject to network sync

@@ -1244,8 +1244,14 @@ static void WI_Init_DeathmatchStats(void)
 //  Quick-patch for the Cave party 19-04-1998 !!
 //
 //  width : the column width
+// [Arcade] y_limit: base-unit y at which to stop, because the caller may have
+// offset this block into a viewport cell.  The bottom-row cells of a 2x2 sit
+// past base y 200, so the old hardcoded BASEVIDHEIGHT test broke out after a
+// single row -- which read as "the players on 0 points are missing", since
+// the table is sorted highest first.
 void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
-                    int scorelines, boolean large, int white, int colwidth)
+                    int scorelines, boolean large, int white, int colwidth,
+                    int y_limit)
 {
     char  buf[33];
     int   i,j;
@@ -1304,8 +1310,8 @@ void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
                       ((plnum == white) ? V_WHITEMAP : 0), buf);
 
         y += 12;
-        if (y>=BASEVIDHEIGHT)
-            break;            // dont draw past bottom of screen
+        if (y >= y_limit)
+            break;            // dont draw past the bottom of this view
     }
 }
 
@@ -1344,7 +1350,8 @@ static void WI_Draw_DeathmatchStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("Frags", 5, RANKINGY, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("Frags", 5, RANKINGY, fragtab, scorelines, false, whiteplayer, 6,
+                    BASEVIDHEIGHT);
 
     // count buchholz
     scorelines = 0;
@@ -1363,7 +1370,7 @@ static void WI_Draw_DeathmatchStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("Buchholz", 85, RANKINGY, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("Buchholz", 85, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count individual
     scorelines = 0;
@@ -1390,7 +1397,7 @@ static void WI_Draw_DeathmatchStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("indiv.", 165, RANKINGY, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("indiv.", 165, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count deads
     scorelines = 0;
@@ -1411,7 +1418,7 @@ static void WI_Draw_DeathmatchStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("deads", 245, RANKINGY, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("deads", 245, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 }
 
 boolean teamingame(int teamnum)
@@ -1466,7 +1473,7 @@ static void WI_Draw_TeamsStats(void)
     // count frags for each present player
     scorelines = HU_Create_TeamFragTbl(fragtab,dm_totals,dm_frags);
 
-    WI_Draw_Ranking("Frags", 5, 80, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("Frags", 5, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count buchholz
     scorelines = 0;
@@ -1487,7 +1494,7 @@ static void WI_Draw_TeamsStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("Buchholz", 85, 80, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("Buchholz", 85, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count individuel
     scorelines = 0;
@@ -1514,7 +1521,7 @@ static void WI_Draw_TeamsStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("indiv.", 165, 80, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("indiv.", 165, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count deads
     scorelines = 0;
@@ -1535,7 +1542,7 @@ static void WI_Draw_TeamsStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("deads", 245, 80, fragtab, scorelines, false, whiteplayer, 6);
+    WI_Draw_Ranking("deads", 245, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 }
 
 
