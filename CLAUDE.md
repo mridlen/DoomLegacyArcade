@@ -265,6 +265,33 @@ silently made the flag do nothing at all.
     given row, which reads as "it didn't work". The trimmed table alternated
     `doomu_E1M1_sk0_speed.lmp` and `doomu-sl_E1M1_sk1_speed.lmp`, the latter captioned
     `SINGLE LEVEL: E1M1  HNTR  SPEED  0:13`.
+
+  **Replay order is a shuffled bag**, not a linear walk of the table (`hs_bag*`,
+  `HS_Refill_DemoBag`). Straight cursor order played the same demos in the same sequence every
+  cycle, which is monotonous on a machine that sits on the attract screen all day. Every slot
+  holding a record goes into a bag, the bag is Fisher-Yates shuffled, and demos are dealt from it
+  until it is empty — so **each demo plays once before any repeats**. Picking at random per demo
+  was rejected: it cheerfully shows the same one three times running, which is the complaint
+  rather than the cure.
+  - **The PRNG is local to `hs_stuff.c`** (`HS_Shuffle_Rand`, xorshift32, seeded from `time(NULL)`
+    in `HS_Init`). Deliberately not an engine one: `P_Random` is demo-sync critical, and
+    `M_Random`/`N_Random` index a shared 256 entry table that **`M_ClearRandom` resets at every
+    game start**, so a bag shuffled from those would come out identical after every boot. A
+    self-contained generator also cannot perturb anything a recording depends on.
+  - The bag is refilled when exhausted **and whenever `hs_table_count` changes**, so a record set
+    during the session joins the rotation without a restart. A new record on a map row that
+    already exists does not change that count and waits for the next natural refill — at most one
+    pass of the cycle.
+  - `hs_bag_last` stops a new bag opening with the demo that closed the previous one, the single
+    repeat a shuffle cannot rule out by itself. Needs `hs_bag_count > 1`; with exactly one demo
+    recorded it necessarily repeats.
+  - Eligibility is still re-checked when a slot is dealt (game id, and `access()` on the file), so
+    a deleted demo or a level pack swap is skipped rather than played.
+  - Verified headless by calling `HS_NextRecordDemoPath` in a loop through a temporary console
+    command, against the cabinet's real 21-demo table: three consecutive bags of 21 each held all
+    21 distinct demos with no duplicate, no immediate repeat anywhere including at the two bag
+    boundaries, and a second run produced a different order. A separate run confirmed a MAP02
+    record set mid-session appeared in the rotation immediately after that level exit.
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and

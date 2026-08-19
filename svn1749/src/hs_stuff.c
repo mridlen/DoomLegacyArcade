@@ -5,6 +5,7 @@
 #include <unistd.h>     // access()
 #include <sys/types.h>
 #include <dirent.h>     // demo directory sweep in Command_ClearHighScores_f
+#include <time.h>       // seed for the attract demo shuffle
 
 #include "doomincl.h"
 #include "doomdef.h"
@@ -420,6 +421,8 @@ static void HS_Save( void )
 }
 
 
+static void  HS_Shuffle_Seed( void );   // attract demo replay order, below
+
 void HS_Init( void )
 {
     cat_filename( hs_scorefile, legacyhome, "highscores.dat" );
@@ -428,6 +431,7 @@ void HS_Init( void )
     if( access(hs_demodir, R_OK) < 0 )
         I_mkdir( hs_demodir, 0700 );
 
+    HS_Shuffle_Seed();   // [Arcade] attract demo replay order
     HS_Load();
 }
 
@@ -1125,15 +1129,104 @@ const char * HS_DemoLabel( void )
 }
 
 
+// [Arcade] Replay order.  A linear walk of the table played the same demos
+// in the same order every cycle, which reads as monotonous on a machine that
+// sits on the attract screen all day.  The slots are shuffled into a bag and
+// dealt out instead, so every demo is shown once before any is repeated --
+// plain random picking would happily show the same one three times running,
+// which is the complaint rather than the cure.
+//
+// The bag holds packed (map, skill, category) slot numbers, the same encoding
+// the old cursor used.
+#define HS_BAG_MAX  (HS_MAX_MAPS * HS_NUMSKILLS * HS_NUMCAT)
+
+static uint16_t  hs_bag[HS_BAG_MAX];
+static int       hs_bag_count = 0;   // slots in the bag
+static int       hs_bag_pos   = 0;   // next to deal
+static int       hs_bag_built_for = -1;  // hs_table_count when built
+static int       hs_bag_last = -1;   // last slot dealt, to avoid a repeat
+
+// Self-contained PRNG, deliberately not one of the engine's.  P_Random is
+// demo-sync critical; M_Random/N_Random index a shared 256 entry table that
+// M_ClearRandom resets at every game start, so a bag shuffled from it would
+// come out the same after every boot.  This one is seeded from the clock and
+// touches no state anything else reads, so it cannot perturb a recording.
+static uint32_t  hs_shuffle_rng = 0;
+
+static uint32_t  HS_Shuffle_Rand( void )
+{
+    // xorshift32; any nonzero seed has a full 2**32-1 period.
+    hs_shuffle_rng ^= hs_shuffle_rng << 13;
+    hs_shuffle_rng ^= hs_shuffle_rng >> 17;
+    hs_shuffle_rng ^= hs_shuffle_rng << 5;
+    return hs_shuffle_rng;
+}
+
+static void  HS_Shuffle_Seed( void )
+{
+    hs_shuffle_rng = (uint32_t)time(NULL) ^ 0x9E3779B9u;
+    if( hs_shuffle_rng == 0 )  hs_shuffle_rng = 1;  // xorshift sticks at 0
+}
+
+
+// Refill the bag with every slot that currently holds a record, in a random
+// order.  Rebuilt when exhausted, and whenever the table has grown -- a
+// record set during this session should join the rotation without a restart.
+// A record added to a map *row* that already exists does not change
+// hs_table_count and so waits for the next natural refill, which is at most
+// one pass of the cycle away.
+static void  HS_Refill_DemoBag( void )
+{
+    int  mi, sk, cat, i;
+
+    hs_bag_count = 0;
+    hs_bag_pos = 0;
+    hs_bag_built_for = hs_table_count;
+
+    for( mi=0; mi<hs_table_count; mi++ )
+    {
+        for( sk=0; sk<HS_NUMSKILLS; sk++ )
+        {
+            for( cat=0; cat<HS_NUMCAT; cat++ )
+            {
+                if( ! hs_table[mi].has_record[cat][sk] )  continue;
+                if( hs_bag_count >= HS_BAG_MAX )  goto filled;
+                hs_bag[hs_bag_count++] =
+                    (uint16_t)((mi * HS_NUMSKILLS + sk) * HS_NUMCAT + cat);
+            }
+        }
+    }
+
+filled:
+    // Fisher-Yates, walking down so each position draws from what is left.
+    for( i = hs_bag_count - 1; i > 0; i-- )
+    {
+        int j = (int)(HS_Shuffle_Rand() % (uint32_t)(i + 1));
+        uint16_t t = hs_bag[i];
+        hs_bag[i] = hs_bag[j];
+        hs_bag[j] = t;
+    }
+
+    // Do not open a new bag with the demo that closed the last one, which is
+    // the one repeat a shuffle cannot rule out on its own.
+    if( hs_bag_count > 1 && hs_bag[0] == hs_bag_last )
+    {
+        int j = 1 + (int)(HS_Shuffle_Rand() % (uint32_t)(hs_bag_count - 1));
+        uint16_t t = hs_bag[0];
+        hs_bag[0] = hs_bag[j];
+        hs_bag[j] = t;
+    }
+}
+
+
 const char * HS_NextRecordDemoPath( void )
 {
     static char path[MAX_WADPATH];
-    static int  cursor = 0;
     // HS_GameId_Mode returns a pointer to one static buffer, so both ids
     // have to be copied out before the second call overwrites the first.
     char campaign_id[HS_GAMEID_LEN];
     char single_id[HS_GAMEID_LEN];
-    int  total;
+    int  slot;
     int  tries;
     int  mi, sk, cat;
     boolean is_single;
@@ -1143,13 +1236,22 @@ const char * HS_NextRecordDemoPath( void )
     dl_strncpy( campaign_id, HS_GameId_Mode(false), HS_GAMEID_LEN-1 );
     dl_strncpy( single_id,   HS_GameId_Mode(true),  HS_GAMEID_LEN-1 );
 
-    total = hs_table_count * HS_NUMSKILLS * HS_NUMCAT;
+    if( hs_bag_pos >= hs_bag_count || hs_bag_built_for != hs_table_count )
+        HS_Refill_DemoBag();
 
-    for( tries=0; tries<total; tries++, cursor=(cursor+1)%total )
+    // Bounded by the bag size: a slot can still be unusable here (another
+    // game's demo, or the file gone), and the search must end even if none
+    // of them is playable.
+    for( tries=0; tries<hs_bag_count; tries++ )
     {
-        mi  = cursor / (HS_NUMSKILLS * HS_NUMCAT);
-        sk  = (cursor / HS_NUMCAT) % HS_NUMSKILLS;
-        cat = cursor % HS_NUMCAT;
+        if( hs_bag_pos >= hs_bag_count )
+            hs_bag_pos = 0;   // wrap within this pass; refilled on the next call
+
+        slot = hs_bag[hs_bag_pos++];
+
+        mi  = slot / (HS_NUMSKILLS * HS_NUMCAT);
+        sk  = (slot / HS_NUMCAT) % HS_NUMSKILLS;
+        cat = slot % HS_NUMCAT;
         // Only demos from the running game: the same map name is a
         // different level in Doom 2, Plutonia and TNT, so replaying another
         // game's demo would desync immediately.
@@ -1187,7 +1289,7 @@ const char * HS_NextRecordDemoPath( void )
                          hs_skillnames[sk], hs_catname[cat], timebuf);
                 strupr(hs_demo_label);
 
-                cursor = (cursor+1) % total;
+                hs_bag_last = slot;
                 return path;
             }
         }
