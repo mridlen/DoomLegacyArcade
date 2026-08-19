@@ -120,6 +120,7 @@ void M_Register_Menu_Controls( void );
 // d_clisrv.c to decide how many players join on this machine.  See
 // D_NumLocalPlayers(), which clamps it to MAXSPLITSCREENPLAYERS.
 extern consvar_t cv_localplayers;
+extern consvar_t cv_jointime;       // [Arcade] join screen countdown, seconds
 
 #ifdef LAUNCHER
 void M_LaunchMenu( void );

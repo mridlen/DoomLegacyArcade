@@ -604,6 +604,10 @@ byte  D_NumViews( void );   // 1, 2 or 4 viewports
 byte  D_View_Cell( byte pind );
 void  D_Set_View_Cell( byte pind, byte cell );
 void  D_Reset_View_Cells( void );
+
+// [Arcade] How many panels the join screen counted in.  0 = not asked.
+void  D_Set_Join_Count( byte count );
+void  D_Clear_Join_Count( void );
 void  CL_Init_localplayer( void );
 
 

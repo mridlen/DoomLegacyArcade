@@ -488,6 +488,13 @@ consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
 CV_PossibleValue_t localplayers_cons_t[] = {{1,"1"},{2,"2"},{3,"3"},{4,"4"},{0,NULL}};
 consvar_t cv_localplayers = {"localplayers", "1", CV_SAVE, localplayers_cons_t };
 
+// [Arcade] Seconds the join screen waits before starting with whoever has
+// pressed in.  Operator setting like the two above.  0 skips the wait, which
+// starts the game with panel 1 alone -- useful on a single panel cabinet that
+// still has cv_localplayers set high for testing.
+CV_PossibleValue_t jointime_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
+consvar_t cv_jointime = {"jointime", "20", CV_SAVE, jointime_cons_t };
+
 // [Arcade] Which game the cabinet boots into, instead of whichever IWAD the
 // engine's search happens to find first.  Also an operator setting, saved only
 // from a -devmode session.
@@ -1627,6 +1634,11 @@ static void  M_SingleLevel_Start( int choice )
 
     single_level_mode = 1;
 
+    // [Arcade] Single Level is a scored single player mode: no join screen,
+    // and it must not inherit a join count from an earlier multiplayer game.
+    D_Set_Join_Count( 1 );
+    D_Reset_View_Cells();
+
     // Same ordering rule as M_ChooseSkill: HS_NewGame must precede
     // G_DeferedInitNew so the player-create and map netxcmds land in the
     // demo stream.  It reads HS_GameId(), which now follows single_level_mode
@@ -2387,6 +2399,214 @@ void M_SingleNewGame(int choice)
         Push_Setup_Menu(&EpiDef);
 }
 
+// =========================================================================
+//  [Arcade] Join screen
+// =========================================================================
+// After the skill is chosen, and before the game starts, each control panel
+// presses fire to be counted in.  The page is laid out as the view grid it is
+// about to become, so a player presses and watches *their own cell* claim
+// itself -- which is the whole point: with panels 1, 3 and 4 joining there is
+// nothing left to be confused about, because the square that lit up when you
+// pressed is the square you play in.
+//
+// Only reached when the cabinet has more than one panel (cv_localplayers), so
+// a single panel machine starts the game exactly as it did before.
+
+// The page owns its own active flag rather than testing currentMenu:
+// M_Clear_Menus leaves currentMenu pointing at the page it closed, so a
+// currentMenu test kept firing the countdown every tic after the game had
+// already been started -- G_DeferedInitNew once per tic, for ever.
+static boolean join_active = false;
+static byte  join_pressed[MAXSPLITSCREENPLAYERS];  // panel has pressed in
+static int   join_endtic;         // gametic the countdown expires
+static skill_e  join_skill;       // the game to start once joining is done
+static char  join_mapname[16];
+static boolean join_splitscreen;  // the old StartSplitScreenGame flag
+
+static void  M_Join_Drawer(void);
+boolean  M_Join_Open( skill_e skill, const char * mapname, boolean splitscreen_game );
+
+static menuitem_t  JoinMenu[] =
+{
+    // One inert item: the page is driven entirely from M_Join_Key.
+    {IT_SPACE | IT_NOTHING, 0, "", NULL, 0},
+};
+
+menu_t  JoinDef =
+{
+    "M_JOIN",           // supplied in legacy.wad, 223x17
+    NULL,               // no fontb title; the graphic is the title
+    JoinMenu,
+    M_Join_Drawer,
+    NULL,
+    sizeof(JoinMenu)/sizeof(menuitem_t),
+    56,40,
+    0
+};
+
+
+// How many panels the cabinet has, and so how many cells the page shows.
+static byte  M_Join_NumPanels( void )
+{
+    int n = cv_localplayers.EV;
+    if( n < 1 )  n = 1;
+    if( n > MAXSPLITSCREENPLAYERS )  n = MAXSPLITSCREENPLAYERS;
+    return (byte) n;
+}
+
+
+// Hand the joined panels to the engine and start the game.  Local players are
+// numbered in join order, but each keeps the cell of the panel that pressed --
+// see D_Set_View_Cell.
+static void  M_Join_Start( void )
+{
+    byte panel, i, joined = 0;
+    byte joined_panel[MAXSPLITSCREENPLAYERS];
+
+    if( ! join_active )  return;
+    join_active = false;
+
+    for( panel=0; panel < M_Join_NumPanels(); panel++ )
+    {
+        if( join_pressed[panel] )
+            joined_panel[joined++] = panel;
+    }
+
+    // Nobody pressed: start for panel 1 rather than dead-ending on this page.
+    if( joined == 0 )
+    {
+        joined_panel[0] = 0;
+        joined = 1;
+    }
+
+    // One or two players get the big layout -- the whole screen, or the
+    // stacked halves -- rather than a quarter each, however far apart their
+    // panels are.  Keeping the panel's own cell only earns its keep at three
+    // or more, where the 2x2 is used anyway and there is a gap to place; with
+    // two players top-and-bottom there is nothing to be confused about, and a
+    // quarter screen each would be a poor trade for it.
+    for( i=0; i<joined; i++ )
+        D_Set_View_Cell( i, (joined <= 2) ? i : joined_panel[i] );
+
+    D_Set_Join_Count( joined );
+
+    M_Clear_Menus( true );
+
+    // Same ordering rule as M_ChooseSkill: HS_NewGame before G_DeferedInitNew.
+    if( ! join_splitscreen )
+        HS_NewGame();
+    G_DeferedInitNew( join_skill, join_mapname, join_splitscreen );
+}
+
+
+// Called from M_Ticker while the page is up.
+void  M_Join_Ticker( void )
+{
+    if( ! join_active )  return;
+
+    if( (int)gametic >= join_endtic )
+        M_Join_Start();
+}
+
+
+// Raw key handling, taken before M_Cabinet_Menu_Key translates panel buttons
+// into cursor movement -- this page needs to know *which* panel pressed, and
+// that translation throws the identity away.  True when the key is consumed.
+boolean  M_Join_Key( uint16_t key )
+{
+    byte panel, panels = M_Join_NumPanels();
+
+    if( ! join_active )  return false;
+    if( key == KEY_ESCAPE )
+    {
+        join_active = false;    // backing out abandons the join
+        return false;
+    }
+
+    for( panel=0; panel < panels; panel++ )
+    {
+        // Fire joins this panel.
+        if( key == gamecontrol_pl[panel][gc_fire][0]
+            || key == gamecontrol_pl[panel][gc_fire][1] )
+        {
+            if( ! join_pressed[panel] )
+            {
+                join_pressed[panel] = 1;
+                S_StartSound(menu_sfx_enter);
+            }
+            return true;
+        }
+
+        // Use/open from a panel that is already in starts the game now, so a
+        // group that is ready need not sit out the rest of the countdown.
+        if( join_pressed[panel]
+            && ( key == gamecontrol_pl[panel][gc_use][0]
+                 || key == gamecontrol_pl[panel][gc_use][1] ) )
+        {
+            M_Join_Start();
+            return true;
+        }
+    }
+
+    return true;   // swallow the rest; this page has no cursor to move
+}
+
+
+static void  M_Join_Drawer( void )
+{
+    byte  panel, panels = M_Join_NumPanels();
+    int   secs = (join_endtic - (int)gametic) / TICRATE;
+    char  buf[48];
+
+    // One box per panel, laid out as the view grid will be: two panels stack
+    // as halves, three or four are a 2x2, matching D_NumViews.
+    for( panel=0; panel < panels; panel++ )
+    {
+        byte col = (panels >= 3) ? (panel & 1) : 0;
+        byte row = (panels >= 3) ? (panel >> 1) : panel;
+        int  cw  = (panels >= 3) ? (BASEVIDWIDTH/2) : BASEVIDWIDTH;
+        int  cx  = col * cw;
+        int  cy  = 60 + row * 50;
+        const char * state = join_pressed[panel] ? "READY" : "PRESS FIRE";
+        int  opt = join_pressed[panel] ? V_WHITEMAP : 0;
+
+        snprintf(buf, sizeof(buf), "PLAYER %d", panel+1);
+        V_DrawString( cx + (cw - V_StringWidth(buf))/2, cy, opt, buf );
+        V_DrawString( cx + (cw - V_StringWidth((char*)state))/2, cy + 12,
+                      opt, (char*) state );
+    }
+
+    if( secs < 0 )  secs = 0;
+    snprintf(buf, sizeof(buf), "STARTING IN %d", secs);
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, BASEVIDHEIGHT - 28, 0, buf );
+}
+
+
+// Open the page for a game that is about to start.  False when there is
+// nothing to ask -- a single panel, or the countdown turned off -- and the
+// caller should just start the game itself.
+boolean  M_Join_Open( skill_e skill, const char * mapname, boolean splitscreen_game )
+{
+    byte panel;
+
+    if( M_Join_NumPanels() < 2 )  return false;
+    if( cv_jointime.EV == 0 )     return false;
+
+    for( panel=0; panel<MAXSPLITSCREENPLAYERS; panel++ )
+        join_pressed[panel] = 0;
+
+    join_skill = skill;
+    dl_strncpy( join_mapname, mapname, sizeof(join_mapname) );
+    join_splitscreen = splitscreen_game;
+    join_endtic = (int)gametic + (cv_jointime.EV * TICRATE);
+
+    D_Reset_View_Cells();
+    join_active = true;
+    Push_Setup_Menu( &JoinDef );
+    return true;
+}
+
+
 static
 void M_ChooseSkill(int choice)
 {
@@ -2397,6 +2617,15 @@ void M_ChooseSkill(int choice)
     // flag, so starting a New Game from the menu *during* a single level run
     // would otherwise carry single_level_mode into the campaign.
     single_level_mode = 0;
+
+    // [Arcade] Ask which panels are playing first, on a cabinet that has more
+    // than one.  M_Join_Open returns false when there is nothing to ask, and
+    // then the game starts here exactly as it always did.
+    if( M_Join_Open( (skill_e) choice, G_BuildMapName(epi+1,1), StartSplitScreenGame ) )
+        return;
+
+    D_Clear_Join_Count();   // no join screen: every panel plays
+    D_Reset_View_Cells();
 
     // [Arcade] Reset cumulative timer and begin background recording.
     // Must precede G_DeferedInitNew so the player-create and map netxcmds
@@ -2905,6 +3134,8 @@ menuitem_t MenuOptionsMenu[]=
     // it is only reachable under -devmode.  Appended rather than inserted --
     // the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Two Player Mode" , &cv_twoplayer     , 0},
+    {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
+    {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
 };
 
@@ -6469,6 +6700,13 @@ boolean M_Responder (event_t* ev)
      case ev_keydown :
         key = ev->data1;  // keycode
 
+        // [Arcade] The join screen needs to know *which* panel pressed, and
+        // M_Cabinet_Menu_Key below translates every panel's buttons into the
+        // same cursor keys -- so this has to come first, before that identity
+        // is thrown away.
+        if( menuactive && M_Join_Key( key ) )
+            return true;
+
         // [Arcade] Drive the menus from the cabinet buttons.  Only while a
         // menu is up, or "use" would open the menu during play instead of
         // opening doors.
@@ -7317,6 +7555,8 @@ void Pop_Menu( void )
 // Call once per tic.
 void M_Ticker (void)
 {
+    M_Join_Ticker();   // [Arcade] join screen countdown
+
     if (--skullAnimCounter <= 0)
     {
         whichSkull ^= 1;
@@ -8100,6 +8340,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_screenslink,
   &cv_twoplayer,        // [Arcade]
   &cv_localplayers,     // [Arcade]
+  &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
 
     // p_mobj.c

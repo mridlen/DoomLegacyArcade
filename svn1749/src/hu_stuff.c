@@ -1180,7 +1180,10 @@ void HU_Draw_DeathmatchRankings ( byte vind )
     boolean	 large;
 
     byte  num_views = D_NumViews();
-    byte  cell  = D_View_Cell(vind);   // [Arcade] panel's cell, not join order
+    byte  cell  = (num_views >= 2) ? D_View_Cell(vind) : 0;   // [Arcade] panel's cell, not join order.
+    // Clamped to 0 for a single view: one player gets the whole screen
+    // whichever panel they are at, and an unclamped cell 1 would still
+    // push row to 1 and offset everything into a half that is not drawn.
     byte  col   = (num_views >= 4) ? (cell & 1) : 0;
     byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
     int   offx  = 0, offy = 0;   // in base units, at the scale set below

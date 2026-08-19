@@ -362,9 +362,24 @@ typedef char localplayer_init_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 
 // [Arcade] How many players share this machine.  Clamped to the compiled
 // limit so a hand-edited config cannot ask for more slots than exist, and to
 // at least 1 -- a cabinet with no local player would never spawn anybody.
+// [Arcade] Players the join screen counted in, 0 = nobody asked yet, in which
+// case every panel plays (which is what a cabinet without a join screen, or a
+// game started from the console, wants).
+static byte  local_join_count = 0;
+
+void  D_Set_Join_Count( byte count )
+{
+    local_join_count = (count <= MAXSPLITSCREENPLAYERS) ? count : MAXSPLITSCREENPLAYERS;
+}
+
+void  D_Clear_Join_Count( void )
+{
+    local_join_count = 0;
+}
+
 byte  D_NumLocalPlayers( void )
 {
-    int n = cv_localplayers.EV;
+    int n = local_join_count ? local_join_count : cv_localplayers.EV;
 
     // cv_splitscreen means at least two players, and it is the *only* thing
     // the Two Player Game menu sets -- that menu predates cv_localplayers and

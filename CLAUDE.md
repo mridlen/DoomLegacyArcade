@@ -479,6 +479,36 @@ silently made the flag do nothing at all.
     does not trigger a rebuild**. This bit during this work: `console.o` kept a stale
     `gamecontrol` symbol and failed at link. After editing any header, `make clean && make`.
 
+- **Join screen** (`m_menu.c`, `M_Join_*`, `JoinDef`). After the skill is chosen and before the
+  game starts, each control panel presses fire to be counted in. Laid out as the view grid it is
+  about to become, so a player presses and watches **their own cell** claim itself.
+  - **`cv_jointime`** ("jointime", default 20s, `CV_SAVE`) is the countdown, and
+    **`cv_localplayers`** the panel count — both operator settings under **Options → Menu Options**
+    beside `cv_twoplayer`, so only a `-devmode` session writes them. `jointime 0` or a single panel
+    skips the page entirely and the game starts exactly as it always did.
+  - **One or two players get the big layout** — the whole screen, or the stacked halves — however
+    far apart their panels are; only three or more use the 2x2. Keeping a player in their own
+    panel's cell only earns its keep once the grid is in use anyway: with two players top and
+    bottom there is nothing to be confused about, and a quarter screen each is a poor trade.
+    `M_Join_Start` assigns cells by join order when `joined <= 2` and by panel otherwise.
+  - Nobody pressing starts panel 1 alone rather than dead-ending on the page. Use/open from a panel
+    that is already in starts immediately, so a ready group need not sit out the countdown.
+  - **Keys are read before `M_Cabinet_Menu_Key`**, in `M_Responder`'s `ev_keydown`. That
+    translation turns every panel's buttons into the same cursor keys, which is exactly the
+    identity this page needs; taken afterwards, every panel would look alike.
+  - **The page owns a `join_active` flag rather than testing `currentMenu`.** `M_Clear_Menus`
+    leaves `currentMenu` pointing at the page it closed, so a `currentMenu` test kept firing the
+    countdown every tic *after* the game had started — `G_DeferedInitNew` once per tic, for ever.
+  - Single Level sets `D_Set_Join_Count(1)` and resets the cells: it is a scored single player mode
+    and must not inherit a join from an earlier multiplayer game.
+  - **Clamp the cell to 0 when only one view is drawn.** A lone player at panel 2 holds cell 1, and
+    unclamped that still set `row = 1`, offsetting the HUD into a half of the screen that is not
+    being drawn.
+  - Verified headless by driving the page through temporary console hooks: panels 1+3 give 2 views
+    (stacked halves, cells 0/1); panel 2 alone gives 1 view full screen; panels 1,2,4 give 4 views
+    at cells 0,1,3 with the bottom-left empty; all four give cells 0..3. Nobody pressing yields one
+    player; `localplayers 1` and `jointime 0` both skip the page.
+
 - **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
   for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
   devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and

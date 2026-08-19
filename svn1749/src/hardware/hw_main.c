@@ -4410,7 +4410,10 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // left-to-right then top-to-bottom, so panel order matches screen order.
     {
         byte num_views = D_NumViews();
-        byte cell = D_View_Cell(pind);   // [Arcade] panel's cell, not join order
+        byte cell = (num_views >= 2) ? D_View_Cell(pind) : 0;   // [Arcade] panel's cell, not join order.
+        // Clamped to 0 for a single view: one player gets the whole screen
+        // whichever panel they are at, and an unclamped cell 1 would still
+        // push row to 1 and offset everything into a half that is not drawn.
         byte col = (num_views >= 4) ? (cell & 1) : 0;
         byte row = (num_views >= 4) ? (cell >> 1) : cell;
 
