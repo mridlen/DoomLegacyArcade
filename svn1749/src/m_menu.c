@@ -1410,8 +1410,32 @@ static boolean StartSplitScreenGame = false;
 #define ARCADE_DM_TIMELIMIT   5
 
 // Called from ServerMenu
+// [Arcade] Join screen, defined further down.  True when the page was opened
+// and the caller should return; the callback runs the real start.
+boolean  M_Join_Open( void (*startfunc)(void) );
+
+static void  M_StartServer_Go( void );
+static int   startserver_choice;
+
+// [Arcade] Two Player Game -> Start Game reaches the game through here rather
+// than through M_ChooseSkill, so it needs its own join-screen hook or that
+// whole route would skip the page.
 void M_StartServer( int choice )
 {
+    startserver_choice = choice;
+
+    if( M_Join_Open( M_StartServer_Go ) )
+        return;
+
+    D_Clear_Join_Count();   // no join screen: every panel plays
+    D_Reset_View_Cells();
+    M_StartServer_Go();
+}
+
+static void  M_StartServer_Go( void )
+{
+    int choice = startserver_choice;
+
     M_Clear_Menus(true);
 
     single_level_mode = 0;   // [Arcade] campaign game, see M_ChooseSkill
@@ -2419,12 +2443,13 @@ void M_SingleNewGame(int choice)
 static boolean join_active = false;
 static byte  join_pressed[MAXSPLITSCREENPLAYERS];  // panel has pressed in
 static int   join_endtic;         // gametic the countdown expires
-static skill_e  join_skill;       // the game to start once joining is done
-static char  join_mapname[16];
-static boolean join_splitscreen;  // the old StartSplitScreenGame flag
+// What to run once joining is done.  A callback because the two menu routes
+// into a game start differently: the Single Player path ends at
+// G_DeferedInitNew, while Two Player Game -> Start Game goes through
+// M_StartServer, which issues its own command sequence.
+static void (*join_startfunc)(void) = NULL;
 
 static void  M_Join_Drawer(void);
-boolean  M_Join_Open( skill_e skill, const char * mapname, boolean splitscreen_game );
 
 static menuitem_t  JoinMenu[] =
 {
@@ -2492,10 +2517,8 @@ static void  M_Join_Start( void )
 
     M_Clear_Menus( true );
 
-    // Same ordering rule as M_ChooseSkill: HS_NewGame before G_DeferedInitNew.
-    if( ! join_splitscreen )
-        HS_NewGame();
-    G_DeferedInitNew( join_skill, join_mapname, join_splitscreen );
+    if( join_startfunc )
+        join_startfunc();
 }
 
 
@@ -2582,10 +2605,27 @@ static void  M_Join_Drawer( void )
 }
 
 
+// [Arcade] The Single Player route's game start, deferred until the join
+// screen is done with (or run straight away when there is no join screen).
+static skill_e  newgame_skill;
+static char     newgame_map[16];
+static boolean  newgame_split;
+
+static void  M_NewGame_Go( void )
+{
+    // Reset cumulative timer and begin background recording.  Must precede
+    // G_DeferedInitNew so the player-create and map netxcmds land in the demo
+    // stream (see HS_NewGame).
+    if( ! newgame_split )
+        HS_NewGame();
+    G_DeferedInitNew( newgame_skill, newgame_map, newgame_split );
+}
+
+
 // Open the page for a game that is about to start.  False when there is
 // nothing to ask -- a single panel, or the countdown turned off -- and the
 // caller should just start the game itself.
-boolean  M_Join_Open( skill_e skill, const char * mapname, boolean splitscreen_game )
+boolean  M_Join_Open( void (*startfunc)(void) )
 {
     byte panel;
 
@@ -2595,9 +2635,7 @@ boolean  M_Join_Open( skill_e skill, const char * mapname, boolean splitscreen_g
     for( panel=0; panel<MAXSPLITSCREENPLAYERS; panel++ )
         join_pressed[panel] = 0;
 
-    join_skill = skill;
-    dl_strncpy( join_mapname, mapname, sizeof(join_mapname) );
-    join_splitscreen = splitscreen_game;
+    join_startfunc = startfunc;
     join_endtic = (int)gametic + (cv_jointime.EV * TICRATE);
 
     D_Reset_View_Cells();
@@ -2621,18 +2659,16 @@ void M_ChooseSkill(int choice)
     // [Arcade] Ask which panels are playing first, on a cabinet that has more
     // than one.  M_Join_Open returns false when there is nothing to ask, and
     // then the game starts here exactly as it always did.
-    if( M_Join_Open( (skill_e) choice, G_BuildMapName(epi+1,1), StartSplitScreenGame ) )
+    newgame_skill = (skill_e) choice;
+    dl_strncpy( newgame_map, G_BuildMapName(epi+1,1), sizeof(newgame_map) );
+    newgame_split = StartSplitScreenGame;
+
+    if( M_Join_Open( M_NewGame_Go ) )
         return;
 
     D_Clear_Join_Count();   // no join screen: every panel plays
     D_Reset_View_Cells();
-
-    // [Arcade] Reset cumulative timer and begin background recording.
-    // Must precede G_DeferedInitNew so the player-create and map netxcmds
-    // land in the demo stream (see HS_NewGame).
-    if( ! StartSplitScreenGame )
-        HS_NewGame();
-    G_DeferedInitNew(choice, G_BuildMapName(epi+1,1), StartSplitScreenGame);
+    M_NewGame_Go();
     M_Clear_Menus (true);
 }
 

@@ -491,8 +491,17 @@ silently made the flag do nothing at all.
     panel's cell only earns its keep once the grid is in use anyway: with two players top and
     bottom there is nothing to be confused about, and a quarter screen each is a poor trade.
     `M_Join_Start` assigns cells by join order when `joined <= 2` and by panel otherwise.
+  - **Both routes into a game must be hooked.** The cabinet's New Game menu offers *Single Player*,
+    which ends at `M_ChooseSkill` → `G_DeferedInitNew`, and *Two Player Game → Start Game*, which
+    goes through `M_StartServer` and issues its own command sequence. Hooking only the first left
+    the two player route skipping the page entirely. `M_Join_Open` therefore takes a **completion
+    callback** rather than game parameters, and each route supplies its own starter
+    (`M_NewGame_Go`, `M_StartServer_Go`).
   - Nobody pressing starts panel 1 alone rather than dead-ending on the page. Use/open from a panel
     that is already in starts immediately, so a ready group need not sit out the countdown.
+  - **The page does not appear until `cv_localplayers` is raised**, which is correct but reads as
+    the feature being broken: it ships at 1, and one panel has nothing to ask. Set *Control Panels*
+    under Options → Menu Options in a `-devmode` session, which is the only session that saves.
   - **Keys are read before `M_Cabinet_Menu_Key`**, in `M_Responder`'s `ev_keydown`. That
     translation turns every panel's buttons into the same cursor keys, which is exactly the
     identity this page needs; taken afterwards, every panel would look alike.
