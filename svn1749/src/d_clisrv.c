@@ -377,6 +377,23 @@ byte  D_NumLocalPlayers( void )
 }
 
 
+// [Arcade] How many viewports are drawn, and so how the screen is carved up:
+//   1 -> whole screen
+//   2 -> two stacked halves, as splitscreen has always been
+//   4 -> a 2x2 grid, used for three players too, leaving one quadrant unused
+// Three players in a 2x2 grid rather than three strips because thirds would
+// need a third layout and would not match a 4 player cabinet's muscle memory.
+// Note a quadrant has very nearly the screen's own aspect ratio, so unlike
+// the 2 view split it needs no projection fix.
+byte  D_NumViews( void )
+{
+    byte n = D_NumLocalPlayers();
+    if( n <= 1 )  return 1;
+    if( n == 2 )  return 2;
+    return 4;
+}
+
+
 // [Arcade] Mark every local player slot unused.
 void CL_Init_localplayer( void )
 {

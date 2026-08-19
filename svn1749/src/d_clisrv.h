@@ -597,6 +597,7 @@ extern byte      localplayer[MAXSPLITSCREENPLAYERS];  // client player number
 
 // [Arcade] Players sharing this machine, 1..MAXSPLITSCREENPLAYERS.
 byte  D_NumLocalPlayers( void );
+byte  D_NumViews( void );   // 1, 2 or 4 viewports
 void  CL_Init_localplayer( void );
 
 

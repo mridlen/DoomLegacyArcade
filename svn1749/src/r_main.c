@@ -879,7 +879,7 @@ void R_ExecuteSetViewSize (void)
 
     setsizeneeded = false;
     // no reduced view in splitscreen mode
-    if( cv_splitscreen.EV && (cv_viewsize.value < 11) )
+    if( (D_NumViews() >= 2) && (cv_viewsize.value < 11) )
         CV_SetValue (&cv_viewsize, 11);
 
     // added by Hurdler
@@ -934,7 +934,11 @@ void R_ExecuteSetViewSize (void)
     }
 
     // added 16-6-98:splitscreen
-    if( cv_splitscreen.EV )
+    // [Arcade] Any multi-view layout halves the height; the 2x2 grid halves
+    // the width too, but only the hardware renderer can place those columns
+    // (r_draw.c has just the two stacked ylookup tables), so the software
+    // renderer keeps drawing full width and shows at most two views.
+    if( D_NumViews() >= 2 )
         rdraw_viewheight >>= 1;
 
     detailshift = setdetail;

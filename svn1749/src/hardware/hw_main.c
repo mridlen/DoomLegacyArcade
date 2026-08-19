@@ -478,7 +478,9 @@ angle_t gr_x_to_viewangle[MAXVIDWIDTH + 1];
 
 // base values set at SetViewSize
 float gr_basecentery;
+float gr_baseviewwindowx;   // [Arcade] left edge before the per-view column offset
 float gr_baseviewwindowy;
+float gr_basewindowcenterx; // [Arcade] projection centre of one view column
 float gr_basewindowcentery;
 
 float gr_viewwidth;             // viewport clipping boundaries (screen coords)
@@ -3924,8 +3926,8 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
 
     // set top/bottom coords
     ty = FIXED_TO_FLOAT( psp->sy - sprlump->topoffset );
-    if (cv_splitscreen.value && (cv_grfov.value == 90))
-        ty -= 20;       //Hurdler: so it's a bit higher
+    if ((D_NumViews() == 2) && (cv_grfov.value == 90))
+        ty -= 20;       //Hurdler: so it's a bit higher, [Arcade] 2 view split only
     if (EN_heretic_hexen)
     {
         if (rdraw_viewheight == vid.height
@@ -4297,24 +4299,45 @@ void HWR_SetViewSize( int viewsize )
         gr_viewheight = (float) ((viewsize * (vid.height - stbar_height / 2) / 10) & ~1);
     }
 
-    if (cv_splitscreen.value)
+    // [Arcade] 2 views stack as halves; 4 views are a 2x2 grid, so the width
+    // halves as well.  view_span_* is the size of one cell of that grid.
+    byte num_views = D_NumViews();
+    float view_span_w = (float) vid.width;
+    float view_span_h = (float) vid.height;
+
+    if( num_views >= 2 )
+    {
         gr_viewheight /= 2;
+        view_span_h /= 2;
+    }
+    if( num_views >= 4 )
+    {
+        gr_viewwidth /= 2;
+        view_span_w /= 2;
+    }
 
     gr_centerx = gr_viewwidth / 2;
     gr_basecentery = gr_viewheight / 2; //note: this is (gr_centerx * gr_viewheight / gr_viewwidth)
 
-    gr_viewwindowx = (vid.width - gr_viewwidth) / 2;
-    gr_windowcenterx = (float) (vid.width / 2);
-    if (gr_viewwidth == vid.width)
+    // Centre the view inside its own cell, not inside the whole screen.
+    gr_baseviewwindowx = (view_span_w - gr_viewwidth) / 2;
+    gr_basewindowcenterx = view_span_w / 2;
+    gr_viewwindowx = gr_baseviewwindowx;
+    gr_windowcenterx = gr_basewindowcenterx;
+    // [Arcade] Compare against the cell, not the screen: with a 2x2 grid the
+    // view fills its cell at half the screen width, and testing vid.width
+    // sent it down the status-bar-centering path below, which produced a
+    // negative y for the top row.
+    if (gr_viewwidth == view_span_w)
     {
-        // window top left corner at 0,0
+        // window top left corner at 0,0 of its cell
         gr_baseviewwindowy = 0;
         gr_basewindowcentery = gr_viewheight / 2;
     }
     else
     {
-        gr_baseviewwindowy = (vid.height - stbar_height - gr_viewheight) / 2;
-        gr_basewindowcentery = (float) ((vid.height - stbar_height) / 2);
+        gr_baseviewwindowy = (view_span_h - stbar_height - gr_viewheight) / 2;
+        gr_basewindowcentery = (float) ((view_span_h - stbar_height) / 2);
     }
 
 #ifdef FIT_RATIO
@@ -4341,7 +4364,7 @@ static int num_late_walls = 0;  // drawn late, transparent walls
 // ==========================================================================
 // Split player saved settings.
 // indexed from viewnumber, when 0,1.
-static byte viewsv_need_sky[2];
+static byte viewsv_need_sky[MAXSPLITSCREENPLAYERS];   // [Arcade] one per view
 
 
 //  viewnumber : splitscreen 0=upper, 1=lower. Single player is always 0.
@@ -4357,7 +4380,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // Is also forced upon first Render, by init of viewsv_viewnumber.
     if(viewsv_viewnumber != pind)
     {
-        if( viewsv_viewnumber < 2 )
+        if( viewsv_viewnumber < MAXSPLITSCREENPLAYERS )   // [Arcade] was 2
         {
             // swap split window settings
             viewsv_need_sky[viewsv_viewnumber] = need_sky_background;
@@ -4366,8 +4389,10 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
         else
         {
             // Initial values.
+            byte vi;
             need_sky_background = DSB_all;
-            viewsv_need_sky[0] = viewsv_need_sky[1] = DSB_all;
+            for( vi=0; vi<MAXSPLITSCREENPLAYERS; vi++ )
+                viewsv_need_sky[vi] = DSB_all;
         }
         viewsv_viewnumber = pind;
         HWR_Set_Lights(pind);
@@ -4380,15 +4405,30 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     dup_viewangle = viewangle;
 
     // set window position
-    gr_centery = gr_basecentery;
-    gr_viewwindowy = gr_baseviewwindowy;
-    gr_windowcentery = gr_basewindowcentery;
-    if (cv_splitscreen.value && (pind == 1))
+    // [Arcade] Place the view in its cell of the grid.  With 2 views that is
+    // the old upper/lower split; with 4 it is a 2x2, pind 0..3 reading
+    // left-to-right then top-to-bottom, so panel order matches screen order.
     {
-        // lower screen
-        //gr_centery += (vid.height/2 );
-        gr_viewwindowy += (vid.height / 2);
-        gr_windowcentery += (vid.height / 2);
+        byte num_views = D_NumViews();
+        byte col = (num_views >= 4) ? (pind & 1) : 0;
+        byte row = (num_views >= 4) ? (pind >> 1) : pind;
+
+        gr_centery = gr_basecentery;
+        gr_viewwindowx = gr_baseviewwindowx;
+        gr_windowcenterx = gr_basewindowcenterx;
+        gr_viewwindowy = gr_baseviewwindowy;
+        gr_windowcentery = gr_basewindowcentery;
+
+        if( col )
+        {
+            gr_viewwindowx += (vid.width / 2);
+            gr_windowcenterx += (vid.width / 2);
+        }
+        if( row && (num_views >= 2) )
+        {
+            gr_viewwindowy += (vid.height / 2);
+            gr_windowcentery += (vid.height / 2);
+        }
     }
 
     // hmm solidsegs probably useless here
@@ -4427,7 +4467,9 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     atransform.scalez = 1;
     atransform.fovxangle = cv_grfov.value;
     atransform.fovyangle = cv_grfov.value;
-    atransform.splitscreen = cv_splitscreen.value;
+    // [Arcade] Only the 2 view split squashes the aspect.  A 2x2 quadrant is
+    // very nearly the screen's own ratio, so it must not get this correction.
+    atransform.splitscreen = (D_NumViews() == 2);
     gr_fovlud = 1 / tan(cv_grfov.value * PI / 360);
 
 #ifdef NO_MLOOK_EXTENDS_FOV

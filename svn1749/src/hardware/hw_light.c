@@ -157,7 +157,7 @@ consvar_t cv_grcorona_draw     = {"gr_corona_draw",      "Auto", CV_SAVE, grcoro
 #endif
 
 // Select by view, using indirection into view_dynlights.
-static dynlights_t view_dynlights[2]; // 2 players in splitscreen mode
+static dynlights_t view_dynlights[MAXSPLITSCREENPLAYERS]; // [Arcade] one per view
 static dynlights_t *dynlights = &view_dynlights[0];
 
 

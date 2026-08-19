@@ -399,6 +399,32 @@ silently made the flag do nothing at all.
   - Verified headless: `localplayers` 1/2/3/4 each joined exactly that many players, filling slots
     0..3 with real mobjs and surviving. Controls: `splitscreen 1` still gives the normal two player
     split (`multiplayer=1`), and the stock default is untouched at one player.
+  - **Phase 2 (viewports) is done for the hardware renderer.** `D_NumViews()` returns 1, 2 or 4:
+    one view is the whole screen, two are the stacked halves splitscreen always had, and three or
+    four are a **2x2 grid** (three players leave one quadrant unused, rather than inventing a
+    third layout). `pind` 0..3 reads left-to-right then top-to-bottom, so panel order matches
+    screen order.
+    - **The cabinet runs OpenGL** (`drawmode "OpenGL"` in the tracked config), which is why the
+      grid went into `hw_main.c`: a viewport there is just a rectangle. `HWR_SetViewSize` halves
+      `gr_viewheight` for two views and `gr_viewwidth` as well for four, and
+      `HWR_RenderPlayerView` offsets `gr_viewwindowx/y` by the view's column and row.
+    - **The "does the view fill the screen" test had to become "does it fill its cell"**
+      (`gr_viewwidth == view_span_w`, not `vid.width`). Left as it was, a half-width quadrant took
+      the status-bar centering path and the top row came out at **y = -61**.
+    - A quadrant is very nearly the screen's own aspect ratio, so it must **not** get the
+      2-view projection squash: `atransform.splitscreen` is now `(D_NumViews() == 2)`, and the
+      same for the weapon-sprite nudge that keys off fov 90.
+    - `viewsv_need_sky[]` and `view_dynlights[]` were `[2]`, indexed by view number.
+    - **The software renderer still draws at most two views** and is left that way: `r_draw.c` has
+      exactly `ylookup1`/`ylookup2` for stacked halves, and columns would need per-view
+      `view_window_x` tables. `D_Display` renders view 0 plus, for the software path, view 1 only.
+    - Verified numerically rather than by eye, printing each view rectangle at 1366x768:
+      1 view `0,0 1366x768`; 2 views `0,0` and `0,384`, each 1366x384; 4 views `0,0` `683,0`
+      `0,384` `683,384`, each 683x384 — tiling the screen exactly. Three players give the first
+      three of those.
+    - Still to do for a finished 4 player cabinet: the **HUD and status bar** are still placed
+      against the 2-view split (`st_stuff.c` `lowerbar_y`, `CLK_DY`), so they are not yet
+      re-derived for quadrants.
   - **There are no dep files for most objects** (`svn1749/dep` holds about 16), so **a header edit
     does not trigger a rebuild**. This bit during this work: `console.o` kept a stale
     `gamecontrol` symbol and failed at link. After editing any header, `make clean && make`.

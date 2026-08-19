@@ -872,31 +872,48 @@ void D_Display(void)
             }
 
             // added 16-6-98: render the second screen
-            if ( displayplayer2_ptr && displayplayer2_ptr->mo)
+            // [Arcade] ... and the third and fourth.  Views past the first
+            // are taken from localplayer[], not from displayplayer2_ptr,
+            // which only ever named the second of two.  The hardware
+            // renderer places each view in its cell of the grid (see
+            // HWR_RenderPlayerView); the software renderer still has only
+            // the two stacked half-screen tables, so it draws at most two.
             {
+                byte vind, num_views = D_NumViews();
+                for( vind=1; vind<num_views; vind++ )
+                {
+                    byte pn = localplayer[vind];
+                    player_t * vpl;
+
+                    if( pn >= MAXPLAYERS )  continue;   // panel with no player
+                    vpl = &players[pn];
+                    if( ! vpl->mo )  continue;
+
 #ifdef CLIENTPREDICTION2
-                displayplayer2_ptr->mo->flags2 |= MF2_DONTDRAW;
+                    vpl->mo->flags2 |= MF2_DONTDRAW;
 #endif
 #ifdef HWRENDER
-                if (rendermode != render_soft)
-                    HWR_RenderPlayerView(1, displayplayer2_ptr);
-                else
+                    if (rendermode != render_soft)
+                        HWR_RenderPlayerView(vind, vpl);
+                    else
 #endif
-                {
-                    // Alter the draw tables to draw into second player window
-                    //faB: Boris hack :P !!
-                    view_window_y = vid.height / 2;
-                    memcpy(ylookup, ylookup2, rdraw_viewheight * sizeof(ylookup[0]));
+                    if( vind == 1 )
+                    {
+                        // Alter the draw tables to draw into second player window
+                        //faB: Boris hack :P !!
+                        view_window_y = vid.height / 2;
+                        memcpy(ylookup, ylookup2, rdraw_viewheight * sizeof(ylookup[0]));
 
-                    R_RenderPlayerView(1, displayplayer2_ptr);
+                        R_RenderPlayerView(1, vpl);
 
-                    // Restore first player tables
-                    view_window_y = 0;
-                    memcpy(ylookup, ylookup1, rdraw_viewheight * sizeof(ylookup[0]));
-                }
+                        // Restore first player tables
+                        view_window_y = 0;
+                        memcpy(ylookup, ylookup1, rdraw_viewheight * sizeof(ylookup[0]));
+                    }
 #ifdef CLIENTPREDICTION2
-                displayplayer2_ptr->mo->flags2 &= ~MF2_DONTDRAW;
+                    vpl->mo->flags2 &= ~MF2_DONTDRAW;
 #endif
+                }
             }
         }
 
