@@ -4005,9 +4005,33 @@ menuitem_t MControlMenu[]=
     {IT_SUBMENU | IT_WHITESTRING, 0,"Second Mouse config >>", &SecondMouseCfgdef, 0},
     {IT_CALL | IT_WHITESTRING, 0,"Player1 Controls >>", M_Setup_P1_Controls, '1'},
     {IT_CALL | IT_WHITESTRING, 0,"Player2 Controls >>", M_Setup_P2_Controls, '2'},
+    // [Arcade] The full per-action binding page for the extra panels.  The
+    // guided setup above only teaches the ten controls a standard six button
+    // panel needs; a panel with more buttons binds the rest here.  Shown only
+    // when the cabinet has that many panels; see M_Configure.
+    {IT_CALL | IT_WHITESTRING, 0,"Player3 Controls >>", M_Setup_P3_Controls, '3'},
+    {IT_CALL | IT_WHITESTRING, 0,"Player4 Controls >>", M_Setup_P4_Controls, '4'},
 #ifdef JOYSTICK_SUPPORT   
     {IT_SUBMENU | IT_WHITESTRING, 0,"Joystick Options >>" ,&JoystickOptionsDef   , 'j'},
 #endif
+};
+
+// [Arcade] This menu *is* addressed by position now (the lockdown hides the
+// rows for panels the cabinet does not have), so the indices are named.  Keep
+// in step with MControlMenu above.
+enum {
+    mcontrol_guided_p1 = 0,
+    mcontrol_guided_p2,
+    mcontrol_guided_p3,
+    mcontrol_guided_p4,
+    mcontrol_reclayout,
+    mcontrol_controlperkey,
+    mcontrol_mouseopt,
+    mcontrol_mouse2cfg,
+    mcontrol_p1_controls,
+    mcontrol_p2_controls,
+    mcontrol_p3_controls,
+    mcontrol_p4_controls,
 };
 
 menu_t  MControlDef =
@@ -4284,9 +4308,17 @@ void M_DrawControl(void)
     // draw title, strings and submenu
     M_DrawGenericMenu();
 
-    M_CentreText (ControlDef.y-12,
-        (controls_player ? "PLAYER2: ENTER TO CHANGE, BACKSPACE TO CLEAR" :
-                           "PLAYER1: ENTER TO CHANGE, BACKSPACE TO CLEAR") );
+    // [Arcade] Name the actual panel.  This was a two-way choice, so with
+    // four panels the third and fourth both announced themselves as PLAYER2 --
+    // which is exactly the confusion this screen must not create when an
+    // operator is binding buttons.
+    {
+        char hdr[64];
+        snprintf( hdr, sizeof(hdr),
+                  "PLAYER%d: ENTER TO CHANGE, BACKSPACE TO CLEAR",
+                  (int)controls_player + 1 );
+        M_CentreText( ControlDef.y-12, hdr );
+    }
 
     for(i=0;i<currentMenu->numitems;i++)
     {
@@ -8045,9 +8077,12 @@ void M_Configure (void)
             if( PlayerDirectorDef.lastOn == i )
                 PlayerDirectorDef.lastOn = 0;
 
-            // Guided setup P3/P4 sit at MControlMenu[2] and [3].
-            MControlMenu[i].status = IT_HIDDEN;
-            if( MControlDef.lastOn == i )
+            // Both of this panel's rows on the Controls menu: the guided
+            // setup and the full binding page.
+            MControlMenu[ mcontrol_guided_p1 + i ].status = IT_HIDDEN;
+            MControlMenu[ mcontrol_p1_controls + i ].status = IT_HIDDEN;
+            if( MControlDef.lastOn == (mcontrol_guided_p1 + i)
+                || MControlDef.lastOn == (mcontrol_p1_controls + i) )
                 MControlDef.lastOn = 0;
         }
     }

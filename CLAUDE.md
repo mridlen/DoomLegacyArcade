@@ -494,6 +494,17 @@ silently made the flag do nothing at all.
     (Use Mouse, Mouse Move, Always MouseLook) are **hidden for panels 3 and 4** rather than
     inventing a `use_mouse3`. An arcade panel has no mouse anyway. The compiler caught this as an
     out-of-bounds read; the other per-player cvars had already been widened.
+  - **Options → Setup Controls carries both rows per panel**: *Guided setup Pn* and
+    *Player n Controls >>*. The guided setup only teaches the ten controls a standard six button
+    panel needs, so a panel with more buttons binds the rest on the full per-action page — which is
+    the whole reason the second row has to exist for 3 and 4, not just 1 and 2.
+  - **`MControlMenu` is now addressed by position**, which it explicitly was not before, so its
+    indices are named in an enum (`mcontrol_*`) and the lockdown uses those. Keep the enum in step
+    with the array.
+  - **The binding page names the panel it is editing.** Its header was
+    `controls_player ? "PLAYER2" : "PLAYER1"`, so panels 3 and 4 both announced themselves as
+    PLAYER2 — exactly the confusion this screen must not create while an operator is assigning
+    buttons. It prints the number now.
   - Entries for panels that do not exist are hidden in **`M_Configure`**, keyed on
     `cv_localplayers`, for the same reason as `cv_twoplayer`: config.cfg is not loaded when
     `M_Init` runs.
