@@ -512,6 +512,14 @@ CV_PossibleValue_t defaultgame_cons_t[] = {
   {0, "None"}, {1, "doomu"}, {2, "doom2"}, {3, "plutonia"}, {4, "tnt"}, {0, NULL} };
 consvar_t cv_defaultgame = {"defaultgame", "None", CV_SAVE, defaultgame_cons_t };
 
+// [Arcade] Leave the Cheats entry on the main menu for players, instead of it
+// being -devmode only.  Operator setting like the rest of this group, so a
+// player cannot switch it on for themselves; off by default because a scored
+// cabinet does not want it, and cheating still voids the run either way.
+// Applied in M_Configure, not M_Init's lockdown -- config.cfg is not loaded
+// that early, the same rule as cv_twoplayer above.
+consvar_t cv_cheatsmenu = {"cheatsmenu", "0", CV_SAVE, CV_OnOff };
+
 static
 void CV_menusound_OnChange(void)
 {
@@ -3428,6 +3436,7 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
+    {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -8068,9 +8077,9 @@ void M_Init (void)
         if( MainDef.lastOn >= 2 && MainDef.lastOn <= 3 )
             MainDef.lastOn = 0;
 
-        MainMenu[MM_cheats].status = IT_HIDDEN;   // [Arcade] operator only
-        if( MainDef.lastOn == MM_cheats )
-            MainDef.lastOn = 0;
+        // [Arcade] The Cheats entry is hidden in M_Configure instead, because
+        // the operator can now leave it on for players (cv_cheatsmenu) and
+        // that cvar is not loaded from config.cfg until long after M_Init.
 
         // Options stays reachable, but pared down to the few settings a
         // player may change.  Leaves Crosshair, Player >>, Game Options >>.
@@ -8313,6 +8322,19 @@ void M_Configure (void)
         TwoPlayerMenu[twoplayer_p2_config].status = IT_HIDDEN;
         if( TwoPlayerDef.lastOn == twoplayer_p2_config )
             TwoPlayerDef.lastOn = 0;
+    }
+
+    // [Arcade] The Cheats entry.  Normally operator-only, but an operator can
+    // leave it up for players with cv_cheatsmenu -- a cabinet at a party is
+    // not the same machine as a cabinet keeping scores.  Here rather than in
+    // M_Init's lockdown for the usual reason: that cvar comes from config.cfg,
+    // which is not loaded when M_Init runs.  Cheating still voids the run's
+    // score whichever way this is set.
+    if( ! devmode && ! cv_cheatsmenu.EV )
+    {
+        MainMenu[MM_cheats].status = IT_HIDDEN;
+        if( MainDef.lastOn == MM_cheats )
+            MainDef.lastOn = 0;
     }
 
     // [Arcade] Panels 3 and 4 exist only on a cabinet configured for them.
@@ -8803,6 +8825,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_localplayers,     // [Arcade]
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
+  &cv_cheatsmenu,       // [Arcade]
 
     // p_mobj.c
   &cv_itemrespawntime,

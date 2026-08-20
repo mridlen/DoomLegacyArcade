@@ -728,7 +728,16 @@ silently made the flag do nothing at all.
     and drops the last row, so anything appended past Quit would be cut off under Doom 2. The
     lockdown's Load/Save hiding at indices 2,3 is unaffected. Those are the complete set of index
     references — see the `grep` list under Single Level mode, which uses the same discipline.
-  - Devmode only, hidden by the usual `IT_HIDDEN` lockdown, with `MainDef.lastOn` moved off it.
+  - Devmode only by default, hidden by the usual `IT_HIDDEN` treatment with `MainDef.lastOn` moved
+    off it — but an operator can leave it up for players with **`cv_cheatsmenu`** ("cheatsmenu",
+    default Off, `CV_SAVE`), under **Options → Menu Options** beside `cv_twoplayer`. A cabinet at a
+    party is not the same machine as a cabinet keeping scores; cheating voids the run either way.
+    - **The hiding therefore lives in `M_Configure`, not `M_Init`'s lockdown**, for the same reason
+      as `cv_twoplayer` and the game selector: `config.cfg` is not loaded until long after `M_Init`
+      runs, so the cvar would still read as its compiled default there. The condition is
+      `! devmode && ! cv_cheatsmenu.EV`.
+    - Being an operator setting, only a `-devmode` session saves it — a player cannot switch it on
+      for themselves.
   - **Single player only** (the user's requirement). `Command_CheatGod_f` and `Command_CheatGimme_f`
     already `return` when `multiplayer` is set, so the engine enforces it; `M_Cheats_Usable()`
     additionally greys the items out when there is no single player level running, rather than
