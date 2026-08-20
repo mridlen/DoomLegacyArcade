@@ -450,6 +450,11 @@ static boolean hs_attract_page = false;   // [Arcade] high-score table page acti
 static int     hs_subpage_tic = 0;        // [Arcade] tics left on the map on screen
 static boolean hs_page_after_demo = false;  // [Arcade] show scores after this demo
 
+// [Arcade] Extra splash page (CREDIT2 in legacy.wad), shown once per attract
+// cycle straight after the stock CREDIT page.
+static boolean credit2_pending = false;
+#define CREDIT2_SECS   6
+
 //  PROTOS
 static void Help(void);
 static void Clear_SoftError(void);
@@ -1329,6 +1334,26 @@ void D_DoAdvanceDemo(void)
         }
     }
 
+    // [Arcade] The extra splash page, interposed for the same reason as the
+    // high score page above: the demosequence cases are shared between game
+    // modes and the last is reachable only under the retail divisor, so a new
+    // case would have to renumber them.  Returning without advancing shows
+    // this page and then carries on where the sequence left off.
+    //
+    // Skipped when the lump is absent, so a legacy.wad without CREDIT2 -- an
+    // older copy, or another install -- behaves exactly as before.
+    if( credit2_pending )
+    {
+        credit2_pending = false;
+        if( VALID_LUMP( W_CheckNumForName("CREDIT2") ) )
+        {
+            pagetic = TICRATE * CREDIT2_SECS;
+            gamestate = GS_DEMOSCREEN;
+            pagename = "CREDIT2";
+            return;             // demosequence deliberately not advanced
+        }
+    }
+
     if (gamemode == ultdoom_retail)
         demosequence = (demosequence + 1) % 7;
     else
@@ -1368,6 +1393,7 @@ void D_DoAdvanceDemo(void)
             pagetic = 200;
             gamestate = GS_DEMOSCREEN;
             pagename = "CREDIT";
+            credit2_pending = true;   // [Arcade] extra splash follows this one
             break;
         case 3:
             demo_name = HS_NextRecordDemoPath();   // [Arcade]

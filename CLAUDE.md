@@ -961,6 +961,16 @@ silently made the flag do nothing at all.
   so a stock IWAD demo is never captioned with the previous record's text. Drawn on the **second**
   text line (y=8), because item pickups still print messages at y=0 during playback.
 
+  An extra splash page, **`CREDIT2`** (in `legacy.wad`, 320x200 like the stock `CREDIT`), is shown
+  once per attract cycle straight after `CREDIT`, for `CREDIT2_SECS` seconds. Interposed with a
+  flag and an early `return`, exactly like the high score page below and for the same reason — the
+  `demosequence` cases are shared between game modes and the last is reachable only under the
+  retail divisor, so a new case would have to renumber them. Guarded on the lump existing, so a
+  `legacy.wad` without it behaves as before.
+  - **Keep splash art at 320x200.** `D_PageDrawer` ends at `V_DrawScaledPatch_Name`, which
+    multiplies by `vid.dupx/dupy` — a 960x720 patch would be drawn at 3840x2160 and only its
+    top-left corner would be on screen.
+
   The attract page appears **after every demo**, skipped when the current combination has no times
   (`HS_Have_Records()`) so a fresh cabinet does not show an empty page repeatedly. It is interposed
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
