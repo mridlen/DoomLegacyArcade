@@ -985,12 +985,16 @@ silently made the flag do nothing at all.
   so a stock IWAD demo is never captioned with the previous record's text. Drawn on the **second**
   text line (y=8), because item pickups still print messages at y=0 during playback.
 
-  An extra splash page, **`CREDIT2`** (in `legacy.wad`, 320x200 like the stock `CREDIT`), is shown
-  once per attract cycle straight after `CREDIT`, for `CREDIT2_SECS` seconds. Interposed with a
-  flag and an early `return`, exactly like the high score page below and for the same reason — the
-  `demosequence` cases are shared between game modes and the last is reachable only under the
-  retail divisor, so a new case would have to renumber them. Guarded on the lump existing, so a
-  `legacy.wad` without it behaves as before.
+  **The attract cycle is a fixed four steps** (`d_main.c`, the `attract_*` enum): title → `CREDIT`
+  → `CREDIT2` → one demo, repeating. It replaces the stock 6-step sequence (7 under the retail
+  divisor), which showed `CREDIT` only once per three demos and filled the rest with the help and
+  order pages. `demosequence` is read outside `D_DoAdvanceDemo` — `D_PageDrawer`'s Heretic raw-screen
+  hack tests it — which is why the steps are named rather than numbered.
+  - `CREDIT2` (in `legacy.wad`, 320x200 like the stock `CREDIT`) runs for `CREDIT2_SECS`. Its step
+    is **skipped when the lump is absent**, so a `legacy.wad` without it still cycles cleanly.
+  - The stock demo used when no record demo exists now **rotates** `demo1`/`demo2`/`demo3`, since
+    the single demo step would otherwise always play `demo1`. `demo4` (retail only) is dropped.
+  - The high score page is still interposed after each demo, on its own flag.
   - **Keep splash art at 320x200.** `D_PageDrawer` ends at `V_DrawScaledPatch_Name`, which
     multiplies by `vid.dupx/dupy` — a 960x720 patch would be drawn at 3840x2160 and only its
     top-left corner would be on screen.

@@ -450,9 +450,19 @@ static boolean hs_attract_page = false;   // [Arcade] high-score table page acti
 static int     hs_subpage_tic = 0;        // [Arcade] tics left on the map on screen
 static boolean hs_page_after_demo = false;  // [Arcade] show scores after this demo
 
-// [Arcade] Extra splash page (CREDIT2 in legacy.wad), shown once per attract
-// cycle straight after the stock CREDIT page.
-static boolean credit2_pending = false;
+// [Arcade] The attract cycle: title, both splash pages, then one demo, over
+// and over.  This replaces the stock 6 (or 7, under the retail divisor)
+// sequence, which showed CREDIT only once per three demos and filled the rest
+// with the help and order pages.  Named because demosequence is read outside
+// D_DoAdvanceDemo as well -- see D_PageDrawer.
+enum {
+    attract_title = 0,
+    attract_credit,
+    attract_credit2,
+    attract_demo,
+    attract_num_steps
+};
+
 #define CREDIT2_SECS   6
 
 //  PROTOS
@@ -1269,7 +1279,9 @@ void D_PageDrawer(const char *lumpname)
         }
     }
     // big hack for legacy's credits
-    if (EN_heretic_hexen && (demosequence != 2))
+    // [Arcade] Both splash pages are patches, not raw 320x200 screens.
+    if (EN_heretic_hexen && (demosequence != attract_credit)
+        && (demosequence != attract_credit2))
     {
         V_DrawRawScreen_Num(0, 0, W_GetNumForName(lumpname), 320, 200);
         if (demosequence == 0 && pagetic <= 140)
@@ -1334,37 +1346,20 @@ void D_DoAdvanceDemo(void)
         }
     }
 
-    // [Arcade] The extra splash page, interposed for the same reason as the
-    // high score page above: the demosequence cases are shared between game
-    // modes and the last is reachable only under the retail divisor, so a new
-    // case would have to renumber them.  Returning without advancing shows
-    // this page and then carries on where the sequence left off.
-    //
-    // Skipped when the lump is absent, so a legacy.wad without CREDIT2 -- an
-    // older copy, or another install -- behaves exactly as before.
-    if( credit2_pending )
-    {
-        credit2_pending = false;
-        if( VALID_LUMP( W_CheckNumForName("CREDIT2") ) )
-        {
-            pagetic = TICRATE * CREDIT2_SECS;
-            gamestate = GS_DEMOSCREEN;
-            pagename = "CREDIT2";
-            return;             // demosequence deliberately not advanced
-        }
-    }
+    demosequence = (demosequence + 1) % attract_num_steps;
 
-    if (gamemode == ultdoom_retail)
-        demosequence = (demosequence + 1) % 7;
-    else
-        demosequence = (demosequence + 1) % 6;
+    // Skip the extra splash when the lump is absent, so a legacy.wad without
+    // CREDIT2 -- an older copy, or another install -- still cycles cleanly.
+    if( demosequence == attract_credit2
+        && ! VALID_LUMP( W_CheckNumForName("CREDIT2") ) )
+        demosequence = attract_demo;
 
     hs_attract_page = false;   // [Arcade] cleared for the graphic/demo pages
     HS_Clear_DemoLabel();      // [Arcade] only the record cases below set it
 
     switch (demosequence)
     {
-        case 0:
+        case attract_title:
             pagename = "TITLEPIC";
             switch (gamemode)
             {
@@ -1385,53 +1380,36 @@ void D_DoAdvanceDemo(void)
             }
             gamestate = GS_DEMOSCREEN;
             break;
-        case 1:
-            demo_name = HS_NextRecordDemoPath();   // [Arcade]
-            if( demo_name == NULL )  demo_name = "demo1";
-            goto playdemo;
-        case 2:
+        case attract_credit:
             pagetic = 200;
             gamestate = GS_DEMOSCREEN;
-            pagename = "CREDIT";
-            credit2_pending = true;   // [Arcade] extra splash follows this one
-            break;
-        case 3:
-            demo_name = HS_NextRecordDemoPath();   // [Arcade]
-            if( demo_name == NULL )  demo_name = "demo2";
-            goto playdemo;
-        case 4:
-            gamestate = GS_DEMOSCREEN;
-            if (gamemode == doom2_commercial)
-            {
-                pagetic = TICRATE * 11;
-                pagename = "TITLEPIC";
-                S_StartMusic(mus_dm2ttl);
-            }
-            else if (gamemode == heretic)
-            {
-                pagetic = 200;
-                if( ! VALID_LUMP( W_CheckNumForName("e2m1") ) )
-                    pagename = "ORDER";
-                else
-                    pagename = "CREDIT";
-            }
+            // Heretic's own credits page is named differently, and the
+            // shareware build has an order form in its place.
+            if( gamemode == heretic )
+                pagename = VALID_LUMP( W_CheckNumForName("e2m1") )
+                           ? "CREDIT" : "ORDER";
             else
-            {
-                pagetic = 200;
-
-                if (gamemode == ultdoom_retail)
-                    pagename = text[CREDIT_NUM];
-                else
-                    pagename = text[HELP2_NUM];
-            }
+                pagename = "CREDIT";
             break;
-        case 5:
-            demo_name = HS_NextRecordDemoPath();   // [Arcade]
-            if( demo_name == NULL )  demo_name = "demo3";
-            goto playdemo;
-            // THE DEFINITIVE DOOM Special Edition demo
-        case 6:
-            demo_name = "demo4";
+
+        case attract_credit2:
+            pagetic = TICRATE * CREDIT2_SECS;
+            gamestate = GS_DEMOSCREEN;
+            pagename = "CREDIT2";
+            break;
+
+        case attract_demo:
+            // [Arcade] A record demo when there is one.  The stock demo
+            // played otherwise rotates, so a cabinet with no records still
+            // shows all of the IWAD's demos rather than only the first.
+            demo_name = HS_NextRecordDemoPath();
+            if( demo_name == NULL )
+            {
+                static const char * stock_demo[3] = { "demo1", "demo2", "demo3" };
+                static byte stock_i = 0;
+                demo_name = stock_demo[ stock_i ];
+                stock_i = (stock_i + 1) % 3;
+            }
             goto playdemo;
     }
     return;
