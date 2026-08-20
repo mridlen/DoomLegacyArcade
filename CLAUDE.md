@@ -733,6 +733,15 @@ silently made the flag do nothing at all.
     already `return` when `multiplayer` is set, so the engine enforces it; `M_Cheats_Usable()`
     additionally greys the items out when there is no single player level running, rather than
     offering a row that silently does nothing. The page footer says which case it is.
+    - **That made this the first menu with *no* selectable item, which hard-locked the program.**
+      `M_Responder`'s KEY_UPARROW/KEY_DOWNARROW handlers step the cursor in a
+      `do … while(status & IT_TYPE) == IT_SPACE` loop, searching for something selectable —
+      unbounded, so with every row `IT_DISABLED` (which *is* an `IT_SPACE` type) it spins for ever
+      inside the event handler. Opening Cheats from the attract screen and pressing down froze the
+      cabinet with no way out. Both loops are now bounded by `numitems` and leave the cursor where
+      it was when nothing is selectable. **This is upstream code and a latent trap for the whole
+      lockdown**: `IT_HIDDEN` is `IT_SPACE` too, so any menu the lockdown hides entirely would have
+      done the same. `M_SetupMenu`'s own walk was already bounded (`&& itemOn`) and is unaffected.
   - **Using any cheat voids the run's score**, via `HS_Player_Cheated()` (`hs_stuff.c`), modelled
     exactly on `HS_Player_Died`: it latches `hs_run_cheated`, clears `hs_run_ranked` so the existing
     early return in `HS_LevelExit` stops all further scoring, and closes the background recorder

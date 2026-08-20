@@ -7065,6 +7065,8 @@ boolean M_Responder (event_t* ev)
     menuitem_t * r_menuline;
 
     int i;
+    int updown_limit;  // [Arcade] bounds the cursor search, see KEY_UPARROW
+    int updown_from;   // [Arcade] where the cursor was before that search
     uint16_t key = KEY_NULL; // key pressed (if any)
     uint16_t button_key = 0; // mouse and joystick specific
     unsigned char ch = '\0';  // ASCII char it corresponds to
@@ -7545,8 +7547,17 @@ boolean M_Responder (event_t* ev)
             goto ret_updown;
         }
 #endif
+        // [Arcade] Bounded, see the note on the up arrow below.
+        updown_limit = currentMenu->numitems;
+        updown_from = itemOn;
         do
         {
+            if( --updown_limit < 0 )
+            {
+                itemOn = updown_from;  // nothing selectable, stay put
+                goto ret_updown;
+            }
+
             if (itemOn+1 > currentMenu->numitems-1)
             {
                 if( scroll_callback )  // only wrap when not scrolling
@@ -7568,8 +7579,24 @@ boolean M_Responder (event_t* ev)
             goto ret_updown;
         }
 #endif       
+        // [Arcade] Bounded by the item count.  A menu can legitimately have
+        // *no* selectable item -- the Cheats page greys every row out when
+        // there is no single player game to cheat in, and the cabinet lockdown
+        // hides whole menus with IT_HIDDEN, which is an IT_SPACE type as well.
+        // Unbounded, this searches for a selectable item that does not exist
+        // and spins for ever inside the event handler: a hard lockup with no
+        // way out, which is exactly what opening Cheats from the attract
+        // screen and pressing down used to do.
+        updown_limit = currentMenu->numitems;
+        updown_from = itemOn;
         do
         {
+            if( --updown_limit < 0 )
+            {
+                itemOn = updown_from;  // nothing selectable, stay put
+                goto ret_updown;
+            }
+
             if (!itemOn)
                 itemOn = currentMenu->numitems-1;
             else itemOn--;
