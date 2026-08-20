@@ -18,8 +18,11 @@ The actual source tree is under `svn1749/`. The top-level `bin/`, `dep/`, `objs/
 and the `srcdir` symlink are leftover build-output scaffolding from the original packager's machine;
 `srcdir` is a **dangling symlink** (points to a path on the original author's machine) and is not
 usable as-is. Always work under `svn1749/`. The top-level `common/` holds the runtime asset package
-(`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified** (the `M_STSERV` menu graphic
-now reads "Start Game" instead of "Start Server").
+(`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified**: the `M_STSERV` menu
+graphic now reads "Start Game" instead of "Start Server", and the cabinet's own art has been added
+(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`). The user edits their live
+`~/games/doom/legacy.wad` and it is copied over `common/legacy.wad` to track it; verify only the
+expected lumps differ before committing.
 
 ## Build
 
@@ -714,6 +717,39 @@ silently made the flag do nothing at all.
 - **No confirmation prompts** (`m_menu.c`). Quit, End Game, Nightmare skill, "already playing", and
   quicksave/quickload all take the "yes" path immediately. Only the savegame-slot `Delete Y/N?`
   survives, as it guards irreversible data loss.
+- **Cheats menu** (`m_menu.c`, `CheatsMenu`/`CheatsDef`, from a main menu entry using the locally
+  added **`M_CHEATS`** graphic). Operator convenience: God Mode (`god`), All Weapons and Keys
+  (`gimme health ammo armor keys weapons`, i.e. IDKFA), No Clipping (`noclip`) and Exit Level
+  (`exitlevel`). Each issues the ordinary console command through `COM_BufAddText` rather than
+  touching `player_t` directly, so there is one implementation of each cheat.
+  - **Inserted at MainMenu index 5, before Read This**, giving `MM_cheats = 5`, `MM_readthis` 6 and
+    `MM_quitdoom` 7. Before it, *not* after: the Doom 2 fixup
+    `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--` copies Quit over the Read This slot
+    and drops the last row, so anything appended past Quit would be cut off under Doom 2. The
+    lockdown's Load/Save hiding at indices 2,3 is unaffected. Those are the complete set of index
+    references — see the `grep` list under Single Level mode, which uses the same discipline.
+  - Devmode only, hidden by the usual `IT_HIDDEN` lockdown, with `MainDef.lastOn` moved off it.
+  - **Single player only** (the user's requirement). `Command_CheatGod_f` and `Command_CheatGimme_f`
+    already `return` when `multiplayer` is set, so the engine enforces it; `M_Cheats_Usable()`
+    additionally greys the items out when there is no single player level running, rather than
+    offering a row that silently does nothing. The page footer says which case it is.
+  - **Using any cheat voids the run's score**, via `HS_Player_Cheated()` (`hs_stuff.c`), modelled
+    exactly on `HS_Player_Died`: it latches `hs_run_cheated`, clears `hs_run_ranked` so the existing
+    early return in `HS_LevelExit` stops all further scoring, and closes the background recorder
+    with `G_CheckDemoStatus`. Guarded on `netgame || multiplayer || deathmatch`, which are not
+    scored anyway. The HUD marker becomes **`PLAYER CHEATED - UNRANKED`** (`hu_stuff.c`), which
+    takes priority over `PLAYER DIED - UNRANKED` when both happened — the cheat is the thing the
+    player chose to do.
+  - **The hook is in the cheat commands, not the menu**, so the console (`god`, `noclip`, `gimme`)
+    and the **typed cheat codes** are covered too. For the typed codes the single hook point is
+    `cht_Responder`'s closing `if (msg)` block — every cheat that changes the simulation reports
+    through `msg`, and the three that do not (IDDT, IDMYPOS, IDMUS) do not affect play, so they
+    still score. `M_Cheat_Apply` calls it as well because **`exitlevel` is not a cheat command** and
+    would otherwise skip the rest of a map for free; the flag is latched, so the double call is
+    free.
+  - Verified headless with two otherwise identical `-warp 1` autoexec runs differing only by a
+    `god` line: the control wrote `doom2 MAP01 2 104 speed`, the cheated run wrote nothing.
+  - `hs_run_cheated` is reset in `HS_NewGame` beside `hs_run_died`.
 - **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
   `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` (but
   **not during `demoplayback`**, see below) so intermission time does not carry over. Ends the

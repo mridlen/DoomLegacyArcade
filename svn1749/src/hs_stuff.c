@@ -218,6 +218,8 @@ static boolean hs_run_ranked = true;
 // went unranked, for the HUD marker and the log line; the voiding itself is
 // done by clearing hs_run_ranked, exactly as an altered ruleset does.
 static boolean hs_run_died = false;
+// Latched by HS_Player_Cheated, the same way and for the same reason.
+static boolean hs_run_cheated = false;
 
 boolean  HS_Run_Is_Ranked( void )
 {
@@ -227,6 +229,38 @@ boolean  HS_Run_Is_Ranked( void )
 boolean  HS_Run_Died( void )
 {
     return hs_run_died;
+}
+
+boolean  HS_Run_Cheated( void )
+{
+    return hs_run_cheated;
+}
+
+
+// [Arcade] A cheat was used, so the run scores nothing from here.  Modelled
+// exactly on HS_Player_Died: clearing hs_run_ranked does the voiding, and the
+// separate flag only selects the reason shown and logged.
+//
+// No demoplayback guard is needed -- a demo cannot reach the cheat menu --
+// but the netgame/multiplayer one is kept so this stays a single player
+// concern, matching the cheats themselves, which refuse in multiplayer.
+void  HS_Player_Cheated( void )
+{
+    if( netgame || multiplayer || deathmatch )  return;
+    if( hs_run_cheated )  return;   // already latched
+
+    hs_run_cheated = true;
+
+    if( hs_run_ranked )
+    {
+        GenPrintf( EMSG_info, "Run is unranked: a cheat was used.\n" );
+        hs_run_ranked = false;
+    }
+
+    // Nothing more can be recorded, so stop spending the demo buffer on it.
+    // Records earned before the cheat keep their own saved demos.
+    if( demorecording )
+        G_CheckDemoStatus();
 }
 static char    hs_last_exit_mapname[9] = "";
 static skill_e hs_last_exit_skill = sk_baby;
@@ -495,6 +529,7 @@ void HS_NewGame( void )
     hs_cumulative_time = 0;
     hs_run_is_max = true;   // still eligible until a level is exited short
     hs_run_died = false;
+    hs_run_cheated = false;
     memset( hs_new_record, 0, sizeof(hs_new_record) );
 
     // An altered ruleset makes the run unscoreable, so do not spend the

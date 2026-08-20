@@ -38,6 +38,10 @@ void  HS_Demo_Start(void);
 // the records they already earned.  Called from P_KillMobj.
 void  HS_Player_Died(void);
 boolean  HS_Run_Died(void);   // was this run voided by a death?
+
+// [Arcade] A cheat was used; voids the run the same way a death does.
+void  HS_Player_Cheated(void);
+boolean  HS_Run_Cheated(void);
 // maxed: this level was exited with 100% kills and 100% secrets (items are
 // not required).  A run stays eligible for the "max" record only while every
 // level of it has been maxed; the "speed" record ignores this entirely.

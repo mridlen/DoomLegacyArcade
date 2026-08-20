@@ -735,7 +735,11 @@ void HU_Drawer(void)
         // settings problem, and the player needs to know the retry they are
         // about to play is no longer being scored.  Measured against the
         // real STCFN0xx widths: 158px of 320, so it centers without clipping.
-        const char * mark = HS_Run_Died() ? "PLAYER DIED - UNRANKED" : "UNRANKED";
+        // [Arcade] Cheating is named before dying: if both happened, the
+        // cheat is the thing the player chose to do.
+        const char * mark = HS_Run_Cheated() ? "PLAYER CHEATED - UNRANKED"
+                          : HS_Run_Died()    ? "PLAYER DIED - UNRANKED"
+                          :                    "UNRANKED";
         V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
         V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,
                       V_WHITEMAP, (char*) mark );

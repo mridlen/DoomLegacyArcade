@@ -61,6 +61,8 @@
 #include "v_video.h"
 #include "st_stuff.h"
 #include "w_wad.h"
+#include "hs_stuff.h"
+  // [Arcade] HS_Player_Cheated
 
 static boolean HandleCheats(byte key);
 
@@ -464,7 +466,14 @@ boolean cht_Responder(event_t * ev)
 
         // append a newline to the original doom messages
         if (msg)
+        {
+            // [Arcade] Every cheat that changes the simulation reports through
+            // msg, so this one place covers the typed codes -- IDDQD, IDKFA,
+            // IDCLIP, IDBEHOLD, IDCLEV and the rest.  The ones that do not set
+            // it (IDDT, IDMYPOS, IDMUS) do not affect play, so they score.
+            HS_Player_Cheated();
             CONS_Printf("%s\n", msg);
+        }
     }
     return false;
 }
@@ -477,6 +486,8 @@ void Command_CheatNoClip_f(void)
 
     if (multiplayer)
         return;
+
+    HS_Player_Cheated();   // [Arcade] voids the run's score
 
     plyr = consoleplayer_ptr;
 
@@ -495,6 +506,8 @@ void Command_CheatGod_f(void)
 
     if (multiplayer)
         return;
+
+    HS_Player_Cheated();   // [Arcade] voids the run's score
 
     plyr = consoleplayer_ptr;
 
@@ -523,8 +536,10 @@ void Command_CheatGimme_f(void)
     if (COM_Argc() < 2)
     {
         CONS_Printf("gimme [health] [ammo] [armor] ...\n");
-        return;
+        return;   // a usage error is not a cheat
     }
+
+    HS_Player_Cheated();   // [Arcade] voids the run's score
 
     plyr = consoleplayer_ptr;
 

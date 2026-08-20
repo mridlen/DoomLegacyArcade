@@ -638,6 +638,7 @@ menu_t MainDef, SoundDef, EpiDef, NewDef,
   MPOptionDef;
 
 extern menu_t  SingleLevelDef;   // [Arcade]
+extern menu_t  CheatsDef;        // [Arcade]
 
 
 //===========================================================================
@@ -1158,9 +1159,13 @@ static void M_QuitDOOM(int choice);
 
 enum
 {
-    // [Arcade] 5 and 6, not 4 and 5: Single Level is inserted at index 1.
-    MM_readthis = 5,	// referenced
-    MM_quitdoom = 6,	// referenced
+    // [Arcade] Single Level is inserted at index 1 and Cheats at 5, so these
+    // are 6 and 7 rather than the stock 4 and 5.  Cheats sits *before* Read
+    // This deliberately: the Doom 2 fixup below copies Quit over the Read
+    // This slot and drops one item, which would cut off anything after it.
+    MM_cheats   = 5,	// referenced
+    MM_readthis = 6,	// referenced
+    MM_quitdoom = 7,	// referenced
 } main_e;
 
 // Compatible with modifications to original graphics
@@ -1175,6 +1180,8 @@ menuitem_t MainMenu[]=
     {IT_CALL    | IT_PATCH,"M_LOADG" ,"LOAD GAME",M_Loadgame,'l'},
     {IT_CALL    | IT_PATCH,"M_SAVEG" ,"SAVE GAME",M_Savegame,'s'},
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"  ,&OptionsDef,'o'},
+    // [Arcade] Devmode only; hidden by the lockdown for players.
+    {IT_SUBMENU | IT_PATCH,"M_CHEATS","CHEATS"   ,&CheatsDef ,'c'},
     {IT_SUBMENU | IT_PATCH,"M_RDTHIS","INFO"     ,&ReadDef1  ,'r'},  // Another hickup with Special edition.
     {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'}
 };
@@ -2543,6 +2550,115 @@ void M_SingleNewGame(int choice)
     else
         Push_Setup_Menu(&EpiDef);
 }
+
+// =========================================================================
+//  [Arcade] Cheats menu
+// =========================================================================
+// Operator convenience, reachable only under -devmode -- the lockdown hides
+// the main menu entry for players.  Every item voids the run's score through
+// HS_Player_Cheated, exactly the way dying does, so a cheated run plays on but
+// records nothing and says PLAYER CHEATED - UNRANKED on the HUD.
+//
+// Single player only, which the engine already enforces: Command_CheatGod_f
+// and Command_CheatGimme_f both return early when multiplayer is set.  The
+// menu greys the items out in that case rather than offering something that
+// silently does nothing.
+
+static void M_Cheat_God(int choice);
+static void M_Cheat_GiveAll(int choice);
+static void M_Cheat_NoClip(int choice);
+static void M_Cheat_ExitLevel(int choice);
+static void M_Draw_Cheats(void);
+
+static menuitem_t  CheatsMenu[] =
+{
+    {IT_WHITESTRING | IT_CALL, NULL, "God Mode",             M_Cheat_God,       'g'},
+    {IT_WHITESTRING | IT_CALL, NULL, "All Weapons and Keys", M_Cheat_GiveAll,   'a'},
+    {IT_WHITESTRING | IT_CALL, NULL, "No Clipping",          M_Cheat_NoClip,    'n'},
+    {IT_WHITESTRING | IT_CALL, NULL, "Exit Level",           M_Cheat_ExitLevel, 'e'},
+};
+
+#define  NUM_CHEATSMENU  (sizeof(CheatsMenu)/sizeof(menuitem_t))
+
+menu_t  CheatsDef =
+{
+    "M_CHEATS",  // in legacy.wad
+    "Cheats",
+    CheatsMenu,
+    M_Draw_Cheats,
+    NULL,
+    NUM_CHEATSMENU,
+    60,40,
+    0
+};
+
+
+// True when there is something to cheat in: a single player game, in a level.
+static boolean  M_Cheats_Usable( void )
+{
+    return ( gamestate == GS_LEVEL )
+           && ! multiplayer && ! netgame && ! demoplayback;
+}
+
+
+// Void the score first, then run the cheat, so the run is already marked
+// before anything in the level changes.
+static void  M_Cheat_Apply( const char * command )
+{
+    if( ! M_Cheats_Usable() )  return;
+
+    HS_Player_Cheated();
+    COM_BufAddText( command );
+    COM_BufAddText( "\n" );
+    M_Clear_Menus( true );
+}
+
+
+static void M_Cheat_God(int choice)
+{
+    M_Cheat_Apply( "god" );
+}
+
+static void M_Cheat_GiveAll(int choice)
+{
+    // IDKFA, in the terms the gimme command understands.
+    M_Cheat_Apply( "gimme health ammo armor keys weapons" );
+}
+
+static void M_Cheat_NoClip(int choice)
+{
+    M_Cheat_Apply( "noclip" );
+}
+
+static void M_Cheat_ExitLevel(int choice)
+{
+    // Not a cheat in the classic sense, but it skips the rest of the map, so
+    // it voids the run like the rest.  It is also much the fastest way to
+    // reach the intermission and the high score write while testing.
+    M_Cheat_Apply( "exitlevel" );
+}
+
+
+static void  M_Draw_Cheats( void )
+{
+    boolean usable = M_Cheats_Usable();
+    unsigned int i;
+    int y;
+
+    // IT_DISABLED is (IT_SPACE | IT_GRAYPATCH) and so replaces IT_CALL --
+    // it is not a flag to be OR-ed on top of the enabled status.
+    for( i=0; i<NUM_CHEATSMENU; i++ )
+        CheatsMenu[i].status = usable ? (IT_WHITESTRING | IT_CALL)
+                                      : (IT_WHITESTRING | IT_DISABLED);
+
+    M_DrawGenericMenu();
+
+    y = CheatsDef.y + (NUM_CHEATSMENU * LINEHEIGHT) + 8;
+    V_DrawString( CheatsDef.x, y, 0,
+                  usable ? "USING ANY OF THESE ENDS SCORING"
+                         : "START A ONE PLAYER GAME FIRST" );
+}
+
 
 // =========================================================================
 //  [Arcade] Join screen
@@ -7923,6 +8039,10 @@ void M_Init (void)
         MainMenu[2].status = IT_HIDDEN;  // Load Game  (2/3 since Single Level
         MainMenu[3].status = IT_HIDDEN;  // Save Game   took index 1)
         if( MainDef.lastOn >= 2 && MainDef.lastOn <= 3 )
+            MainDef.lastOn = 0;
+
+        MainMenu[MM_cheats].status = IT_HIDDEN;   // [Arcade] operator only
+        if( MainDef.lastOn == MM_cheats )
             MainDef.lastOn = 0;
 
         // Options stays reachable, but pared down to the few settings a
