@@ -796,12 +796,14 @@ void G_Controldefault(void)
     gamecontrol[gc_console    ][0]=KEY_CONSOLE;
     //gamecontrol[gc_nextweapon ][1]=KEY_JOY0BUT4;
     //gamecontrol[gc_prevweapon ][1]=KEY_JOY0BUT5;
-    // [Arcade] Plain PrtSc first, SysRq (Alt+PrtSc) kept as the second
-    // binding.  SysRq alone was awkward: it is a modifier combination, and
-    // desktop environments and KVM software commonly grab it before the game
-    // sees it.
-    gamecontrol[gc_screenshot ][0]=KEY_PRINT;
-    gamecontrol[gc_screenshot ][1]=KEY_SYSREQ;
+    // [Arcade] F12 first, PrtSc second.  The stock default was SysRq
+    // (Alt+PrtSc), a modifier combination; PrtSc itself is taken by the GNOME
+    // desktop's own screenshot tool and never reaches the game.  F12 does
+    // arrive, at the cost of the engine's hardcoded "spy mode" on that key
+    // (G_Responder) -- M_Responder consumes the screenshot key first, and spy
+    // mode is single-player-only and of no use on a cabinet anyway.
+    gamecontrol[gc_screenshot ][0]=KEY_F12;
+    gamecontrol[gc_screenshot ][1]=KEY_PRINT;
 
     if( gamemode == heretic )
     {

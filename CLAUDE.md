@@ -755,9 +755,13 @@ silently made the flag do nothing at all.
   `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
   two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
-- **Screenshots** are on **PrtSc** (`gc_screenshot`), with SysRq (Alt+PrtSc) kept as the second
-  binding. The stock default was SysRq alone, which is a modifier combination and is commonly
-  grabbed by the desktop or KVM software before the game sees it.
+- **Screenshots** are on **F12** (`gc_screenshot`), with PrtSc as the second binding. The stock
+  default was SysRq (Alt+PrtSc), a modifier combination; and **PrtSc itself never reaches the game
+  under GNOME**, whose own screenshot tool takes it first. F12 costs the engine's hardcoded "spy
+  mode" on that key (`G_Responder`) — `M_Responder` consumes the screenshot key first — which is
+  single-player-only and of no use on a cabinet.
+  - **`M_Responder` only tested `gamecontrol[gc_screenshot][0]`**, so a second key assigned to
+    Screenshot silently did nothing. It checks both slots now.
   - **`KEY_PRINT` had no entry in the key name table**, so it could not be bound or saved by
     `setcontrol` at all; it is `"print"` now. Changing the compiled default is not enough on its
     own — `config.cfg` carries a `setcontrol "screenshot"` line that is loaded afterwards and wins,

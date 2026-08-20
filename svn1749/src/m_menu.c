@@ -7164,8 +7164,11 @@ boolean M_Responder (event_t* ev)
         goto ret_true;
     }
 
+    // [Arcade] Both bindings, not just the first: this tested only slot [0],
+    // so a second key assigned to Screenshot silently did nothing.
     if( (devparm && key == KEY_F1)
-       || (key == gamecontrol[gc_screenshot][0] ))
+       || (key && key == gamecontrol[gc_screenshot][0])
+       || (key && key == gamecontrol[gc_screenshot][1]) )
     {
         COM_BufAddText("screenshot\n");
         goto ret_true;
