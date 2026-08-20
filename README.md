@@ -304,6 +304,31 @@ From the console, or at launch:
 This clears the table *and* deletes the saved record demos. Deleting `highscores.dat` by hand is
 not enough — the table is held in memory while the game runs and gets written back out.
 
+### Taking a screenshot
+
+Press **F12**. The image is written to the directory you launched from, named `DOOM0000.tga` and
+counting up — `DOOM0001.tga`, and so on — so nothing is ever overwritten.
+
+Files are **Targa** (`.tga`), because the cabinet uses the OpenGL renderer, and uncompressed: about
+3 MB each at 1366x768. Convert before sending them anywhere:
+
+```sh
+convert DOOM0000.tga shot.png
+```
+
+PrtSc is bound as a fallback, but on a GNOME desktop it never reaches the game — the desktop's own
+screenshot tool takes it first. That is why F12 is the default here rather than the stock SysRq
+(Alt+PrtSc), which has the same problem and is a two-key combination besides.
+
+To use a different key, rebind **Screenshot** on the player's controls page, or from the console:
+
+```
+setcontrol "screenshot" "f11"
+```
+
+Set the `screenshotdir` cvar to write somewhere other than the working directory. Both are settings
+like any other, so they only stick from a `-devmode` session.
+
 ### Other useful flags
 
 | Flag | Effect |
