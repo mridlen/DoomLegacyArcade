@@ -92,6 +92,7 @@
   // I_OutputMessage
 #include "z_zone.h"
 #include "d_main.h"
+#include "d_clisrv.h"   // D_NumViews, for the shared-screen message rule
 
 //#include <unistd.h>
 
@@ -1237,6 +1238,15 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
     // to the cv_showmessages setting.
     if( gameplay_msg )
     {
+        // [Arcade] Keep gameplay messages off the HUD when the screen is
+        // shared.  A pickup line belongs to whoever triggered it but is
+        // painted across the top of the whole screen, so on a splitscreen or
+        // 2x2 cabinet it sits over somebody else's view and tells them
+        // nothing.  They still reach the console, and the idle-timeout
+        // countdown (HU_SetTip) is a separate path and unaffected.
+        if( D_NumViews() > 1 )
+            viewnum = 5;  // console only
+
         // During game playing, honor the showmessage option.
         if( cv_showmessages.EV < gameplay_hud_message_table[ ecat ] )
             viewnum = 5;  // console only	    
