@@ -1082,18 +1082,22 @@ silently made the flag do nothing at all.
   - **`config.cfg` overrides the compiled default**, and only devmode rewrites it, so changing the
     default in `st_stuff.c` does nothing on a machine with an existing config — the saved
     `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
-- **Gameplay messages are off the HUD when the screen is shared** (`console.c`, the
-  `gameplay_msg` block). A pickup line belongs to whoever triggered it but is painted across the
-  top of the *whole* screen, so on a splitscreen or 2x2 cabinet it covers someone else's view and
-  tells them nothing. When `D_NumViews() > 1` the message is forced to `viewnum = 5`, the
-  console-only path the `cv_showmessages` test already used — so nothing new had to be invented and
-  the messages are still in the console and the log.
+- **Gameplay messages are off the HUD when the screen is shared, or during a demo** (`console.c`,
+  the `gameplay_msg` block). A pickup line belongs to whoever triggered it but is painted across
+  the top of the *whole* screen: on a splitscreen or 2x2 cabinet it covers someone else's view, and
+  on the attract screen it is somebody else's pickups scrolling over a shop window. Forced to
+  `viewnum = 5` for `D_NumViews() > 1` or `demoplayback` — the console-only path the
+  `cv_showmessages` test already used, so nothing new had to be invented and the messages are still
+  in the console and the log. The demo case covers the Single Level "watch run" replays too.
+  - `HS_DemoLabel` still draws on the **second** text line even though the first is now free
+    during playback; left there so the caption does not move.
   - Single player is untouched, and this is separate from `cv_showmessages`, which still works
     normally for one player.
   - **`HU_SetTip` is a different path and unaffected**, which matters: the idle-timeout countdown
     uses it and must keep showing.
-  - Verified by counting suppressions with a cheat generating messages: one player suppressed 0,
-    four players suppressed 3, splitscreen suppressed 4.
+  - Verified by counting suppressions: with a cheat generating messages, one player suppressed 0,
+    four players 3, splitscreen 4; and an attract cycle suppressed 20 demo messages while a normal
+    single player game suppressed none.
 
 - **Level clock on the HUD** — element code **`t`**, new, so the default is now `"kahmfeist"`.
   Counts *down* the time remaining when a time limit is set and counts elapsed time *up* when one

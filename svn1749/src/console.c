@@ -1238,13 +1238,21 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
     // to the cv_showmessages setting.
     if( gameplay_msg )
     {
-        // [Arcade] Keep gameplay messages off the HUD when the screen is
-        // shared.  A pickup line belongs to whoever triggered it but is
-        // painted across the top of the whole screen, so on a splitscreen or
-        // 2x2 cabinet it sits over somebody else's view and tells them
-        // nothing.  They still reach the console, and the idle-timeout
-        // countdown (HU_SetTip) is a separate path and unaffected.
-        if( D_NumViews() > 1 )
+        // [Arcade] Keep gameplay messages off the HUD in two cases.  They
+        // still reach the console either way, and the idle-timeout countdown
+        // (HU_SetTip) is a separate path and unaffected.
+        //
+        // A shared screen: a pickup line belongs to whoever triggered it but
+        // is painted across the top of the whole screen, so on a splitscreen
+        // or 2x2 cabinet it sits over somebody else's view and tells them
+        // nothing.
+        //
+        // A demo replay: the attract screen is a shop window, and somebody
+        // else's pickups scrolling across it are noise.  This covers the
+        // Single Level "watch run" replays too.  Note HS_DemoLabel still
+        // draws on the second text line rather than the first, which is now
+        // free -- left there so the caption does not move.
+        if( (D_NumViews() > 1) || demoplayback )
             viewnum = 5;  // console only
 
         // During game playing, honor the showmessage option.
