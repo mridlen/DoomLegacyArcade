@@ -3548,6 +3548,11 @@ void G_demo_defaults( void )
     voodoo_mode = VM_vanilla;
     cv_viewheight.EV = 41; // vanilla viewheight
     cv_solidcorpse.EV = 0;
+    // [Arcade] Off for playback whatever the live default is.  Stock IWAD
+    // demos contain player deaths -- the Ultimate Doom E4M2 one does -- and
+    // were recorded without weapon dropping, so replaying them with it on
+    // spawns a weapon that is not in the recording and desyncs from there.
+    cv_fragsweaponfalling.EV = 0;
     cv_instadeath.EV = 0;  // Die
     cv_monstergravity.EV = 0;
     cv_monbehavior.EV = 0;  // Vanilla

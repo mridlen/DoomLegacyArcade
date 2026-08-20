@@ -1165,6 +1165,18 @@ silently made the flag do nothing at all.
     cvars will silently skip them when re-set to the value it already holds. If something else pins
     those other cvars in between (the ranked ruleset does), they stay pinned. Re-apply the mapping
     at the point of use rather than relying on the change notification.
+- **`cv_fragsweaponfalling` defaults On** (`p_inter.c`), so killing the player holding the rocket
+  launcher leaves it for whoever did it — how modern arena shooters behave, and what makes a
+  cabinet deathmatch flow. It only fires when a **player** dies (`target_player`), so single play is
+  unaffected in practice: a death there ends the run and reloads the level.
+  - **Added to `G_demo_defaults()`** as a result. It is not in the demo header and was not in that
+    function either, so it is exactly the case the rule below warns about: stock IWAD demos contain
+    player deaths — the Ultimate Doom E4M2 one does — and were recorded without weapon dropping, so
+    replaying them with it on spawns a weapon the recording does not have and desyncs from there.
+    Playback pins it off; live play uses the new default.
+  - Not in `hs_ranked_rules[]`, so it does not affect whether a run scores. It is a deathmatch
+    setting and the ruleset governs single player scoring.
+
 - **The ranked ruleset** (`hs_stuff.c`, `hs_ranked_rules[]`). **Game options are not multiplayer
   only.** DoomLegacy has no separate single-player path — solo play runs the same client/server
   simulation — and every gameplay setting is a single global `CV_NETVAR`, so anything reachable

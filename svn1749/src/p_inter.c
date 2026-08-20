@@ -241,8 +241,13 @@ void DemoAdapt_p_inter( void )
 uint16_t   maxammo[NUMAMMO] = {200, 50, 300, 50};
 uint16_t   clipammo[NUMAMMO] = {10, 4, 20, 1};
 
+// [Arcade] Default On: killing the player holding the rocket launcher should
+// leave it for whoever did it, which is how modern arena shooters behave and
+// what makes a cabinet deathmatch flow.  Only fires when a *player* dies
+// (target_player), so single play is unaffected in practice -- a death there
+// ends the run and reloads the level.
 consvar_t cv_fragsweaponfalling
-  = {"fragsweaponfalling"   ,"0", CV_NETVAR, CV_YesNo};
+  = {"fragsweaponfalling"   ,"1", CV_NETVAR, CV_YesNo};
 
 // added 4-2-98 (Boris) for dehacked patch
 // (i don't like that but do you see another solution ?)
