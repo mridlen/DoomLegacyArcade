@@ -163,7 +163,7 @@ silently made the flag do nothing at all.
   Setup:    Your color / Control scheme / Player config >>
   ```
 
-  Hidden: Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
+  Hidden: Networked Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
   Always Run, Effects/Connect/Network/Server/Menu Options, Sound Volume, Video Options, Setup
   Controls), Network Options again where Game Options nests it, several Start Game server options,
   Always Run/Autoaim/mouse/weaponpref/rebinding on the player config screen, and name/skin on the
@@ -175,6 +175,16 @@ silently made the flag do nothing at all.
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **Menu naming**: the New Game page offers **Single Player** and **Multiplayer**, where
+  "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
+  only) and keeps the `M_2PLAYR` graphic. The engine's networked server menu is renamed
+  **"Networked Multiplayer >>"** and drawn as **plain text** rather than the `M_MULTI` graphic, so
+  it cannot be mistaken for the line above. It was already devmode-only — the lockdown hides both
+  of its entry points — and stays that way; a stretch goal to revisit.
+  - The `TwoPlayerDef` page title is "Multiplayer" too, and its `M_2PLAYR` graphic is unchanged.
+  - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
+    `TwoPlayerMenu[4]`) still point at the right rows.
+
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
   **Options → Menu Options** as "Boot Game" beside `cv_twoplayer`, so it is operator-only. Picks
   which game the cabinet starts in instead of whichever IWAD the search finds first.

@@ -1212,8 +1212,14 @@ static void M_EndGame(int choice);
 menuitem_t SingleMulti_Menu[] =
 {
     {IT_CALL | IT_PATCH,"M_SINGLE","SINGLE PLAYER",M_SingleNewGame ,'s'},
-    {IT_CALL | IT_PATCH,"M_2PLAYR","TWO PLAYER GAME",M_TwoPlayerMenu ,'n'},
-    {IT_SUBMENU | IT_PATCH,"M_MULTI" ,"MULTIPLAYER",&MultiPlayerDef  ,'m'},
+    // [Arcade] Local play is what a cabinet means by "multiplayer", so it
+    // takes that name and keeps the M_2PLAYR graphic.  It is no longer two
+    // player only in any case.
+    {IT_CALL | IT_PATCH,"M_2PLAYR","MULTIPLAYER",M_TwoPlayerMenu ,'n'},
+    // [Arcade] The networked server menu is named for what it is and drawn as
+    // plain text rather than the M_MULTI graphic, so it cannot be mistaken for
+    // the line above.  Already devmode-only: the lockdown hides it.
+    {IT_SUBMENU | IT_WHITESTRING, 0,"Networked Multiplayer >>",&MultiPlayerDef  ,'m'},
     {IT_CALL | IT_PATCH,"M_ENDGAM","END GAME",M_EndGame ,'e'}
 };
 
@@ -1764,7 +1770,7 @@ menuitem_t MultiPlayerMenu[] =
 {
     // BIG font menu. BIG font does not work, lump is missing.
     // Cannot put all three options here.
-    {IT_CALL | IT_PATCH,"M_2PLAYR","TWO PLAYER GAME",M_TwoPlayerMenu ,'n'},
+    {IT_CALL | IT_PATCH,"M_2PLAYR","MULTIPLAYER",M_TwoPlayerMenu ,'n'},
     {IT_CALL | IT_PATCH,"M_SETUPA","SETUP PLAYER 1" ,M_SetupMultiPlayer1 ,'s'},
     {IT_CALL | IT_PATCH,"M_SETUPB","SETUP PLAYER 2" ,M_SetupMultiPlayer2 ,'t'},
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"     ,&MPOptionDef ,'o'},
@@ -1797,13 +1803,13 @@ menuitem_t TwoPlayerMenu[] =
     {IT_CALL | IT_PATCH,"M_SETUPB","SETUP PLAYER 2",M_SetupMultiPlayer2 ,'t'},
     {IT_CALL | IT_PATCH,"M_OPTION","OPTIONS"       ,M_NetOption ,'o'},
     {IT_CALL | IT_PATCH,"M_STSERV","START GAME"    ,M_StartServerMenu , 0},
-    {IT_SUBMENU | IT_PATCH,"M_MULTI" ,"MULTIPLAYER",&MultiPlayerDef  ,'m'},
+    {IT_SUBMENU | IT_WHITESTRING, 0,"Networked Multiplayer >>",&MultiPlayerDef  ,'m'},
 };
 
 menu_t  TwoPlayerDef =
 {
     "M_2PLAYR",  // from legacy.wad
-    "Two Player",
+    "Multiplayer",   // [Arcade] up to four local players now
     TwoPlayerMenu,
     M_DrawGenericMenu,
     NULL,
@@ -7805,11 +7811,11 @@ void M_Init (void)
     {
         // Locked-down (e.g. arcade cabinet) build: no multiplayer server,
         // no save/load or options tampering.
-        SingleMulti_Menu[2].status = IT_HIDDEN;  // Multiplayer
+        SingleMulti_Menu[2].status = IT_HIDDEN;  // Networked Multiplayer
         if( SingleMultiDef.lastOn == 2 )
             SingleMultiDef.lastOn = 0;
 
-        TwoPlayerMenu[4].status = IT_HIDDEN;  // Multiplayer (reached via Two Player Game)
+        TwoPlayerMenu[4].status = IT_HIDDEN;  // Networked Multiplayer (via the Multiplayer page)
         if( TwoPlayerDef.lastOn == 4 )
             TwoPlayerDef.lastOn = 0;
 
