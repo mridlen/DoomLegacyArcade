@@ -1448,6 +1448,28 @@ memory while the game runs, so a later record writes the old entries straight ba
   **no DECORATE or ZScript anywhere in the tree**, so GZDoom mods (Brutal Doom and similar) cannot
   work, and no amount of repackaging changes that. Test a candidate with `-file mod.deh` before
   building anything around it.
+- **Replacement music is lumps, not files — there is no music directory.** `S_ChangeMusic`
+  (`s_sound.c`) resolves a track through `S_FindExtMusic` (`sounds.c:1056`), which tries
+  **`o_<name>`** first and falls back to **`d_<name>`** (`%.8s`, so the lump name limit applies);
+  the format is then sniffed from the lump's own header by `detect_music_type` — `MUS`, `MThd`,
+  `ID3`/`\xFF\xFB\x90`, `Ogg`. So an OGG soundtrack has to be packed into a wad and loaded like any
+  other PWAD. `MUSIC_OGG`/`MUSIC_MP3` are enabled in `doomdef.h`, and SDL2_mixer carries its own
+  Vorbis decoder, so nothing extra has to be linked.
+  - **`cv_music_source` ("music_source") gates the `o_` lookup entirely.** At `MUS` its
+    `src_music_enables[]` row is `ADM_MUS | ADM_MIDI`, so the `o_` name is never tried — which is
+    where the cabinet's tracked config used to sit, and it now ships at **`Auto`** (the compiled
+    default anyway) so a soundtrack wad works with no settings change. Under
+    `MUSIC_SELECT_ALT_IS_SILENCE` (defined), the `MP3`/`OGG` settings play *silence* for anything
+    not replaced rather than falling back, so `Auto` is the only sensible choice of the four.
+  - `legacyhome/levels/` is the wrong home for a music wad: `M_LevelPack_MapStyle` filters that
+    directory by map lumps, so one with no maps is never listed. `addfile` from
+    `legacyhome/autoexec.cfg` works, and the ordering is safe — `D_DoomLoop` runs
+    `COM_BufExecute` before entering its `while(1)`, so the wad is in place before
+    `D_DoAdvanceDemo` picks the title track.
+  - `P_process_wadfile`'s music scan (`p_setup.c`) only *counts and prints* replacements; it does
+    not reset `S_music[].lumpnum`. A track already looked up keeps the lump it found, so a wad
+    added mid-session applies to tracks not yet played. Changing `cv_music_source` forces the
+    re-lookup (the `CS_MODIFIED` test in `S_ChangeMusic`).
 - **Demo recording must start before the game-start commands are issued.** `G_Ticker` writes demo
   data *before* `ExtraDataTicker` executes queued netxcmds, so recording started from inside
   `G_InitNew` misses the commands that create the player and load the first map. Such demos then
