@@ -163,6 +163,13 @@ silently made the flag do nothing at all.
   Setup:    Your color / Control scheme / Player config >>
   ```
 
+  On **Multiplayer → Options** (the Net Options page) only the deathmatch ruleset a player might
+  reasonably choose is left: Allow exitlevel, Teamplay, TeamDamage, Fraglimit, Timelimit,
+  Deathmatch Type, Frag's Weapon Falling, and the Game Options link. Allow Jump, Allow Rocket Jump,
+  Allow autoaim, Allow turbo, Allow join player and Maxplayers are hidden — server and network
+  plumbing that means nothing on a cabinet. `NetOptionsMenu` is addressed by position for this, so
+  its indices are named (`netoption_*`); keep the enum in step with the array.
+
   Hidden: Networked Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
   Always Run, Effects/Connect/Network/Server/Menu Options, Sound Volume, Video Options, Setup
   Controls), Network Options again where Game Options nests it, several Start Game server options,
@@ -1103,9 +1110,17 @@ silently made the flag do nothing at all.
     the `t` was added to the saved `overlay` line, because the config value overrides the compiled
     default and only a devmode session rewrites it. The cabinet's line is now `"kahmfeist"`, but
     any *other* install still needs the letter added by hand.
-- **Deathmatch defaults** — a DM round gets **`ARCADE_DM_TIMELIMIT` (5) minutes** on the clock, and
-  coop explicitly clears the limit, appended to the game-start command in `M_StartServer`
-  (`m_menu.c`). An unattended cabinet has no other way out of a DM stalemate: players cannot reach
+- **Deathmatch defaults** — a DM round gets a time limit from **`cv_dm_timelimit`** ("dmtimelimit",
+  default 5 minutes, `CV_SAVE`), and coop explicitly clears the limit, appended to the game-start
+  command in `M_StartServer` (`m_menu.c`).
+  - **`cv_timelimit` is the engine's limit and is rewritten at every game start**, so the Net
+    Options menu row could never edit it usefully: whatever was typed there was overwritten before
+    it was read, and the row then displayed the 0 that a coop start had left behind — "it says 0
+    and does 5 minutes whatever you set". The row edits `cv_dm_timelimit` now, which is only ever
+    *read*, so it keeps what the operator set. Same split as `cv_deathmatch_menu` versus
+    `cv_deathmatch`, and the same reason.
+  - The limit still cannot simply be `cv_timelimit`'s default: that would cut **single player**
+    levels short too, which is why it is applied per game start. An unattended cabinet has no other way out of a DM stalemate: players cannot reach
   End Game, and the idle timeout only fires when *nobody* is touching the controls. Applied per
   game start rather than as the `cv_timelimit` default, which would also cut single player levels
   short. In `deathmatch_cons_t` the DM modes are values **1..4**; every coop variant is 0 or ≥0x10.

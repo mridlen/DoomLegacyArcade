@@ -1400,6 +1400,16 @@ extern CV_PossibleValue_t deathmatch_cons_t[];
 void deathmatch_menu_OnChange( void );
 consvar_t cv_deathmatch_menu  = {"dmm"  , "3", CV_HIDEN | CV_CALL, deathmatch_cons_t, deathmatch_menu_OnChange };
 
+// [Arcade] The deathmatch round length, in minutes, as the menu shows it.
+// A separate cvar from cv_timelimit for the same reason cv_deathmatch_menu is
+// separate from cv_deathmatch: cv_timelimit is the *engine's* limit and is
+// rewritten at every game start -- set to 0 for coop and single player, which
+// must not be cut short -- so a value typed into the menu was overwritten
+// before it could ever be used, and the menu then read back 0.  This one is
+// only read, never written, so it keeps what the operator set.
+CV_PossibleValue_t dmtimelimit_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
+consvar_t cv_dm_timelimit = {"dmtimelimit", "5", CV_SAVE, dmtimelimit_cons_t };
+
 void deathmatch_menu_OnChange( void )
 {
     // Default monsters, because it often gets forgotten, and it is not saved.
@@ -1414,7 +1424,9 @@ consvar_t cv_wait_timeout = {"wait_timeout" ,"0",CV_HIDEN,wait_timeout_cons_t};
 static boolean StartSplitScreenGame = false;
 
 // [Arcade] Minutes on the clock for a deathmatch round.
-#define ARCADE_DM_TIMELIMIT   5
+// [Arcade] Superseded by cv_dm_timelimit, which is the same 5 minutes by
+// default but can be changed from the menu.  Kept only as the documented
+// origin of that default.
 
 // Called from ServerMenu
 // [Arcade] Join screen, defined further down.  True when the page was opened
@@ -1473,7 +1485,7 @@ static void  M_StartServer_Go( void )
     // In deathmatch_cons_t the DM modes are values 1..4; every coop variant
     // is 0 or >= 0x10.
     int  dmm = cv_deathmatch_menu.value;
-    int  tl  = (dmm >= 1 && dmm <= 4) ? ARCADE_DM_TIMELIMIT : 0;
+    int  tl  = (dmm >= 1 && dmm <= 4) ? cv_dm_timelimit.value : 0;
     COM_BufAddText(va("stopdemo;splitscreen %d;deathmatch %d;timelimit %d\n",
                       StartSplitScreenGame, dmm, tl ) );
 
@@ -3750,11 +3762,29 @@ menuitem_t NetOptionsMenu[]=
     {IT_STRING | IT_CVAR,0,"Teamplay"        ,&cv_teamplay        ,0},
     {IT_STRING | IT_CVAR,0,"TeamDamage"      ,&cv_teamdamage      ,0},
     {IT_STRING | IT_CVAR,0,"Fraglimit"       ,&cv_fraglimit       ,0},
-    {IT_STRING | IT_CVAR,0,"Timelimit"       ,&cv_timelimit       ,0},
+    {IT_STRING | IT_CVAR,0,"Timelimit"       ,&cv_dm_timelimit    ,0},
     {IT_STRING | IT_CVAR,0,"Deathmatch Type" ,&cv_deathmatch      ,0},
     {IT_STRING | IT_CVAR,0,"Frag's Weapon Falling", &cv_fragsweaponfalling, 0},
     {IT_STRING | IT_CVAR,0,"Maxplayers"      ,&cv_maxplayers      ,0},
     {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Games Options >>" ,M_GameOption ,132},
+};
+
+// [Arcade] Addressed by position by the lockdown; keep in step with the array.
+enum {
+    netoption_allowjump = 0,
+    netoption_allowrocketjump,
+    netoption_allowautoaim,
+    netoption_allowturbo,
+    netoption_allowexit,
+    netoption_allowjoin,
+    netoption_teamplay,
+    netoption_teamdamage,
+    netoption_fraglimit,
+    netoption_timelimit,
+    netoption_dmtype,
+    netoption_fragweapfall,
+    netoption_maxplayers,
+    netoption_gameoptions,
 };
 
 menu_t  NetOptionDef =
@@ -7809,6 +7839,7 @@ consvar_t * menu_init_cvar_list[] =
   &cv_nextmap,
   &cv_nextepmap,
   &cv_deathmatch_menu,
+  &cv_dm_timelimit,     // [Arcade]
   &cv_wait_players,
   &cv_wait_timeout,
   &cv_serversearch,
@@ -7853,6 +7884,20 @@ void M_Init (void)
         TwoPlayerMenu[twoplayer_networked].status = IT_HIDDEN;
         if( TwoPlayerDef.lastOn == twoplayer_networked )
             TwoPlayerDef.lastOn = 0;
+
+        // [Arcade] The Net Options page is the deathmatch ruleset a player
+        // can reasonably choose from; the rest is server and network
+        // plumbing that means nothing on a cabinet.  Kept: Allow exitlevel,
+        // Teamplay, TeamDamage, Fraglimit, Timelimit, Deathmatch Type,
+        // Frag's Weapon Falling, and the Game Options link.
+        NetOptionsMenu[netoption_allowjump].status       = IT_HIDDEN;
+        NetOptionsMenu[netoption_allowrocketjump].status = IT_HIDDEN;
+        NetOptionsMenu[netoption_allowautoaim].status    = IT_HIDDEN;
+        NetOptionsMenu[netoption_allowturbo].status      = IT_HIDDEN;
+        NetOptionsMenu[netoption_allowjoin].status       = IT_HIDDEN;
+        NetOptionsMenu[netoption_maxplayers].status      = IT_HIDDEN;
+        if( NetOptionDef.lastOn < netoption_allowexit )
+            NetOptionDef.lastOn = netoption_allowexit;
 
         MainMenu[2].status = IT_HIDDEN;  // Load Game  (2/3 since Single Level
         MainMenu[3].status = IT_HIDDEN;  // Save Game   took index 1)
