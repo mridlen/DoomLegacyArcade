@@ -1431,7 +1431,7 @@ static boolean StartSplitScreenGame = false;
 // Called from ServerMenu
 // [Arcade] Join screen, defined further down.  True when the page was opened
 // and the caller should return; the callback runs the real start.
-boolean  M_Join_Open( void (*startfunc)(void) );
+boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts );
 
 static void  M_StartServer_Go( void );
 static int   startserver_choice;
@@ -1443,7 +1443,7 @@ void M_StartServer( int choice )
 {
     startserver_choice = choice;
 
-    if( M_Join_Open( M_StartServer_Go ) )
+    if( M_Join_Open( M_StartServer_Go, false ) )   // wait for everyone
         return;
 
     D_Clear_Join_Count();   // no join screen: every panel plays
@@ -2566,9 +2566,16 @@ static byte  join_pressed[MAXSPLITSCREENPLAYERS];  // panel has pressed in
 static int   join_endtic;         // gametic the countdown expires
 // What to run once joining is done.  A callback because the two menu routes
 // into a game start differently: the Single Player path ends at
-// G_DeferedInitNew, while Two Player Game -> Start Game goes through
+// G_DeferedInitNew, while Multiplayer -> Start Game goes through
 // M_StartServer, which issues its own command sequence.
 static void (*join_startfunc)(void) = NULL;
+
+// [Arcade] Single Player asks the same question -- which panel is playing --
+// but there is nobody else to wait for, so the first fire press starts the
+// game at once rather than sitting out the countdown.  That is what makes the
+// page worth showing on that route: a lone player can take panel 3 and get
+// the whole screen, instead of being assumed to be at panel 1.
+static boolean join_first_press_starts = false;
 
 static void  M_Join_Drawer(void);
 
@@ -2632,7 +2639,12 @@ static void  M_Join_Start( void )
     // two players top-and-bottom there is nothing to be confused about, and a
     // quarter screen each would be a poor trade for it.
     for( i=0; i<joined; i++ )
+    {
+        // Input always follows the panel that pressed in; the cell only does
+        // so once the 2x2 grid is in use.
+        D_Set_Panel( i, joined_panel[i] );
         D_Set_View_Cell( i, (joined <= 2) ? i : joined_panel[i] );
+    }
 
     D_Set_Join_Count( joined );
 
@@ -2677,6 +2689,8 @@ boolean  M_Join_Key( uint16_t key )
             {
                 join_pressed[panel] = 1;
                 S_StartSound(menu_sfx_enter);
+                if( join_first_press_starts )
+                    M_Join_Start();
             }
             return true;
         }
@@ -2721,7 +2735,10 @@ static void  M_Join_Drawer( void )
     }
 
     if( secs < 0 )  secs = 0;
-    snprintf(buf, sizeof(buf), "STARTING IN %d", secs);
+    if( join_first_press_starts )
+        snprintf(buf, sizeof(buf), "PRESS FIRE ON YOUR PANEL   (%d)", secs);
+    else
+        snprintf(buf, sizeof(buf), "STARTING IN %d", secs);
     V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, BASEVIDHEIGHT - 28, 0, buf );
 }
 
@@ -2746,7 +2763,7 @@ static void  M_NewGame_Go( void )
 // Open the page for a game that is about to start.  False when there is
 // nothing to ask -- a single panel, or the countdown turned off -- and the
 // caller should just start the game itself.
-boolean  M_Join_Open( void (*startfunc)(void) )
+boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
 {
     byte panel;
 
@@ -2757,6 +2774,7 @@ boolean  M_Join_Open( void (*startfunc)(void) )
         join_pressed[panel] = 0;
 
     join_startfunc = startfunc;
+    join_first_press_starts = first_press_starts;
     join_endtic = (int)gametic + (cv_jointime.EV * TICRATE);
 
     D_Reset_View_Cells();
@@ -2784,7 +2802,7 @@ void M_ChooseSkill(int choice)
     dl_strncpy( newgame_map, G_BuildMapName(epi+1,1), sizeof(newgame_map) );
     newgame_split = StartSplitScreenGame;
 
-    if( M_Join_Open( M_NewGame_Go ) )
+    if( M_Join_Open( M_NewGame_Go, true ) )   // one player: first press starts
         return;
 
     D_Clear_Join_Count();   // no join screen: every panel plays

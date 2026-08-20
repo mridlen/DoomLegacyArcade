@@ -561,6 +561,15 @@ silently made the flag do nothing at all.
     **`cv_localplayers`** the panel count — both operator settings under **Options → Menu Options**
     beside `cv_twoplayer`, so only a `-devmode` session writes them. `jointime 0` or a single panel
     skips the page entirely and the game starts exactly as it always did.
+  - **Which panel drives a player is a different question from which cell they occupy**, and
+    conflating the two was a bug. `D_View_Cell(pind)` is the screen cell; `D_Panel_Of(pind)` is the
+    physical panel, and `G_BuildTiccmd` indexes `gamecontrol_pl[]` by the latter. A lone player who
+    joined at panel 3 gets the whole screen (cell 0) but must still be driven by panel 3's buttons
+    — with one table the compact layout overwrote the panel with the cell, so joining at panel 3
+    handed you player 1's controls and the panel you were standing at did nothing.
+  - **Single Player starts on the first press** (`join_first_press_starts`), with no countdown to
+    sit through: there is nobody else to wait for, and the page's value on that route is letting a
+    lone player claim the panel they are standing at. Multiplayer still waits.
   - **One or two players get the big layout** — the whole screen, or the stacked halves — however
     far apart their panels are; only three or more use the 2x2. Keeping a player in their own
     panel's cell only earns its keep once the grid is in use anyway: with two players top and

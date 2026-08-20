@@ -172,8 +172,13 @@ static void  HU_Draw_DeathmatchRankings( byte vind );
 // rather than gamecontrol, or every panel would follow player 1's key.
 static boolean  HU_Rankings_For_View( byte vind, byte pn )
 {
-    if( gamekeydown[gamecontrol_pl[vind][gc_scores][0]]
-        || gamekeydown[gamecontrol_pl[vind][gc_scores][1]] )
+    {
+        byte pan = D_Panel_Of(vind);   // [Arcade] this view's own panel
+        if( gamekeydown[gamecontrol_pl[pan][gc_scores][0]]
+            || gamekeydown[gamecontrol_pl[pan][gc_scores][1]] )
+            return ! chat_on;
+    }
+    if( 0 )
         return ! chat_on;
 
     return ( players[pn].playerstate == PST_DEAD );

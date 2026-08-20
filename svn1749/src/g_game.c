@@ -1187,7 +1187,10 @@ void G_BuildTiccmd(ticcmd_t* cmd, int realtics, byte pind)
       if( pn >= MAXPLAYERS )  goto done;   // this panel has no player
       this_player = &players[pn];
     }
-    gcc = gamecontrol_pl[pind];
+    // [Arcade] The panel that joined as this local player, not the join
+    // index: someone who pressed in at panel 3 must be driven by panel 3's
+    // buttons even when they are the only player and hold cell 0.
+    gcc = gamecontrol_pl[ D_Panel_Of(pind) ];
     pitch = localaiming[pind];
 
     // Exit now if locked

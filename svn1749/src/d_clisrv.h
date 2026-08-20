@@ -602,6 +602,11 @@ byte  D_NumViews( void );   // 1, 2 or 4 viewports
 // [Arcade] Grid cell for a local player, so a panel's screen area matches
 // where the player is standing rather than the order they joined.
 byte  D_View_Cell( byte pind );
+
+// [Arcade] The control panel driving a local player, which is a different
+// question from which screen cell they occupy.
+byte  D_Panel_Of( byte pind );
+void  D_Set_Panel( byte pind, byte panel );
 void  D_Set_View_Cell( byte pind, byte cell );
 void  D_Reset_View_Cells( void );
 

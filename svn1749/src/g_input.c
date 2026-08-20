@@ -731,10 +731,20 @@ static void ControlScheme_Apply( int pind )
     // [Arcade] An operator table from the guided setup takes the place of
     // the compiled-in preset, but is swapped by the scheme exactly the same
     // way -- so a cabinet still gets both "Look and Move" and "WASD".
-    const controlkeys_t * k = Parse_CustomControls(pind, &custom)
-                              ? &custom : &scheme_keys[pind];
+    boolean have_custom = Parse_CustomControls(pind, &custom);
+    const controlkeys_t * k = have_custom ? &custom : &scheme_keys[pind];
     int (* gc)[2] = gamecontrol_pl[pind];   // [Arcade] was a 0/1 choice
     boolean wasd;
+
+    // [Arcade] With no custom table and no preset -- panels 3 and 4, whose
+    // scheme_keys entries are deliberately all KEY_NULL -- applying the
+    // scheme would stamp "unbound" over ten controls.  This runs *after* the
+    // config's setcontrol lines, so it silently wiped bindings those lines
+    // had just made: panels 3 and 4 ended up with no fire button at all,
+    // while 1 and 2 survived only because their customcontrols happen to
+    // restore the same keys.  Leave the bindings alone instead.
+    if( ! have_custom && ! scheme_keys[pind].fire )
+        return;
 
     wasd = (cv_controlscheme[pind].value != 0);
 

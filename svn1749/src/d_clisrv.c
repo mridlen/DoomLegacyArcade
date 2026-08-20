@@ -406,11 +406,31 @@ byte  D_NumLocalPlayers( void )
 // changing the netcode, while the draw loops already skip empty cells.
 static byte  localplayer_cell[MAXSPLITSCREENPLAYERS] = { 0, 1, 2, 3 };
 
+// [Arcade] And which physical panel drives each local player.  This is NOT
+// the same question as the cell: a lone player who joined at panel 3 gets the
+// whole screen (cell 0) but must still be driven by panel 3's buttons.  They
+// were one table at first, and the compact 1-2 player layout overwrote the
+// panel with the cell -- so joining at panel 3 handed you player 1's
+// controls and the panel you were standing at did nothing.
+static byte  localplayer_panel[MAXSPLITSCREENPLAYERS] = { 0, 1, 2, 3 };
+
 typedef char localplayer_cell_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 : -1 ];
 
 byte  D_View_Cell( byte pind )
 {
     return (pind < MAXSPLITSCREENPLAYERS) ? localplayer_cell[pind] : pind;
+}
+
+// [Arcade] The control panel driving this local player.
+byte  D_Panel_Of( byte pind )
+{
+    return (pind < MAXSPLITSCREENPLAYERS) ? localplayer_panel[pind] : pind;
+}
+
+void  D_Set_Panel( byte pind, byte panel )
+{
+    if( pind < MAXSPLITSCREENPLAYERS && panel < MAXSPLITSCREENPLAYERS )
+        localplayer_panel[pind] = panel;
 }
 
 // Called by the join screen: local player 'pind' plays in grid cell 'cell'.
@@ -437,6 +457,7 @@ void  D_Reset_View_Cells( void )
     {
         if( localplayer_cell[pind] != pind )  changed = true;
         localplayer_cell[pind] = pind;
+        localplayer_panel[pind] = pind;
     }
     if( changed )  R_SetViewSize();
 }
