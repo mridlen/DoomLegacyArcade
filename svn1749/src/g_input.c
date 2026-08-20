@@ -332,6 +332,8 @@ static keyname_t keynames[] =
   {KEY_NUMLOCK,    "num lock"},
   {KEY_CAPSLOCK,   "caps lock"},
   {KEY_SCROLLLOCK, "scroll lock"},
+  {KEY_PRINT,      "print"},   // [Arcade] plain PrtSc; had no name, so it
+                               // could not be bound or saved by setcontrol
   {KEY_SYSREQ,     "sysreq"},
   {KEY_RSHIFT,     "right shift"},
   {KEY_LSHIFT,     "left shift"},
@@ -794,7 +796,12 @@ void G_Controldefault(void)
     gamecontrol[gc_console    ][0]=KEY_CONSOLE;
     //gamecontrol[gc_nextweapon ][1]=KEY_JOY0BUT4;
     //gamecontrol[gc_prevweapon ][1]=KEY_JOY0BUT5;
-    gamecontrol[gc_screenshot ][0]=KEY_SYSREQ;
+    // [Arcade] Plain PrtSc first, SysRq (Alt+PrtSc) kept as the second
+    // binding.  SysRq alone was awkward: it is a modifier combination, and
+    // desktop environments and KVM software commonly grab it before the game
+    // sees it.
+    gamecontrol[gc_screenshot ][0]=KEY_PRINT;
+    gamecontrol[gc_screenshot ][1]=KEY_SYSREQ;
 
     if( gamemode == heretic )
     {

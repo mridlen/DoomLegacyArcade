@@ -755,6 +755,19 @@ silently made the flag do nothing at all.
   `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
   two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
+- **Screenshots** are on **PrtSc** (`gc_screenshot`), with SysRq (Alt+PrtSc) kept as the second
+  binding. The stock default was SysRq alone, which is a modifier combination and is commonly
+  grabbed by the desktop or KVM software before the game sees it.
+  - **`KEY_PRINT` had no entry in the key name table**, so it could not be bound or saved by
+    `setcontrol` at all; it is `"print"` now. Changing the compiled default is not enough on its
+    own — `config.cfg` carries a `setcontrol "screenshot"` line that is loaded afterwards and wins,
+    so both the tracked and live configs were updated to
+    `setcontrol "screenshot" "print" "sysreq"`.
+  - Written to the **current working directory** as `DOOM0000.tga`, counting up to the first
+    unused number (`HRTC`/`CHXQ` for Heretic/Chex). Targa because the cabinet runs OpenGL; the
+    software renderer writes `.pcx`. `screenshotdir` redirects it, and only then is the file named
+    after the first loaded PWAD instead of the game.
+
 - **Analog joystick axes are translated to hat keys** (`sdl/i_system.c`, the `SDL_JOYAXISMOTION`
   case). Upstream produced **no bindable input from any analog axis**: the only handling was for
   Xbox triggers, gated on `check_Joystick_Xbox[]`, which requires the joystick's *name* to match
