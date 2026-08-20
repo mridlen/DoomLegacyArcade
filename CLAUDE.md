@@ -183,6 +183,16 @@ silently made the flag do nothing at all.
   it cannot be mistaken for the line above. It was already devmode-only — the lockdown hides both
   of its entry points — and stays that way; a stretch goal to revisit.
   - The `TwoPlayerDef` page uses `M_MULTI` as its title graphic for the same reason.
+  - Its two `SETUP PLAYER` rows (`M_SETUPA`/`M_SETUPB`) are replaced by **four**
+    "Player n config >>" text entries, matching Options → Player, so panels 3 and 4 needed no
+    artwork. They open `PlayerOptionsDef` **without** `Pop_Menu()`, unlike `M_PlayerDirectorChoice`,
+    so backing out returns to this page instead of skipping past it.
+  - **`TwoPlayerMenu` is addressed by position** and the rows moved, so its indices are named
+    (`twoplayer_*`) and the lockdown uses those — the networked row went from 4 to 6.
+  - Rows for panels the cabinet does not have are hidden, as on the Player page.
+  - **The three mouse rows are devmode-only** (`M_SetupMultiPlayer_pind`): a player has no use for
+    mouse settings on a cabinet, and they were three rows of clutter on the page reached most
+    often. Already hidden for panels 3 and 4, which have no mouse hardware at all.
   - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
     `TwoPlayerMenu[4]`) still point at the right rows.
 

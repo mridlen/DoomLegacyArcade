@@ -1797,15 +1797,46 @@ menu_t  MultiPlayerDef =
 // Two Player menu
 //===========================================================================
 
-// DoomLegacy graphics from legacy.wad: M_SETUPA, M_SETUPB, M_STSERV, M_MULTI
+static void M_TwoPlayer_PlayerConfig(int choice);
+static void M_SetupMultiPlayer_pind( byte pind );   // defined below
+
+// DoomLegacy graphics from legacy.wad: M_STSERV, M_MULTI
 menuitem_t TwoPlayerMenu[] =
 {
-    {IT_CALL | IT_PATCH,"M_SETUPA","SETUP PLAYER 1",M_SetupMultiPlayer1 ,'s'},
-    {IT_CALL | IT_PATCH,"M_SETUPB","SETUP PLAYER 2",M_SetupMultiPlayer2 ,'t'},
+    // [Arcade] One config entry per panel, replacing the two "SETUP PLAYER"
+    // graphics (M_SETUPA/M_SETUPB), which only ever covered two players and
+    // named a different page than the one they open.  Plain text, matching
+    // Options -> Player, so panels 3 and 4 need no new artwork.
+    {IT_CALL | IT_WHITESTRING, 0,"Player1 config >>", M_TwoPlayer_PlayerConfig, '1'},
+    {IT_CALL | IT_WHITESTRING, 0,"Player2 config >>", M_TwoPlayer_PlayerConfig, '2'},
+    {IT_CALL | IT_WHITESTRING, 0,"Player3 config >>", M_TwoPlayer_PlayerConfig, '3'},
+    {IT_CALL | IT_WHITESTRING, 0,"Player4 config >>", M_TwoPlayer_PlayerConfig, '4'},
     {IT_CALL | IT_PATCH,"M_OPTION","OPTIONS"       ,M_NetOption ,'o'},
     {IT_CALL | IT_PATCH,"M_STSERV","START GAME"    ,M_StartServerMenu , 0},
     {IT_SUBMENU | IT_WHITESTRING, 0,"Networked Multiplayer >>",&MultiPlayerDef  ,'m'},
 };
+
+// [Arcade] This menu is addressed by position (the lockdown hides rows), so
+// the indices are named.  Keep in step with TwoPlayerMenu above.
+enum {
+    twoplayer_p1_config = 0,
+    twoplayer_p2_config,
+    twoplayer_p3_config,
+    twoplayer_p4_config,
+    twoplayer_options,
+    twoplayer_startgame,
+    twoplayer_networked,
+};
+
+
+// Open a panel's config page.  Unlike M_PlayerDirectorChoice this does not
+// Pop_Menu first, so backing out of the config returns to this page rather
+// than skipping past it.
+static void M_TwoPlayer_PlayerConfig(int choice)
+{
+    M_SetupMultiPlayer_pind( choice );   // pind = 0..3
+    Push_Setup_Menu( &PlayerOptionsDef );
+}
 
 menu_t  TwoPlayerDef =
 {
@@ -2078,7 +2109,10 @@ void M_SetupMultiPlayer_pind( byte pind )
     // not four -- and an arcade panel has no mouse at all, so the three mouse
     // rows are hidden for panels 3 and 4 rather than inventing a use_mouse3.
     {
-        boolean has_mouse = (pind < 2);
+        // [Arcade] Also devmode-only: a player has no use for mouse settings
+        // on a cabinet, and they are three rows of clutter on the page they
+        // reach most often.
+        boolean has_mouse = (pind < 2) && devmode;
         uint16_t mouse_status = has_mouse ? (IT_STRING | IT_CVAR) : IT_HIDDEN;
 
         PlayerOptionsMenu[playeroption_usemouse].itemaction =
@@ -7816,8 +7850,8 @@ void M_Init (void)
         if( SingleMultiDef.lastOn == 2 )
             SingleMultiDef.lastOn = 0;
 
-        TwoPlayerMenu[4].status = IT_HIDDEN;  // Networked Multiplayer (via the Multiplayer page)
-        if( TwoPlayerDef.lastOn == 4 )
+        TwoPlayerMenu[twoplayer_networked].status = IT_HIDDEN;
+        if( TwoPlayerDef.lastOn == twoplayer_networked )
             TwoPlayerDef.lastOn = 0;
 
         MainMenu[2].status = IT_HIDDEN;  // Load Game  (2/3 since Single Level
@@ -8062,6 +8096,10 @@ void M_Configure (void)
         PlayerDirectorMenu[1].status = IT_HIDDEN;
         if( PlayerDirectorDef.lastOn == 1 )
             PlayerDirectorDef.lastOn = 0;
+
+        TwoPlayerMenu[twoplayer_p2_config].status = IT_HIDDEN;
+        if( TwoPlayerDef.lastOn == twoplayer_p2_config )
+            TwoPlayerDef.lastOn = 0;
     }
 
     // [Arcade] Panels 3 and 4 exist only on a cabinet configured for them.
@@ -8083,6 +8121,10 @@ void M_Configure (void)
             PlayerDirectorMenu[i].status = IT_HIDDEN;
             if( PlayerDirectorDef.lastOn == i )
                 PlayerDirectorDef.lastOn = 0;
+
+            TwoPlayerMenu[ twoplayer_p1_config + i ].status = IT_HIDDEN;
+            if( TwoPlayerDef.lastOn == (twoplayer_p1_config + i) )
+                TwoPlayerDef.lastOn = 0;
 
             // Both of this panel's rows on the Controls menu: the guided
             // setup and the full binding page.
