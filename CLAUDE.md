@@ -404,6 +404,16 @@ silently made the flag do nothing at all.
     four are a **2x2 grid** (three players leave one quadrant unused, rather than inventing a
     third layout). `pind` 0..3 reads left-to-right then top-to-bottom, so panel order matches
     screen order.
+    - **A demo always plays full screen.** `D_NumViews()` returns 1 while `demoplayback`, whatever
+      the cabinet's panel count says — otherwise the attract screen was carved into a 2x2 and the
+      demo drew in the top-left quadrant. This is the same trap `cv_splitscreen` had, which
+      `Command_ExitGame_f` clears on the way to the title; `cv_localplayers` is an operator setting
+      and is *not* cleared, so the view count has to ignore it here. Covers the Single Level
+      "watch run" replays too.
+    - **Changing the view count needs `R_SetViewSize()`**, or the old geometry sticks: viewport
+      sizes are only recomputed on request. `G_DoPlayDemo` and `G_StopDemo` both call it, as
+      `D_Set_View_Cell` does. **This has now caught me twice** — the count was right and the
+      rectangle was stale both times.
     - **The cabinet runs OpenGL** (`drawmode "OpenGL"` in the tracked config), which is why the
       grid went into `hw_main.c`: a viewport there is just a rectangle. `HWR_SetViewSize` halves
       `gr_viewheight` for two views and `gr_viewwidth` as well for four, and

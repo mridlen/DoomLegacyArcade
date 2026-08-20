@@ -4856,6 +4856,12 @@ void G_DoPlayDemo (const char *defdemoname)
 
     demoplayback = true;
 
+    // [Arcade] A demo draws one full-screen view whatever the cabinet's panel
+    // count says (see D_NumViews), and the viewport sizes are only recomputed
+    // on request -- without this the demo kept the 2x2 geometry and played in
+    // the top-left quadrant.
+    R_SetViewSize();
+
     // [Arcade] The replay is its own run for the intermission's purposes.
     // Set after demoplayback so HS_LevelExit takes the replay path, and
     // before G_InitNew below, which reaches the first level.
@@ -4938,6 +4944,8 @@ void G_StopDemo(void)
     demoplayback  = false;
     timingdemo = false;
     singletics = false;
+
+    R_SetViewSize();   // [Arcade] back to the cabinet's own view layout
 
     playdemo_restore_settings();  // [WDJ] restore user settings
     G_set_gamemode( gamemode );  // restore EN set by gamemode

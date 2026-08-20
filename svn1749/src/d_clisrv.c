@@ -452,9 +452,19 @@ void  D_Reset_View_Cells( void )
 // the 2 view split it needs no projection fix.
 byte  D_NumViews( void )
 {
-    byte pind, n = D_NumLocalPlayers();
+    byte pind, n;
     byte top = 0;   // highest cell any local player occupies
 
+    // [Arcade] A demo has exactly one viewpoint, whatever the cabinet is set
+    // up for, so it plays full screen.  Without this the attract screen was
+    // carved into a 2x2 and the demo drew in the top-left quadrant, which is
+    // the same trap cv_splitscreen had -- Command_ExitGame_f clears that on
+    // the way to the title for exactly this reason, but cv_localplayers is an
+    // operator setting and does not get cleared.  Covers the Single Level
+    // "watch run" replays as well.
+    if( demoplayback )  return 1;
+
+    n = D_NumLocalPlayers();
     if( n <= 1 )  return 1;
 
     for( pind=0; pind<n && pind<MAXSPLITSCREENPLAYERS; pind++ )
