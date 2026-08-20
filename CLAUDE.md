@@ -177,11 +177,12 @@ silently made the flag do nothing at all.
   items, so it cannot recover when index 0 is hidden).
 - **Menu naming**: the New Game page offers **Single Player** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
-  only) and keeps the `M_2PLAYR` graphic. The engine's networked server menu is renamed
+  only) and uses the **`M_MULTI`** graphic, which reads "MULTIPLAYER". `M_2PLAYR` literally reads
+  "TWO PLAYER GAME" and is now unused. The engine's networked server menu is renamed
   **"Networked Multiplayer >>"** and drawn as **plain text** rather than the `M_MULTI` graphic, so
   it cannot be mistaken for the line above. It was already devmode-only — the lockdown hides both
   of its entry points — and stays that way; a stretch goal to revisit.
-  - The `TwoPlayerDef` page title is "Multiplayer" too, and its `M_2PLAYR` graphic is unchanged.
+  - The `TwoPlayerDef` page uses `M_MULTI` as its title graphic for the same reason.
   - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
     `TwoPlayerMenu[4]`) still point at the right rows.
 
