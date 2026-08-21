@@ -1057,8 +1057,22 @@ silently made the flag do nothing at all.
     comes from `hs_maprecord_t.startmap[cat][skill]`, stored per record rather than inferred from
     the episode: every menu-started campaign does begin at map 1, but that is a property of the
     menus, not of the record.
-  - A record whose `startmap` equals its map, or which has none (a line written before that field
-    existed), is captioned with the bare map name — no invented span.
+  - A record whose `startmap` equals its map is captioned with the bare map name — no invented span.
+  - **A campaign record with no stored `startmap` falls back to an inference** (`HS_Infer_StartMap`,
+    used through `HS_Format_Range`): the first map of that map's own episode, so `MAP03` reads
+    `MAP01-MAP03` and `E2M3` reads `E2M1-E2M3`. Episode-aware, not always `E1M1`.
+    - This was deliberately *avoided* when the field was added, on the grounds that starting at map
+      1 is a property of the menus rather than of the record. That was over-cautious for records
+      written before the field existed: for those the choice is not between a fact and a guess but
+      between a good guess and nothing, and a cumulative time at MAP03 can only have come from a
+      run that began at MAP01, since that is the only way to accumulate time there.
+    - **A stored start map always wins**, so this never overrides a recorded fact and quietly stops
+      mattering as old records are beaten.
+    - Single level records are excluded — one map by definition — so they stay bare.
+    - Secret levels need no special case: reaching MAP31 or E1M9 still means a run from MAP01 or
+      E1M1.
+    - The one case it cannot describe is a run started mid-episode with `-warp`, which no route
+      through the cabinet's menus produces.
   - **It still fits on one line.** Measured against the real `STCFN` lumps, the widest either form
     reaches is `SINGLE LEVEL: MAP01  ITYTD  SPEED  888:88.99` at **295px of 320** — a single level
     run is one map so it never carries a range, and a range costs less width than the

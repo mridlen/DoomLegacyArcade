@@ -399,6 +399,60 @@ static const char * HS_GameId( void )
 }
 
 
+// [Arcade] Where a *campaign* run holding this record must have begun, for
+// records written before the start map was tracked.
+//
+// This is an inference and was deliberately avoided when the field was added
+// -- "every menu-started campaign does begin at map 1, but that is a
+// property of the menus, not of the record".  It is used only as a fallback
+// for records that have no stored start map, because for those the choice is
+// not between a fact and a guess but between a good guess and nothing: a
+// cumulative time at MAP03 can only have come from a run that began at
+// MAP01, since that is the only way to accumulate time there.  A stored
+// start map always wins.
+//
+// Campaign only.  A single level record is one map by definition, and the
+// secret levels need no special case: reaching MAP31 or E1M9 still means a
+// run that started at MAP01 or E1M1.
+//
+// The one thing this cannot describe is a run started mid-episode with
+// -warp, which no route through the cabinet's menus can produce.
+static void HS_Infer_StartMap( const char * mapname, char * out, size_t outsize )
+{
+    int e, m;
+
+    out[0] = 0;
+    if( sscanf(mapname, "MAP%d", &m) == 1 )
+    {
+        dl_strncpy( out, "MAP01", outsize );
+        return;
+    }
+    if( sscanf(mapname, "E%dM%d", &e, &m) == 2 )
+        snprintf( out, outsize, "E%dM1", e );
+}
+
+
+// The span a record covers, as "E1M1-E1M5", or the bare map name for a run
+// of one map.  start may be empty, in which case a campaign record falls
+// back to the inference above and a single level one stays bare.
+static void HS_Format_Range( const char * start, const char * mapname,
+                             boolean single, char * out, size_t outsize )
+{
+    char inferred[9];
+
+    if( (start == NULL || start[0] == 0) && ! single )
+    {
+        HS_Infer_StartMap( mapname, inferred, sizeof(inferred) );
+        start = inferred;
+    }
+
+    if( start && start[0] && strncmp(start, mapname, 8) != 0 )
+        snprintf( out, outsize, "%.8s-%.8s", start, mapname );
+    else
+        snprintf( out, outsize, "%.8s", mapname );
+}
+
+
 static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
 {
     int seconds = tics / TICRATE;
@@ -864,11 +918,12 @@ boolean  HS_Board_Entry( boolean single, const char * mapname,
         if( out_range )
         {
             // A one map run reads as the bare map name; only a run that
-            // actually spans levels gets a range.
-            if( r->startmap[0] && strncmp(r->startmap, r->endmap, 8) != 0 )
-                snprintf( out_range, 20, "%.8s-%.8s", r->startmap, r->endmap );
-            else
-                snprintf( out_range, 20, "%.8s", r->endmap );
+            // actually spans levels gets a range.  Board entries always
+            // carry a real start map -- they are built from live runs, or
+            // seeded from single level records -- so the inference inside
+            // this helper is a fallback that should never fire here.
+            HS_Format_Range( r->startmap, r->endmap,
+                             HS_Id_Is_Single(r->game), out_range, 20 );
         }
         if( out_tics )  *out_tics = r->tics;
         return true;
@@ -2116,15 +2171,11 @@ const char * HS_NextRecordDemoPath( void )
                 // are cumulative from the start of a run, so the demo for the
                 // E1M5 record is a five level run -- captioned with the bare
                 // map name it was indistinguishable from a single level one,
-                // which badly undersold the longer runs.  A record with no
-                // start map (written before that was stored) falls back to
-                // the bare name rather than inventing a span.
-                if( sm[0] && strncmp(sm, hs_table[mi].mapname, 8) != 0 )
-                    snprintf(range, sizeof(range), "%.8s-%.8s",
-                             sm, hs_table[mi].mapname);
-                else
-                    snprintf(range, sizeof(range), "%.8s",
-                             hs_table[mi].mapname);
+                // which badly undersold the longer runs.  A campaign record
+                // with no stored start map (written before that was tracked)
+                // falls back to the inference in HS_Format_Range.
+                HS_Format_Range( sm, hs_table[mi].mapname, is_single,
+                                 range, sizeof(range) );
 
                 // e.g. "E1M1-E1M5  ITYTD  MAX  4:32.17", or
                 // "SINGLE LEVEL: MAP01  ITYTD  SPEED  4:32.17".  Measured
