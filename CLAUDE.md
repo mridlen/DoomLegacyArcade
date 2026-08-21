@@ -191,7 +191,10 @@ silently made the flag do nothing at all.
   "TWO PLAYER GAME" and is now unused. The engine's networked server menu is renamed
   **"Networked Multiplayer >>"** and drawn as **plain text** rather than the `M_MULTI` graphic, so
   it cannot be mistaken for the line above. It was already devmode-only — the lockdown hides both
-  of its entry points — and stays that way; a stretch goal to revisit.
+  of its entry points — and stays that way. **Not because it is known broken: it has never been
+  exercised in this build**, since cabinet-to-cabinet play needs two cabinets and there is not yet
+  one. Nothing was removed, so treat it as untested rather than unsupported, and do not "fix"
+  anything there speculatively.
   - The `TwoPlayerDef` page uses `M_MULTI` as its title graphic for the same reason.
   - Its two `SETUP PLAYER` rows (`M_SETUPA`/`M_SETUPB`) are replaced by **four**
     "Player n config >>" text entries, matching Options → Player, so panels 3 and 4 needed no

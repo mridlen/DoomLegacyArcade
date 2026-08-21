@@ -29,6 +29,11 @@ Discord is likely to get you banned.
   setup, no video or sound settings to get lost in.
 - **The cabinet buttons drive the menus.** No keyboard needed — the stick moves the cursor, fire
   selects, use backs out.
+- **Up to four players on one machine.** Two share the screen as the usual stacked halves; three or
+  four get a 2x2 grid, each with their own HUD. A **join screen** after the skill select lets each
+  panel press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous.
+- **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
+  its own separate high score table and its own record demos.
 - **High scores.** Best cumulative time-to-exit per map, skill and category, shown at the
   intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
   kills and secrets on every level so far).
@@ -45,7 +50,15 @@ Discord is likely to get you banned.
 - **Settings don't persist for players.** Anything changed during a session is forgotten at the next
   launch. Only an operator session writes the config.
 - **A guided control setup** that asks for each control in turn and binds whatever you press —
-  stick, buttons, or anything else your panel is wired to.
+  stick, buttons, or anything else your panel is wired to. One per panel, up to four.
+- **A cheats menu** — god mode, all weapons and keys, no clipping, exit level. Operator-only by
+  default, or leave it up for players. Using one voids that run's score.
+- **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
+  IWAD the search finds first.
+- **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
+  weapons — nobody can be left stuck in a stalemate on an unattended machine.
+- **Config safety.** Every save keeps a backup, and lines that fail to apply are reported at startup
+  instead of silently doing nothing.
 - **A fixed competitive ruleset.** Gameplay settings are pinned to a vanilla baseline so scores are
   comparable. A run played outside it still plays, but is marked `UNRANKED` and records nothing.
 - **Portable install.** The whole configuration lives next to the binary, so the cabinet is one
@@ -146,12 +159,31 @@ operator guide for the restart-loop wrapper you'll want.
 
 ## Playing
 
-**One or Two Player** from the main menu, then pick a skill. Two-player is splitscreen and uses a
-second set of controls on the same machine.
+**New Game → Single Player** or **Multiplayer** from the main menu, then pick a skill. Multiplayer
+here means everyone playing on *this* cabinet, sharing the screen.
+
+DoomLegacy's **networked** play between separate machines is still in there, under
+**Networked Multiplayer** in a `-devmode` session, but it is hidden from players because it hasn't
+been tested in this build — cabinet-to-cabinet play needs two cabinets. Treat it as untested rather
+than unsupported: nothing was removed, and it may well work.
 
 Under **Options** a player can change the crosshair, their colour, their control scheme, and pick a
 game or level pack. Everything else is hidden, and nothing a player changes survives to the next
 launch.
+
+### Joining a game
+
+On a cabinet with more than one control panel, a **join screen** appears once the skill is chosen.
+Each panel presses **fire** to be counted in, and the screen is laid out as the game is about to be:
+press fire and watch your own square claim itself. It starts when the countdown runs out, or as soon
+as anyone already in presses **use**.
+
+Whoever joins plays at the panel they pressed at, so a lone player can use panel 3 and still get the
+whole screen. One or two players share the screen as **stacked halves**; three or four get a **2x2
+grid**, one quadrant each, with the fourth left empty for three players.
+
+The page is skipped entirely on a single-panel cabinet, and for a single player it starts on the
+first press rather than making one person sit through a countdown.
 
 ### Controls
 
@@ -223,8 +255,8 @@ levels and keep separate records.
 
 Drop any `.wad` level pack into `legacyhome/levels/` and it appears under **Options → Select Game**
 as `<game> wad: <name>`, alongside the installed games. Packs are loaded on demand rather than at
-startup: selecting one loads it, its maps replace the IWAD's, and the normal One or Two Player flow
-then plays it. Selecting it again unloads it. One pack at a time.
+startup: selecting one loads it, its maps replace the IWAD's, and the normal Single Player or
+Multiplayer flow then plays it. Selecting it again unloads it. One pack at a time.
 
 Packs are filtered by the game they suit — a `MAPxx` pack shows under Doom II, an `ExMy` pack under
 Ultimate Doom — so a mismatched pack can't be loaded by accident.
@@ -259,6 +291,33 @@ sessions then start from that baseline every time.
 then asks for each control in turn — stick directions first, then the six buttons by number —
 binding whatever you press. Works with keyboards, joysticks, encoders, anything that reports as a
 button. Press ESC to abandon and keep the previous layout.
+
+There is a guided setup per panel, P1 to P4, and a **Player n Controls** page beside each one for
+panels with more than six buttons — the guided setup only teaches the ten controls a standard panel
+needs, so anything beyond that gets bound on the full page.
+
+### More than one control panel
+
+**Options → Menu Options → Control Panels** (devmode only) is how many sets of controls the cabinet
+has, 1 to 4. It ships at 1, and until you raise it the join screen never appears and panels 3 and 4
+have no configuration pages — which reads as those features being broken, when the cabinet simply
+hasn't been told they exist.
+
+**Join Time** beside it is how long the join screen waits, in seconds; `0` skips the page entirely.
+
+Set the panel count first, then run the guided setup for each panel. Panels 3 and 4 have no preset
+bindings on purpose — the two built-in schemes are chosen so one keyboard can drive two players, and
+there is no third set that wouldn't collide.
+
+### Cheats
+
+**Options → Menu Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
+players: god mode, all weapons and keys, no clipping, and exit level. It ships off, in which case
+the entry is operator-only and reachable just in a `-devmode` session.
+
+Cheats are single-player only, and using any of them — from the menu, the console, or a typed
+IDDQD/IDKFA/IDCLIP — voids that run's score. The HUD then shows `PLAYER CHEATED - UNRANKED` for the
+rest of the run.
 
 ### Keeping the cabinet running
 
@@ -410,6 +469,7 @@ like any other, so they only stick from a `-devmode` session.
 | `-clearhighscores` | Wipe scores and record demos at startup |
 | `-game <name>` | Start a specific game (`doomu`, `doom2`, `plutonia`, `tnt`) |
 | `-warp <map>` | Jump straight to a map |
+| `-file <wad>` | Load a wad at startup — a level pack, a soundtrack, a DEH/BEX patch |
 | `-config <file>` | Use a different configuration file |
 | `-v` | Verbose startup, showing which files were found |
 
@@ -448,7 +508,23 @@ git diff cabinet/legacyhome/config.cfg
 ```
 
 Check the diff before committing — a devmode session saves *everything* in memory on quit, not just
-what you meant to change. See [`cabinet/README.md`](cabinet/README.md).
+what you meant to change. (`botrandom` is a random seed and always differs; that one is noise.) See
+[`cabinet/README.md`](cabinet/README.md).
+
+### If the configuration goes wrong
+
+Every save first copies the old file to **`config.cfg.bak`**, so a bad write is one `cp` away from
+being undone. A config written from defaults is easy to spot: `name` will be your Unix login rather
+than the player name you set.
+
+Settings that fail to load are **reported at startup** rather than silently ignored, naming the line
+number — an unrecognised setting, or a value the engine rejects, otherwise just leaves that setting
+at its compiled default and looks like the config was half-read. Run **`cfgcheck`** from the console
+to repeat the check at any time.
+
+Expect exactly four reports on a healthy cabinet: `botrandom`, plus `monstergravity`,
+`monsterfriction` and `voodoo_mode`. Those three are DoomLegacy defaults that the competitive
+ruleset deliberately overrides in a player session. Anything else is worth a look.
 
 ---
 
@@ -471,6 +547,10 @@ Add the letter by hand, or re-save from a `-devmode` session.
 Check the HUD for `UNRANKED`. If it's there, either a gameplay setting differs from the standard
 ruleset — the console log names which one — or somebody died. Returning to the attract screen
 resets the ruleset automatically, so starting a fresh game normally clears it.
+
+**The join screen never appears, or panels 3 and 4 have no settings pages.**
+`Control Panels` under Options → Menu Options is still at 1. Nothing about the extra panels shows up
+until the cabinet is told how many it has. Check `Join Time` isn't 0 while you're there.
 
 **Replacement music isn't playing.**
 Check `music_source` is `Auto` rather than `MUS` — that alone disables it, and an older config may
