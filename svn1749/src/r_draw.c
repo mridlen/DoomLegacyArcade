@@ -79,6 +79,8 @@
   //Som: Until I get buffering finished
 #include "r_draw.h"
 #include "r_data.h"
+#include "d_clisrv.h"
+  // [Arcade] D_NumViews, D_View_Cell : the view grid
 
 #ifdef HWRENDER
 #include "hardware/hw_main.h"
@@ -106,8 +108,11 @@ int             view_window_y;
                 // pointer to the start of each line of the screen,
 byte*           ylookup[MAXVIDHEIGHT];
 
-byte*           ylookup1[MAXVIDHEIGHT]; // for view1 (splitscreen)
-byte*           ylookup2[MAXVIDHEIGHT]; // for view2 (splitscreen)
+// [Arcade] The two precomputed half-screen row tables splitscreen used before
+// the view grid existed are gone; R_Set_View_Window() below places the tables
+// on any cell of the grid, which covers the old upper/lower split as its
+// two-view case.  Leaving them would have been a trap: they can only ever
+// describe stacked halves, and nothing tells you so at the call site.
 
                 // x byte offset for columns inside the view_window
                 // so the first column starts at (SCRWIDTH-VIEWWIDTH)/2
@@ -395,6 +400,108 @@ void  R_Setup_Drawmode( void )
 // put here
 
 
+// [Arcade] Size of one cell of the view grid, in screen pixels.  This is what
+// the player sees, so it is the same for both renderers.
+//   1 view  -> the whole screen
+//   2 views -> the stacked halves splitscreen has always drawn
+//   4 views -> a 2x2 grid (three players leave one quadrant unused)
+void  R_View_Cell_Size( int * span_w, int * span_h )
+{
+    byte num_views = D_NumViews();
+    *span_w = vid.width  / ((num_views >= 4) ? 2 : 1);
+    *span_h = vid.height / ((num_views >= 2) ? 2 : 1);
+}
+
+
+// [Arcade] True when the software draw window has been split into columns.
+// Read off the window itself rather than off rendermode: only the software
+// path halves rdraw_scaledviewwidth (r_main.c), because the hardware renderer
+// places its views by GL viewport and reads that width only through
+// vid.fit_width.  So in hardware mode the draw window still spans the screen,
+// and everything below must treat it that way or it would place the tables at
+// a negative x.
+static boolean  R_Draw_Column_Split( void )
+{
+    return (D_NumViews() >= 4) && (rdraw_scaledviewwidth <= (vid.width / 2));
+}
+
+
+// [Arcade] The cell the software draw window occupies, which is the view cell
+// when the software renderer is drawing the grid and the full screen width
+// otherwise.
+static void  R_Draw_Cell_Size( int * span_w, int * span_h )
+{
+    R_View_Cell_Size( span_w, span_h );
+    if( ! R_Draw_Column_Split() )
+        *span_w = vid.width;
+}
+
+
+// [Arcade] True when a view covers its whole cell, so that the views together
+// tile the screen and there is no border or back-screen pattern to draw.
+//
+// This has to compare against the cell, not against vid.width: with the 2x2
+// grid a view fills its cell at half the screen width, and the old
+// "rdraw_scaledviewwidth == vid.width" test reads that as a reduced view
+// window and paints a border around it.  Exactly the trap the hardware
+// renderer had with gr_viewwidth == view_span_w.
+boolean  R_View_Fills_Cell( void )
+{
+    int span_w, span_h;
+    R_Draw_Cell_Size( &span_w, &span_h );
+    return (rdraw_scaledviewwidth == span_w);
+}
+
+
+// [Arcade] Point the draw tables at one view's cell of the screen grid.
+//
+// The engine has always had a horizontal window offset as well as a vertical
+// one -- view_window_x, folded into columnofs[] -- but nothing ever used it
+// for a second *column*, because splitscreen only stacked two half-height
+// views.  That is why d_main.c could get away with swapping between two
+// precomputed ylookup tables, and why the software renderer drew at most two
+// views.  Both axes are placed here now, per view, so a 2x2 grid works.
+//
+// Cheap enough to call per view per frame: two loops of view width + view
+// height ints, about 1100 iterations at 1366x768.
+//
+//   vind : which view, 0 .. D_NumViews()-1
+void R_Set_View_Window( byte vind )
+{
+    byte num_views = D_NumViews();
+    // The panel's cell, not the join order -- see D_View_Cell.
+    byte cell   = (num_views >= 2) ? D_View_Cell(vind) : 0;
+    // Clamped to 0 for a single view: one player gets the whole screen
+    // whichever panel they are at, and an unclamped cell 1 would still push
+    // row to 1 and draw into a half of the screen that is not shown.
+    byte col    = R_Draw_Column_Split() ? (cell & 1) : 0;
+    byte row    = (num_views >= 4) ? (cell >> 1) : cell;
+    int  span_w, span_h;
+    int  i;
+
+    R_Draw_Cell_Size( &span_w, &span_h );
+
+    // Centre the view inside its own cell, not inside the whole screen.
+    view_window_x = (col * span_w) + ((span_w - rdraw_scaledviewwidth) >> 1);
+
+    if( R_View_Fills_Cell() )
+        view_window_y = row * span_h;   // cell top left corner
+    else
+        view_window_y = (row * span_h)
+                        + ((span_h - stbar_height - rdraw_viewheight) >> 1);
+
+    // Column offset for those columns of the view window, but
+    // relative to the entire screen
+    for (i=0 ; i<rdraw_scaledviewwidth ; i++)
+        columnofs[i] = (view_window_x + i) * vid.bytepp;
+
+    // [WDJ] Table fixed for all bpp, bytepp, and padding
+    // Precalculate all row offsets for screen[0] buffer.
+    for (i=0 ; i<rdraw_viewheight ; i++)
+        ylookup[i] = vid.display + (i+view_window_y)*vid.ybytes;
+}
+
+
 // R_Init_ViewBuffer
 // Creates lookup tables for getting the framebuffer address
 // of a pixel to draw.
@@ -403,7 +510,6 @@ void R_Init_ViewBuffer ( int width, int height )
 {
     // ViewBuffer may be smaller than video or screen buffers
     int  bytesperpixel = vid.bytepp;  // smaller code
-    int  i;
 
     if (bytesperpixel<1 || bytesperpixel>4)
     {
@@ -414,29 +520,13 @@ void R_Init_ViewBuffer ( int width, int height )
     // Handle resize,
     //  e.g. smaller view windows
     //  with border and/or status bar.
-    view_window_x = (vid.width - width) >> 1;  // centered
-
-    // Column offset for those columns of the view window, but
-    // relative to the entire screen
-    for (i=0 ; i<width ; i++)
-        columnofs[i] = (view_window_x + i) * bytesperpixel;
-
-    // Same with base row offset.
-    if (width == vid.width)
-        view_window_y = 0;
-    else
-        view_window_y = (vid.height - stbar_height - height) >> 1;
-
-    // [WDJ] Table fixed for all bpp, bytepp, and padding
-    // Precalculate all row offsets for screen[0] buffer.
-    for (i=0 ; i<height ; i++)
-    {
-        ylookup[i] = ylookup1[i] = vid.display + (i+view_window_y)*vid.ybytes;
-                     ylookup2[i] = vid.display + (i+(vid.height>>1))*vid.ybytes; // for splitscreen
-    }
-        
+    // [Arcade] The sizes are already in rdraw_scaledviewwidth/rdraw_viewheight
+    // (which is what the caller passes), so the placement is all that is left,
+    // and the first view is where the tables rest between frames.
+    R_Set_View_Window( 0 );
 
 #ifdef HORIZONTALDRAW
+    int  i;
     //Fab 17-06-98
     // create similar lookup tables for horizontal column draw optimisation
     // [WDJ] assumes screen buffer is width x height, not padded
@@ -530,7 +620,8 @@ void R_FillBackScreen (void)
     }
 
     //added:08-01-98:dont draw the borders when viewwidth is full vid.width.
-    if (rdraw_scaledviewwidth == vid.width)
+    // [Arcade] ... which with a view grid means the view's own cell.
+    if( R_View_Fills_Cell() )
        return;
 
     // view window borders
@@ -646,7 +737,8 @@ void R_DrawViewBorder (void)
         R_VideoErase(ofs,side_brdr);
     }*/
 
-    if (rdraw_scaledviewwidth == vid.width)
+    // [Arcade] Cell, not screen -- see R_View_Fills_Cell.
+    if( R_View_Fills_Cell() )
         return;
    
     // rdraw_viewheight is the height of the window within the border

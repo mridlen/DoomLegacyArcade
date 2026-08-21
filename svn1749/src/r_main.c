@@ -878,6 +878,15 @@ void R_ExecuteSetViewSize (void)
 //    int         aspectf_x;  //added:02-02-98:for aspect ratio calc. below...
 
     setsizeneeded = false;
+
+    // [Arcade] The software renderer draws a 2x2 grid by halving its own draw
+    // window and moving it per view (R_Set_View_Window, r_draw.c).  Gated on
+    // the renderer because the hardware one places its views by GL viewport
+    // instead, and reads these widths only through vid.fit_width/fit_height --
+    // halving those would change the projection, the texture mapping and the
+    // weapon sprite scale of a layout that already works.
+    boolean  soft_grid = (rendermode == render_soft) && (D_NumViews() >= 4);
+
     // no reduced view in splitscreen mode
     if( (D_NumViews() >= 2) && (cv_viewsize.value < 11) )
         CV_SetValue (&cv_viewsize, 11);
@@ -935,11 +944,17 @@ void R_ExecuteSetViewSize (void)
 
     // added 16-6-98:splitscreen
     // [Arcade] Any multi-view layout halves the height; the 2x2 grid halves
-    // the width too, but only the hardware renderer can place those columns
-    // (r_draw.c has just the two stacked ylookup tables), so the software
-    // renderer keeps drawing full width and shows at most two views.
+    // the width as well.  Both renderers can place those columns now -- the
+    // software one through R_Set_View_Window (r_draw.c), which puts the view's
+    // x offset into columnofs[] the same way the y offset has always gone into
+    // ylookup[].  Must come before rdraw_viewwidth is derived below, and
+    // before centerx/centery and the projection, which all follow from it: a
+    // cell has the screen's own aspect, so halving both axes leaves the field
+    // of view unchanged.
     if( D_NumViews() >= 2 )
         rdraw_viewheight >>= 1;
+    if( soft_grid )
+        rdraw_scaledviewwidth >>= 1;
 
     detailshift = setdetail;
     rdraw_viewwidth = rdraw_scaledviewwidth>>detailshift;
@@ -985,7 +1000,13 @@ std_fit:
     GenPrintf(EMSG_debug, " base_ratio %i\n", base_ratio );
 #endif
     vid.fit_width = rdraw_viewwidth;
-    vid.fit_height = vid.height;   // not rdraw_viewheight because of splitwindow
+    // not rdraw_viewheight because of splitwindow: two views keep the
+    // full-height projection, which is the vertical squash splitscreen has
+    // always had.  [Arcade] A 2x2 cell is a different case -- it has very
+    // nearly the screen's own aspect ratio and must not be squashed, which is
+    // the same distinction the hardware renderer draws with
+    // atransform.splitscreen = (D_NumViews() == 2).
+    vid.fit_height = soft_grid ? (vid.height / 2) : vid.height;
     switch( viewfit_ev )
     {
      default:
@@ -1492,7 +1513,11 @@ void R_SetupFrame( byte pind, player_t* player )
         aimingangle = G_ClipAimingPitch(aimingangle);	// limit aimingangle
 
         // [WDJ] cleaned up
-        dy = cv_splitscreen.EV ? rdraw_viewheight*2 : rdraw_viewheight ;
+        // [Arcade] D_NumViews, not cv_splitscreen: the view height is halved
+        // by the view count, and cv_localplayers can halve it with the
+        // splitscreen cvar still off.  Views and local players are different
+        // things -- the same conflation that broke G_BuildTiccmd.
+        dy = (D_NumViews() >= 2) ? rdraw_viewheight*2 : rdraw_viewheight ;
         dy = ( dy * AIMINGTODY(aimingangle) )/ BASEVIDHEIGHT ;
 
         yslope = &yslopetab[(3*rdraw_viewheight/2) - dy];

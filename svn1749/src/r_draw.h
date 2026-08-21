@@ -59,9 +59,17 @@
 // COMMON STUFF FOR 8bpp AND 16bpp
 // -------------------------------
 extern byte*            ylookup[MAXVIDHEIGHT];
-extern byte*            ylookup1[MAXVIDHEIGHT];
-extern byte*            ylookup2[MAXVIDHEIGHT];
 extern int              columnofs[MAXVIDWIDTH];
+
+// [Arcade] Place the draw tables on one view's cell of the view grid.
+// Both tables carry the view's position, so any cell can be drawn, not just
+// the stacked halves splitscreen used to have.
+void     R_Set_View_Window( byte vind );
+// Size of one cell of the view grid, in screen pixels.
+void     R_View_Cell_Size( int * span_w, int * span_h );
+// True when a view covers its whole cell, so the views tile the screen and
+// no border is needed.  Use this, not "rdraw_scaledviewwidth == vid.width".
+boolean  R_View_Fills_Cell( void );
 
 #ifdef HORIZONTALDRAW
 //Fab 17-06-98

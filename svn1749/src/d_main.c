@@ -856,7 +856,10 @@ void D_Display(void)
         if (!automapactive)
         {
             // see if the border needs to be updated to the screen
-            if( rdraw_scaledviewwidth != vid.width )
+            // [Arcade] Against the view's own cell, not the whole screen: a
+            // view in the 2x2 grid is half the screen wide and still has no
+            // border, and this test would otherwise paint one every frame.
+            if( ! R_View_Fills_Cell() )
             {
                 // the menu may draw over parts out of the view window,
                 // which are refreshed only when needed
@@ -889,10 +892,10 @@ void D_Display(void)
             // added 16-6-98: render the second screen
             // [Arcade] ... and the third and fourth.  Views past the first
             // are taken from localplayer[], not from displayplayer2_ptr,
-            // which only ever named the second of two.  The hardware
-            // renderer places each view in its cell of the grid (see
-            // HWR_RenderPlayerView); the software renderer still has only
-            // the two stacked half-screen tables, so it draws at most two.
+            // which only ever named the second of two.  Each renderer places
+            // the view in its own cell of the grid: the hardware one by
+            // viewport (HWR_RenderPlayerView), the software one by moving the
+            // draw tables (R_Set_View_Window).
             {
                 byte vind, num_views = D_NumViews();
                 for( vind=1; vind<num_views; vind++ )
@@ -900,7 +903,25 @@ void D_Display(void)
                     byte pn = localplayer[vind];
                     player_t * vpl;
 
-                    if( pn >= MAXPLAYERS )  continue;   // panel with no player
+                    if( pn >= MAXPLAYERS )
+                    {
+                        // [Arcade] Panel with no player: black out its cell.
+                        // Three players use the 2x2 grid and leave the fourth
+                        // quadrant unused, and nothing else clears it -- the
+                        // hardware renderer's per-frame clear is depth only
+                        // (HWR_ClearView) and the software renderer draws
+                        // straight into the screen buffer -- so the cell kept
+                        // whatever was last drawn there, frozen, which reads
+                        // as the renderer having crashed.
+                        int span_w, span_h;
+                        byte cell = D_View_Cell(vind);
+                        R_View_Cell_Size( &span_w, &span_h );
+                        V_SetupDraw( 0 | V_NOSCALE );  // screen 0, vid coords
+                        V_DrawVidFill( (num_views >= 4)? ((cell & 1) * span_w) : 0,
+                                       ((num_views >= 4)? (cell >> 1) : cell) * span_h,
+                                       span_w, span_h, 0 );
+                        continue;
+                    }
                     vpl = &players[pn];
                     if( ! vpl->mo )  continue;
 
@@ -912,23 +933,23 @@ void D_Display(void)
                         HWR_RenderPlayerView(vind, vpl);
                     else
 #endif
-                    if( vind == 1 )
                     {
-                        // Alter the draw tables to draw into second player window
-                        //faB: Boris hack :P !!
-                        view_window_y = vid.height / 2;
-                        memcpy(ylookup, ylookup2, rdraw_viewheight * sizeof(ylookup[0]));
-
-                        R_RenderPlayerView(1, vpl);
-
-                        // Restore first player tables
-                        view_window_y = 0;
-                        memcpy(ylookup, ylookup1, rdraw_viewheight * sizeof(ylookup[0]));
+                        // Alter the draw tables to draw into this view's cell.
+                        // Was Boris' hack for the second player window, which
+                        // could only ever be the lower half of the screen.
+                        R_Set_View_Window( vind );
+                        R_RenderPlayerView(vind, vpl);
                     }
 #ifdef CLIENTPREDICTION2
                     vpl->mo->flags2 &= ~MF2_DONTDRAW;
 #endif
                 }
+
+                // Restore the draw tables to the first view, which the border,
+                // the automap, the pause patch and the message eraser all read
+                // through view_window_x/y.
+                if( (num_views > 1) && (rendermode == render_soft) )
+                    R_Set_View_Window( 0 );
             }
         }
 

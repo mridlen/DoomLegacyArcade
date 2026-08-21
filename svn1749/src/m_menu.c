@@ -480,11 +480,10 @@ consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
 // a -devmode session, like cv_twoplayer above.
 //
 // This is the count of players that *join* on this machine, which is a
-// separate thing from cv_splitscreen, the two-view render toggle.  Players
-// past the second currently join, take controls and play, but have no
-// viewport of their own -- the renderer splits into at most two halves (see
-// r_main.c "rdraw_viewheight >>= 1" and r_draw.c's ylookup1/ylookup2).
-// Raising this past 2 is only useful once that is addressed.
+// separate thing from cv_splitscreen, the two-view render toggle.  Each of
+// them gets a viewport: one player the whole screen, two the stacked halves,
+// three or four a 2x2 grid -- in both renderers (see D_NumViews, and
+// R_Set_View_Window in r_draw.c for the software one).
 CV_PossibleValue_t localplayers_cons_t[] = {{1,"1"},{2,"2"},{3,"3"},{4,"4"},{0,NULL}};
 consvar_t cv_localplayers = {"localplayers", "1", CV_SAVE, localplayers_cons_t };
 

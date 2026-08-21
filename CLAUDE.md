@@ -409,9 +409,10 @@ silently made the flag do nothing at all.
   - **`cv_localplayers`** ("localplayers", 1..4, default 1, `CV_SAVE`) is how many players join on
     this machine — an operator setting like `cv_twoplayer`. It is **not** `cv_splitscreen`, which
     is only the two-view render toggle. `D_NumLocalPlayers()` clamps it.
-  - **Players 3 and 4 play but are not drawn.** The renderer splits into at most two stacked
-    halves (`r_main.c` `rdraw_viewheight >>= 1`, and `r_draw.c` has exactly `ylookup1`/`ylookup2`,
-    view 2 at `vid.height>>1`). A 2x2 split needs per-view *horizontal* offsets, which have no
+  - **Players 3 and 4 played but were not drawn** *at this phase* — the renderer split into at
+    most two stacked halves (`r_main.c` `rdraw_viewheight >>= 1`, and `r_draw.c` had exactly
+    `ylookup1`/`ylookup2`, view 2 at `vid.height>>1`). Phases 2 and 3 below gave them viewports;
+    this paragraph is the starting state, not the current one. A 2x2 split needs per-view *horizontal* offsets, which have no
     precedent in the code — that is Phase 2, along with re-deriving the HUD placement.
   - What Phase 1 changed, and why each was load-bearing:
     - `SV_commit_player` refused a third player outright (`if( pind > 1 ) return 255`).
@@ -448,7 +449,8 @@ silently made the flag do nothing at all.
   - Verified headless: `localplayers` 1/2/3/4 each joined exactly that many players, filling slots
     0..3 with real mobjs and surviving. Controls: `splitscreen 1` still gives the normal two player
     split (`multiplayer=1`), and the stock default is untouched at one player.
-  - **Phase 2 (viewports) is done for the hardware renderer.** `D_NumViews()` returns 1, 2 or 4:
+  - **Phase 2 (viewports) is done for both renderers** — the hardware one first, the software
+    one in Phase 3 below. `D_NumViews()` returns 1, 2 or 4:
     one view is the whole screen, two are the stacked halves splitscreen always had, and three or
     four are a **2x2 grid** (three players leave one quadrant unused, rather than inventing a
     third layout). `pind` 0..3 reads left-to-right then top-to-bottom, so panel order matches
@@ -474,9 +476,59 @@ silently made the flag do nothing at all.
       2-view projection squash: `atransform.splitscreen` is now `(D_NumViews() == 2)`, and the
       same for the weapon-sprite nudge that keys off fov 90.
     - `viewsv_need_sky[]` and `view_dynlights[]` were `[2]`, indexed by view number.
-    - **The software renderer still draws at most two views** and is left that way: `r_draw.c` has
-      exactly `ylookup1`/`ylookup2` for stacked halves, and columns would need per-view
-      `view_window_x` tables. `D_Display` renders view 0 plus, for the software path, view 1 only.
+    - **Phase 3: the software renderer draws the 2x2 grid too.** It used to draw at most two
+      views — `r_draw.c` had exactly `ylookup1`/`ylookup2` for stacked halves, and `D_Display`
+      rendered view 0 plus, for the software path, a view 1 hardwired to the lower half. With
+      four panels that produced **two half-screen views and four HUDs**, which is what a
+      software-mode cabinet actually showed.
+      - **The mechanism was already there and unused.** The software renderer has always had a
+        horizontal window offset as well as a vertical one — `view_window_x`, folded into
+        `columnofs[]` by `R_Init_ViewBuffer` — but nothing ever used it for a second *column*,
+        because splitscreen only ever stacked. **`R_Set_View_Window(vind)`** (`r_draw.c`) now
+        places both tables on any cell of the grid, and `D_Display` calls it per view. The two
+        precomputed half-screen tables are **gone**: they can only describe stacked halves and
+        nothing said so at the call site.
+      - **Only the software path halves the width**, gated on `rendermode` by `soft_grid` in
+        `R_ExecuteSetViewSize`. The hardware renderer places its views by GL viewport and reads
+        `rdraw_viewwidth` only through **`vid.fit_width`/`fit_height`**, which feed
+        `atransform.scalex/scaley`, `HWR_Init_TextureMapping`'s focal length and
+        `gr_pspritescale_*` — halving those visibly widened the OpenGL field of view and
+        resized the weapon sprite. **Anything that touches `rdraw_*` reaches the hardware
+        renderer through `vid.fit_*`**; check there before assuming the two paths are separate.
+      - `r_draw.c` keeps the two questions apart: `R_View_Cell_Size()` is the **view grid the
+        player sees** (both renderers, used to black out an unclaimed cell), while
+        `R_Draw_Cell_Size()`/`R_Draw_Column_Split()` describe the **software draw window**,
+        which still spans the screen in hardware mode. Placing a view with the wrong one of the
+        two puts `view_window_x` at a negative value in OpenGL.
+      - **The border tests had to become cell-relative**, the same trap the hardware renderer hit
+        with `gr_viewwidth == view_span_w`: `rdraw_scaledviewwidth == vid.width` reads a
+        half-width cell as a reduced view window, so `D_Display`, `R_FillBackScreen` and
+        `R_DrawViewBorder` would paint a border around every quadrant. They ask
+        **`R_View_Fills_Cell()`** now.
+      - **The freelook aiming shift asked `cv_splitscreen`** (`R_SetupFrame`'s
+        `dy = cv_splitscreen.EV ? rdraw_viewheight*2 : ...`). The view height is halved by the
+        *view count*, and `cv_localplayers` halves it with that cvar still off — the same
+        views-versus-local-players conflation that broke `G_BuildTiccmd`. It asks `D_NumViews()`.
+      - **A cell with no player is filled black** (`D_Display`). Three players use the 2x2 and
+        leave the fourth quadrant unused, and *neither* renderer was clearing it — the hardware
+        per-frame clear (`HWR_ClearView`) is depth only, and the software renderer draws straight
+        into the screen buffer — so it kept the last thing drawn there, frozen, which reads as a
+        crashed renderer.
+      - Sprite, psprite and corona clipping already clamp to `rdraw_viewwidth`
+        (`r_things.c:1919/2193/2910`), so nothing can bleed into the next cell horizontally; the
+        `vid.width` tests near `r_things.c:3529` are coarse off-screen rejects, with the fine
+        clip after them. The half-*height* case has relied on exactly this for years.
+      - **Software rendering cannot be exercised headless** — SDL's dummy and offscreen drivers
+        both end in the `R_DrawColumn_32` segfault, at any player count including one, because
+        the surface never matches the mode the engine thinks it set. Verified instead by
+        printing each view's draw window through a temporary console command, with `soft_grid`
+        temporarily forced true so the OpenGL harness computes the *software* numbers. At
+        1024x768, four views: cells 512x384 at `0,0` `512,0` `0,384` `512,384`, each view's
+        `columnofs` and `ylookup` confined to its own cell, and the highest byte written exactly
+        `width*height*bytepp` — the buffer end, no overrun. One and two views are unchanged.
+      - The OpenGL path was required to stay **byte-identical**, and is: screenshots at 1, 2 and
+        4 players differ in 0 of 786432 pixels. Three players differ only inside the
+        bottom-right quadrant, which is now pure black instead of stale image.
     - Verified numerically rather than by eye, printing each view rectangle at 1366x768:
       1 view `0,0 1366x768`; 2 views `0,0` and `0,384`, each 1366x384; 4 views `0,0` `683,0`
       `0,384` `683,384`, each 683x384 — tiling the screen exactly. Three players give the first
