@@ -1322,6 +1322,21 @@ void D_DoAdvanceDemo(void)
     players[consoleplayer].playerstate = PST_LIVE;      // not reborn
     gameaction = ga_nothing;
 
+    // [Arcade] Clear any palette tint the level left behind.
+    //
+    // ST_doPaletteStuff is only called while a player view is being
+    // rendered, so whatever it last set simply stays: finish a level wearing
+    // a radiation suit and the attract screen is green, take a hit at the
+    // exit switch and it is red.  The score pages show it worst, being a
+    // full screen fill, but the title and credit pages inherit it too.
+    //
+    // ST_Palette0 is the existing reset -- it handles the hardware flash
+    // path as well as the 8-bit one, and updates st_palette so the next
+    // ST_doPaletteStuff still sees a correct previous value.  The only other
+    // route to it is ST_Stop, which runs from ST_Start, i.e. when the *next*
+    // level begins -- far too late for anything drawn in between.
+    ST_Palette0();
+
     // [Arcade] Show the high score table after each demo rather than once
     // per cycle, so it comes around often.  Interposed here instead of being
     // another demosequence case: the cases are shared between game modes and
@@ -4145,3 +4160,4 @@ static void Help( void )
      break;
   }
 }
+
