@@ -3049,13 +3049,18 @@ void  M_Initials_Ticker( void )
     // that is just the attract screen running underneath.
     if( gamestate == GS_LEVEL && ! demoplayback )  return;
 
-    // [Arcade] Nor over the ending.  A completed episode commits its run at
-    // the finale start (G_NextLevel), so the place is already safe on disk;
-    // asking for a name across the ending text would step on the reward for
-    // finishing.  The player is asked once the finale is done -- by pressing
-    // through it, or by the idle timeout, which covers GS_FINALE and returns
-    // to the title on its own.
-    if( gamestate == GS_FINALE )  return;
+    // [Arcade] The ending is deliberately NOT excluded, though it looks like
+    // it should be.  Waiting for the finale to finish meant the player was
+    // almost never asked: a Doom 1 ending screen is terminal -- you do not
+    // finish it, you leave it -- so gamestate stayed GS_FINALE until they
+    // quit, and the entry kept its "---" placeholder.  Only sitting out the
+    // full idle timeout on the ending screen ever produced a prompt.
+    //
+    // Asking over the ending is also what an arcade machine does: finish the
+    // last level, sign the board, then watch the ending.  M_Drawer runs
+    // "even on top of everything" (d_main.c) so the page renders over the
+    // finale, and M_Responder is called before G_Responder, so it takes the
+    // keys rather than the finale advancing underneath.
 
     M_Initials_Open();
 }

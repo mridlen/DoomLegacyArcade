@@ -1197,9 +1197,22 @@ silently made the flag do nothing at all.
     - The run is committed **at the finale start**, not when the ending is over, so the place
       survives the player quitting during the credits. Only the *initials* are lost in that case,
       and the entry keeps the `---` placeholder.
-    - `M_Initials_Ticker` correspondingly **refuses to open during `GS_FINALE`**, so the prompt
-      does not paint over the ending text; the player is asked once the finale is done, by
-      pressing through it or by the idle timeout returning to the title.
+    - **The prompt is raised over the ending, and `M_Initials_Ticker` deliberately does not
+      exclude `GS_FINALE`.** It did at first, to avoid painting over the ending text, and that was
+      wrong: a Doom 1 ending screen is *terminal* — you do not finish it, you leave it — so
+      gamestate stayed `GS_FINALE` until the player quit and the entry kept its `---` placeholder.
+      Only sitting out the whole 60s idle timeout on the ending screen ever produced a prompt,
+      which is why this presented as "it skipped the initials again" even after the commit itself
+      was fixed. Asking over the ending is also what an arcade machine does: finish the last
+      level, sign the board, then watch the ending.
+    - Two things make that safe, and both are worth knowing before putting any other page up
+      during a finale: `M_Drawer` is called "even on top of everything" (`d_main.c`), so the page
+      renders over it; and `M_Responder` runs **before** `G_Responder` in `D_ProcessEvents`, so
+      the page takes the keys instead of the finale advancing underneath.
+    - **Test the prompt inside a window shorter than `cv_idletimeout`.** The idle timeout covers
+      `GS_FINALE` and reaches the prompt by its own route (`Command_ExitGame_f` → title), so a
+      test longer than 60s passes whether or not this works. The verification run is 30s against
+      the cabinet's 60s timeout.
     - Verified headless, driving the intermission with a temporary console accelerate: E1M8 gives
       `finale_pending=1` then a committed `doomu E1M8 E1M8 0 speed 104` entry with no
       `Command_ExitGame_f` involved at all, and `AAA` once the run is allowed to reach the title;
