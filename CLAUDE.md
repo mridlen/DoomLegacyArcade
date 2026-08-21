@@ -1051,6 +1051,27 @@ silently made the flag do nothing at all.
   so a stock IWAD demo is never captioned with the previous record's text. Drawn on the **second**
   text line (y=8), because item pickups still print messages at y=0 during playback.
 
+  A blinking **`PRESS FIRE TO START`** is drawn over the same demos (`hu_stuff.c`, `HU_Drawer`) —
+  the arcade "insert coin" on a machine that takes no coins. It is only a prompt: **`G_Responder`
+  already pops up the menu on any keypress while a demo plays** (`g_game.c`, the "any other key
+  pops up menu if in demos" branch), so fire has always started the way into a game and nothing on
+  the attract screen said so.
+  - Shown on `demoplayback && ! menuactive`, so it is not painted behind an open menu. That also
+    means it appears over a Single Level **"watch run"** replay, which is harmless — fire ends the
+    replay and opens the menu there too.
+  - Blink is `gametic & 16`, the same cadence as the intermission's `NEW RECORD` marker.
+  - **Placed clear of the status bar in either of its forms**, since a demo is drawn at whatever
+    viewsize the cabinet is set to: the classic bar's top is `BASEVIDHEIGHT - ST_HEIGHT` = 168 and
+    the overlay's lower row is at 182 (`st_stuff.c`'s `SCY(198) - 16`), so the text goes at
+    **160**, spanning 160..167 for `hu_font`'s 7-tall glyphs. Width measured from the real `STCFN`
+    lumps: **133px of 320**, centred by `V_StringWidth` so it follows any rewording.
+  - It does cross the **weapon sprite**, which draws up the middle of the screen in every mode.
+    Unavoidable for anything centred that low — the same constraint that pushed the HUD clock off
+    centre — and the blink is what keeps it readable against the moving demo.
+  - Only the demos carry it. The title and `CREDIT`/`CREDIT2` pages are `GS_DEMOSCREEN`, which
+    `D_Display` does not call `HU_Drawer` for; they draw through `D_PageDrawer` and would need
+    their own call.
+
   **The attract cycle is a fixed four steps** (`d_main.c`, the `attract_*` enum): title → `CREDIT`
   → `CREDIT2` → one demo, repeating. It replaces the stock 6-step sequence (7 under the retail
   divisor), which showed `CREDIT` only once per three demos and filled the rest with the help and

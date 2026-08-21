@@ -38,7 +38,8 @@ Discord is likely to get you banned.
   intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
   kills and secrets on every level so far).
 - **Record demos.** The run that set each record is saved and replayed in the attract cycle,
-  captioned with its map, skill and time.
+  captioned with its map, skill and time, under a blinking **PRESS FIRE TO START** — the arcade
+  "insert coin" on a machine that takes no coins.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.

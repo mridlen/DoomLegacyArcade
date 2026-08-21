@@ -727,6 +727,35 @@ void HU_Drawer(void)
         }
     }
 
+    // [Arcade] The arcade "insert coin", on a cabinet that takes no coins:
+    // a blinking prompt over the attract screen's demos telling a passer-by
+    // how to start.  It is not a lie -- G_Responder already pops up the menu
+    // on any keypress while a demo is playing, so fire really does open the
+    // way to a game; nothing on the attract screen said so.
+    if( demoplayback && ! menuactive && (gametic & 16) )
+    {
+        // Blink cadence matches the intermission's NEW RECORD marker, and
+        // wi_stuff.c's own flashing pointer: gametic (not leveltime), 16 tics
+        // on and 16 off.
+        //
+        // Placed clear of the status bar in *either* of its forms, since the
+        // demo is drawn at whatever viewsize the cabinet is set to: the
+        // classic bar's top is BASEVIDHEIGHT - ST_HEIGHT = 168, and the
+        // overlay's lower row sits at 182 (st_stuff.c's SCY(198) - 16).  At
+        // 168 - 8 = 160 the text spans 160..167 (hu_font glyphs are 7 tall),
+        // clearing both.  Width was measured from the real STCFN lumps at
+        // 133px of 320, so it centres with room to spare.
+        //
+        // It does cross the weapon sprite, which draws up the middle of the
+        // screen in every mode -- unavoidable for anything centred down here,
+        // and the blink is what keeps it readable against the moving demo.
+        static const char press_fire[] = "PRESS FIRE TO START";
+        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth(press_fire)) / 2,
+                      BASEVIDHEIGHT - ST_HEIGHT - 8,
+                      V_WHITEMAP, (char*) press_fire );
+    }
+
     // [Arcade] Standing reminder that this run will not be scored, so a
     // player who changed a setting is not surprised at the intermission.
     if( !demoplayback && !devmode && !HS_Run_Is_Ranked() )
