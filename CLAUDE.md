@@ -1568,6 +1568,15 @@ five adds the category, six adds the start map. A record with no start map is ne
 empty field — `-` stands in, or it would shift every field after it on the next read.
 `runs.dat` writes `---` for initials nobody entered, and reads that back as empty.
 
+**Every placeholder must be converted back on load, or it becomes a value.** This is written twice
+in each file — `-` for an unknown start map, `---` for unentered initials — and the load side has
+to undo both. Missing the `-` conversion in `HS_Load` made an unknown start map read as a map
+literally named `-`, which differs from the record's own map and so satisfied exactly the test the
+caption uses to decide it has a range: attract captions came out as **`--E4M1`** and
+**`SINGLE LEVEL: --E1M1`**. Nothing was corrupted on disk — the file was always right and only the
+read was wrong — which is why it showed up as a display oddity rather than lost data, and why no
+migration was needed to fix it.
+
 To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
 command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory tables
 as well as the files — `runs.dat` goes with `highscores.dat`, since leaving it would put named

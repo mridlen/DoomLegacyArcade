@@ -515,9 +515,14 @@ static void HS_Load( void )
         if( ! rec )  continue;
         rec->has_record[cat][skillnum] = true;
         rec->besttime[cat][skillnum]   = (tic_t) tics;
-        // No start map recorded (a line written before this field existed):
-        // leave it empty and let the caption fall back to the bare map name
-        // rather than inventing a range that may not be true.
+        // No start map recorded -- either a line written before this field
+        // existed, or one HS_Save wrote "-" into because it did not know.
+        // *Both must read back as empty.*  Taking the "-" literally makes it
+        // a map name that differs from this record's map, which is exactly
+        // what the caption treats as a range: it produced "--E4M1" and
+        // "SINGLE LEVEL: --E1M1".  The placeholder is written so the field
+        // cannot shift on the next read (see HS_Save); it is not a value.
+        if( strcmp(startmap, "-") == 0 )  startmap[0] = 0;
         dl_strncpy( rec->startmap[cat][skillnum], startmap, 8 );
     }
 
@@ -665,9 +670,12 @@ static void HS_Runs_Load( void )
         r->skill = (byte) skillnum;
         r->cat   = (byte) cat;
         r->tics  = (tic_t) tics;
-        // "---" is the placeholder written for a run nobody claimed; read it
-        // back as empty so one code path covers both.
+        // "---" is the placeholder written for a run nobody claimed, and "-"
+        // the one for an unknown start map; read both back as empty so one
+        // code path covers them.  A placeholder taken literally becomes a
+        // value, which is how "--E4M1" happened in the split table.
         if( strcmp(initials, "---") == 0 )  initials[0] = 0;
+        if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
         dl_strncpy(r->initials, initials, HS_INITIALS_LEN);
     }
 
@@ -706,9 +714,16 @@ static void HS_Runs_Save( void )
     for( i=0; i<hs_runs_count; i++ )
     {
         const char * ini = hs_runs[i].initials;
+        const char * sm  = hs_runs[i].startmap;
         if( ini[0] == 0 )  ini = "---";
+        // Never write an empty field, for the same reason as HS_Save: it
+        // would shift every field after it on the next read.  A committed
+        // run always has a start map, so this is belt and braces -- but an
+        // empty one here would silently reparse the *end* map as the start
+        // map, which is the kind of corruption that is very hard to see.
+        if( sm[0] == 0 )  sm = "-";
         fprintf(fw, "%s %s %s %d %s %u %s\n",
-                hs_runs[i].game, hs_runs[i].startmap, hs_runs[i].endmap,
+                hs_runs[i].game, sm, hs_runs[i].endmap,
                 (int) hs_runs[i].skill, hs_catname[hs_runs[i].cat],
                 (unsigned int) hs_runs[i].tics, ini);
     }
