@@ -128,11 +128,26 @@ static char    hs_run_gameid[HS_GAMEID_LEN] = "";
 static boolean hs_run_board_ok = true;
 
 // Set by HS_Run_Finished when the finished run took a place; cleared by
-// HS_Set_Initials.  hs_run_placed[] indexes the entries to stamp -- one run
-// can place in both categories at once.
+// HS_Set_Initials.
 static boolean hs_initials_pending = false;
-static int     hs_run_placed[HS_NUMCAT];
-static int     hs_run_placed_n = 0;
+// Board places this run took, so the initials can be stamped on all of them.
+// A list of full keys rather than a list of categories, because one run can
+// now place on *two different boards*: a campaign run that stops after its
+// first level also competes on that map's single level board (see
+// HS_Score_As_Single_Level), so it may hold a campaign entry and a single
+// level entry at once, under different game ids and different maps.
+typedef struct
+{
+    char   game[HS_GAMEID_LEN];
+    char   endmap[9];
+    byte   skill;
+    byte   cat;
+    tic_t  tics;
+} hs_placement_t;
+
+#define HS_MAX_PLACED  (HS_NUMCAT * 2)   // campaign + single level, both cats
+static hs_placement_t hs_placed[HS_MAX_PLACED];
+static int     hs_placed_n = 0;
 static int     hs_run_best_place = 0;
 
 // =========================================================================
@@ -362,11 +377,14 @@ static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV"
 // [Arcade] "single" gives the single-level table its own key, which is all
 // that is needed to keep those runs from mixing with campaign ones: records,
 // record demo filenames and the attract page are all selected by this id.
-// The two attract-screen consumers deliberately disagree about it:
-// HS_Entry_Eligible takes campaign only, so the score *pages* stay campaign
-// times whatever mode the cabinet was last left in (and do not double in
-// number), while HS_NextRecordDemoPath replays both -- a one map demo is
-// just a demo, and captioning it costs the cycle nothing.
+// Both attract-screen consumers now take both ids: the score pages give
+// campaign and single level times their own page families (HS_Build_Pages),
+// and HS_NextRecordDemoPath replays demos from either.  This is *not* how it
+// started -- the pages were campaign only, to stop single level times
+// leaking on whenever single_level_mode happened to still be set, and to
+// stop the page count doubling.  Bounding the cycle to a few pages per
+// appearance removed the second objection, and asking for the mode
+// explicitly rather than reading the flag removed the first.
 static const char * HS_GameId_Mode( boolean single )
 {
     static char  id[HS_GAMEID_LEN];
@@ -450,15 +468,6 @@ static void HS_Format_Range( const char * start, const char * mapname,
         snprintf( out, outsize, "%.8s-%.8s", start, mapname );
     else
         snprintf( out, outsize, "%.8s", mapname );
-}
-
-
-static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
-{
-    int seconds = tics / TICRATE;
-    int minutes = seconds / 60;
-    int secs    = seconds % 60;
-    snprintf(buf, bufsize, "%d:%02d", minutes, secs);
 }
 
 
@@ -947,8 +956,99 @@ static void  HS_Run_Reset( void )
     hs_run_endmap_max  = false;
     hs_run_gameid[0]   = 0;
     hs_initials_pending = false;
-    hs_run_placed_n    = 0;
+    hs_placed_n        = 0;
     hs_run_best_place  = 0;
+}
+
+
+// Put a run on its board and, if it placed, remember the key so the initials
+// can be stamped on that exact entry once the player has entered them.
+// Deliberately keyed rather than indexed: the array is re-sorted and pruned
+// by later inserts, so a stored slot number would not survive.
+static void  HS_Record_Placement( const hs_run_t * run )
+{
+    int place = HS_Board_Insert( run );
+
+    if( place <= 0 )  return;
+
+    if( hs_placed_n < HS_MAX_PLACED )
+    {
+        hs_placement_t * p = &hs_placed[ hs_placed_n++ ];
+        dl_strncpy( p->game, run->game, HS_GAMEID_LEN-1 );
+        dl_strncpy( p->endmap, run->endmap, 8 );
+        p->skill = run->skill;
+        p->cat   = run->cat;
+        p->tics  = run->tics;
+    }
+
+    if( hs_run_best_place == 0 || place < hs_run_best_place )
+        hs_run_best_place = place;
+}
+
+
+// [Arcade] A campaign run that has only finished its *first* level is
+// directly comparable with a Single Level run of that map, so it competes on
+// the same tables: both are pistol starts of one map, and at the first exit
+// the run's cumulative time is exactly that level's time.
+//
+// **Only the first level.** A campaign MAP02 begins with whatever was
+// carried out of MAP01, while a Single Level MAP02 is a pistol start, so
+// merging those would compare two different things.  Later exits of a
+// campaign run never reach here.
+static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
+                                       tic_t tics )
+{
+    const char *      sl_id = HS_GameId_Mode( true );
+    char              gid[HS_GAMEID_LEN];
+    hs_maprecord_t *  rec;
+    int               cat;
+
+    // HS_GameId_Mode hands back one static buffer, so copy before anything
+    // else calls it.
+    dl_strncpy( gid, sl_id, HS_GAMEID_LEN-1 );
+
+    rec = HS_FindOrAddRecord( gid, mapname );
+    if( rec == NULL )  return;   // table full
+
+    for( cat=0; cat<HS_NUMCAT; cat++ )
+    {
+        hs_run_t run;
+
+        if( cat == HS_CAT_max && ! hs_run_is_max )  continue;
+
+        if( ! rec->has_record[cat][skill]
+            || tics < rec->besttime[cat][skill] )
+        {
+            rec->has_record[cat][skill] = true;
+            rec->besttime[cat][skill]   = tics;
+            // One map, so the range is the bare name either way.
+            dl_strncpy( rec->startmap[cat][skill], mapname, 8 );
+
+            if( demorecording )
+            {
+                // The buffer holds exactly this one level at this point, so
+                // a snapshot of it *is* a valid single level demo.
+                char demopath[MAX_WADPATH];
+                HS_BuildDemoPath( demopath, gid, mapname, skill, cat );
+                G_SnapshotDemo( demopath );
+            }
+        }
+
+        // The single level board takes it too, so a campaign first level can
+        // hold a top three place beside runs started from the Single Level
+        // menu.  Recorded now, but the initials prompt is still only raised
+        // when the whole run ends.
+        memset( &run, 0, sizeof(run) );
+        dl_strncpy( run.game, gid, HS_GAMEID_LEN-1 );
+        dl_strncpy( run.startmap, mapname, 8 );
+        dl_strncpy( run.endmap, mapname, 8 );
+        run.skill = (byte) skill;
+        run.cat   = (byte) cat;
+        run.tics  = tics;
+        HS_Record_Placement( &run );
+    }
+
+    HS_Save();
 }
 
 
@@ -973,13 +1073,8 @@ void  HS_Run_Finished( void )
         return;
     }
 
-    hs_run_placed_n   = 0;
-    hs_run_best_place = 0;
-
     for( cat=0; cat<HS_NUMCAT; cat++ )
     {
-        int place;
-
         // The max board only takes runs that were still 100% at the point
         // they stopped; the speed board takes every scored run.
         if( cat == HS_CAT_max && ! hs_run_endmap_max )  continue;
@@ -992,20 +1087,16 @@ void  HS_Run_Finished( void )
         run.cat   = (byte) cat;
         run.tics  = hs_run_tics;
 
-        place = HS_Board_Insert( &run );
-        if( place > 0 )
-        {
-            // Remember where it went so the initials can be stamped on
-            // exactly these entries once the player has entered them.
-            hs_run_placed[hs_run_placed_n++] = cat;
-            if( hs_run_best_place == 0 || place < hs_run_best_place )
-                hs_run_best_place = place;
-        }
+        HS_Record_Placement( &run );
     }
 
-    if( hs_run_placed_n > 0 )
+    if( hs_placed_n > 0 )
     {
         HS_Runs_Save();          // the place is real even if nobody claims it
+        // Armed only here, at the end of the run.  A placement can be
+        // recorded much earlier -- the single level one is taken at the
+        // first level exit -- and raising the prompt then would put it over
+        // the intermission of a game still in progress.
         hs_initials_pending = true;
         GenPrintf( EMSG_info, "Run placed %d on the board (%s %s-%s).\n",
                    hs_run_best_place, hs_run_gameid,
@@ -1051,28 +1142,29 @@ void  HS_Set_Initials( const char * ini )
 
     // Stamp every entry this run placed.  Both categories can place at once,
     // and they are the same run by the same player.
-    for( i=0; i<hs_run_placed_n; i++ )
+    for( i=0; i<hs_placed_n; i++ )
     {
+        const hs_placement_t * pl = &hs_placed[i];
         int  slot[HS_MAX_RUNS];
         int  ns, s;
         hs_run_t key;
 
         memset( &key, 0, sizeof(key) );
-        dl_strncpy( key.game, hs_run_gameid, HS_GAMEID_LEN-1 );
-        dl_strncpy( key.endmap, hs_run_endmap, 8 );
-        key.skill = (byte) hs_run_skill;
-        key.cat   = (byte) hs_run_placed[i];
+        dl_strncpy( key.game, pl->game, HS_GAMEID_LEN-1 );
+        dl_strncpy( key.endmap, pl->endmap, 8 );
+        key.skill = pl->skill;
+        key.cat   = pl->cat;
 
         ns = HS_Board_Slots( &key, slot, HS_MAX_RUNS );
         for( s=0; s<ns; s++ )
         {
             hs_run_t * r = &hs_runs[slot[s]];
-            // The entry this run just made: same end map and same time, and
+            // The entry this placement made: same end map and same time, and
             // not already claimed.  Matching on the time as well as the map
             // is what keeps this off an older entry that happens to share
             // the end map.
-            if( r->tics != hs_run_tics )  continue;
-            if( strncmp(r->endmap, hs_run_endmap, 8) != 0 )  continue;
+            if( r->tics != pl->tics )  continue;
+            if( strncmp(r->endmap, pl->endmap, 8) != 0 )  continue;
             if( r->initials[0] )  continue;
             dl_strncpy( r->initials, clean, HS_INITIALS_LEN );
             break;
@@ -1082,7 +1174,7 @@ void  HS_Set_Initials( const char * ini )
     HS_Runs_Save();
 
     hs_initials_pending = false;
-    hs_run_placed_n     = 0;
+    hs_placed_n         = 0;
     hs_run_best_place   = 0;
 }
 
@@ -1417,6 +1509,14 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
 
     if( saved )
         HS_Save();
+
+    // [Arcade] A campaign run's *first* level is the same thing as a Single
+    // Level run of that map -- pistol start, one map, and at this point the
+    // run's cumulative time is exactly that level's time -- so it competes
+    // on the single level tables too.  hs_run_levels was incremented above,
+    // so 1 means "this is the first scored exit of the run".
+    if( hs_run_levels == 1 && ! single_level_mode )
+        HS_Score_As_Single_Level( mapname, skill, hs_cumulative_time );
 }
 
 
@@ -1557,61 +1657,44 @@ void HS_Draw_IntermissionTable( int x, int y )
 }
 
 
-// Does the running game have any recorded times?
-// The attract screen uses this to skip the page when it would only say
-// "No times recorded yet", which would otherwise show after every demo.
-// Part of the running game, and holding at least one time.  A map with
-// nothing recorded is skipped entirely rather than shown as a blank page.
-static boolean  HS_Entry_Eligible( const hs_maprecord_t * rec )
-{
-    int  sk, cat;
-
-    // [Arcade] HS_GameId_Mode(false), not HS_GameId(): this feeds the attract
-    // page, which must always show campaign times no matter what mode the
-    // cabinet was last left in.  Otherwise single-level times leak onto the
-    // attract screen whenever single_level_mode happens to still be set.
-    // Note HS_NextRecordDemoPath does NOT filter this way -- single-level
-    // *demos* are replayed, only the score pages are campaign only.
-    if( strncmp(rec->game, HS_GameId_Mode(false), HS_GAMEID_LEN-1) != 0 )
-        return false;
-
-    for( cat=0; cat<HS_NUMCAT; cat++ )
-    {
-        for( sk=0; sk<HS_NUMSKILLS; sk++ )
-        {
-            if( rec->has_record[cat][sk] )  return true;
-        }
-    }
-    return false;
-}
-
-
-static int  HS_Board_Page_Count( void );   // defined with the pages below
-
+// [Arcade] Is there anything for the attract screen to show?  Asked by
+// D_DoAdvanceDemo before it interposes the score pages, so that a fresh
+// cabinet does not flash an empty page after every demo.  Answered by the
+// page enumeration itself, which is the same thing the drawer will walk --
+// campaign times, single level times and the run boards all count.
 boolean  HS_Have_Records( void )
 {
-    int  i;
-
-    for( i=0; i<hs_table_count; i++ )
-    {
-        if( HS_Entry_Eligible(&hs_table[i]) )  return true;
-    }
-    // [Arcade] A run board with entries is worth showing on its own, even
-    // if nothing qualifies for a split page.
-    return (HS_Board_Page_Count() > 0);
+    return (HS_Attract_Page_Count() > 0);
 }
 
-
-// The attract screen shows one *skill* per page, listing every map that has
-// a time under it -- a 32 map table is then two pages instead of thirty-two.
 // Pages are numbered linearly across (skill, chunk); the index is recomputed
 // from the table each time rather than stored, since the table grows during
 // a session as new maps are played.
-#define HS_ROWS_PER_COL  12
-#define HS_PAGE_COLS      2
-#define HS_PER_PAGE      (HS_ROWS_PER_COL * HS_PAGE_COLS)
+// =========================================================================
+//   Attract screen pages  [Arcade]
+// =========================================================================
+// Four kinds of page, enumerated into one linear list each time it is asked
+// for, since the tables grow during a session:
+//
+//   campaign  best cumulative time per map, one page per (skill, category)
+//   single    the same for single level runs
+//   board     the run board, one page per (skill, category)
+//   slmap     one map's single level top three, by difficulty
+//
+// The cycle shows only HS_PAGES_PER_CYCLE of them after each demo and picks
+// up where it left off next time.  Showing all of them every cycle reached ~100
+// seconds between demos once the single level pages were added, which is
+// unusable on a machine that is meant to be advertising itself.
 
-static int  hs_attract_page = 0;    // linear page index
+// The New Game menu's skill graphics, indexed by skill.  Doom names; Heretic
+// differs, hence the VALID_LUMP check at the draw site.
+static const char * hs_skillpatch[HS_NUMSKILLS] =
+  { "M_JKILL", "M_ROUGH", "M_HURT", "M_ULTRA", "M_NMARE" };
+
+// Bottom edge of the skill graphic.  The patches vary in height (15..19), so
+// they are bottom aligned on this rather than top aligned, or the baseline
+// would jump as the pages cycle.
+#define HS_PG_SKILL_BOT  34
 
 
 // Sort key putting maps in the order a player actually reaches them.
@@ -1641,53 +1724,89 @@ static int  HS_MapOrder( const char * mapname )
 }
 
 
-// Table indices of the maps holding a time at this skill, in play order.
-// Returns how many were found (bounded by out_max).
-static int  HS_Collect_Skill( int sk, int * out, int out_max )
+// [Arcade] Every map this game actually has, in progression order.
+//
+// The best-times pages list *all* of them, not only the ones with a time, so
+// that the columns line up with the episodes (E1-E2 left, E3-E4 right) and
+// an unclaimed map is visible as such.  Presence is decided by whether the
+// map lump exists, which is what makes this work for level packs too rather
+// than assuming 32 maps or four episodes.
+#define HS_MAX_PAGE_MAPS  64
+
+static int  HS_Map_List( char out[][9], int out_max )
 {
-    int  i, j, n = 0;
+    int  n = 0, e, m, i, j;
 
-    for( i=0; i<hs_table_count; i++ )
+    if( gamemode == doom2_commercial )
     {
-        if( ! HS_Entry_Eligible(&hs_table[i]) )  continue;
-        if( ! hs_table[i].has_record[HS_CAT_speed][sk]
-            && ! hs_table[i].has_record[HS_CAT_max][sk] )  continue;
-        if( n >= out_max )  break;
-
-        // Insertion sort; the table is at most HS_MAX_MAPS entries.
-        for( j = n; j > 0
-             && HS_MapOrder(hs_table[out[j-1]].mapname) > HS_MapOrder(hs_table[i].mapname);
-             j-- )
-            out[j] = out[j-1];
-        out[j] = i;
-        n++;
+        for( m = 1; m <= 32 && n < out_max; m++ )
+        {
+            const char * nm = G_BuildMapName(1, m);
+            if( ! VALID_LUMP( W_CheckNumForName((char*)nm) ) )  continue;
+            dl_strncpy( out[n++], nm, 9 );
+        }
     }
+    else
+    {
+        for( e = 1; e <= 4; e++ )
+        {
+            for( m = 1; m <= 9 && n < out_max; m++ )
+            {
+                const char * nm = G_BuildMapName(e, m);
+                if( ! VALID_LUMP( W_CheckNumForName((char*)nm) ) )  continue;
+                dl_strncpy( out[n++], nm, 9 );
+            }
+        }
+    }
+
+    // Progression order.  A no-op for Doom 1, where the loops above already
+    // walk episode major; it is Doom 2's secret detour that needs it.
+    for( i = 1; i < n; i++ )
+    {
+        char key[9];
+        dl_strncpy( key, out[i], 9 );
+        for( j = i; j > 0 && HS_MapOrder(out[j-1]) > HS_MapOrder(key); j-- )
+            dl_strncpy( out[j], out[j-1], 9 );
+        dl_strncpy( out[j], key, 9 );
+    }
+
     return n;
 }
 
 
-// Pages this skill occupies (0 when it has no times at all).
-static int  HS_Skill_Pages( int sk )
+// The split-table record for one map of one game id, or NULL.
+static const hs_maprecord_t *  HS_Find_Record( const char * game,
+                                               const char * mapname )
 {
-    int  idx[HS_MAX_MAPS];
-    int  n = HS_Collect_Skill( sk, idx, HS_MAX_MAPS );
-    return (n + HS_PER_PAGE - 1) / HS_PER_PAGE;
+    int i;
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].mapname, mapname, 8) != 0 )  continue;
+        if( strncmp(hs_table[i].game, game, HS_GAMEID_LEN-1) != 0 )  continue;
+        return &hs_table[i];
+    }
+    return NULL;
 }
 
 
-// Pages of per-map split times, which come first in the cycle.
-static int  HS_Split_Page_Count( void )
+// Does this (mode, skill, category) have any time at all?  A page is only
+// enumerated when it would have something on it.
+static boolean  HS_Have_Times( boolean single, int sk, int cat )
 {
-    int  sk, total = 0;
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
-        total += HS_Skill_Pages(sk);
-    return total;
+    char gid[HS_GAMEID_LEN];
+    int  i;
+
+    dl_strncpy( gid, HS_GameId_Mode(single), HS_GAMEID_LEN-1 );
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( strncmp(hs_table[i].game, gid, HS_GAMEID_LEN-1) != 0 )  continue;
+        if( hs_table[i].has_record[cat][sk] )  return true;
+    }
+    return false;
 }
 
 
 // [Arcade] Entries on the campaign run board at this skill and category.
-// Counted by walking places rather than the array, so it obeys the board
-// depth and the current game id exactly as the drawer will.
 static int  HS_Board_Rows( int sk, int cat )
 {
     int  n = 0;
@@ -1699,71 +1818,114 @@ static int  HS_Board_Rows( int sk, int cat )
 }
 
 
-// One page per (skill, category) that has anyone on it.  A page is ten rows,
-// which is the whole board, so a board never needs more than one -- unlike
-// the split pages, which chunk a 32 map table.
-static int  HS_Board_Page_Count( void )
+// Any single level board entry for this map, at any skill or category?
+// Decides whether the rotating per-map page has anything to show.
+static boolean  HS_SL_Map_Has_Entries( const char * mapname )
 {
-    int  sk, cat, total = 0;
+    int sk, cat;
     for( sk=0; sk<HS_NUMSKILLS; sk++ )
     {
         for( cat=0; cat<HS_NUMCAT; cat++ )
         {
-            if( HS_Board_Rows(sk, cat) > 0 )  total++;
+            if( HS_Board_Entry(true, mapname, (skill_e)sk, cat, 0,
+                               NULL, NULL, NULL) )
+                return true;
         }
     }
-    return total;
+    return false;
+}
+
+
+enum { HSPG_campaign = 0, HSPG_single, HSPG_board, HSPG_slmap };
+
+typedef struct
+{
+    byte  kind;
+    byte  skill;
+    byte  cat;
+} hs_page_t;
+
+// campaign + single + board, each (skill x category), plus the one rotating
+// single level map page.
+#define HS_MAX_PAGES  ((HS_NUMSKILLS * HS_NUMCAT * 3) + 1)
+
+static int  hs_attract_page = 0;   // linear index into the enumeration
+// Which map the rotating single level page is showing.  Advanced when that
+// page is *drawn*, so a different map comes up each time it appears rather
+// than every cycle starting at E1M1.
+static int  hs_slmap_cursor = 0;
+
+
+static int  HS_Build_Pages( hs_page_t * out, int out_max )
+{
+    int  sk, cat, n = 0;
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+      for( cat=0; cat<HS_NUMCAT; cat++ )
+        if( n < out_max && HS_Have_Times(false, sk, cat) )
+        {
+            out[n].kind = HSPG_campaign;  out[n].skill = sk;
+            out[n].cat = cat;  n++;
+        }
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+      for( cat=0; cat<HS_NUMCAT; cat++ )
+        if( n < out_max && HS_Have_Times(true, sk, cat) )
+        {
+            out[n].kind = HSPG_single;  out[n].skill = sk;
+            out[n].cat = cat;  n++;
+        }
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+      for( cat=0; cat<HS_NUMCAT; cat++ )
+        if( n < out_max && HS_Board_Rows(sk, cat) > 0 )
+        {
+            out[n].kind = HSPG_board;  out[n].skill = sk;
+            out[n].cat = cat;  n++;
+        }
+
+    // One slot only, however many maps have single level times: it shows a
+    // different map each time it comes round, which keeps the cycle short.
+    {
+        char maps[HS_MAX_PAGE_MAPS][9];
+        int  nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
+        int  i;
+        for( i=0; i<nm; i++ )
+        {
+            if( HS_SL_Map_Has_Entries(maps[i]) )
+            {
+                if( n < out_max )
+                {
+                    out[n].kind = HSPG_slmap;  out[n].skill = 0;
+                    out[n].cat = 0;  n++;
+                }
+                break;
+            }
+        }
+    }
+
+    return n;
 }
 
 
 int HS_Attract_Page_Count( void )
 {
-    return HS_Split_Page_Count() + HS_Board_Page_Count();
+    hs_page_t  pages[HS_MAX_PAGES];
+    return HS_Build_Pages( pages, HS_MAX_PAGES );
 }
 
 
-// Resolve the linear page index to a skill and a chunk within it.
-// False when there is nothing to show.
-static boolean  HS_Resolve_Page( int page, int * out_sk, int * out_chunk )
+// [Arcade] How many pages this appearance shows.  The cycle no longer runs
+// the whole set after every demo: with campaign, single level, board and
+// per-map pages that reached roughly 100 seconds of score pages between
+// demos.  A small window, continued next time, keeps each interruption
+// short while still making everything reachable.
+#define HS_PAGES_PER_CYCLE  3
+
+int HS_Attract_Cycle_Pages( void )
 {
-    int  sk, acc = 0;
-
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
-    {
-        int np = HS_Skill_Pages(sk);
-        if( np == 0 )  continue;
-        if( page < acc + np )
-        {
-            *out_sk = sk;
-            *out_chunk = page - acc;
-            return true;
-        }
-        acc += np;
-    }
-    return false;
-}
-
-
-// Resolve a board page index (already relative to the first board page).
-static boolean  HS_Resolve_Board_Page( int page, int * out_sk, int * out_cat )
-{
-    int  sk, cat, acc = 0;
-
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
-    {
-        for( cat=0; cat<HS_NUMCAT; cat++ )
-        {
-            if( HS_Board_Rows(sk, cat) == 0 )  continue;
-            if( page == acc )
-            {
-                *out_sk  = sk;
-                *out_cat = cat;
-                return true;
-            }
-            acc++;
-        }
-    }
-    return false;
+    int total = HS_Attract_Page_Count();
+    return (total < HS_PAGES_PER_CYCLE) ? total : HS_PAGES_PER_CYCLE;
 }
 
 
@@ -1774,84 +1936,28 @@ void HS_Attract_Advance_Page( void )
 }
 
 
-// Start the cycle over at the first page, so every appearance runs the same
-// sequence from the top rather than resuming wherever the last one stopped.
-void HS_Attract_Reset_Pages( void )
-{
-    hs_attract_page = 0;
-}
-
-
-// Compact two-column list.  Within a column: map name at x, then the two
-// category times right-justified.  Two columns of HS_ROWS_PER_COL fit 24
-// maps a page, so even a full 32 map wad is two pages per skill.
-// Offsets measured against the real font: "MAP01" is 38px and a "12:34" time
-// about 38px, so the speed column has to start past x+52 or the two touch.
-#define HS_PG_COL0     14      // left column origin
-#define HS_PG_COL1    166      // right column origin
-#define HS_PG_SPEED    84      // right edge of the speed time, from origin
-#define HS_PG_MAX     138      // right edge of the max time, from origin
-#define HS_PG_ROW0     58      // first row baseline
-#define HS_PG_ROWSTEP  10
-// Bottom edge of the skill graphic.  The patches vary in height, so they are
-// bottom aligned on this; 42 leaves 2px above the column headers at 44.
-#define HS_PG_SKILL_BOT  42
-
-// The New Game menu's skill graphics, indexed by skill.  Doom names; Heretic
-// differs, hence the VALID_LUMP check at the draw site.
-static const char * hs_skillpatch[HS_NUMSKILLS] =
-  { "M_JKILL", "M_ROUGH", "M_HURT", "M_ULTRA", "M_NMARE" };
-
-static void  HS_Draw_Row( int x, int y, const hs_maprecord_t * rec, int sk )
-{
-    char  timebuf[16];
-    int   cat;
-    static const int  right[HS_NUMCAT] = { HS_PG_SPEED, HS_PG_MAX };
-
-    V_DrawString( x, y, 0, (char*) rec->mapname );
-
-    for( cat=0; cat<HS_NUMCAT; cat++ )
-    {
-        if( rec->has_record[cat][sk] )
-            HS_FormatTime( rec->besttime[cat][sk], timebuf, sizeof(timebuf) );
-        else
-            snprintf( timebuf, sizeof(timebuf), "--:--" );
-
-        V_DrawString( x + right[cat] - V_StringWidth(timebuf), y, 0, timebuf );
-    }
-}
-
-
-// [Arcade] The run board page.  One category of one skill, ten places deep,
-// each naming the player, the span of levels the run covered and its time.
+// -------------------------------------------------------------------------
+// Best times page: every map of the game, one time each, two columns.
 //
-// Offsets measured against the real STCFN lumps:
-//   rank    "10." 17px right-justified at 41, so 24..41 ("1." is 9px)
-//   player  "AAA" 24px at 48, so 48..72
-//   levels  "MAP01-MAP30" 85px at 110, so 110..195
-//   time    "888:88.99" 64px right-justified at 296, so 232..296
-// The headers ("PLAYER" 48, "LEVELS" 46, "TIME" 29) all sit inside their
-// columns, and ten rows from 58 at HS_PG_ROWSTEP reach 148, leaving the
-// footer's line at BASEVIDHEIGHT-14 clear.
-#define HS_BD_RANK_R    41
-#define HS_BD_INIT_X    48
-#define HS_BD_RANGE_X  110
-#define HS_BD_TIME_R   296
-#define HS_BD_ROW0      58
+// One page per (skill, category) rather than both categories side by side,
+// which is forced by width: measured against the real STCFN lumps a row of
+// "MAP01  12:34.57  12:34.57" is 156px against the 160 a column has, and a
+// cumulative Doom 2 time reaching "123:45.67" makes it 164.  Splitting by
+// category also frees the room for the initials, which this page never had.
+//
+// Column layout, relative to the column origin:
+//   map name   +0    ("MAP01" 38px, "E1M1" 27px)
+//   time       right-justified at +110, so the widest "888:88.99" (64px)
+//              starts at +46 and clears the map name by 8
+//   initials   +118 .. +142 ("AAA" 24px)
+// Origins 10 and 168, so the columns span 10..152 and 168..310 of 320.
+#define HS_BT_COL0     10
+#define HS_BT_COL1    168
+#define HS_BT_TIME_R  110
+#define HS_BT_INI_X   118
+#define HS_BT_ROW0     46
+#define HS_BT_ROW_MAXY 182    // top edge of the last row that still fits
 
-// The skill a page is for -- the whole point of grouping this way.  Drawn as
-// the New Game menu's own skill graphic rather than the short text name, so
-// it reads at a glance from across a room.
-//
-// *Bottom* aligned on HS_PG_SKILL_BOT, not top aligned: the five patches are
-// 15..19 tall (M_NMARE is the tall one), so aligning their tops would leave
-// the baseline jumping as the page cycles.  The band is tight -- the title
-// ends at 21 and the column headers start at 44 -- so the tallest lands at
-// y=23 with 2px clear above and below.  Widths run to 248 (M_ROUGH), which
-// still centres inside 320.
-//
-// Falls back to the text name if the lump is missing: these are the Doom
-// names, and Heretic uses different ones.
 static void  HS_Draw_SkillGraphic( int sk )
 {
     lumpnum_t  sklump = W_CheckNumForName( (char*) hs_skillpatch[sk] );
@@ -1867,10 +1973,199 @@ static void  HS_Draw_SkillGraphic( int sk )
     else
     {
         V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)hs_skillnames[sk]))/2,
-                      28, V_WHITEMAP, (char*) hs_skillnames[sk] );
+                      HS_PG_SKILL_BOT - 7, V_WHITEMAP, (char*) hs_skillnames[sk] );
     }
 }
 
+
+static void  HS_Draw_BestTimes( boolean single, int sk, int cat )
+{
+    char  maps[HS_MAX_PAGE_MAPS][9];
+    char  gid[HS_GAMEID_LEN];
+    char  buf[64], timebuf[16];
+    int   nm, rows, step, i, col;
+    const char * title = single ? "SINGLE LEVEL BEST TIMES"
+                                : "SINGLE PLAYER BEST TIMES";
+
+    dl_strncpy( gid, HS_GameId_Mode(single), HS_GAMEID_LEN-1 );
+    nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
+
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)title))/2, 8,
+                  V_WHITEMAP, (char*) title );
+    HS_Draw_SkillGraphic( sk );
+
+    // Rows per column, and a step chosen to fill the band: 36 maps (Doom 1
+    // with four episodes) gives 18 rows and a step of 8, Doom 2's 32 gives
+    // 16 and a step of 9, and a short level pack gets the full 10.
+    rows = (nm + 1) / 2;
+    if( rows < 1 )  rows = 1;
+    step = (rows > 1) ? ((HS_BT_ROW_MAXY - HS_BT_ROW0) / (rows - 1)) : 10;
+    if( step > 10 )  step = 10;
+    if( step < 6 )   step = 6;
+
+    for( col=0; col<2; col++ )
+    {
+        int x = col ? HS_BT_COL1 : HS_BT_COL0;
+        V_DrawString( x, 36, V_WHITEMAP, "MAP" );
+        snprintf( buf, sizeof(buf), "%s", hs_catname[cat] );
+        strupr( buf );
+        V_DrawString( x + HS_BT_TIME_R - V_StringWidth(buf), 36,
+                      V_WHITEMAP, buf );
+        // Only the single level page can name a holder; see below.
+        if( single )
+            V_DrawString( x + HS_BT_INI_X, 36, V_WHITEMAP, "BY" );
+    }
+
+    for( i=0; i<nm; i++ )
+    {
+        const hs_maprecord_t * rec;
+        char  ini[HS_INITIALS_LEN];
+        int   x, y;
+        boolean have_ini = false;
+
+        col = (i < rows) ? 0 : 1;             // fill the left column first
+        x   = col ? HS_BT_COL1 : HS_BT_COL0;
+        y   = HS_BT_ROW0 + ((i % rows) * step);
+
+        V_DrawString( x, y, 0, maps[i] );
+
+        rec = HS_Find_Record( gid, maps[i] );
+        if( rec && rec->has_record[cat][sk] )
+        {
+            HS_Format_Time_CS( rec->besttime[cat][sk], timebuf, sizeof(timebuf) );
+            // Only a single level time has an identifiable holder.  Its
+            // board is keyed per map, so the number one entry there is the
+            // same run as this split by construction.  A *campaign* split is
+            // genuinely anonymous: the split table records no owner, and a
+            // campaign board entry is keyed by the run's END map, so nothing
+            // attributes the MAP03 split of a run that carried on to MAP08.
+            // Showing "---" against every row would be worse than showing
+            // nothing, so the column is omitted entirely for campaign pages.
+            if( single )
+                have_ini = HS_Board_Entry( true, maps[i], (skill_e)sk, cat, 0,
+                                           ini, NULL, NULL );
+        }
+        else
+        {
+            dl_strncpy( timebuf, "--:--.--", sizeof(timebuf) );
+        }
+
+        V_DrawString( x + HS_BT_TIME_R - V_StringWidth(timebuf), y, 0, timebuf );
+        if( have_ini )
+            V_DrawString( x + HS_BT_INI_X, y, 0, ini );
+    }
+}
+
+
+// -------------------------------------------------------------------------
+// One map's single level top three, laid out difficulty x place.
+//
+// Read in one glance, unlike stacking a block per difficulty.  Measured
+// against the real STCFN lumps: a cell is "AAA 0:08.57" at 75px and at worst
+// "AAA 29:59.99" at 83px for a slow max run of one map, so cells at 52, 139
+// and 226 clear each other by 4px and the last ends at 309 of 320.  The
+// skill label ("ITYTD" 36px) sits at 10..46, clearing the first cell by 6.
+//
+// Only a single *level* time appears here, so three digit minutes -- which
+// would make a cell 92px and crowd the next -- cannot arise from real play.
+#define HS_SLM_SKILL_X   10
+#define HS_SLM_CELL0     52
+#define HS_SLM_CELL_STEP 87
+#define HS_SLM_ROW0      50
+#define HS_SLM_ROWSTEP   10
+
+static void  HS_Draw_SL_Map_Block( const char * mapname, int cat, int y0 )
+{
+    char buf[64], timebuf[16], ini[HS_INITIALS_LEN];
+    tic_t t;
+    int  sk, place;
+
+    snprintf( buf, sizeof(buf), "%s", hs_catname[cat] );
+    strupr( buf );
+    V_DrawString( HS_SLM_SKILL_X, y0, V_WHITEMAP, buf );
+
+    for( place=0; place<HS_BOARD_DEPTH_SL; place++ )
+    {
+        static const char * ord[3] = { "1st", "2nd", "3rd" };
+        V_DrawString( HS_SLM_CELL0 + (place * HS_SLM_CELL_STEP), y0,
+                      V_WHITEMAP, (char*) ord[place] );
+    }
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        int y = y0 + 10 + (sk * HS_SLM_ROWSTEP);
+
+        V_DrawString( HS_SLM_SKILL_X, y, 0, (char*) hs_skillnames[sk] );
+
+        for( place=0; place<HS_BOARD_DEPTH_SL; place++ )
+        {
+            int cx = HS_SLM_CELL0 + (place * HS_SLM_CELL_STEP);
+
+            if( ! HS_Board_Entry( true, mapname, (skill_e)sk, cat, place,
+                                  ini, NULL, &t ) )
+                continue;   // blank rather than a row of dashes
+
+            HS_Format_Time_CS( t, timebuf, sizeof(timebuf) );
+            snprintf( buf, sizeof(buf), "%s %s", ini, timebuf );
+            V_DrawString( cx, y, 0, buf );
+        }
+    }
+}
+
+
+static void  HS_Draw_SL_Map_Page( void )
+{
+    char  maps[HS_MAX_PAGE_MAPS][9];
+    char  buf[64];
+    int   nm, i, tries, has_max = 0, sk;
+
+    nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
+    if( nm == 0 )  return;
+
+    // Advance to the next map that actually has entries.  Bounded by the map
+    // count so a table with none cannot spin here.
+    for( tries=0; tries<nm; tries++ )
+    {
+        if( hs_slmap_cursor >= nm )  hs_slmap_cursor = 0;
+        if( HS_SL_Map_Has_Entries( maps[hs_slmap_cursor] ) )  break;
+        hs_slmap_cursor++;
+    }
+    if( tries >= nm )  return;
+
+    i = hs_slmap_cursor;
+    hs_slmap_cursor++;      // a different map next time this page comes round
+
+    snprintf( buf, sizeof(buf), "SINGLE LEVEL: %s", maps[i] );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 12, V_WHITEMAP, buf );
+
+    HS_Draw_SL_Map_Block( maps[i], HS_CAT_speed, HS_SLM_ROW0 );
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        if( HS_Board_Entry(true, maps[i], (skill_e)sk, HS_CAT_max, 0,
+                           NULL, NULL, NULL) )
+            has_max = 1;
+    }
+    // Only drawn when there is something in it; otherwise the page would be
+    // half a screen of empty rows.
+    if( has_max )
+        HS_Draw_SL_Map_Block( maps[i], HS_CAT_max, HS_SLM_ROW0 + 68 );
+}
+
+
+// -------------------------------------------------------------------------
+// The run board page, unchanged in layout.
+//
+//   rank    "10." 17px right-justified at 41, so 24..41 ("1." is 9px)
+//   player  "AAA" 24px at 48, so 48..72
+//   levels  "MAP01-MAP30" 85px at 110, so 110..195
+//   time    "888:88.99" 64px right-justified at 296, so 232..296
+#define HS_BD_RANK_R    41
+#define HS_BD_INIT_X    48
+#define HS_BD_RANGE_X  110
+#define HS_BD_TIME_R   296
+#define HS_BD_ROW0      58
+#define HS_BD_ROWSTEP   10
 
 static void  HS_Draw_BoardPage( int sk, int cat )
 {
@@ -1880,7 +2175,7 @@ static void  HS_Draw_BoardPage( int sk, int cat )
 
     snprintf( buf, sizeof(buf), "BEST %s RUNS", hs_catname[cat] );
     strupr( buf );
-    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 14, V_WHITEMAP, buf );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 8, V_WHITEMAP, buf );
 
     HS_Draw_SkillGraphic( sk );
 
@@ -1890,7 +2185,7 @@ static void  HS_Draw_BoardPage( int sk, int cat )
 
     for( place = 0; place < HS_BOARD_DEPTH_RUN; place++ )
     {
-        int y = HS_BD_ROW0 + (place * HS_PG_ROWSTEP);
+        int y = HS_BD_ROW0 + (place * HS_BD_ROWSTEP);
 
         if( ! HS_Board_Entry( false, NULL, (skill_e)sk, cat, place,
                               ini, range, &tics ) )
@@ -1909,12 +2204,9 @@ static void  HS_Draw_BoardPage( int sk, int cat )
 
 void HS_Draw_AttractTable( void )
 {
-    int   idx[HS_MAX_MAPS];
+    hs_page_t  pages[HS_MAX_PAGES];
     char  buf[64];
-    int   sk = 0, chunk = 0;
-    int   n, first, i, col, x, y;
     int   total;
-    int   splitpages;
 
     // This is an attract-screen page like the ones D_PageDrawer handles, so
     // it must establish the same draw state and cover the whole screen.
@@ -1924,79 +2216,46 @@ void HS_Draw_AttractTable( void )
     V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
     V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
 
-    total = HS_Attract_Page_Count();
-
-    // [Arcade] The run boards come after the per-map split pages, so the
-    // cycle reads splits-then-boards.  Each board draws its own title, so
-    // the "HIGH SCORES" heading belongs to the split pages only.
-    splitpages = HS_Split_Page_Count();
-    if( hs_attract_page >= splitpages )
-    {
-        int  bsk = 0, bcat = 0;
-        if( HS_Resolve_Board_Page( hs_attract_page - splitpages, &bsk, &bcat ) )
-        {
-            HS_Draw_BoardPage( bsk, bcat );
-            if( total > 1 )
-            {
-                snprintf( buf, sizeof(buf), "%d of %d",
-                          hs_attract_page + 1, total );
-                V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
-                              BASEVIDHEIGHT-14, 0, buf );
-            }
-            return;
-        }
-        // Fell off the end (the table shrank between the count and the
-        // draw); show the split page heading and the empty message below.
-    }
-
-    V_DrawString( (BASEVIDWIDTH - V_StringWidth("HIGH SCORES"))/2,
-                  14, V_WHITEMAP, "HIGH SCORES" );
-
-    if( ! HS_Resolve_Page( hs_attract_page, &sk, &chunk ) )
+    total = HS_Build_Pages( pages, HS_MAX_PAGES );
+    if( total == 0 )
     {
         V_DrawString( (BASEVIDWIDTH - V_StringWidth("No times recorded yet"))/2,
                       90, 0, "No times recorded yet" );
         return;
     }
 
-    HS_Draw_SkillGraphic( sk );
+    if( hs_attract_page >= total )  hs_attract_page = 0;
 
-    // Column headers over both columns.  A "max" run additionally requires
-    // 100% kills and secrets on every level, so its times are always >= speed.
-    for( col=0; col<HS_PAGE_COLS; col++ )
+    switch( pages[hs_attract_page].kind )
     {
-        x = col ? HS_PG_COL1 : HS_PG_COL0;
-        V_DrawString( x, 44, V_WHITEMAP, "MAP" );
-        V_DrawString( x + HS_PG_SPEED - V_StringWidth((char*)hs_catname[HS_CAT_speed]),
-                      44, V_WHITEMAP, (char*) hs_catname[HS_CAT_speed] );
-        V_DrawString( x + HS_PG_MAX - V_StringWidth((char*)hs_catname[HS_CAT_max]),
-                      44, V_WHITEMAP, (char*) hs_catname[HS_CAT_max] );
+     case HSPG_campaign:
+        HS_Draw_BestTimes( false, pages[hs_attract_page].skill,
+                                  pages[hs_attract_page].cat );
+        break;
+     case HSPG_single:
+        HS_Draw_BestTimes( true, pages[hs_attract_page].skill,
+                                 pages[hs_attract_page].cat );
+        break;
+     case HSPG_board:
+        HS_Draw_BoardPage( pages[hs_attract_page].skill,
+                           pages[hs_attract_page].cat );
+        break;
+     case HSPG_slmap:
+        HS_Draw_SL_Map_Page();
+        break;
+     default:
+        break;
     }
 
-    n = HS_Collect_Skill( sk, idx, HS_MAX_MAPS );
-    first = chunk * HS_PER_PAGE;
-
-    for( i=0; i<HS_PER_PAGE; i++ )
-    {
-        int  e = first + i;
-        if( e >= n )  break;
-
-        col = i / HS_ROWS_PER_COL;          // fill the left column first
-        x   = col ? HS_PG_COL1 : HS_PG_COL0;
-        y   = HS_PG_ROW0 + ((i % HS_ROWS_PER_COL) * HS_PG_ROWSTEP);
-
-        HS_Draw_Row( x, y, &hs_table[ idx[e] ], sk );
-    }
-
-    // Footer, so it is obvious that other pages follow.  (total was taken
-    // at the top, before the board pages were dispatched.)
+    // Footer, so it is obvious that other pages follow.
     if( total > 1 )
     {
         snprintf( buf, sizeof(buf), "%d of %d", hs_attract_page + 1, total );
         V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
-                      BASEVIDHEIGHT-14, 0, buf );
+                      BASEVIDHEIGHT-10, 0, buf );
     }
 }
+
 
 
 // [Arcade] Describes the record demo HS_NextRecordDemoPath last handed out,
@@ -2143,10 +2402,7 @@ const char * HS_NextRecordDemoPath( void )
         // game's demo would desync immediately.
         // [Arcade] Both modes are replayed.  A single-level demo is an
         // ordinary one map recording -- nothing about playing it back is
-        // mode specific -- so it is captioned rather than skipped.  This
-        // deliberately differs from HS_Entry_Eligible, which still keeps
-        // single-level times off the score *pages*: a demo costs the cycle
-        // nothing extra, while those entries would double the page count.
+        // mode specific -- so it is captioned rather than skipped.
         if( strncmp(hs_table[mi].game, campaign_id, HS_GAMEID_LEN-1) == 0 )
             is_single = false;
         else if( strncmp(hs_table[mi].game, single_id, HS_GAMEID_LEN-1) == 0 )

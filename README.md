@@ -35,7 +35,8 @@ Discord is likely to get you banned.
 - **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
   its own separate high score table and its own record demos.
 - **High scores.** Best cumulative time-to-exit per map, skill and category, shown at the
-  intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
+  intermission and on **Single Player Best Times** pages in the attract cycle — one per difficulty,
+  every map of the game on a single page. Two categories: **speed** (just finish) and **max** (100%
   kills and secrets on every level so far). Times are kept to hundredths of a second, because whole
   seconds cannot separate two E1M1 runs.
 - **A run leaderboard, with your initials on it.** Separate from the per-map best times: a board of
@@ -241,8 +242,14 @@ shown right there. If a record demo exists you can watch it with **Watch speed r
 run**; those are greyed out when nothing has been recorded yet.
 
 Single Level keeps its **own high score table**, separate from campaign runs — a one-map time isn't
-comparable to a run that reached the same map from level one. Those times appear only on this page,
-not in the attract cycle.
+comparable to a run that reached the same map from level one. Those times get their own pages in
+the attract cycle: a best-times page per difficulty, and a rotating page showing one map's top
+three at a time.
+
+**A campaign run's first level competes here too.** Finishing E1M1 on a Single Player run is the
+same thing as a Single Level run of E1M1 — a pistol start, one map — so it goes on the same board.
+Only the first level: a campaign E1M2 begins with whatever you carried out of E1M1, so it stays out
+of it.
 
 ### High scores
 

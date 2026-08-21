@@ -1334,12 +1334,13 @@ void D_DoAdvanceDemo(void)
         hs_page_after_demo = false;
         if( HS_Have_Records() )
         {
-            // Step through every map that has a time, HS_PAGE_SECS each, so
-            // the whole table is shown between demos without any one page
-            // overflowing.  Length scales with how much has been recorded.
-            HS_Attract_Reset_Pages();
+            // [Arcade] A bounded window of pages, HS_PAGE_SECS each, rather
+            // than the whole set.  The cursor is deliberately not reset, so
+            // the next appearance carries on through the rest of the pages:
+            // running all of them every time reached about 100 seconds
+            // between demos once the single level pages existed.
             hs_subpage_tic = TICRATE * HS_PAGE_SECS;
-            pagetic = (TICRATE * HS_PAGE_SECS * HS_Attract_Page_Count()) - 1;
+            pagetic = (TICRATE * HS_PAGE_SECS * HS_Attract_Cycle_Pages()) - 1;
             hs_attract_page = true;
             gamestate = GS_DEMOSCREEN;
             return;                 // demosequence deliberately not advanced

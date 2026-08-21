@@ -348,12 +348,15 @@ silently made the flag do nothing at all.
     moment the exit switch was hit. The replay items set `single_level_mode` instead, and the
     `demoplayback` branch of `G_CheckDemoStatus` routes back to the menu via
     `M_SingleLevel_Finished()`.
-  - **The two attract-screen consumers deliberately disagree about mode.** Neither may use
-    `HS_GameId()`, because `single_level_mode` is whatever the cabinet was last left in (it is
-    still set while the player sits on the Single Level page, with the attract cycle running
-    behind the menu) — so both resolve the mode explicitly instead:
-    - `HS_Entry_Eligible` takes **`HS_GameId_Mode(false)`**, campaign only. The score pages stay
-      campaign times, and do not double in number.
+  - **No attract-screen consumer may use `HS_GameId()`**, because `single_level_mode` is whatever
+    the cabinet was last left in (it is still set while the player sits on the Single Level page,
+    with the attract cycle running behind the menu). Every one of them resolves the mode
+    explicitly instead:
+    - The score pages give campaign and single level times **their own page families**, each
+      asking `HS_GameId_Mode()` for the mode it wants. They were campaign-only at first, partly to
+      stop single level times leaking on when the flag happened to be set and partly to stop the
+      page count doubling; bounding the cycle to three pages an appearance removed the second
+      objection, and asking explicitly removed the first.
     - `HS_NextRecordDemoPath` accepts **both ids** and captions the single-level ones
       `SINGLE LEVEL: E1M1  HNTR  SPEED  0:13`. A single-level demo is an ordinary one map
       recording — nothing about replaying it is mode specific — and it adds no pages, just another
@@ -1130,35 +1133,76 @@ silently made the flag do nothing at all.
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
   are shared between game modes and the last is reachable only under the retail divisor.
 
-  The page is **grouped by skill, one difficulty per page**, listing every map that has a time
-  under it in two compact columns (`HS_ROWS_PER_COL` x `HS_PAGE_COLS` = 24 maps a page), with an
-  `n of m` footer. A full 32 map wad is two pages per skill rather than thirty-two pages. Maps
-  with no time are skipped (`HS_Entry_Eligible()`); a skill with no times gets no page at all.
-  Pages are numbered linearly across (skill, chunk) and resolved by `HS_Resolve_Page()`,
-  recomputed from the table each time rather than stored, since the table grows during a session.
+  **The pages are enumerated, not numbered** (`HS_Build_Pages`, `hs_page_t`). Four kinds:
+
+  | kind | one page per | content |
+  | --- | --- | --- |
+  | `HSPG_campaign` | (skill, category) | best cumulative time per map, whole game |
+  | `HSPG_single` | (skill, category) | the same for single level runs, with initials |
+  | `HSPG_board` | (skill, category) | the run board, ten deep |
+  | `HSPG_slmap` | one slot | one map's single level top three, by difficulty |
+
+  A page is only enumerated when it would have something on it, so empty skills and categories
+  cost nothing. The list is rebuilt on every query because the tables grow during a session.
+
+  - **An appearance shows `HS_PAGES_PER_CYCLE` (3) pages, not all of them**, and the cursor is
+    deliberately *not* reset between appearances (`HS_Attract_Cycle_Pages`, and the removal of the
+    old `HS_Attract_Reset_Pages`). This is load-bearing: with campaign, single level, board and
+    per-map pages the cabinet's own tables enumerate **14 pages** under Ultimate Doom, which at 8s
+    each is nearly two minutes of score pages between demos. A bounded window keeps each
+    interruption around 24s while the whole set still comes round over a few cycles.
+  - **`HSPG_slmap` is one slot, not one page per map.** It advances `hs_slmap_cursor` when it is
+    *drawn*, so a different map comes up each time it appears. Enumerating a page per map would
+    have put ten-plus near-identical pages in the rotation.
+
+  **Best times pages** list **every map of the game**, not only the ones with a time, so the
+  columns line up with the episodes — E1-E2 left, E3-E4 right for Doom 1 — and an unclaimed map is
+  visible as `--:--.--`. The map list comes from `HS_Map_List()`, which decides a map exists by
+  whether its **lump** exists, so it follows level packs instead of assuming 32 maps or four
+  episodes, and is sorted by `HS_MapOrder`.
+  - **One page per (skill, category), not both categories side by side, and this is forced by
+    width.** Measured against the real `STCFN` lumps, a row of `MAP01  12:34.57  12:34.57` is
+    **156px** against the 160 a column has, and a cumulative Doom 2 time reaching `123:45.67`
+    makes it **164**. Times are right-justified, so the failure mode is silent overlap of the map
+    name rather than clipping. Splitting by category also freed the width for the initials.
+  - Column layout, relative to the column origin: map name at +0, time right-justified at **+110**
+    (so the widest `888:88.99` at 64px starts at +46 and clears a 38px map name by 8), initials at
+    **+118**. Origins **10** and **168**, so the columns span 10..152 and 168..310 of 320.
+  - **The row step is computed, not fixed**: `(182 - 46) / (rows - 1)`, capped at 10. Ultimate
+    Doom's 36 maps give 18 rows and a step of 8 (last row at 182, text bottom 189); Doom 2's 32
+    give 16 rows and a step of 9; a short level pack gets the full 10.
+  - **Only the single level page names a holder.** Its board is keyed per map, so the number one
+    entry there is the same run as the split by construction. A *campaign* split is genuinely
+    anonymous — the split table records no owner, and a campaign board entry is keyed by the run's
+    **end** map, so nothing attributes the MAP03 split of a run that carried on to MAP08. The
+    column is omitted entirely on campaign pages rather than printing `---` on every row.
+  - Titled **"SINGLE PLAYER BEST TIMES"** / **"SINGLE LEVEL BEST TIMES"**, replacing "HIGH SCORES".
+
+  **The per-map single level page** (`HS_Draw_SL_Map_Page`) is laid out **difficulty x place**
+  rather than a stacked block per difficulty, which reads in one glance: skill label at x=10, then
+  three cells at 52, 139 and 226. Measured, a cell is `AAA 0:08.57` at 75px and at worst
+  `AAA 29:59.99` at 83px for a slow max run of one map, so cells clear each other by 4px and the
+  last ends at 309 of 320. The max block is drawn only when it has entries, or the page would be
+  half a screen of blanks.
+
   - The skill is shown as the **New Game menu's own graphic** (`hs_skillpatch[]` —
     `M_JKILL`/`M_ROUGH`/`M_HURT`/`M_ULTRA`/`M_NMARE`, matching `ITYTD`/`HNTR`/`HMP`/`UV`/`NM`),
     not the short text name, so it reads from across a room. Falls back to the text if the lump is
     missing, since those are the Doom names and Heretic differs.
-    - **Bottom aligned** on `HS_PG_SKILL_BOT` (42), not top aligned: the patches are 15..19 tall
-      (`M_NMARE` is the tall one), so aligning tops would make the baseline jump as pages cycle.
-      The band is tight — "HIGH SCORES" ends at 21, column headers start at 44 — leaving the
-      tallest at y=23 with 2px either side. Widths reach 248 (`M_ROUGH`), still centred in 320.
-      Verified in a live attract cycle: `M_JKILL` 246x15 landed at x=37, y=27.
-  - **`HS_PAGE_SECS` is 8**, up from the 3 left over from the original one-map-per-page scheme.
-    A page is now two columns of twelve, which cannot be read in three seconds. Raise it further if
-    it still feels rushed; the only cost is a longer gap between attract demos.
+    - **Bottom aligned** on `HS_PG_SKILL_BOT` (**34**), not top aligned: the patches are 15..19
+      tall (`M_NMARE` is the tall one), so aligning tops would make the baseline jump as pages
+      cycle. Widths reach 248 (`M_ROUGH`), still centred in 320.
+  - **`HS_PAGE_SECS` is 8.** Its cost is bounded now that an appearance shows at most three pages,
+    so raising it is cheaper than it used to be.
   - **`HS_MapOrder()` sorts by the order a player actually reaches the maps, not by name.** Doom 2
     hides MAP31/32 behind MAP15's secret exit and returns to MAP16 afterwards, so the run is
     **15 -> 31 -> 32 -> 16**; plain numeric order would list them fifteen levels from where they
     are played. Doom 1 is episode major, map minor -- E?M9 is a secret level too but sits at the
-    end of its episode, which is where numeric order already puts it. Verified against a live
-    table: `doomu` produced one page reading E1M1..E1M7, E2M1..E2M7.
-  - Column offsets were measured against the real font: `MAP01` is 38px and a `12:34` time about
-    38px, so the speed column starts at +84 from the column origin, leaving a 14px gap. Re-measure
-    from the `STCFN0xx` lumps if the row format changes.
-  - This replaced a one-map-per-page scheme tracked by map *name*. It paged correctly but grew a
-    page per map -- 14 recorded maps meant 14 pages, 42 seconds of high scores between demos.
+    end of its episode, which is where numeric order already puts it.
+  - Verified numerically rather than by eye: Ultimate Doom enumerates 36 maps E1M1..E4M9 in order,
+    18 rows a column at step 8 ending at 189 of 200, columns 10..152 and 168..310, 14 pages at 3
+    per cycle; Doom 2 enumerates 32 as MAP01..MAP15, **MAP31, MAP32**, MAP16..MAP30, 16 rows at
+    step 9 ending at 188.
 
   Records demos in the background and saves the run that set each record. Hooks:
   `HS_Init` from `D_DoomMain` (after `legacyhome` is resolved — `M_Init` is too early),

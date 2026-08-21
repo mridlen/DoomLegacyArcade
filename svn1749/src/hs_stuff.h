@@ -102,19 +102,24 @@ boolean  HS_Board_Entry(boolean single, const char * mapname,
 // Cumulative run time under the intermission's Time row.  label_x is the left
 // edge of the caption, time_right_x the right edge of the value.
 void  HS_Draw_TotalTime(int label_x, int time_right_x, int y);
-// The attract page steps through one page per skill (up to 24 maps each) before
-// handing back to the demo cycle.  Seconds each page is on screen; the whole
-// sequence lasts this times HS_Attract_Page_Count().
+// Seconds each score page is on screen.
 //
 // 3 was left over from the original one-map-per-page scheme, where each page
-// held a single line.  A full page is now two columns of twelve, which nobody
+// held a single line.  A page is now a whole game's map list, which nobody
 // can read in three seconds -- this is the number to raise if it still feels
-// rushed, and the only cost is a longer gap between attract demos.
+// rushed.  Its cost is bounded now: an appearance shows at most
+// HS_Attract_Cycle_Pages() of them, not the whole set.
 #define HS_PAGE_SECS  8
 
-void  HS_Attract_Reset_Pages(void);   // back to the first map
-void  HS_Attract_Advance_Page(void);  // next map, wrapping
-int   HS_Attract_Page_Count(void);    // maps with at least one time
+void  HS_Attract_Advance_Page(void);  // next page, wrapping
+int   HS_Attract_Page_Count(void);    // pages the tables currently justify
+// [Arcade] How many pages one appearance shows before handing back to the
+// demo cycle.  The whole set is no longer run after every demo: campaign,
+// single level, board and per-map pages together reached about 100 seconds
+// between demos, which is unusable on a machine advertising itself.  The
+// page cursor is deliberately *not* reset between appearances, so the rest
+// of the set comes round on later cycles.
+int   HS_Attract_Cycle_Pages(void);
 void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);
