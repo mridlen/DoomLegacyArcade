@@ -44,8 +44,20 @@ static const char * hs_catname[HS_NUMCAT] = { "speed", "max" };
 // Time columns are right-justified at x + HS_COL_TIME + cat*HS_COL_STEP.
 // Sized so the skill label (up to "ITYTD") clears the first column and the
 // last column's right edge still lands inside BASEVIDWIDTH (320).
-#define HS_COL_TIME   90
-#define HS_COL_STEP   62
+//
+// [Arcade] Widened when these times went to hundredths, and re-measured
+// against the real STCFN lumps at the call site's new x of 138:
+//   skill label   "ITYTD" 36px    138 .. 174
+//   speed time    "888:88.99" 64px right-justified at 138+108 = 246,
+//                                 so 182 .. 246, clearing the label by 8
+//   max time      right-justified at 138+108+72 = 318, so 254 .. 318,
+//                                 clearing the speed column by 8
+// 318 is inside BASEVIDWIDTH 320, and the headers ("speed" 39px, "max" 26px)
+// are narrower than the values they sit over.  The call site moved from 156
+// to 138 to open the extra 40px these two columns needed; "NEW RECORD" is
+// still centred in everything left of x, which at 77px lands at 30..107.
+#define HS_COL_TIME  108
+#define HS_COL_STEP   72
 
 typedef struct
 {
@@ -53,10 +65,75 @@ typedef struct
     char     mapname[9];
     boolean  has_record[HS_NUMCAT][HS_NUMSKILLS];
     tic_t    besttime[HS_NUMCAT][HS_NUMSKILLS];
+    // [Arcade] Map the run that set this record began on.  besttime is
+    // cumulative from the start of a run, so a record at E1M5 is normally an
+    // E1M1-E1M5 time -- worth saying out loud on the attract captions, where
+    // a five level run was previously indistinguishable from a one level one.
+    // Stored rather than inferred from the episode: every menu-started
+    // campaign does begin at map 1, but that is a property of the menus, not
+    // of the record, and anything that ever starts a run mid-episode would
+    // silently make the inferred range a lie.
+    char     startmap[HS_NUMCAT][HS_NUMSKILLS][9];
 } hs_maprecord_t;
 
 static hs_maprecord_t  hs_table[HS_MAX_MAPS];
 static int              hs_table_count = 0;
+
+// -------------------------------------------------------------------------
+// [Arcade] The run board.  See the header for why this is a separate table
+// and a separate file from the per-map splits above.
+#define HS_MAX_RUNS  256
+
+typedef struct
+{
+    char   game[HS_GAMEID_LEN];   // carries the "-sl" suffix for single level
+    char   startmap[9];
+    char   endmap[9];
+    byte   skill;
+    byte   cat;
+    tic_t  tics;
+    char   initials[HS_INITIALS_LEN];
+} hs_run_t;
+
+static hs_run_t  hs_runs[HS_MAX_RUNS];
+static int       hs_runs_count = 0;
+static char      hs_runfile[MAX_WADPATH];
+
+// The run in progress, frozen at its last *scored* level exit.  Deliberately
+// separate from hs_cumulative_time, which keeps accumulating after a death
+// so the intermission can still show an honest elapsed time: the board entry
+// must stop at the last level the run actually completed under scoring.
+static char    hs_run_startmap[9] = "";
+static char    hs_run_endmap[9]   = "";
+// The run's own skill, *not* hs_last_exit_skill.  That one is set above the
+// demoplayback guard in HS_LevelExit, so an attract demo playing behind the
+// initials prompt -- which sits there for up to cv_initialstimeout seconds --
+// would overwrite it, and the initials would then be looked up against the
+// wrong board and silently never stamped.
+static skill_e hs_run_skill       = sk_baby;
+static tic_t   hs_run_tics        = 0;
+static int     hs_run_levels      = 0;    // scored level exits this run
+static boolean hs_run_endmap_max  = false;// was the max category still alive?
+static char    hs_run_gameid[HS_GAMEID_LEN] = "";
+
+// Ruleset-and-cheating only -- a *death does not clear this*, which is the
+// whole point of the progress board.  hs_run_ranked still goes false on a
+// death (it gates the split records, where a free level reload would
+// otherwise make dying a costless retry); this stays true so the run can
+// still take its place on the board for how far it actually got.
+// Initialised true to match hs_run_ranked above, and for the same reason: a
+// game started from the command line (-warp) never runs HS_NewGame, so a
+// flag defaulting false would let such a game write split records while
+// silently never reaching the board.  The two must agree.
+static boolean hs_run_board_ok = true;
+
+// Set by HS_Run_Finished when the finished run took a place; cleared by
+// HS_Set_Initials.  hs_run_placed[] indexes the entries to stamp -- one run
+// can place in both categories at once.
+static boolean hs_initials_pending = false;
+static int     hs_run_placed[HS_NUMCAT];
+static int     hs_run_placed_n = 0;
+static int     hs_run_best_place = 0;
 
 // =========================================================================
 //   Ranked ruleset
@@ -257,6 +334,10 @@ void  HS_Player_Cheated( void )
         hs_run_ranked = false;
     }
 
+    // [Arcade] A cheat *does* take the run off the board, unlike a death:
+    // dying is playing badly, cheating is not playing the same game.
+    hs_run_board_ok = false;
+
     // Nothing more can be recorded, so stop spending the demo buffer on it.
     // Records earned before the cheat keep their own saved demos.
     if( demorecording )
@@ -327,6 +408,26 @@ static void HS_FormatTime( tic_t tics, char * buf, size_t bufsize )
 }
 
 
+// [Arcade] The same time to hundredths.  Times have always been stored as
+// tics -- highscores.dat's fourth field is a raw tic count -- so this needs
+// no format change and no migration; whole seconds were simply thrown away
+// at the point of display, which is far too coarse to separate two E1M1
+// runs a handful of tics apart.
+//
+// TICRATE is 35, which does not divide 100, so the hundredths are a scaled
+// tic count rather than exact: floor((tics % 35) * 100 / 35).  That is the
+// convention the wider Doom speedrunning world displays, so a cabinet time
+// reads the same way as one from anywhere else.
+void  HS_Format_Time_CS( tic_t tics, char * buf, size_t bufsize )
+{
+    int seconds = tics / TICRATE;
+    int minutes = seconds / 60;
+    int secs    = seconds % 60;
+    int cs      = (int)((tics % TICRATE) * 100 / TICRATE);
+    snprintf(buf, bufsize, "%d:%02d.%02d", minutes, secs, cs);
+}
+
+
 static hs_maprecord_t * HS_FindOrAddRecord( const char * game, const char * mapname )
 {
     int  i;
@@ -371,6 +472,7 @@ static void HS_Load( void )
     char   game[64];   // wider than HS_GAMEID_LEN; copy in is bounded
     char   mapname[16];
     char   catname[16];
+    char   startmap[16];
     int    skillnum, cat, i;
     unsigned int  tics;
     int    old_format = 0;
@@ -384,10 +486,12 @@ static void HS_Load( void )
     {
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
             continue;
-        // The category was added last and is written at the end, so a line
-        // without it is a speed record from before the split.
-        int nf = sscanf(line, "%63s %15s %d %u %15s",
-                        game, mapname, &skillnum, &tics, catname);
+        // Fields are only ever *appended*, so an older short line still
+        // loads: four fields is a pre-category speed record, five adds the
+        // category, six adds the map the run started on.
+        startmap[0] = 0;
+        int nf = sscanf(line, "%63s %15s %d %u %15s %15s",
+                        game, mapname, &skillnum, &tics, catname, startmap);
         if( nf < 4 )
         {
             // Records written before scores were tracked per game cannot be
@@ -411,6 +515,10 @@ static void HS_Load( void )
         if( ! rec )  continue;
         rec->has_record[cat][skillnum] = true;
         rec->besttime[cat][skillnum]   = (tic_t) tics;
+        // No start map recorded (a line written before this field existed):
+        // leave it empty and let the caption fall back to the bare map name
+        // rather than inventing a range that may not be true.
+        dl_strncpy( rec->startmap[cat][skillnum], startmap, 8 );
     }
 
     fclose(fr);
@@ -435,18 +543,26 @@ static void HS_Save( void )
     }
 
     fprintf(fw, "# DoomLegacy arcade high scores:"
-                " wadcombo mapname skill cumulative_tics category\n");
+                " wadcombo mapname skill cumulative_tics category startmap\n");
     for( i=0; i<hs_table_count; i++ )
     {
         for( cat=0; cat<HS_NUMCAT; cat++ )
         {
             for( sk=0; sk<HS_NUMSKILLS; sk++ )
             {
-                if( hs_table[i].has_record[cat][sk] )
-                    fprintf(fw, "%s %s %d %u %s\n",
-                            hs_table[i].game, hs_table[i].mapname, sk,
-                            (unsigned int) hs_table[i].besttime[cat][sk],
-                            hs_catname[cat]);
+                const char * sm;
+                if( ! hs_table[i].has_record[cat][sk] )  continue;
+
+                // Never write an empty field: it would shift every field
+                // after it on the next read.  "-" reads back as "no start
+                // map known", the same as a line from before this existed.
+                sm = hs_table[i].startmap[cat][sk];
+                if( sm[0] == 0 )  sm = "-";
+
+                fprintf(fw, "%s %s %d %u %s %s\n",
+                        hs_table[i].game, hs_table[i].mapname, sk,
+                        (unsigned int) hs_table[i].besttime[cat][sk],
+                        hs_catname[cat], sm);
             }
         }
     }
@@ -455,11 +571,506 @@ static void HS_Save( void )
 }
 
 
+// =========================================================================
+//   Run board storage  [Arcade]
+// =========================================================================
+
+static int   HS_MapOrder( const char * mapname );   // defined with the pages
+static void  HS_Board_Sort( const hs_run_t * key ); // defined below
+
+// Is this game id a single level one?  The board rules differ: single level
+// runs are all one map so they rank on time alone and sit three deep, while
+// campaign runs rank on progress first and sit ten deep.
+static boolean  HS_Id_Is_Single( const char * game )
+{
+    size_t n = strlen(game);
+    return (n >= 3) && (strcmp(game + n - 3, "-sl") == 0);
+}
+
+
+int  HS_Board_Depth( boolean single )
+{
+    return single ? HS_BOARD_DEPTH_SL : HS_BOARD_DEPTH_RUN;
+}
+
+
+// Do two runs compete for the same board places?
+static boolean  HS_Same_Board( const hs_run_t * a, const hs_run_t * b )
+{
+    if( a->skill != b->skill || a->cat != b->cat )  return false;
+    if( strncmp(a->game, b->game, HS_GAMEID_LEN-1) != 0 )  return false;
+    // A single level board is per map; a campaign board spans the whole game.
+    if( HS_Id_Is_Single(a->game)
+        && strncmp(a->endmap, b->endmap, 8) != 0 )  return false;
+    return true;
+}
+
+
+// Ranking within a board.  Negative when a outranks b.
+//
+// Campaign runs go furthest first and use time only to break ties, so a run
+// that died on E1M6 still outranks one that died on E1M3 however fast the
+// latter was, and a completed episode tops the board because nothing beats
+// it on progress.  Single level runs are all the same map, so progress is
+// constant and this reduces to the time comparison.
+static int  HS_Run_Cmp( const hs_run_t * a, const hs_run_t * b )
+{
+    if( ! HS_Id_Is_Single(a->game) )
+    {
+        int pa = HS_MapOrder(a->endmap);
+        int pb = HS_MapOrder(b->endmap);
+        if( pa != pb )  return (pb - pa);   // further is better
+    }
+    if( a->tics != b->tics )  return (a->tics < b->tics) ? -1 : 1;
+    return 0;
+}
+
+
+static void HS_Runs_Load( void )
+{
+    FILE * fr;
+    char   line[160];
+    char   game[64], startmap[16], endmap[16], catname[16], initials[16];
+    int    skillnum, cat, i;
+    unsigned int tics;
+
+    hs_runs_count = 0;
+
+    fr = fopen(hs_runfile, "r");
+    if( ! fr )  return;
+
+    while( fgets(line, sizeof(line), fr) )
+    {
+        if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )  continue;
+
+        initials[0] = 0;
+        int nf = sscanf(line, "%63s %15s %15s %d %15s %u %15s",
+                        game, startmap, endmap, &skillnum, catname,
+                        &tics, initials);
+        if( nf < 6 )  continue;
+        if( skillnum < 0 || skillnum >= HS_NUMSKILLS )  continue;
+        if( hs_runs_count >= HS_MAX_RUNS )  break;
+
+        cat = HS_CAT_speed;
+        for( i = 0; i < HS_NUMCAT; i++ )
+        {
+            if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
+        }
+
+        hs_run_t * r = &hs_runs[hs_runs_count++];
+        memset(r, 0, sizeof(*r));
+        dl_strncpy(r->game, game, HS_GAMEID_LEN-1);
+        dl_strncpy(r->startmap, startmap, 8);
+        dl_strncpy(r->endmap, endmap, 8);
+        r->skill = (byte) skillnum;
+        r->cat   = (byte) cat;
+        r->tics  = (tic_t) tics;
+        // "---" is the placeholder written for a run nobody claimed; read it
+        // back as empty so one code path covers both.
+        if( strcmp(initials, "---") == 0 )  initials[0] = 0;
+        dl_strncpy(r->initials, initials, HS_INITIALS_LEN);
+    }
+
+    fclose(fr);
+
+    // Re-establish "stored order is rank order", which HS_Board_Entry walks
+    // to hand out places.  Insertion maintains it, but runs.dat is a plain
+    // text file an operator may have edited.  One pass, sorting each board
+    // the first time an entry of it is seen.
+    for( i=0; i<hs_runs_count; i++ )
+    {
+        int j;
+        for( j=0; j<i; j++ )
+        {
+            if( HS_Same_Board(&hs_runs[j], &hs_runs[i]) )  break;
+        }
+        if( j == i )  HS_Board_Sort( &hs_runs[i] );
+    }
+}
+
+
+static void HS_Runs_Save( void )
+{
+    FILE * fw;
+    int    i;
+
+    fw = fopen(hs_runfile, "w");
+    if( ! fw )
+    {
+        GenPrintf(EMSG_warn, "HS_Runs_Save: could not write %s\n", hs_runfile);
+        return;
+    }
+
+    fprintf(fw, "# DoomLegacy arcade run board:"
+                " wadcombo startmap endmap skill category tics initials\n");
+    for( i=0; i<hs_runs_count; i++ )
+    {
+        const char * ini = hs_runs[i].initials;
+        if( ini[0] == 0 )  ini = "---";
+        fprintf(fw, "%s %s %s %d %s %u %s\n",
+                hs_runs[i].game, hs_runs[i].startmap, hs_runs[i].endmap,
+                (int) hs_runs[i].skill, hs_catname[hs_runs[i].cat],
+                (unsigned int) hs_runs[i].tics, ini);
+    }
+
+    fclose(fw);
+}
+
+
+// Slots holding the entries of one board, in stored order.  Boards are
+// interleaved in hs_runs[] -- entries are appended as runs finish, whatever
+// game or skill they belong to -- so every board operation works through
+// this gather rather than over a contiguous range.
+static int  HS_Board_Slots( const hs_run_t * key, int * out, int out_max )
+{
+    int  i, n = 0;
+    for( i=0; i<hs_runs_count && n<out_max; i++ )
+    {
+        if( HS_Same_Board(&hs_runs[i], key) )  out[n++] = i;
+    }
+    return n;
+}
+
+
+// Put one board's entries in rank order.  Selection sort over the gathered
+// slots, so the entries move but the slots they occupy do not -- other
+// boards interleaved between them are left untouched.
+//
+// The stored order being the rank order is an invariant the rest of this
+// relies on: HS_Board_Entry walks the file order and hands back the nth
+// match as the nth place.  Insertion maintains it, and this re-establishes
+// it after a load, since runs.dat may have been hand-edited.
+static void  HS_Board_Sort( const hs_run_t * key )
+{
+    int  slot[HS_MAX_RUNS];
+    int  n = HS_Board_Slots( key, slot, HS_MAX_RUNS );
+    int  a, b;
+
+    for( a=0; a<n-1; a++ )
+    {
+        int best = a;
+        for( b=a+1; b<n; b++ )
+        {
+            if( HS_Run_Cmp(&hs_runs[slot[b]], &hs_runs[slot[best]]) < 0 )
+                best = b;
+        }
+        if( best != a )
+        {
+            hs_run_t tmp        = hs_runs[slot[a]];
+            hs_runs[slot[a]]    = hs_runs[slot[best]];
+            hs_runs[slot[best]] = tmp;
+        }
+    }
+}
+
+
+// Insert a finished run, keeping its board sorted and pruned to depth.
+// Returns the 1-based place taken, or 0 if it did not make the board.
+static int  HS_Board_Insert( const hs_run_t * run )
+{
+    int  slot[HS_MAX_RUNS];
+    int  n, place, depth, at;
+
+    depth = HS_Board_Depth( HS_Id_Is_Single(run->game) );
+    n = HS_Board_Slots( run, slot, HS_MAX_RUNS );
+
+    // Where it lands among the entries it competes with.  The comparison is
+    // strict, so an exactly equal time stops *behind* the entry already
+    // there: first to achieve a time keeps the higher place, which is the
+    // arcade convention and matters now that times are kept to the tic.
+    for( place = 0; place < n; place++ )
+    {
+        if( HS_Run_Cmp(run, &hs_runs[slot[place]]) < 0 )  break;
+    }
+    if( place >= depth )  return 0;   // off the bottom of the board
+
+    if( hs_runs_count >= HS_MAX_RUNS )
+    {
+        // Pruning bounds the file, so this only happens if it was hand
+        // edited, or if very many games and packs share one cabinet.
+        // Refusing is better than silently dropping someone else's entry.
+        GenPrintf(EMSG_warn, "Run board full (%d); entry not recorded.\n",
+                  HS_MAX_RUNS);
+        return 0;
+    }
+
+    // Open a slot at the right position.  Inserting *at* the slot currently
+    // holding the entry it displaces keeps this board's stored order equal
+    // to its rank order without disturbing any other.
+    at = (place < n) ? slot[place]
+                     : ((n > 0) ? slot[n-1] + 1 : hs_runs_count);
+    memmove( &hs_runs[at+1], &hs_runs[at],
+             (hs_runs_count - at) * sizeof(hs_run_t) );
+    hs_runs[at] = *run;
+    hs_runs_count++;
+
+    // Drop whatever fell off the bottom.  At most one entry can, since the
+    // board was already within depth before this insert.
+    n = HS_Board_Slots( run, slot, HS_MAX_RUNS );
+    if( n > depth )
+    {
+        int drop = slot[n-1];
+        memmove( &hs_runs[drop], &hs_runs[drop+1],
+                 (hs_runs_count - drop - 1) * sizeof(hs_run_t) );
+        hs_runs_count--;
+    }
+
+    return place + 1;
+}
+
+
+boolean  HS_Board_Entry( boolean single, const char * mapname,
+                         skill_e skill, int cat, int place,
+                         char * out_initials, char * out_range,
+                         tic_t * out_tics )
+{
+    char  wanted[HS_GAMEID_LEN];
+    int   i, seen = 0;
+
+    if( cat < 0 || cat >= HS_NUMCAT )  return false;
+    if( skill < 0 || skill >= HS_NUMSKILLS )  return false;
+
+    dl_strncpy( wanted, HS_GameId_Mode(single), HS_GAMEID_LEN-1 );
+
+    for( i=0; i<hs_runs_count; i++ )
+    {
+        const hs_run_t * r = &hs_runs[i];
+        if( r->skill != skill || r->cat != cat )  continue;
+        if( strncmp(r->game, wanted, HS_GAMEID_LEN-1) != 0 )  continue;
+        if( single && mapname
+            && strncmp(r->endmap, mapname, 8) != 0 )  continue;
+
+        if( seen++ != place )  continue;
+
+        if( out_initials )
+            dl_strncpy( out_initials,
+                        r->initials[0] ? r->initials : "---",
+                        HS_INITIALS_LEN );
+        if( out_range )
+        {
+            // A one map run reads as the bare map name; only a run that
+            // actually spans levels gets a range.
+            if( r->startmap[0] && strncmp(r->startmap, r->endmap, 8) != 0 )
+                snprintf( out_range, 20, "%.8s-%.8s", r->startmap, r->endmap );
+            else
+                snprintf( out_range, 20, "%.8s", r->endmap );
+        }
+        if( out_tics )  *out_tics = r->tics;
+        return true;
+    }
+
+    return false;
+}
+
+
+
+// -------------------------------------------------------------------------
+// The run in progress, and committing it when it ends.
+
+static void  HS_Run_Reset( void )
+{
+    hs_run_startmap[0] = 0;
+    hs_run_endmap[0]   = 0;
+    hs_run_skill       = sk_baby;
+    hs_run_tics        = 0;
+    hs_run_levels      = 0;
+    hs_run_endmap_max  = false;
+    hs_run_gameid[0]   = 0;
+    hs_initials_pending = false;
+    hs_run_placed_n    = 0;
+    hs_run_best_place  = 0;
+}
+
+
+// [Arcade] Called from every route back to the title (Command_ExitGame_f),
+// which is the point a run is definitively over: the player finished the
+// episode, died and gave up, chose End Game, or walked away and let the idle
+// timeout fire.
+//
+// Idempotent, because that funnel can be reached more than once -- notably
+// M_SingleLevel_Finished calls it and then the menu it returns to may lead
+// straight back out again.  Committing sets hs_run_levels to 0, so a second
+// call finds nothing to do.
+void  HS_Run_Finished( void )
+{
+    hs_run_t  run;
+    int  cat;
+
+    if( hs_run_levels == 0 )  return;   // nothing was ever scored
+    if( ! hs_run_board_ok )             // altered ruleset, or a cheat
+    {
+        HS_Run_Reset();
+        return;
+    }
+
+    hs_run_placed_n   = 0;
+    hs_run_best_place = 0;
+
+    for( cat=0; cat<HS_NUMCAT; cat++ )
+    {
+        int place;
+
+        // The max board only takes runs that were still 100% at the point
+        // they stopped; the speed board takes every scored run.
+        if( cat == HS_CAT_max && ! hs_run_endmap_max )  continue;
+
+        memset( &run, 0, sizeof(run) );
+        dl_strncpy( run.game, hs_run_gameid, HS_GAMEID_LEN-1 );
+        dl_strncpy( run.startmap, hs_run_startmap, 8 );
+        dl_strncpy( run.endmap, hs_run_endmap, 8 );
+        run.skill = (byte) hs_run_skill;
+        run.cat   = (byte) cat;
+        run.tics  = hs_run_tics;
+
+        place = HS_Board_Insert( &run );
+        if( place > 0 )
+        {
+            // Remember where it went so the initials can be stamped on
+            // exactly these entries once the player has entered them.
+            hs_run_placed[hs_run_placed_n++] = cat;
+            if( hs_run_best_place == 0 || place < hs_run_best_place )
+                hs_run_best_place = place;
+        }
+    }
+
+    if( hs_run_placed_n > 0 )
+    {
+        HS_Runs_Save();          // the place is real even if nobody claims it
+        hs_initials_pending = true;
+        GenPrintf( EMSG_info, "Run placed %d on the board (%s %s-%s).\n",
+                   hs_run_best_place, hs_run_gameid,
+                   hs_run_startmap, hs_run_endmap );
+    }
+
+    // Consumed: the run's own state is done with, but the placement is left
+    // standing for HS_Set_Initials to find.
+    hs_run_levels = 0;
+}
+
+
+boolean  HS_Initials_Pending( void )
+{
+    return hs_initials_pending;
+}
+
+
+int  HS_Run_Place( void )
+{
+    return hs_run_best_place;
+}
+
+
+void  HS_Set_Initials( const char * ini )
+{
+    char  clean[HS_INITIALS_LEN];
+    int   i, n;
+
+    if( ! hs_initials_pending )  return;
+
+    // Keep it to the characters hu_font can actually draw, uppercased.
+    memset( clean, 0, sizeof(clean) );
+    if( ini )
+    {
+        for( i=0, n=0; ini[i] && n < HS_INITIALS_LEN-1; i++ )
+        {
+            unsigned char uc = (unsigned char) ini[i];
+            if( uc <= ' ' )  continue;
+            clean[n++] = toupper(uc);
+        }
+    }
+
+    // Stamp every entry this run placed.  Both categories can place at once,
+    // and they are the same run by the same player.
+    for( i=0; i<hs_run_placed_n; i++ )
+    {
+        int  slot[HS_MAX_RUNS];
+        int  ns, s;
+        hs_run_t key;
+
+        memset( &key, 0, sizeof(key) );
+        dl_strncpy( key.game, hs_run_gameid, HS_GAMEID_LEN-1 );
+        dl_strncpy( key.endmap, hs_run_endmap, 8 );
+        key.skill = (byte) hs_run_skill;
+        key.cat   = (byte) hs_run_placed[i];
+
+        ns = HS_Board_Slots( &key, slot, HS_MAX_RUNS );
+        for( s=0; s<ns; s++ )
+        {
+            hs_run_t * r = &hs_runs[slot[s]];
+            // The entry this run just made: same end map and same time, and
+            // not already claimed.  Matching on the time as well as the map
+            // is what keeps this off an older entry that happens to share
+            // the end map.
+            if( r->tics != hs_run_tics )  continue;
+            if( strncmp(r->endmap, hs_run_endmap, 8) != 0 )  continue;
+            if( r->initials[0] )  continue;
+            dl_strncpy( r->initials, clean, HS_INITIALS_LEN );
+            break;
+        }
+    }
+
+    HS_Runs_Save();
+
+    hs_initials_pending = false;
+    hs_run_placed_n     = 0;
+    hs_run_best_place   = 0;
+}
+
+
 static void  HS_Shuffle_Seed( void );   // attract demo replay order, below
+
+// [Arcade] Give a cabinet that already has scores a populated single level
+// board on the first run of this build, instead of a page of dashes beside
+// times it can plainly see elsewhere.
+//
+// Only the single level records can be converted: one of those *is* one run,
+// so the mapping is exact.  A campaign split cannot be -- several of them
+// come from the same run and nothing in the old file says which -- so the
+// campaign board deliberately starts empty and fills as runs are played.
+// Seeded entries carry the "nobody claimed this" placeholder for initials.
+static void  HS_Seed_Runs_From_Splits( void )
+{
+    int  i, sk, cat;
+
+    for( i=0; i<hs_table_count; i++ )
+    {
+        if( ! HS_Id_Is_Single(hs_table[i].game) )  continue;
+
+        for( cat=0; cat<HS_NUMCAT; cat++ )
+        {
+            for( sk=0; sk<HS_NUMSKILLS; sk++ )
+            {
+                hs_run_t  run;
+                if( ! hs_table[i].has_record[cat][sk] )  continue;
+
+                memset( &run, 0, sizeof(run) );
+                dl_strncpy( run.game, hs_table[i].game, HS_GAMEID_LEN-1 );
+                dl_strncpy( run.startmap, hs_table[i].mapname, 8 );
+                dl_strncpy( run.endmap,   hs_table[i].mapname, 8 );
+                run.skill = (byte) sk;
+                run.cat   = (byte) cat;
+                run.tics  = hs_table[i].besttime[cat][sk];
+                HS_Board_Insert( &run );
+            }
+        }
+    }
+
+    if( hs_runs_count > 0 )
+    {
+        GenPrintf( EMSG_info,
+                   "Run board seeded with %d single level time(s).\n",
+                   hs_runs_count );
+        HS_Runs_Save();
+    }
+}
+
 
 void HS_Init( void )
 {
+    boolean  had_runfile;
+
     cat_filename( hs_scorefile, legacyhome, "highscores.dat" );
+    cat_filename( hs_runfile,   legacyhome, "runs.dat" );
     cat_filename( hs_demodir,   legacyhome, "demos" );
 
     if( access(hs_demodir, R_OK) < 0 )
@@ -467,6 +1078,11 @@ void HS_Init( void )
 
     HS_Shuffle_Seed();   // [Arcade] attract demo replay order
     HS_Load();
+
+    had_runfile = (access(hs_runfile, R_OK) == 0);
+    HS_Runs_Load();
+    if( ! had_runfile )
+        HS_Seed_Runs_From_Splits();
 }
 
 
@@ -511,6 +1127,14 @@ void Command_ClearHighScores_f( void )
     hs_cumulative_time = 0;
     hs_last_exit_mapname[0] = 0;
 
+    // [Arcade] The run board is part of "the scores" and goes with them --
+    // leaving it would put named board entries beside an empty split table.
+    hs_runs_count = 0;
+    memset(hs_runs, 0, sizeof(hs_runs));
+    HS_Run_Reset();
+    if( remove(hs_runfile) == 0 )
+        GenPrintf(EMSG_info, "Run board cleared.\n");
+
     if( remove(hs_scorefile) != 0 )
     {
         // Not an error when nothing has been recorded yet.
@@ -532,9 +1156,19 @@ void HS_NewGame( void )
     hs_run_cheated = false;
     memset( hs_new_record, 0, sizeof(hs_new_record) );
 
+    // [Arcade] Any placement from the previous run is finished with by now:
+    // the prompt is raised on the way back to the title, which every route
+    // into a new game passes through first.
+    HS_Run_Reset();
+
     // An altered ruleset makes the run unscoreable, so do not spend the
     // demo buffer on it either -- nothing would ever be saved from it.
     hs_run_ranked = HS_Ruleset_Is_Ranked();
+    // The board takes runs that ended in a death -- that is how nearly every
+    // cabinet run ends, and ranking on progress first is what gives those a
+    // place.  So this tracks the ruleset and cheating *only*, and is
+    // deliberately not cleared by HS_Player_Died.
+    hs_run_board_ok = hs_run_ranked;
     if( ! hs_run_ranked )
     {
         if( demorecording )  G_CheckDemoStatus();
@@ -656,11 +1290,31 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
                 "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
                 HS_Unranked_Reason() );
         hs_run_ranked = false;
+        hs_run_board_ok = false;   // [Arcade] off the board as well
     }
     if( ! hs_run_ranked )
         return;
 
     const char * mapname = G_BuildMapName(episode, map);
+
+    // [Arcade] Freeze the run's board state at this exit.  Everything below
+    // this point is gated on hs_run_ranked, which a death clears -- so this
+    // naturally stops at the last level the run actually completed under
+    // scoring, which is exactly the progress the board should credit.  It
+    // deliberately does not track hs_cumulative_time, which keeps counting
+    // after a death so the intermission can still show elapsed time.
+    if( hs_run_startmap[0] == 0 )
+    {
+        // The first level a run exits is the level it started on.
+        dl_strncpy( hs_run_startmap, mapname, 8 );
+        dl_strncpy( hs_run_gameid, HS_GameId(), HS_GAMEID_LEN-1 );
+    }
+    dl_strncpy( hs_run_endmap, mapname, 8 );
+    hs_run_tics       = hs_cumulative_time;
+    hs_run_skill      = skill;
+    hs_run_endmap_max = hs_run_is_max;
+    hs_run_levels++;
+
     hs_maprecord_t * rec = HS_FindOrAddRecord(HS_GameId(), mapname);
     if( rec == NULL )  return;   // table full
 
@@ -676,6 +1330,10 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
 
         rec->has_record[cat][skill] = true;
         rec->besttime[cat][skill]   = hs_cumulative_time;
+        // [Arcade] Remember where the run holding this split began, so the
+        // attract caption can say "E1M1-E1M5" rather than leaving a five
+        // level time looking like a single level one.
+        dl_strncpy( rec->startmap[cat][skill], hs_run_startmap, 8 );
         saved = true;
         hs_new_record[cat] = true;
 
@@ -707,34 +1365,14 @@ void HS_Draw_TotalTime( int label_x, int time_right_x, int y )
 {
     char timebuf[16];
 
-    HS_FormatTime( hs_cumulative_time, timebuf, sizeof(timebuf) );
+    // [Arcade] To hundredths: this is a *run* time, the number the player is
+    // trying to beat, and it must read at the same precision as the BEST
+    // table beside it.  Measured at the call site's SP_TIMEX 16 and right
+    // edge 144: the widest value "888:88.99" is 64px so it starts no further
+    // left than 80, clear of the "TOTAL" caption which ends at 56.
+    HS_Format_Time_CS( hs_cumulative_time, timebuf, sizeof(timebuf) );
     V_DrawString( label_x, y, 0, "TOTAL" );
     V_DrawString( time_right_x - V_StringWidth(timebuf), y, 0, timebuf );
-}
-
-
-// [Arcade] Best time for one map/skill/category in a chosen mode, for the
-// Single Level menu.  Takes the mode explicitly rather than reading
-// single_level_mode: the menu shows single-level times while the cabinet is
-// still sitting in campaign mode, before any game has started.
-boolean  HS_Best_For( const char * mapname, skill_e skill, int cat,
-                      boolean single, /*OUT*/ tic_t * out )
-{
-    const char * gid = HS_GameId_Mode( single );
-    int i;
-
-    if( skill < 0 || skill >= HS_NUMSKILLS )  return false;
-    if( cat < 0 || cat >= HS_NUMCAT )  return false;
-
-    for( i=0; i<hs_table_count; i++ )
-    {
-        if( strncmp(hs_table[i].mapname, mapname, 8) != 0 )  continue;
-        if( strncmp(hs_table[i].game, gid, HS_GAMEID_LEN-1) != 0 )  continue;
-        if( ! hs_table[i].has_record[cat][skill] )  return false;
-        if( out )  *out = hs_table[i].besttime[cat][skill];
-        return true;
-    }
-    return false;
 }
 
 
@@ -753,13 +1391,6 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 
     if( dest )  dl_strncpy( dest, path, MAX_WADPATH );
     return true;
-}
-
-
-// [Arcade] Format helper for the menu, which has no access to HS_FormatTime.
-void  HS_Format_Time_Str( tic_t tics, char * buf, size_t bufsize )
-{
-    HS_FormatTime( tics, buf, bufsize );
 }
 
 
@@ -801,10 +1432,13 @@ void HS_Draw_IntermissionTable( int x, int y )
 
         for( cat=0; cat<HS_NUMCAT; cat++ )
         {
+            // [Arcade] Hundredths here, matching the TOTAL row below: this
+            // is the number the player is comparing their run against, and
+            // at whole seconds two E1M1 times are usually just equal.
             if( rec->has_record[cat][sk] )
-                HS_FormatTime(rec->besttime[cat][sk], timebuf, sizeof(timebuf));
+                HS_Format_Time_CS(rec->besttime[cat][sk], timebuf, sizeof(timebuf));
             else
-                snprintf(timebuf, sizeof(timebuf), "--:--");
+                snprintf(timebuf, sizeof(timebuf), "--:--.--");
 
             V_DrawString(x + HS_COL_TIME + cat*HS_COL_STEP
                            - V_StringWidth(timebuf),
@@ -823,8 +1457,8 @@ void HS_Draw_IntermissionTable( int x, int y )
     // (98) to SP_TIMEY (168), and the header plus five skill rows already
     // spans y-14 .. y+48, which is 102..164 at the call site's y of 116.
     // So this goes in the horizontal space instead -- the table itself only
-    // occupies x .. x+152 (HS_COL_TIME + (HS_NUMCAT-1)*HS_COL_STEP), which
-    // is 156..308, leaving everything left of x free in that band.
+    // occupies x .. x+180 (HS_COL_TIME + (HS_NUMCAT-1)*HS_COL_STEP), which
+    // is 138..318, leaving everything left of x free in that band.
     //
     // Centred in that free region and vertically on the table block, whose
     // midpoint is ((y-14) + (y+48))/2 = y+17; the glyphs are 8 tall, so the
@@ -882,6 +1516,8 @@ static boolean  HS_Entry_Eligible( const hs_maprecord_t * rec )
 }
 
 
+static int  HS_Board_Page_Count( void );   // defined with the pages below
+
 boolean  HS_Have_Records( void )
 {
     int  i;
@@ -890,7 +1526,9 @@ boolean  HS_Have_Records( void )
     {
         if( HS_Entry_Eligible(&hs_table[i]) )  return true;
     }
-    return false;
+    // [Arcade] A run board with entries is worth showing on its own, even
+    // if nothing qualifies for a split page.
+    return (HS_Board_Page_Count() > 0);
 }
 
 
@@ -967,12 +1605,50 @@ static int  HS_Skill_Pages( int sk )
 }
 
 
-int HS_Attract_Page_Count( void )
+// Pages of per-map split times, which come first in the cycle.
+static int  HS_Split_Page_Count( void )
 {
     int  sk, total = 0;
     for( sk=0; sk<HS_NUMSKILLS; sk++ )
         total += HS_Skill_Pages(sk);
     return total;
+}
+
+
+// [Arcade] Entries on the campaign run board at this skill and category.
+// Counted by walking places rather than the array, so it obeys the board
+// depth and the current game id exactly as the drawer will.
+static int  HS_Board_Rows( int sk, int cat )
+{
+    int  n = 0;
+    while( n < HS_BOARD_DEPTH_RUN
+           && HS_Board_Entry(false, NULL, (skill_e)sk, cat, n,
+                             NULL, NULL, NULL) )
+        n++;
+    return n;
+}
+
+
+// One page per (skill, category) that has anyone on it.  A page is ten rows,
+// which is the whole board, so a board never needs more than one -- unlike
+// the split pages, which chunk a 32 map table.
+static int  HS_Board_Page_Count( void )
+{
+    int  sk, cat, total = 0;
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        for( cat=0; cat<HS_NUMCAT; cat++ )
+        {
+            if( HS_Board_Rows(sk, cat) > 0 )  total++;
+        }
+    }
+    return total;
+}
+
+
+int HS_Attract_Page_Count( void )
+{
+    return HS_Split_Page_Count() + HS_Board_Page_Count();
 }
 
 
@@ -993,6 +1669,29 @@ static boolean  HS_Resolve_Page( int page, int * out_sk, int * out_chunk )
             return true;
         }
         acc += np;
+    }
+    return false;
+}
+
+
+// Resolve a board page index (already relative to the first board page).
+static boolean  HS_Resolve_Board_Page( int page, int * out_sk, int * out_cat )
+{
+    int  sk, cat, acc = 0;
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        for( cat=0; cat<HS_NUMCAT; cat++ )
+        {
+            if( HS_Board_Rows(sk, cat) == 0 )  continue;
+            if( page == acc )
+            {
+                *out_sk  = sk;
+                *out_cat = cat;
+                return true;
+            }
+            acc++;
+        }
     }
     return false;
 }
@@ -1053,6 +1752,91 @@ static void  HS_Draw_Row( int x, int y, const hs_maprecord_t * rec, int sk )
 }
 
 
+// [Arcade] The run board page.  One category of one skill, ten places deep,
+// each naming the player, the span of levels the run covered and its time.
+//
+// Offsets measured against the real STCFN lumps:
+//   rank    "10." 17px right-justified at 41, so 24..41 ("1." is 9px)
+//   player  "AAA" 24px at 48, so 48..72
+//   levels  "MAP01-MAP30" 85px at 110, so 110..195
+//   time    "888:88.99" 64px right-justified at 296, so 232..296
+// The headers ("PLAYER" 48, "LEVELS" 46, "TIME" 29) all sit inside their
+// columns, and ten rows from 58 at HS_PG_ROWSTEP reach 148, leaving the
+// footer's line at BASEVIDHEIGHT-14 clear.
+#define HS_BD_RANK_R    41
+#define HS_BD_INIT_X    48
+#define HS_BD_RANGE_X  110
+#define HS_BD_TIME_R   296
+#define HS_BD_ROW0      58
+
+// The skill a page is for -- the whole point of grouping this way.  Drawn as
+// the New Game menu's own skill graphic rather than the short text name, so
+// it reads at a glance from across a room.
+//
+// *Bottom* aligned on HS_PG_SKILL_BOT, not top aligned: the five patches are
+// 15..19 tall (M_NMARE is the tall one), so aligning their tops would leave
+// the baseline jumping as the page cycles.  The band is tight -- the title
+// ends at 21 and the column headers start at 44 -- so the tallest lands at
+// y=23 with 2px clear above and below.  Widths run to 248 (M_ROUGH), which
+// still centres inside 320.
+//
+// Falls back to the text name if the lump is missing: these are the Doom
+// names, and Heretic uses different ones.
+static void  HS_Draw_SkillGraphic( int sk )
+{
+    lumpnum_t  sklump = W_CheckNumForName( (char*) hs_skillpatch[sk] );
+
+    if( VALID_LUMP( sklump ) )
+    {
+        patch_t * skp = W_CachePatchName( (char*) hs_skillpatch[sk], PU_CACHE );
+        int  pw = V_patch(skp)->width;
+        int  ph = V_patch(skp)->height;
+
+        V_DrawScaledPatch( (BASEVIDWIDTH - pw)/2, HS_PG_SKILL_BOT - ph, skp );
+    }
+    else
+    {
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)hs_skillnames[sk]))/2,
+                      28, V_WHITEMAP, (char*) hs_skillnames[sk] );
+    }
+}
+
+
+static void  HS_Draw_BoardPage( int sk, int cat )
+{
+    char  buf[64], range[20], ini[HS_INITIALS_LEN], timebuf[16];
+    tic_t tics;
+    int   place;
+
+    snprintf( buf, sizeof(buf), "BEST %s RUNS", hs_catname[cat] );
+    strupr( buf );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 14, V_WHITEMAP, buf );
+
+    HS_Draw_SkillGraphic( sk );
+
+    V_DrawString( HS_BD_INIT_X,  44, V_WHITEMAP, "PLAYER" );
+    V_DrawString( HS_BD_RANGE_X, 44, V_WHITEMAP, "LEVELS" );
+    V_DrawString( HS_BD_TIME_R - V_StringWidth("TIME"), 44, V_WHITEMAP, "TIME" );
+
+    for( place = 0; place < HS_BOARD_DEPTH_RUN; place++ )
+    {
+        int y = HS_BD_ROW0 + (place * HS_PG_ROWSTEP);
+
+        if( ! HS_Board_Entry( false, NULL, (skill_e)sk, cat, place,
+                              ini, range, &tics ) )
+            break;
+
+        snprintf( buf, sizeof(buf), "%d.", place + 1 );
+        V_DrawString( HS_BD_RANK_R - V_StringWidth(buf), y, 0, buf );
+        V_DrawString( HS_BD_INIT_X,  y, 0, ini );
+        V_DrawString( HS_BD_RANGE_X, y, 0, range );
+
+        HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
+        V_DrawString( HS_BD_TIME_R - V_StringWidth(timebuf), y, 0, timebuf );
+    }
+}
+
+
 void HS_Draw_AttractTable( void )
 {
     int   idx[HS_MAX_MAPS];
@@ -1060,6 +1844,7 @@ void HS_Draw_AttractTable( void )
     int   sk = 0, chunk = 0;
     int   n, first, i, col, x, y;
     int   total;
+    int   splitpages;
 
     // This is an attract-screen page like the ones D_PageDrawer handles, so
     // it must establish the same draw state and cover the whole screen.
@@ -1068,6 +1853,31 @@ void HS_Draw_AttractTable( void )
     // frames alternately, which looked like flickering garbage.
     V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
     V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
+
+    total = HS_Attract_Page_Count();
+
+    // [Arcade] The run boards come after the per-map split pages, so the
+    // cycle reads splits-then-boards.  Each board draws its own title, so
+    // the "HIGH SCORES" heading belongs to the split pages only.
+    splitpages = HS_Split_Page_Count();
+    if( hs_attract_page >= splitpages )
+    {
+        int  bsk = 0, bcat = 0;
+        if( HS_Resolve_Board_Page( hs_attract_page - splitpages, &bsk, &bcat ) )
+        {
+            HS_Draw_BoardPage( bsk, bcat );
+            if( total > 1 )
+            {
+                snprintf( buf, sizeof(buf), "%d of %d",
+                          hs_attract_page + 1, total );
+                V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
+                              BASEVIDHEIGHT-14, 0, buf );
+            }
+            return;
+        }
+        // Fell off the end (the table shrank between the count and the
+        // draw); show the split page heading and the empty message below.
+    }
 
     V_DrawString( (BASEVIDWIDTH - V_StringWidth("HIGH SCORES"))/2,
                   14, V_WHITEMAP, "HIGH SCORES" );
@@ -1079,36 +1889,7 @@ void HS_Draw_AttractTable( void )
         return;
     }
 
-    // The skill this page is for -- the whole point of grouping this way.
-    // Drawn as the New Game menu's own skill graphic rather than the short
-    // text name, so it reads at a glance from across a room.
-    //
-    // *Bottom* aligned on HS_PG_SKILL_BOT, not top aligned: the five patches
-    // are 15..19 tall (M_NMARE is the tall one), so aligning their tops would
-    // leave the baseline jumping as the page cycles.  The band is tight --
-    // "HIGH SCORES" ends at 21 and the column headers start at 44 -- so the
-    // tallest lands at y=23 with 2px clear above and 2px below.  Widths run to
-    // 248 (M_ROUGH) which still centres inside 320.
-    //
-    // Falls back to the text name if the lump is missing: these are the Doom
-    // names, and Heretic uses different ones.
-    {
-        lumpnum_t  sklump = W_CheckNumForName( (char*) hs_skillpatch[sk] );
-
-        if( VALID_LUMP( sklump ) )
-        {
-            patch_t * skp = W_CachePatchName( (char*) hs_skillpatch[sk], PU_CACHE );
-            int  pw = V_patch(skp)->width;
-            int  ph = V_patch(skp)->height;
-
-            V_DrawScaledPatch( (BASEVIDWIDTH - pw)/2, HS_PG_SKILL_BOT - ph, skp );
-        }
-        else
-        {
-            V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)hs_skillnames[sk]))/2,
-                          28, V_WHITEMAP, (char*) hs_skillnames[sk] );
-        }
-    }
+    HS_Draw_SkillGraphic( sk );
 
     // Column headers over both columns.  A "max" run additionally requires
     // 100% kills and secrets on every level, so its times are always >= speed.
@@ -1137,8 +1918,8 @@ void HS_Draw_AttractTable( void )
         HS_Draw_Row( x, y, &hs_table[ idx[e] ], sk );
     }
 
-    // Footer, so it is obvious that other pages follow.
-    total = HS_Attract_Page_Count();
+    // Footer, so it is obvious that other pages follow.  (total was taken
+    // at the top, before the board pages were dispatched.)
     if( total > 1 )
     {
         snprintf( buf, sizeof(buf), "%d of %d", hs_attract_page + 1, total );
@@ -1310,17 +2091,38 @@ const char * HS_NextRecordDemoPath( void )
             if( access(path, R_OK) == 0 )
             {
                 char timebuf[16];
-                HS_FormatTime(hs_table[mi].besttime[cat][sk],
-                              timebuf, sizeof(timebuf));
-                // e.g. "E1M1  ITYTD  MAX  4:32", or
-                // "SINGLE LEVEL: MAP01  ITYTD  SPEED  4:32".  Widest
-                // realistic caption is 275px of BASEVIDWIDTH 320, measured
-                // against the STCFN lumps; HU_Drawer centres it on
-                // V_StringWidth, so it follows any rewording.
+                char range[20];
+                const char * sm = hs_table[mi].startmap[cat][sk];
+
+                HS_Format_Time_CS(hs_table[mi].besttime[cat][sk],
+                                  timebuf, sizeof(timebuf));
+
+                // [Arcade] Name the whole span the run covered.  These times
+                // are cumulative from the start of a run, so the demo for the
+                // E1M5 record is a five level run -- captioned with the bare
+                // map name it was indistinguishable from a single level one,
+                // which badly undersold the longer runs.  A record with no
+                // start map (written before that was stored) falls back to
+                // the bare name rather than inventing a span.
+                if( sm[0] && strncmp(sm, hs_table[mi].mapname, 8) != 0 )
+                    snprintf(range, sizeof(range), "%.8s-%.8s",
+                             sm, hs_table[mi].mapname);
+                else
+                    snprintf(range, sizeof(range), "%.8s",
+                             hs_table[mi].mapname);
+
+                // e.g. "E1M1-E1M5  ITYTD  MAX  4:32.17", or
+                // "SINGLE LEVEL: MAP01  ITYTD  SPEED  4:32.17".  Measured
+                // against the real STCFN lumps, the widest either form can
+                // reach is "SINGLE LEVEL: MAP01  ITYTD  SPEED  888:88.99" at
+                // 295px of BASEVIDWIDTH 320 -- a single level run is one map
+                // so it never carries a range, and a range costs less width
+                // than the prefix does.  HU_Drawer centres on V_StringWidth,
+                // so this follows any rewording.
                 snprintf(hs_demo_label, sizeof(hs_demo_label),
                          "%s%s  %s  %s  %s",
                          is_single? "Single Level: " : "",
-                         hs_table[mi].mapname,
+                         range,
                          hs_skillnames[sk], hs_catname[cat], timebuf);
                 strupr(hs_demo_label);
 

@@ -1092,6 +1092,15 @@ void Command_ExitGame_f(void)
     D_Quit_NetGame();
     CL_Reset();
 
+    // [Arcade] The run is over.  This is the single funnel every route back
+    // to the title passes through -- finishing the episode, dying and giving
+    // up, End Game, or the idle timeout -- which makes it the one place that
+    // reliably means "the player is done".  It commits the run to the board
+    // and arms the initials prompt if it earned a place; M_Initials_Ticker
+    // raises the page on a later tic, once whatever menu this route ends on
+    // has settled.  Idempotent, so the routes that reach here twice are fine.
+    HS_Run_Finished();
+
     // [Arcade] Splitscreen otherwise persists into the attract screen, and
     // the demos play back in a split view.  Setting the cvar also runs
     // SplitScreen_OnChange, which takes the player 2 menu entries back down.

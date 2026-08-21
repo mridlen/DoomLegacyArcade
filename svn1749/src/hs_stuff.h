@@ -52,11 +52,53 @@ void  HS_Draw_IntermissionTable(int x, int y);
 // explicitly rather than from single_level_mode, because the menu shows
 // single-level times while the cabinet is still in campaign mode.
 // cat: 0 = speed, 1 = max.
-boolean  HS_Best_For(const char * mapname, skill_e skill, int cat,
-                     boolean single, tic_t * out);
 boolean  HS_Demo_Path_For(const char * mapname, skill_e skill, int cat,
                           boolean single, char * dest);
-void     HS_Format_Time_Str(tic_t tics, char * buf, size_t bufsize);
+// M:SS.ss -- run times, where whole seconds are far too coarse to separate
+// two E1M1 runs.  The stored value has always been tics; only the display
+// was rounding.  Used everywhere a *run* time is shown: the intermission
+// total and best table, the boards, and the record demo captions.
+void     HS_Format_Time_CS(tic_t tics, char * buf, size_t bufsize);
+
+// =========================================================================
+//   Run leaderboard  [Arcade]
+// =========================================================================
+// The per-map table above holds *splits*: the best cumulative time anyone
+// has reached a given map in, one deep and anonymous.  This is the separate
+// board of whole *runs*, which is what a player actually competes on and
+// puts their initials against.  Kept in its own file (runs.dat) so the
+// existing highscores.dat needs no migration.
+//
+// Campaign runs are ranked furthest-then-fastest: progress is the primary
+// key and time only breaks ties.  That is what lets the great majority of
+// cabinet runs -- the ones that end in a death partway through -- land on a
+// board at all, with a completed episode naturally sitting at the top
+// because nothing outranks it on progress.  Single Level runs are all one
+// map, so they rank on time alone.
+#define HS_INITIALS_LEN     4     // three characters plus NUL
+#define HS_BOARD_DEPTH_RUN  10    // campaign, per (game, skill, category)
+#define HS_BOARD_DEPTH_SL    3    // single level, per (game, map, skill, cat)
+
+// The run ended (any route back to the title).  Commits it to the board if
+// it earned a place, and arms the initials prompt when it did.  Idempotent:
+// Command_ExitGame_f can be reached more than once.
+void     HS_Run_Finished(void);
+boolean  HS_Initials_Pending(void);
+// Write the player's initials onto whatever the finished run placed, and
+// disarm.  NULL or empty stores the "nobody entered" placeholder.
+void     HS_Set_Initials(const char * ini);
+// Best place the finished run took, 1-based, or 0.  For the prompt's header.
+int      HS_Run_Place(void);
+
+int      HS_Board_Depth(boolean single);
+// One line of a board, place 0-based.  mapname selects the map for a single
+// level board and is ignored for the campaign one.  out_range receives the
+// map range ("E1M1-E1M5", or a bare map name for a one map run) and must be
+// at least 20 bytes; any out pointer may be NULL.
+boolean  HS_Board_Entry(boolean single, const char * mapname,
+                        skill_e skill, int cat, int place,
+                        char * out_initials, char * out_range,
+                        tic_t * out_tics);
 // Cumulative run time under the intermission's Time row.  label_x is the left
 // edge of the caption, time_right_x the right edge of the value.
 void  HS_Draw_TotalTime(int label_x, int time_right_x, int y);

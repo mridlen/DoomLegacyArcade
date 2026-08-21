@@ -1800,6 +1800,12 @@ static void G_Idle_Timeout_Check( boolean in_menu )
 
     if( devmode || cv_idletimeout.value <= 0 )  return;
 
+    // [Arcade] Never close the initials page out from under a player part way
+    // through entering their name.  It runs its own countdown
+    // (cv_initialstimeout) and accepts what is on it when that expires, so
+    // an abandoned one still clears itself and the cabinet is never stuck.
+    if( M_Initials_Active() )  return;
+
     // [Arcade] A demo playing on its own *is* the attract screen doing its
     // job, so playback normally means "not idle".  But an attract demo is
     // still running behind an open menu, so when a menu is up that guard has

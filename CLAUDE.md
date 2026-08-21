@@ -991,8 +991,8 @@ silently made the flag do nothing at all.
 
   Both tables are laid out by hand against the surrounding graphics, so **the numbers matter**.
   `HS_Draw_IntermissionTable(x, y)` draws its column header 14 *above* the `y` it is passed, and
-  right-justifies each category's times at `x + HS_COL_TIME + cat*HS_COL_STEP` (90 and 62), so the
-  last column's right edge is `x + 152` and must stay inside `BASEVIDWIDTH` (320). On the single
+  right-justifies each category's times at `x + HS_COL_TIME + cat*HS_COL_STEP` (**108 and 72**), so
+  the last column's right edge is `x + 180` and must stay inside `BASEVIDWIDTH` (320). On the single
   player intermission the free band is only what is left between the Secrets row and the Time row:
   rows start at `SP_STATSY` (50) and are `lh` apart, where `lh` is 1.5× the `WINUM0` patch height
   (12) = **18**, and the percent patches are 12 tall — so Secrets ends at 98 and `SP_TIMEY` is 168.
@@ -1007,9 +1007,9 @@ silently made the flag do nothing at all.
   both categories.
   - **It went in the horizontal space, not the vertical**, because the band above is already full:
     header-plus-rows spans `y-14 .. y+48` (102..164 at the call site's y of 116) inside a free band
-    of only 98..168. The table itself occupies just `x .. x+152` (156..308), so everything left of
-    `x` in that band is free. The text is centred there and on the table block's midpoint
-    (`(y-14 + y+48)/2 = y+17`, glyphs 8 tall, so top edge `y+13`) — landing at x=39, y=129.
+    of only 98..168. The table itself occupies just `x .. x+180` (**138..318**), so everything left
+    of `x` in that band is free. The text is centred there and on the table block's midpoint
+    (`(y-14 + y+48)/2 = y+17`, glyphs 8 tall, so top edge `y+13`) — landing at x=30, y=129.
   - Width comes from `V_StringWidth` at runtime, not the measured 77px, so the centering follows
     the string if it is ever reworded. The 77px was read from the real `STCFN0xx` lumps, per the
     rule above about not eyeballing this font.
@@ -1046,10 +1046,23 @@ silently made the flag do nothing at all.
   arbitrary filenames. Renaming a wad therefore starts a fresh table — the name is the identity.
 
   Record demos are **captioned** during attract playback (`HS_DemoLabel()`, drawn by `HU_Drawer`)
-  with map, skill, category and time — `E1M1  ITYTD  MAX  4:32`. `HS_NextRecordDemoPath()` fills the
-  label as a side effect of handing out a path, and `D_DoAdvanceDemo` clears it before every page,
-  so a stock IWAD demo is never captioned with the previous record's text. Drawn on the **second**
-  text line (y=8), because item pickups still print messages at y=0 during playback.
+  with the **map range**, skill, category and time — `E1M1-E1M5  ITYTD  MAX  4:32.17`.
+  `HS_NextRecordDemoPath()` fills the label as a side effect of handing out a path, and
+  `D_DoAdvanceDemo` clears it before every page, so a stock IWAD demo is never captioned with the
+  previous record's text. Drawn on the **second** text line (y=8), because item pickups still print
+  messages at y=0 during playback.
+  - **The range is the point.** These times are cumulative from the start of a run, so the demo
+    saved against the E1M5 record is a *five level* run. Captioned with the bare map name it was
+    indistinguishable from a single level one, which badly undersold the longer runs. The range
+    comes from `hs_maprecord_t.startmap[cat][skill]`, stored per record rather than inferred from
+    the episode: every menu-started campaign does begin at map 1, but that is a property of the
+    menus, not of the record.
+  - A record whose `startmap` equals its map, or which has none (a line written before that field
+    existed), is captioned with the bare map name — no invented span.
+  - **It still fits on one line.** Measured against the real `STCFN` lumps, the widest either form
+    reaches is `SINGLE LEVEL: MAP01  ITYTD  SPEED  888:88.99` at **295px of 320** — a single level
+    run is one map so it never carries a range, and a range costs less width than the
+    `SINGLE LEVEL: ` prefix does.
 
   A blinking **`PRESS FIRE TO START`** is drawn over the same demos (`hu_stuff.c`, `HU_Drawer`) —
   the arcade "insert coin" on a machine that takes no coins. It is only a prompt: **`G_Responder`
@@ -1128,6 +1141,103 @@ silently made the flag do nothing at all.
   `HS_Player_Died` from `P_KillMobj` (`p_inter.c`), and new
   cases in `D_DoAdvanceDemo`/`D_Display`. `G_SnapshotDemo` (`g_game.c`) copies the demo buffer
   without closing it, so live recording continues after a record is saved.
+
+- **The run board** (`hs_stuff.c`, `hs_run_t`, `runs.dat`). The per-map table above holds *splits* —
+  the best cumulative time anyone has reached a given map in, one deep and anonymous. The board is
+  the separate table of whole **runs**, which is what a player competes on and puts initials
+  against. **Two tables and two files, deliberately**: retrofitting depth and names into
+  `hs_maprecord_t` would have multiplied a 64×2×5 array, while a list of runs is naturally bounded
+  by pruning, and `highscores.dat` needs no migration at all.
+  - **Campaign runs rank furthest-then-fastest**: `HS_MapOrder(endmap)` is the primary key and time
+    only breaks ties. This is what gives the great majority of cabinet runs — the ones that end in
+    a death partway — a board to land on; a completed episode tops it because nothing outranks it
+    on progress. Ranking partial runs on time alone is *not possible*: 8:00 to E1M5 versus 12:00 to
+    E1M7 has no answer without progress as a key. Single Level runs are all one map, so the same
+    comparison reduces to time.
+  - `HS_MapOrder` already encoded the real play order including Doom 2's 15→31→32→16 secret detour,
+    so the progress metric was already written and verified.
+  - Depths differ by board: **10** for campaign (`HS_BOARD_DEPTH_RUN`, per game/skill/category) and
+    **3** for single level (`HS_BOARD_DEPTH_SL`, per game/map/skill/category).
+  - **Depth is only shown where the player is looking at that one thing.** The three-deep single
+    level board is drawn on the **Single Level menu page**, where the player has just highlighted a
+    map and is about to play it. The attract cycle still shows one row per map. That is the rule
+    that stops the page count exploding.
+  - **`hs_run_board_ok` is not `hs_run_ranked`.** A death clears `hs_run_ranked` (it gates the split
+    records, where the free level reload would otherwise make dying a costless retry) but must not
+    take the run off the board. So `hs_run_board_ok` tracks the ruleset and cheating **only**, and
+    `HS_Player_Died` deliberately does not touch it. A cheat does clear it: dying is playing badly,
+    cheating is not playing the same game.
+  - Both are **initialised true**, matching each other. A game started from the command line
+    (`-warp`) never runs `HS_NewGame`, so a board flag defaulting false would let such a game write
+    split records while silently never reaching the board.
+  - The run is **frozen at its last scored level exit** (`hs_run_startmap`/`endmap`/`tics`), inside
+    the block already gated on `hs_run_ranked` — so it naturally stops at the last level completed
+    under scoring. It is *not* `hs_cumulative_time`, which keeps counting after a death so the
+    intermission can still show an honest elapsed time.
+  - `HS_Run_Finished()` is hooked into **`Command_ExitGame_f`**, the single funnel every route back
+    to the title passes through. Idempotent — it zeroes `hs_run_levels` — because some routes reach
+    it twice.
+  - **Board entries have no demos of their own**, on purpose. The attract cycle keeps replaying the
+    split-record demos exactly as before, so the demo count and the shuffle bag are unchanged; a
+    three-deep board with its own demos would have tripled both.
+  - `HS_Board_Entry` walks the stored order and hands back the nth match as the nth place, so
+    **stored order must equal rank order**. Insertion maintains it; `HS_Runs_Load` re-sorts each
+    board after reading, since `runs.dat` is plain text an operator may have edited.
+  - Ties keep the **earlier** entry ahead (the comparison is strict), the arcade convention — and it
+    matters now that times are kept to the tic.
+  - Attract pages: one per (skill, category) that has anyone on it, appended **after** the split
+    pages. Ten rows is the whole board, so a board never needs more than one page.
+  - **One-time migration.** On the first boot with no `runs.dat`, the board is seeded from the
+    existing *single level* split records — one of those is exactly one run, so the mapping is
+    exact. Campaign splits cannot be converted (several come from one run and nothing says which),
+    so the campaign board starts empty and fills as runs are played. Seeded entries get the `---`
+    placeholder for initials.
+
+- **Times are shown to hundredths where they are run times** (`HS_Format_Time_CS`). Whole seconds
+  cannot separate two E1M1 runs. **This needed no format change and no migration**: `besttime` is
+  `tic_t` and `highscores.dat`'s fourth field has always been a raw tic count — the precision was
+  only being thrown away at the point of display.
+  - Hundredths are `(tics % TICRATE) * 100 / TICRATE`. TICRATE is 35 and does not divide 100, so
+    they are a scaled tic count rather than exact — which is the convention the wider Doom
+    speedrunning world displays, so a cabinet time reads the same way as one from anywhere else.
+  - **Where, and why not everywhere.** Run times get hundredths: the intermission TOTAL row, the
+    intermission BEST table, the boards, the Single Level page and the demo captions. The
+    **attract split page stays at `M:SS`**, and that is a geometry limit, not a preference: its two
+    map columns are 152px each, and at `HS_PG_SPEED` 84 a `12:34.57` (51px) would start at 33 and
+    collide with the 38px map name. Two hundredths-wide time columns need ~182px, which does not
+    fit — and one column of 24 rows does not fit vertically either (`58 + 23*10` exceeds
+    `BASEVIDHEIGHT` 200). Nobody compares E1M4 splits to the hundredth.
+  - The intermission BEST table **was re-laid out** to make room: `HS_COL_TIME` 90→**108**,
+    `HS_COL_STEP` 62→**72**, and the `wi_stuff.c` call site x 156→**138**. Measured: "ITYTD" 36px
+    ends at 174, the widest time `888:88.99` 64px starts at 182, the last column's right edge is
+    318 of 320. Done rather than left alone because BEST sits directly above TOTAL and the player
+    compares the two — mismatched precision there is worse than the re-measure.
+
+- **Initials entry** (`m_menu.c`, `M_Initials_*`, `InitialsDef`). Raised once when a run that took a
+  board place has ended, and stamped onto every entry that run placed.
+  - **Once per run, not per record.** A campaign run sets a split record on every level it passes,
+    so prompting per record would ask eight times for one run. Both categories can place at once —
+    same run, same player — and `hs_run_placed[]` records which, so one entry covers them.
+  - **`cv_initialstimeout`** ("initialstimeout", default **60s**, `CV_SAVE`), under
+    **Options → Menu Options** with the other operator settings. Generous on purpose: nothing is
+    waiting on it (the cabinet is already back on the attract screen behind the page), and a player
+    who just earned a place should not be racing a timer. `0` disables the timeout, which leaves
+    the page up until somebody presses fire — supervised machines only.
+  - **The place is saved before the prompt**, so every exit is an accept: ESC accepts rather than
+    abandons, and the timeout accepts the default `AAA`. Backing out would only throw the name away.
+  - **The idle timeout is held off while the page is up** (`G_Idle_Timeout_Check` asks
+    `M_Initials_Active()`), or a player part way through entering would be closed out from under
+    them. The page's own countdown still clears an abandoned one, so the cabinet can never stick.
+  - **Raised from `M_Ticker`, not from the run-end path.** `Command_ExitGame_f` only *arms* it
+    (`HS_Initials_Pending`). Opening from the ticker keeps it independent of the order things
+    happen in on the way back to the title — `M_SingleLevel_Finished` calls `Command_ExitGame_f`
+    and *then* pushes its own page, so a prompt opened inline would be buried by it. From the
+    ticker it lands on top of whatever settled, and backing out returns there.
+  - **Driven from the translated keys**, unlike the join screen: it is taken *after*
+    `M_Cabinet_Menu_Key`, because stick up/down to cycle a letter is exactly what that produces,
+    and this page does not care which panel is entering. The join screen needs the opposite.
+  - Character set is A-Z then 0-9, no blank — three characters always filled keeps every board row
+    the same width. Cells are fixed pitch (20px) so the row does not shift as glyph widths change.
 
 - **The episode's last level gets an intermission** (`g_game.c` `G_Start_Intermission` /
   `G_NextLevel`, `wi_stuff.c`). Vanilla skips it on those maps and jumps straight to the finale, so
@@ -1403,15 +1513,23 @@ history, and the level packs are ~26MB of wads.
 
 Runtime data lives in the active legacyhome — `~/.doomlegacy/` unless a portable one is found:
 `config.cfg`, `highscores.dat` (plain text,
-`<wadcombo> map skill tics <category>`), `demos/<wadcombo>_<map>_sk<N>_<category>.lmp`, and
+`<wadcombo> map skill tics <category> <startmap>`), `runs.dat`
+(`<wadcombo> <startmap> <endmap> skill <category> tics <initials>`),
+`demos/<wadcombo>_<map>_sk<N>_<category>.lmp`, and
 `levels/` for selectable level packs. `<wadcombo>` is `HS_GameId()`, e.g. `doom2` or
-`doomu+mapsofchaos`; `<category>` is `speed` or `max`. The category is written **last** so a
-four-field line from before categories existed still loads, as a speed record.
+`doomu+mapsofchaos`; `<category>` is `speed` or `max`. **Fields are only ever appended** to
+`highscores.dat`, so an older short line still loads: four fields is a pre-category speed record,
+five adds the category, six adds the start map. A record with no start map is never written as an
+empty field — `-` stands in, or it would shift every field after it on the next read.
+`runs.dat` writes `---` for initials nobody entered, and reads that back as empty.
 
 To reset the scores, use the **`clearhighscores`** console command or the **`-clearhighscores`**
-command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory table
-as well as the files. Prefer them over deleting `highscores.dat` by hand: the table is cached in
-memory while the game runs, so a later record writes the old entries straight back out.
+command-line flag (which runs the same code right after `HS_Init`). Both clear the in-memory tables
+as well as the files — `runs.dat` goes with `highscores.dat`, since leaving it would put named
+board entries beside an empty split table. Prefer them over deleting the files by hand: the tables
+are cached in memory while the game runs, so a later record writes the old entries straight back
+out. Note that deleting **only** `runs.dat` is a supported way to re-run the one-time seed from the
+single level splits.
 
 ### Gotchas found the hard way
 

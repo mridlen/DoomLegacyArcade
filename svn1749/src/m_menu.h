@@ -121,6 +121,12 @@ void M_Register_Menu_Controls( void );
 // D_NumLocalPlayers(), which clamps it to MAXSPLITSCREENPLAYERS.
 extern consvar_t cv_localplayers;
 extern consvar_t cv_jointime;       // [Arcade] join screen countdown, seconds
+extern consvar_t cv_initialstimeout;// [Arcade] initials entry timeout, seconds
+
+// [Arcade] True while the initials entry page is up.  The idle timeout asks,
+// so a player part way through entering their initials is not closed out
+// from under them; the page runs its own (operator set) countdown instead.
+boolean  M_Initials_Active( void );
 
 #ifdef LAUNCHER
 void M_LaunchMenu( void );

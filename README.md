@@ -36,10 +36,17 @@ Discord is likely to get you banned.
   its own separate high score table and its own record demos.
 - **High scores.** Best cumulative time-to-exit per map, skill and category, shown at the
   intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
-  kills and secrets on every level so far).
+  kills and secrets on every level so far). Times are kept to hundredths of a second, because whole
+  seconds cannot separate two E1M1 runs.
+- **A run leaderboard, with your initials on it.** Separate from the per-map best times: a board of
+  whole runs, ranked by **how far you got first and how fast second**. That means a run ending in a
+  death partway through — which is how most runs end — still has somewhere to land, while finishing
+  the episode naturally tops the board. Ten places for the campaign, three per map for Single Level.
+  Finish a run that makes the board and you are asked for three initials.
 - **Record demos.** The run that set each record is saved and replayed in the attract cycle,
-  captioned with its map, skill and time, under a blinking **PRESS FIRE TO START** — the arcade
-  "insert coin" on a machine that takes no coins.
+  captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
+  4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
+  takes no coins.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.
@@ -54,6 +61,9 @@ Discord is likely to get you banned.
   stick, buttons, or anything else your panel is wired to. One per panel, up to four.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level. Operator-only by
   default, or leave it up for players. Using one voids that run's score.
+- **A configurable initials timeout** (Options → Menu Options, 60 seconds by default), for how long
+  the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
+  already back on the attract screen behind the page — so it can afford to be patient.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped

@@ -495,6 +495,18 @@ consvar_t cv_localplayers = {"localplayers", "1", CV_SAVE, localplayers_cons_t }
 CV_PossibleValue_t jointime_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
 consvar_t cv_jointime = {"jointime", "20", CV_SAVE, jointime_cons_t };
 
+// [Arcade] Seconds the initials entry page waits before accepting whatever
+// is on it.  Operator setting like the rest of this group.
+//
+// Deliberately generous: a player who has just finished a run and earned a
+// place should not be racing a timer to be credited for it, and unlike the
+// join countdown nothing is waiting on this -- the cabinet is already back
+// on the attract screen behind the page.  0 disables the timeout entirely,
+// which leaves the page up until somebody presses fire; the idle timeout is
+// held off while it is showing, so only pick that on a supervised machine.
+CV_PossibleValue_t initialstimeout_cons_t[] = {{0,"MIN"},{180,"MAX"},{0,NULL}};
+consvar_t cv_initialstimeout = {"initialstimeout", "60", CV_SAVE, initialstimeout_cons_t };
+
 // [Arcade] Which game the cabinet boots into, instead of whichever IWAD the
 // engine's search happens to find first.  Also an operator setting, saved only
 // from a -devmode session.
@@ -1580,8 +1592,11 @@ menuitem_t  SingleLevelMenu[]=
 {
     {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap    ,0},
     {IT_STRING | IT_CVAR,0,"Skill"           ,&cv_skill      ,0},
+    // [Arcade] 82, not the original 50: the best-times block below the cvar
+    // rows grew from two lines to a three deep board with initials, ending
+    // at menu y + 73.  This puts Start clear of it.
     {IT_WHITESTRING | IT_CALL | IT_YOFFSET,
-                         0,"Start"           ,M_SingleLevel_Start      ,50},
+                         0,"Start"           ,M_SingleLevel_Start      ,82},
     {IT_WHITESTRING | IT_CALL,
                          0,"Watch speed run" ,M_SingleLevel_WatchSpeed ,0},
     {IT_WHITESTRING | IT_CALL,
@@ -1650,39 +1665,83 @@ static void  M_SingleLevel_Update_Items( void )
 }
 
 
+// [Arcade] Column offsets for the top-three block, relative to the menu's x
+// (60), measured against the real STCFN lumps with the widest values:
+//   rank      "3." 12px          at +0,  so 60 .. 72
+//   speed     "AAA" 24px         at +20, so 80 .. 104
+//             "888:88.99" 64px   right-justified at +112, so 108 .. 172
+//   max       "AAA"              at +124, so 184 .. 208
+//             time               right-justified at +216, so 212 .. 276
+// 276 is inside BASEVIDWIDTH 320.  Real times are far shorter than the
+// worst case ("0:08.57" is 47px), so the columns sit wider apart in practice.
+#define SL_BD_INI0     20
+#define SL_BD_TIME0   112
+#define SL_BD_INI1    124
+#define SL_BD_TIME1   216
+#define SL_BD_ROW0     46      // first board row, relative to the menu's y
+#define SL_BD_ROWSTEP  10
+
 static void  M_Draw_SingleLevel( void )
 {
-    char  buf[64], tbuf[16];
+    char  buf[64], tbuf[16], ini[HS_INITIALS_LEN];
     const char * mn;
     tic_t t;
-    int   y;
+    int   x, y, place;
 
     M_SingleLevel_Update_Items();
     M_DrawGenericMenu();
 
     mn = M_SingleLevel_MapName();
+    x  = SingleLevelDef.x;
 
-    // Best times for the current selection, between the cvar rows and Start.
+    // The board for the current selection, between the cvar rows and Start.
     // The generic drawer lays items out from currentMenu->y at itemheight
     // steps; this sits in the gap the Start item's IT_YOFFSET opens up.
-    y = SingleLevelDef.y + 30;
+    //
+    // Three deep with initials, unlike the attract screen which only ever
+    // shows the best: this is the one place the player is looking at a
+    // specific map, about to play it, so the places below the top are worth
+    // the rows here and nowhere else.
+    y = SingleLevelDef.y + 24;
 
     snprintf( buf, sizeof(buf), "BEST FOR %s", mn );
-    V_DrawString( SingleLevelDef.x, y, V_WHITEMAP, buf );
+    V_DrawString( x, y, V_WHITEMAP, buf );
 
-    if( HS_Best_For( mn, M_SingleLevel_Skill(), 0, true, &t ) )
-        HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
-    else
-        dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
-    snprintf( buf, sizeof(buf), "SPEED %s", tbuf );
-    V_DrawString( SingleLevelDef.x, y+10, 0, buf );
+    V_DrawString( x + SL_BD_INI0, y+12, V_WHITEMAP, "SPEED" );
+    V_DrawString( x + SL_BD_INI1, y+12, V_WHITEMAP, "MAX" );
 
-    if( HS_Best_For( mn, M_SingleLevel_Skill(), 1, true, &t ) )
-        HS_Format_Time_Str( t, tbuf, sizeof(tbuf) );
-    else
-        dl_strncpy( tbuf, "--:--", sizeof(tbuf) );
-    snprintf( buf, sizeof(buf), "MAX   %s", tbuf );
-    V_DrawString( SingleLevelDef.x + 110, y+10, 0, buf );
+    for( place = 0; place < HS_BOARD_DEPTH_SL; place++ )
+    {
+        int ry = SingleLevelDef.y + SL_BD_ROW0 + (place * SL_BD_ROWSTEP);
+        int cat;
+
+        snprintf( buf, sizeof(buf), "%d.", place + 1 );
+        V_DrawString( x, ry, 0, buf );
+
+        for( cat = 0; cat < 2; cat++ )
+        {
+            int ix = x + (cat ? SL_BD_INI1 : SL_BD_INI0);
+            int tr = x + (cat ? SL_BD_TIME1 : SL_BD_TIME0);
+
+            // Empty places are drawn as dashes rather than skipped, so the
+            // block keeps its height as the player scrolls through maps --
+            // the same reason the two "Watch run" items are disabled rather
+            // than hidden.
+            if( HS_Board_Entry( true, mn, M_SingleLevel_Skill(), cat, place,
+                                ini, NULL, &t ) )
+            {
+                HS_Format_Time_CS( t, tbuf, sizeof(tbuf) );
+            }
+            else
+            {
+                dl_strncpy( ini, "---", sizeof(ini) );
+                dl_strncpy( tbuf, "--:--.--", sizeof(tbuf) );
+            }
+
+            V_DrawString( ix, ry, 0, ini );
+            V_DrawString( tr - V_StringWidth(tbuf), ry, 0, tbuf );
+        }
+    }
 }
 
 
@@ -1740,7 +1799,7 @@ void  M_SingleLevel_Finished( void )
     // The flag means "a single level run is in progress", not "the player is
     // looking at the Single Level menu" -- M_SingleLevel_Start and
     // M_SingleLevel_PlayDemo each set it again for the run they begin, and
-    // this page's own display passes the mode to HS_Best_For /
+    // this page's own display passes the mode to HS_Board_Entry /
     // HS_Demo_Path_For explicitly rather than reading it.
     //
     // It used to be re-set here, which left it stuck on for everything that
@@ -2867,6 +2926,264 @@ static void  M_Join_Drawer( void )
 }
 
 
+//===========================================================================
+//                     INITIALS ENTRY  [Arcade]
+//===========================================================================
+// Raised once, when a run that took a place on a board has ended.  Not per
+// record: a single campaign run sets a split record on every level it
+// passes, so prompting per record would ask eight times for one run.  The
+// place is already saved by then -- this only puts a name against it -- so
+// every way of leaving the page is an accept, and the countdown accepting
+// on its own is the normal case on an unattended cabinet.
+//
+// Driven from the *translated* keys, unlike the join screen: this page does
+// not care which panel is entering, only what it pressed, and stick up/down
+// to cycle a letter is exactly what M_Cabinet_Menu_Key already produces.
+
+#define INITIALS_CELLS   3      // matches HS_INITIALS_LEN-1
+#define INITIALS_PITCH  20      // px between cell centres; glyphs are <= 8
+
+// A-Z then 0-9.  No blank: three characters always filled is the arcade
+// convention, and it keeps every board row the same width.
+static const char initials_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+#define INITIALS_NCHARS  (sizeof(initials_chars) - 1)
+
+static boolean initials_active = false;
+static byte    initials_idx[INITIALS_CELLS];   // index into initials_chars
+static int     initials_pos = 0;
+static int     initials_endtic = 0;
+// Whether this page had to open the menus itself.  It decides how to leave:
+// see M_Initials_Confirm.
+static boolean initials_opened_panel = false;
+
+static void  M_Initials_Drawer(void);
+
+static menuitem_t  InitialsMenu[] =
+{
+    // One inert item: the page is driven entirely from M_Initials_Key.
+    {IT_SPACE | IT_NOTHING, 0, "", NULL, 0},
+};
+
+menu_t  InitialsDef =
+{
+    NULL,               // drawn entirely by M_Initials_Drawer
+    NULL,
+    InitialsMenu,
+    M_Initials_Drawer,
+    NULL,
+    sizeof(InitialsMenu)/sizeof(menuitem_t),
+    56,40,
+    0
+};
+
+
+// True while the page is up.  The idle timeout asks, so that a player part
+// way through entering their initials is not closed out from under them.
+boolean  M_Initials_Active( void )
+{
+    return initials_active;
+}
+
+
+static void  M_Initials_Confirm( void )
+{
+    char  buf[INITIALS_CELLS+1];
+    int   i;
+
+    for( i=0; i<INITIALS_CELLS; i++ )
+        buf[i] = initials_chars[ initials_idx[i] ];
+    buf[INITIALS_CELLS] = 0;
+
+    initials_active = false;
+    HS_Set_Initials( buf );
+
+    // Leave the way we came in.  On the Single Level route a page was already
+    // open underneath (M_SingleLevel_Finished pushes it), so pop back to it --
+    // that is where a player grinding one map wants to be, and it is the flow
+    // that route has always had.  On the campaign route this page opened the
+    // menus itself, and popping would strand the player on the main menu
+    // instead of the attract screen, so close them outright.
+    if( initials_opened_panel )
+        M_Clear_Menus( true );
+    else
+        Pop_Menu();
+}
+
+
+static void  M_Initials_Open( void )
+{
+    int  i;
+
+    for( i=0; i<INITIALS_CELLS; i++ )
+        initials_idx[i] = 0;        // "AAA", the classic default
+    initials_pos = 0;
+
+    // Operator-set, and generous by default: a player who has just finished a
+    // run should not be racing a timer to be credited for it.
+    initials_endtic = (int)gametic + (cv_initialstimeout.EV * TICRATE);
+    initials_active = true;
+
+    initials_opened_panel = ! menuactive;
+    if( initials_opened_panel )
+        M_StartControlPanel();
+    Push_Setup_Menu( &InitialsDef );
+}
+
+
+// Called from M_Ticker.  Opening from here rather than from the run-end path
+// keeps this independent of the order things happen in on the way back to the
+// title: Command_ExitGame_f arms the prompt, M_SingleLevel_Finished may then
+// push its own page, and this opens on top of whatever settled.
+void  M_Initials_Ticker( void )
+{
+    if( initials_active )
+    {
+        if( cv_initialstimeout.EV > 0 && (int)gametic >= initials_endtic )
+            M_Initials_Confirm();
+        return;
+    }
+
+    if( ! HS_Initials_Pending() )  return;
+
+    // Never over a live game.  A demo playing behind the menus is fine --
+    // that is just the attract screen running underneath.
+    if( gamestate == GS_LEVEL && ! demoplayback )  return;
+
+    M_Initials_Open();
+}
+
+
+// Takes the keys after M_Cabinet_Menu_Key has translated them, so the stick
+// arrives as cursor movement and fire/use as ENTER/ESCAPE whatever the panel
+// is wired to.  True when the key is consumed.
+boolean  M_Initials_Key( uint16_t key )
+{
+    if( ! initials_active )  return false;
+
+    switch( key )
+    {
+     case KEY_UPARROW:
+        initials_idx[initials_pos] =
+            (initials_idx[initials_pos] + 1) % INITIALS_NCHARS;
+        S_StartSound(menu_sfx_updown);
+        return true;
+
+     case KEY_DOWNARROW:
+        initials_idx[initials_pos] =
+            (initials_idx[initials_pos] + INITIALS_NCHARS - 1) % INITIALS_NCHARS;
+        S_StartSound(menu_sfx_updown);
+        return true;
+
+     case KEY_LEFTARROW:
+        if( initials_pos > 0 )  initials_pos--;
+        S_StartSound(menu_sfx_updown);
+        return true;
+
+     case KEY_RIGHTARROW:
+        if( initials_pos < INITIALS_CELLS-1 )  initials_pos++;
+        S_StartSound(menu_sfx_updown);
+        return true;
+
+     case KEY_ENTER:
+        // Fire advances, and confirms off the end of the last cell.
+        if( initials_pos < INITIALS_CELLS-1 )
+        {
+            initials_pos++;
+            S_StartSound(menu_sfx_updown);
+        }
+        else
+        {
+            S_StartSound(menu_sfx_enter);
+            M_Initials_Confirm();
+        }
+        return true;
+
+     case KEY_ESCAPE:
+        // Accepts rather than abandons: the place is already on the board,
+        // so backing out would only throw the name away.
+        S_StartSound(menu_sfx_enter);
+        M_Initials_Confirm();
+        return true;
+
+     default:
+        break;
+    }
+
+    return true;   // swallow the rest; this page has no cursor to move
+}
+
+
+static const char *  M_Ordinal( int n )
+{
+    static char buf[8];
+    const char * suffix = "TH";
+
+    // 11th/12th/13th are the exceptions to the 1st/2nd/3rd pattern.
+    if( (n % 100) < 11 || (n % 100) > 13 )
+    {
+        switch( n % 10 )
+        {
+         case 1:  suffix = "ST";  break;
+         case 2:  suffix = "ND";  break;
+         case 3:  suffix = "RD";  break;
+         default: break;
+        }
+    }
+    snprintf( buf, sizeof(buf), "%d%s", n, suffix );
+    return buf;
+}
+
+
+// Laid out against the real STCFN widths, all comfortably inside
+// BASEVIDWIDTH 320: "NEW HIGH SCORE" 100px, "YOU PLACED 10TH" 109px,
+// "STICK UP-DOWN TO CHANGE" 166px.  The three cells are fixed pitch so the
+// row does not shift as characters change width ("I" is 5px, "W" is 8).
+static void  M_Initials_Drawer( void )
+{
+    char  buf[48];
+    int   i, secs;
+    int   cx = BASEVIDWIDTH/2 - INITIALS_PITCH;   // centre of the first cell
+
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth("NEW HIGH SCORE"))/2,
+                  40, V_WHITEMAP, "NEW HIGH SCORE" );
+
+    snprintf( buf, sizeof(buf), "YOU PLACED %s", M_Ordinal(HS_Run_Place()) );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 56, 0, buf );
+
+    for( i=0; i<INITIALS_CELLS; i++ )
+    {
+        char  one[2];
+        int   opt;
+
+        one[0] = initials_chars[ initials_idx[i] ];
+        one[1] = 0;
+
+        // The cell being edited blinks, at the cadence the intermission's
+        // NEW RECORD marker and the attract prompt already use.
+        opt = (i == initials_pos)
+              ? ((gametic & 16) ? V_WHITEMAP : 0)
+              : 0;
+
+        V_DrawString( cx + (i * INITIALS_PITCH) - (V_StringWidth(one)/2),
+                      86, opt, one );
+    }
+
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth("STICK UP-DOWN TO CHANGE"))/2,
+                  116, 0, "STICK UP-DOWN TO CHANGE" );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth("FIRE TO ACCEPT"))/2,
+                  128, 0, "FIRE TO ACCEPT" );
+
+    if( cv_initialstimeout.EV > 0 )
+    {
+        secs = (initials_endtic - (int)gametic) / TICRATE;
+        if( secs < 0 )  secs = 0;
+        snprintf( buf, sizeof(buf), "%d", secs );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
+                      BASEVIDHEIGHT - 28, 0, buf );
+    }
+}
+
+
 // [Arcade] The Single Player route's game start, deferred until the join
 // screen is done with (or run straight away when there is no join screen).
 static skill_e  newgame_skill;
@@ -3437,6 +3754,7 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
+    {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -7122,6 +7440,14 @@ boolean M_Responder (event_t* ev)
                    && (currentMenu->menuitems[itemOn].status & IT_TYPE) == IT_KEYHANDLER ) )
             key = M_Cabinet_Menu_Key( key );
 
+        // [Arcade] Initials entry.  Taken after M_Cabinet_Menu_Key -- unlike
+        // the join screen this wants the *translated* keys, since stick
+        // up/down to cycle a letter is exactly what that produces -- but
+        // before the generic menu handling, so the page's own inert item
+        // cannot swallow the press.
+        if( menuactive && M_Initials_Key( key ) )
+            return true;
+
         // [Arcade] The guided setup opens on the recommended-layout page and
         // waits here for any button.  Taken before the generic menu handling
         // so the page's own (invisible) item cannot swallow the press.
@@ -7968,7 +8294,8 @@ void Pop_Menu( void )
 // Call once per tic.
 void M_Ticker (void)
 {
-    M_Join_Ticker();   // [Arcade] join screen countdown
+    M_Join_Ticker();       // [Arcade] join screen countdown
+    M_Initials_Ticker();   // [Arcade] raises and times out the initials page
 
     if (--skullAnimCounter <= 0)
     {
@@ -8826,6 +9153,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
   &cv_cheatsmenu,       // [Arcade]
+  &cv_initialstimeout,  // [Arcade]
 
     // p_mobj.c
   &cv_itemrespawntime,
