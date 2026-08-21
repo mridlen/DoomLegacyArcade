@@ -1177,6 +1177,38 @@ silently made the flag do nothing at all.
   - `HS_Run_Finished()` is hooked into **`Command_ExitGame_f`**, the single funnel every route back
     to the title passes through. Idempotent — it zeroes `hs_run_levels` — because some routes reach
     it twice.
+  - **That funnel is not enough on its own: a completed episode never reaches it.** Finishing
+    E?M8 (or Doom 2's MAP30) goes intermission → `G_NextLevel` → `F_StartFinale()`, and the player
+    then presses through the ending or quits — neither of which passes through
+    `Command_ExitGame_f`. The per-map splits recorded normally while the board entry was silently
+    dropped, which is the exact opposite of what should happen: **a finished episode is the run
+    that most deserves a place.** `HS_Run_Finished()` is therefore also called from `G_NextLevel`
+    at the run-ending finales.
+    - It looked intermittent because the **idle timeout does cover `GS_FINALE`** — waiting 60s on
+      the ending screen committed the run, while pressing through it lost the run. Any "it worked
+      that time" report about this is that difference.
+    - **Only the run-ending finales, and `CL_Reset()` is what marks them.** Doom 2 reaches the same
+      `F_StartFinale` for the *between levels* text screens after MAP06/11/20 (and 15/31 by the
+      secret exit) and the campaign carries on afterwards, so committing there would end every
+      Doom 2 run at map 6. The end-of-game cases are exactly the ones that call `CL_Reset()`
+      ("end of game, disconnect from server"), so the two calls are kept side by side deliberately.
+      There are three: `finale_after_intermission`, the UMAPINFO endbunny/endcast path, and
+      `gamemap == 30`.
+    - The run is committed **at the finale start**, not when the ending is over, so the place
+      survives the player quitting during the credits. Only the *initials* are lost in that case,
+      and the entry keeps the `---` placeholder.
+    - `M_Initials_Ticker` correspondingly **refuses to open during `GS_FINALE`**, so the prompt
+      does not paint over the ending text; the player is asked once the finale is done, by
+      pressing through it or by the idle timeout returning to the title.
+    - Verified headless, driving the intermission with a temporary console accelerate: E1M8 gives
+      `finale_pending=1` then a committed `doomu E1M8 E1M8 0 speed 104` entry with no
+      `Command_ExitGame_f` involved at all, and `AAA` once the run is allowed to reach the title;
+      Doom 2 MAP30 commits both categories; **Doom 2 MAP06 does not commit and writes no
+      runs.dat**, which is the regression that matters.
+    - **The intermission needs *two* accelerates to leave, not one** (`WI_update_Stats`): the first
+      jumps `sp_state` to 10, the second takes the `sp_state == 10` branch to `WI_Init_NoState`.
+      A headless test that sends one appears to prove the finale is never reached, when in fact
+      the intermission simply never advanced — this cost a wrong diagnosis once already.
   - **Board entries have no demos of their own**, on purpose. The attract cycle keeps replaying the
     split-record demos exactly as before, so the demo count and the shuffle bag are unchanged; a
     three-deep board with its own demos would have tripled both.

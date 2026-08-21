@@ -3049,6 +3049,14 @@ void  M_Initials_Ticker( void )
     // that is just the attract screen running underneath.
     if( gamestate == GS_LEVEL && ! demoplayback )  return;
 
+    // [Arcade] Nor over the ending.  A completed episode commits its run at
+    // the finale start (G_NextLevel), so the place is already safe on disk;
+    // asking for a name across the ending text would step on the reward for
+    // finishing.  The player is asked once the finale is done -- by pressing
+    // through it, or by the idle timeout, which covers GS_FINALE and returns
+    // to the title on its own.
+    if( gamestate == GS_FINALE )  return;
+
     M_Initials_Open();
 }
 

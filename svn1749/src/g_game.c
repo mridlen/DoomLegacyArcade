@@ -3036,6 +3036,14 @@ void G_NextLevel (void)
     {
         finale_after_intermission = false;
         CL_Reset();        // end of game, disconnect from server
+        // [Arcade] Commit the run: a completed episode is over here, and it
+        // is the run that most deserves a board place.  It cannot be left to
+        // Command_ExitGame_f, because *this route never reaches that funnel*
+        // -- the finale plays, the player presses through it or quits, and
+        // the entry was silently lost while the per-map splits recorded
+        // normally.  (Waiting 60s on the ending screen did commit it, via
+        // the idle timeout, which is what made this look intermittent.)
+        HS_Run_Finished();
         gameaction = ga_nothing;
 #ifdef ENABLE_UMAPINFO
         F_StartFinale (secretexit);
@@ -3055,6 +3063,7 @@ void G_NextLevel (void)
         if (game_umapinfo->flags & (UMA_endbunny | UMA_endcast | UMA_endgame_enabled) )
         {
             CL_Reset (); // end of game disconnect from server
+            HS_Run_Finished();   // [Arcade] run over, see above
             gameaction = ga_nothing;
             F_StartFinale (secretexit);  // [MB] 2023-03-04: Parameter added
         }
@@ -3080,8 +3089,18 @@ void G_NextLevel (void)
             case 11:
             case 20:
             case 30:
+                // [Arcade] Only MAP30 ends the run.  Maps 6, 11 and 20 (and
+                // 15/31 by the secret exit) reach this same F_StartFinale
+                // for their *between levels* text screens and the campaign
+                // carries on afterwards, so committing the run for those
+                // would end it several maps early.  CL_Reset marks which is
+                // which -- it is the "end of game" case -- so the two stay
+                // together deliberately.
                 if( gamemap == 30 )
+                {
                     CL_Reset(); // end of game disconnect from server
+                    HS_Run_Finished();
+                }
                 gameaction = ga_nothing;
 #ifdef ENABLE_UMAPINFO	       
                 F_StartFinale (secretexit);  // [MB] 2023-03-04: Parameter added
