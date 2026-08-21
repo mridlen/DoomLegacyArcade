@@ -59,6 +59,9 @@ boolean  HS_Demo_Path_For(const char * mapname, skill_e skill, int cat,
 // was rounding.  Used everywhere a *run* time is shown: the intermission
 // total and best table, the boards, and the record demo captions.
 void     HS_Format_Time_CS(tic_t tics, char * buf, size_t bufsize);
+// Episode a map belongs to; 1 for the flat MAPxx games, where the whole game
+// is one run.  The key Survival scoring is built on.
+int      HS_Episode_Of(const char * mapname);
 
 // =========================================================================
 //   Run leaderboard  [Arcade]
@@ -76,7 +79,11 @@ void     HS_Format_Time_CS(tic_t tics, char * buf, size_t bufsize);
 // because nothing outranks it on progress.  Single Level runs are all one
 // map, so they rank on time alone.
 #define HS_INITIALS_LEN     4     // three characters plus NUL
-#define HS_BOARD_DEPTH_RUN  10    // campaign, per (game, skill, category)
+// Survival keeps only the single best run per (game, episode, skill,
+// category): "who got furthest, and fastest among those" has one answer, and
+// a deep board of near-identical progress is what made the old per-map
+// scheme hard to read.
+#define HS_BOARD_DEPTH_RUN   1    // survival, per (game, episode, skill, cat)
 #define HS_BOARD_DEPTH_SL    3    // single level, per (game, map, skill, cat)
 
 // The run ended (any route back to the title).  Commits it to the board if
@@ -120,6 +127,18 @@ int   HS_Attract_Page_Count(void);    // pages the tables currently justify
 // page cursor is deliberately *not* reset between appearances, so the rest
 // of the set comes round on later cycles.
 int   HS_Attract_Cycle_Pages(void);
+// True once after the page cursor completes a full pass; consumed by the
+// caller.  D_DoAdvanceDemo uses it to play a Survival record run instead of
+// the usual short single level demo, so the long whole-episode demo appears
+// roughly once every several attract cycles.
+boolean  HS_Attract_Rotation_Done(void);
+// The Survival record demo for that occasion, or NULL.
+const char *  HS_NextSurvivalDemoPath(void);
+// The Survival record for one (episode, skill, category): furthest map, its
+// time, and who holds it.  Depth is 1, so there is at most one.
+boolean  HS_Survival_Entry(int episode, skill_e skill, int cat,
+                           char * out_map, char * out_initials,
+                           tic_t * out_tics);
 void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);

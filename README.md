@@ -34,9 +34,10 @@ Discord is likely to get you banned.
   panel press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous.
 - **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
   its own separate high score table and its own record demos.
-- **High scores.** Best cumulative time-to-exit per map, skill and category, shown at the
-  intermission and on **Single Player Best Times** pages in the attract cycle — one per difficulty,
-  every map of the game on a single page. Two categories: **speed** (just finish) and **max** (100%
+- **Single Player - Survival.** A campaign run is scored on **how far you got in the episode**,
+  with the faster run winning a tie — so dying on E1M7 beats dying on E1M3 however quick the latter
+  was, and finishing the episode tops the board because nothing outranks it on progress. One record
+  per episode, difficulty and category, shown at the intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
   kills and secrets on every level so far). Times are kept to hundredths of a second, because whole
   seconds cannot separate two E1M1 runs.
 - **A run leaderboard, with your initials on it.** Separate from the per-map best times: a board of

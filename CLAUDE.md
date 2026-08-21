@@ -1133,24 +1133,53 @@ silently made the flag do nothing at all.
   in `D_DoAdvanceDemo` via a flag rather than added as a `demosequence` case, because those cases
   are shared between game modes and the last is reachable only under the retail divisor.
 
-  **The pages are enumerated, not numbered** (`HS_Build_Pages`, `hs_page_t`). Four kinds:
+  **Single Player scoring is Survival** (`HS_Survival_Entry`, `HS_Episode_Of`). A campaign run is
+  scored on **how far it got in the episode, tie-broken by time** — not on per-map cumulative
+  times, which was the confusing part of the older scheme and is gone entirely.
+
+  - The key is **(game, episode, skill, category)** and the depth is **1**. `HS_Episode_Of` is what
+    makes it an episode: the board used to be keyed by game alone, which let `HS_MapOrder` compare
+    *across* episodes. On the cabinet's own table two one-minute E2M1 attempts (order 201)
+    outranked two **completed** Episode 1 runs (E1M8, order 108). "Furthest" only means anything
+    within one episode. Doom 2 and the other flat `MAPxx` games are one episode — the whole game
+    is the run.
+  - **No per-map campaign record is kept any more.** `HS_LevelExit` freezes the run's state and
+    nothing else; the campaign half of `highscores.dat` is dead weight from older versions and is
+    simply never written or read. Single Level times are untouched, including a campaign first
+    level still competing there.
+  - **The demo is snapshotted at each scored level exit while the run leads its board**
+    (`HS_Snapshot_If_Leading`), not at the end of the run. It has to be: a **death closes the
+    recorder** (`HS_Player_Died`), and under Survival a run that died still scores — on how far it
+    got. Snapshotting as it goes means the file always holds the leading run up to its last scored
+    exit. One demo per (game, episode, skill, category), named `..._ep<N>_sk<M>_<cat>.lmp`.
+  - The intermission shows the **episode record and where this run stands against it**, replacing
+    the old five-row per-map table. `NEW RECORD` can now blink *during* a run rather than only at
+    the end, because under Survival being ahead is knowable: get past the holder's furthest map and
+    you already lead.
+
+  **The pages are enumerated, not numbered** (`HS_Build_Pages`, `hs_page_t`). Three kinds:
 
   | kind | one page per | content |
   | --- | --- | --- |
-  | `HSPG_campaign` | (skill, category) | best cumulative time per map, whole game |
-  | `HSPG_single` | (skill, category) | the same for single level runs, with initials |
-  | `HSPG_board` | (skill, category) | the run board, ten deep |
+  | `HSPG_survival` | episode | the best run per skill and category, both categories side by side |
+  | `HSPG_single` | (skill, category) | single level best times, whole map list, with initials |
   | `HSPG_slmap` | one slot | one map's single level top three, by difficulty |
 
-  A page is only enumerated when it would have something on it, so empty skills and categories
-  cost nothing. The list is rebuilt on every query because the tables grow during a session.
+  A page is only enumerated when it would have something on it. The list is rebuilt on every query
+  because the tables grow during a session.
 
-  - **An appearance shows `HS_PAGES_PER_CYCLE` (3) pages, not all of them**, and the cursor is
-    deliberately *not* reset between appearances (`HS_Attract_Cycle_Pages`, and the removal of the
-    old `HS_Attract_Reset_Pages`). This is load-bearing: with campaign, single level, board and
-    per-map pages the cabinet's own tables enumerate **14 pages** under Ultimate Doom, which at 8s
-    each is nearly two minutes of score pages between demos. A bounded window keeps each
-    interruption around 24s while the whole set still comes round over a few cycles.
+  - **Survival page layout**, measured against the real STCFN lumps. The skill label is written
+    once and the two category blocks sit beside it: `"ITYTD"` 36px at 8, then blocks at 52 and 186,
+    each `"E1M8 12:34.56 MLR"` at 122px — 308 of 320, and 316 with a three-digit-minute time. A
+    per-episode board is what buys this; the old per-map page could not fit two categories at all.
+    Rows are skills, so Doom 1 gets up to four pages and Doom 2 exactly one for the whole game,
+    with no adaptive special-casing.
+  - **An appearance shows `HS_PAGES_PER_CYCLE` (4) pages**, and the cursor is deliberately not
+    reset between appearances. Even, so the single level speed/max pairs sit whole inside an
+    appearance — but **even is not sufficient on its own**: a skill with a speed record and no max
+    contributes a single page and shifts the parity of every pair after it. So
+    `HS_Attract_Cycle_Pages` checks the boundary directly (`HS_Is_Pair_Tail`) and extends the
+    appearance by one page rather than splitting a pair across a demo.
   - **`HSPG_slmap` is one slot, not one page per map.** A different map comes up each time it
     appears; enumerating a page per map would have put ten-plus near-identical pages in the
     rotation.
@@ -1158,36 +1187,14 @@ silently made the flag do nothing at all.
       `HS_Draw_SL_Map_Page` made the page flicker through every map at frame rate, because
       **a drawer runs once per frame, not once per page** — anything it mutates changes 35 times a
       second. `HS_SL_Current_Map` resolves the cursor read-only for drawing. This is the general
-      rule for anything on these pages: the drawers must be idempotent.
-    - Verified by tracing the map actually drawn: it holds for **281 frames** (one 8s page at
-      TICRATE 35) and then changes, where the bug changed it every frame.
+      rule for these pages: the drawers must be idempotent.
   - **The page block steps once more on the way out** (`D_DoAdvanceDemo`), or the page an
-    appearance ended on would be the first page of the next one. The subpage ticker advances
-    *between* pages but deliberately not off the last, since that would flash the next page for a
-    single tic before the demo starts.
-
-  **Best times pages** list **every map of the game**, not only the ones with a time, so the
-  columns line up with the episodes — E1-E2 left, E3-E4 right for Doom 1 — and an unclaimed map is
-  visible as `--:--.--`. The map list comes from `HS_Map_List()`, which decides a map exists by
-  whether its **lump** exists, so it follows level packs instead of assuming 32 maps or four
-  episodes, and is sorted by `HS_MapOrder`.
-  - **One page per (skill, category), not both categories side by side, and this is forced by
-    width.** Measured against the real `STCFN` lumps, a row of `MAP01  12:34.57  12:34.57` is
-    **156px** against the 160 a column has, and a cumulative Doom 2 time reaching `123:45.67`
-    makes it **164**. Times are right-justified, so the failure mode is silent overlap of the map
-    name rather than clipping. Splitting by category also freed the width for the initials.
-  - Column layout, relative to the column origin: map name at +0, time right-justified at **+110**
-    (so the widest `888:88.99` at 64px starts at +46 and clears a 38px map name by 8), initials at
-    **+118**. Origins **10** and **168**, so the columns span 10..152 and 168..310 of 320.
-  - **The row step is computed, not fixed**: `(182 - 46) / (rows - 1)`, capped at 10. Ultimate
-    Doom's 36 maps give 18 rows and a step of 8 (last row at 182, text bottom 189); Doom 2's 32
-    give 16 rows and a step of 9; a short level pack gets the full 10.
-  - **Only the single level page names a holder.** Its board is keyed per map, so the number one
-    entry there is the same run as the split by construction. A *campaign* split is genuinely
-    anonymous — the split table records no owner, and a campaign board entry is keyed by the run's
-    **end** map, so nothing attributes the MAP03 split of a run that carried on to MAP08. The
-    column is omitted entirely on campaign pages rather than printing `---` on every row.
-  - Titled **"SINGLE PLAYER BEST TIMES"** / **"SINGLE LEVEL BEST TIMES"**, replacing "HIGH SCORES".
+    appearance ended on would be the first page of the next one.
+  - **Demos: the normal rotation is single level only.** A Survival demo is a whole episode — ten
+    or twenty minutes — which would park the attract screen on one run. `HS_NextSurvivalDemoPath`
+    hands one out instead when `HS_Attract_Rotation_Done()` reports a full pass of the score pages
+    has finished, so the long run appears roughly once every several attract cycles rather than as
+    the filler between pages.
 
   **The per-map single level page** (`HS_Draw_SL_Map_Page`) is laid out **difficulty x place**
   rather than a stacked block per difficulty, which reads in one glance: skill label at x=10, then

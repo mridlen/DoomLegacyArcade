@@ -1411,7 +1411,17 @@ void D_DoAdvanceDemo(void)
             // [Arcade] A record demo when there is one.  The stock demo
             // played otherwise rotates, so a cabinet with no records still
             // shows all of the IWAD's demos rather than only the first.
-            demo_name = HS_NextRecordDemoPath();
+            // [Arcade] Once a full pass of the score pages has finished,
+            // show a Survival record run -- a whole episode, far too long to
+            // be the ordinary filler, so it appears roughly once every
+            // several attract cycles.  Falls through to the usual short
+            // single level demo when there is no Survival demo to show.
+            demo_name = NULL;
+            if( HS_Attract_Rotation_Done() )
+                demo_name = HS_NextSurvivalDemoPath();
+
+            if( demo_name == NULL )
+                demo_name = HS_NextRecordDemoPath();
             if( demo_name == NULL )
             {
                 static const char * stock_demo[3] = { "demo1", "demo2", "demo3" };
