@@ -353,19 +353,22 @@ search rather than refusing to start.
 
 Like every operator setting, it is only saved from a `-devmode` session.
 
-### Replacement music (IDKFA and other OGG soundtracks)
+### Replacement music (OGG soundtracks)
 
 There is **no music folder** — the engine only ever reads music from wad lumps, so replacement
 tracks have to be packed into a `.wad`. That is the whole trick; everything below follows from it.
 
-Andrew Hulshult's **IDKFA** is the obvious candidate for a home cabinet: it's the original Doom
-soundtrack rerecorded, so it maps track-for-track onto Ultimate Doom. It is packaged as a ready-made
-wad, `IDKFAv2.wad`:
+Two ready-made wads cover the two games, both of them Andrew Hulshult rerecordings of the original
+soundtracks, so they map track-for-track onto the maps:
 
-> https://www.moddb.com/mods/brutal-doom/addons/idkfa-doom-soundtrack
+| Game | Wad | Where |
+| --- | --- | --- |
+| Ultimate Doom | `IDKFAv2.wad` | https://www.moddb.com/mods/brutal-doom/addons/idkfa-doom-soundtrack |
+| Doom II | `Doom2OST.wad` | https://www.reddit.com/r/Doom/comments/1enyv5f/for_anyone_that_wants_to_use_the_new_doom_2_music/ |
 
-Nothing from it ships with this repository. **With a ready-made wad, skip to step 3** — steps 1 and
-2 are for packaging a soundtrack yourself.
+Neither ships with this repository. **With a ready-made wad, skip to step 3** — steps 1 and 2 are
+for packaging a soundtrack yourself. Both games can be set up at once: they use different lump
+names, so `addfile` both wads and each game finds its own.
 
 **1. Name each track after its music lump.** The engine looks for two names, in this order:
 
@@ -390,7 +393,7 @@ O_E3M1 … O_E3M9      episode 3        O_INTER    intermission
 Episode 4 has no music of its own — its maps reuse episode 1–3 tracks, so they're covered
 automatically once the rest are in place.
 
-Doom II uses a different set of names, should you package one of the Doom II soundtracks:
+Doom II uses a different set of names, which is what a Doom II soundtrack wad carries:
 `O_RUNNIN`, `O_STALKS`, `O_COUNTD`, `O_BETWEE`, `O_DOOM`, `O_THE_DA`, `O_SHAWN`, `O_DDTBLU`,
 `O_IN_CIT`, `O_DEAD`, `O_STLKS2`, `O_THEDA2`, `O_DOOM2`, `O_DDTBL2`, `O_RUNNI2`, `O_DEAD2`,
 `O_STLKS3`, `O_ROMERO`, `O_SHAWN2`, `O_MESSAG`, `O_COUNT2`, `O_DDTBL3`, `O_AMPIE`, `O_THEDA3`,
@@ -409,18 +412,19 @@ session and quit to save it.
 Avoid the `MP3` and `OGG` settings: those play *silence* for any track the wad doesn't replace,
 rather than falling back to the original. `Auto` prefers the replacement and falls back.
 
-**4. Load it at startup.** Put this in `legacyhome/autoexec.cfg`, creating the file if it isn't
-there:
+**4. Load it at startup.** Put a line per wad in `legacyhome/autoexec.cfg`, creating the file if it
+isn't there:
 
 ```
 addfile "IDKFAv2.wad"
+addfile "Doom2OST.wad"
 ```
 
 The bare filename is enough as long as the wad sits in one of the usual wad directories, such as
 `~/games/doom` — the engine searches them by name. An absolute path works too. `legacyhome/levels/`
-is *not* the place for it: packs there are filtered by their maps, and a music wad has none, so it
-will never be listed. If you'd rather not use an autoexec, `-file IDKFAv2.wad` on the command line
-does the same thing.
+is *not* the place for these: packs there are filtered by their maps, and a music wad has none, so
+it will never be listed. If you'd rather not use an autoexec, `-file IDKFAv2.wad` on the command
+line does the same thing.
 
 Two things to expect: recorded music is far louder than the original MIDI, so **turn the music
 volume down** — 3 or 4 rather than the default — and tracks loop from the beginning rather than at
