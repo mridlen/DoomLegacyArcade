@@ -1151,9 +1151,20 @@ silently made the flag do nothing at all.
     per-map pages the cabinet's own tables enumerate **14 pages** under Ultimate Doom, which at 8s
     each is nearly two minutes of score pages between demos. A bounded window keeps each
     interruption around 24s while the whole set still comes round over a few cycles.
-  - **`HSPG_slmap` is one slot, not one page per map.** It advances `hs_slmap_cursor` when it is
-    *drawn*, so a different map comes up each time it appears. Enumerating a page per map would
-    have put ten-plus near-identical pages in the rotation.
+  - **`HSPG_slmap` is one slot, not one page per map.** A different map comes up each time it
+    appears; enumerating a page per map would have put ten-plus near-identical pages in the
+    rotation.
+    - **The cursor is stepped by `HS_Attract_Advance_Page`, never by the drawer.** Advancing it in
+      `HS_Draw_SL_Map_Page` made the page flicker through every map at frame rate, because
+      **a drawer runs once per frame, not once per page** — anything it mutates changes 35 times a
+      second. `HS_SL_Current_Map` resolves the cursor read-only for drawing. This is the general
+      rule for anything on these pages: the drawers must be idempotent.
+    - Verified by tracing the map actually drawn: it holds for **281 frames** (one 8s page at
+      TICRATE 35) and then changes, where the bug changed it every frame.
+  - **The page block steps once more on the way out** (`D_DoAdvanceDemo`), or the page an
+    appearance ended on would be the first page of the next one. The subpage ticker advances
+    *between* pages but deliberately not off the last, since that would flash the next page for a
+    single tic before the demo starts.
 
   **Best times pages** list **every map of the game**, not only the ones with a time, so the
   columns line up with the episodes — E1-E2 left, E3-E4 right for Doom 1 — and an unclaimed map is

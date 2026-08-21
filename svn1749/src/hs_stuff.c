@@ -1855,6 +1855,10 @@ static int  hs_attract_page = 0;   // linear index into the enumeration
 // than every cycle starting at E1M1.
 static int  hs_slmap_cursor = 0;
 
+// Defined with the drawers below; needed by HS_Attract_Advance_Page above
+// them, which is what steps the cursor now.
+static int  HS_SL_Current_Map( char maps[][9], int nm );
+
 
 static int  HS_Build_Pages( hs_page_t * out, int out_max )
 {
@@ -1931,8 +1935,28 @@ int HS_Attract_Cycle_Pages( void )
 
 void HS_Attract_Advance_Page( void )
 {
-    int  total = HS_Attract_Page_Count();
-    hs_attract_page = (total > 0) ? ((hs_attract_page + 1) % total) : 0;
+    hs_page_t  pages[HS_MAX_PAGES];
+    int  total = HS_Build_Pages( pages, HS_MAX_PAGES );
+
+    if( total <= 0 )
+    {
+        hs_attract_page = 0;
+        return;
+    }
+
+    // Step the rotating single level page onto its next map as we leave it.
+    // This belongs here and not in the drawer: this runs once per page, the
+    // drawer once per frame.
+    if( hs_attract_page < total && pages[hs_attract_page].kind == HSPG_slmap )
+    {
+        char maps[HS_MAX_PAGE_MAPS][9];
+        int  nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
+        int  cur = HS_SL_Current_Map( maps, nm );
+        if( cur >= 0 )
+            hs_slmap_cursor = cur + 1;
+    }
+
+    hs_attract_page = (hs_attract_page + 1) % total;
 }
 
 
@@ -2113,27 +2137,40 @@ static void  HS_Draw_SL_Map_Block( const char * mapname, int cat, int y0 )
 }
 
 
+// Which map the rotating page is showing, resolved from the cursor without
+// touching it.  **Read only, deliberately.**  Advancing here is what made
+// this page flicker through every map at frame rate: a drawer runs once per
+// *frame*, not once per page, so anything it mutates changes 35 times a
+// second.  The cursor is stepped by HS_Attract_Advance_Page instead, which
+// runs once per page.  Returns -1 when no map has entries.
+static int  HS_SL_Current_Map( char maps[][9], int nm )
+{
+    int  cur = hs_slmap_cursor;
+    int  tries;
+
+    // Bounded by the map count, so a table with no single level entries at
+    // all cannot spin here.
+    for( tries=0; tries<nm; tries++ )
+    {
+        if( cur >= nm )  cur = 0;
+        if( HS_SL_Map_Has_Entries( maps[cur] ) )  return cur;
+        cur++;
+    }
+    return -1;
+}
+
+
 static void  HS_Draw_SL_Map_Page( void )
 {
     char  maps[HS_MAX_PAGE_MAPS][9];
     char  buf[64];
-    int   nm, i, tries, has_max = 0, sk;
+    int   nm, i, has_max = 0, sk;
 
     nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
     if( nm == 0 )  return;
 
-    // Advance to the next map that actually has entries.  Bounded by the map
-    // count so a table with none cannot spin here.
-    for( tries=0; tries<nm; tries++ )
-    {
-        if( hs_slmap_cursor >= nm )  hs_slmap_cursor = 0;
-        if( HS_SL_Map_Has_Entries( maps[hs_slmap_cursor] ) )  break;
-        hs_slmap_cursor++;
-    }
-    if( tries >= nm )  return;
-
-    i = hs_slmap_cursor;
-    hs_slmap_cursor++;      // a different map next time this page comes round
+    i = HS_SL_Current_Map( maps, nm );
+    if( i < 0 )  return;
 
     snprintf( buf, sizeof(buf), "SINGLE LEVEL: %s", maps[i] );
     V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 12, V_WHITEMAP, buf );

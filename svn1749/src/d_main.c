@@ -1355,6 +1355,14 @@ void D_DoAdvanceDemo(void)
         && ! VALID_LUMP( W_CheckNumForName("CREDIT2") ) )
         demosequence = attract_demo;
 
+    // [Arcade] Leaving the score pages.  Step past the one the block ended
+    // on, so the next appearance starts on a new page rather than repeating
+    // it: the subpage ticker advances *between* pages but deliberately not
+    // off the last one, which would flash the next page for a single tic on
+    // the way out.  Harmless when no block was running.
+    if( hs_attract_page )
+        HS_Attract_Advance_Page();
+
     hs_attract_page = false;   // [Arcade] cleared for the graphic/demo pages
     HS_Clear_DemoLabel();      // [Arcade] only the record cases below set it
 
