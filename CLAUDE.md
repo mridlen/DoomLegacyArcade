@@ -160,6 +160,7 @@ silently made the flag do nothing at all.
 
   ```
   Main:     New Game / Options / Quit Game
+  New Game: Single Player / Single Level / Multiplayer / End Game
   Options:  Crosshair / Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
   Config:   Crosshair / Player setup >>
@@ -235,18 +236,29 @@ silently made the flag do nothing at all.
 - **Single Level mode** (`m_menu.c`, `SingleLevelMenu`/`SingleLevelDef`, from a new main menu entry
   using the locally added **`M_SINLVL`** graphic). Plays one chosen map and returns to its own menu,
   with a separate high score table.
-  - The main menu entry is **inserted at index 1**, giving New Game / Single Level / Options / Quit.
-    This is the one place that addition by index was unavoidable, so everything addressing this menu
-    by position moved with it: `MM_readthis` 4→**5**, `MM_quitdoom` 5→**6**, and the lockdown's
-    Load/Save hiding 1,2→**2,3**. Those four sites are the complete set. Verified by dumping the
-    menu at the *end* of `M_Configure` — dumping at the top shows a misleading pre-fixup state,
-    since Doom 2's `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--` and the Doom 1
-    Read This hiding both run later. Final result: Doom 2 gets 6 items with Quit at 5; Ultimate
-    Doom gets 7 with Read This hidden.
+  - **It lives on the New Game page, at index 1, directly under Single Player**
+    (`SingleMulti_Menu`) — a third way to *start a game*, rather than a peer of the New Game item
+    itself. It was originally inserted into `MainMenu` at index 1, and moving it back off that menu
+    reverted every index that had shifted for it: `MM_cheats` 5→**4**, `MM_readthis` 6→**5**,
+    `MM_quitdoom` 7→**6**, and the lockdown's Load/Save hiding 2,3→**1,2**. Those are the complete
+    set on the main menu.
+  - **`SingleMulti_Menu` is now addressed by position**, which it was not before, so its indices are
+    named in an enum (`singlemulti_*`) and the two lockdown sites use those — the networked row went
+    from 2 to 3 and the MULTIPLAYER row from 1 to 2. Keep the enum in step with the array.
+  - It needed no new artwork or geometry: the same `M_SINLVL` graphic (148x17), and `MainDef` and
+    `SingleMultiDef` share an origin (both 97,64), so it draws exactly where it did before.
+  - Verified by dumping both menus at the *end* of `M_Configure` — dumping at the top shows a
+    misleading pre-fixup state, since Doom 2's `MainMenu[MM_readthis] = MainMenu[MM_quitdoom];
+    numitems--`, the Doom 1 Read This hiding and the Cheats hiding all run later. **This bit again
+    during this move**: an insertion point that merely looked like the end of the function reported
+    7 main items with Read This still present. Final result: Doom 2 gets 6 items with Quit at 5;
+    Ultimate Doom gets 7 with Read This hidden; New Game gets 5 with Single Level at 1. Checked in
+    all four states — Doom 2 player, Ultimate player, `-devmode`, and `twoplayer` off, where the
+    hidden row must be MULTIPLAYER and **not** Single Level.
   - Reuses `cv_nextmap` / `cv_nextepmap` / `cv_skill` from the Start Game screen rather than
     building a level list — `M_Configure` already trims `exmy_cons_t` to the episodes present. The
     per-gamemode swap (`SingleLevelMenu_Map` vs `_EpisodeMap`) is done **in `M_Configure`**, not on
-    menu open: the main menu reaches this page with `IT_SUBMENU`, which has no handler to hook.
+    menu open: the New Game page reaches this page with `IT_SUBMENU`, which has no handler to hook.
   - **`cv_skill` is 1-based and `skill_e` is 0-based** — `skill_cons_t` numbers the five skills
     1..5, because that is what the `map ... -skill %d` console command wants (`Command_Map_f` does
     `atoi()-1`), and `M_StartServer` passes `cv_skill.value` straight into that command. But
@@ -725,11 +737,11 @@ silently made the flag do nothing at all.
   (`gimme health ammo armor keys weapons`, i.e. IDKFA), No Clipping (`noclip`) and Exit Level
   (`exitlevel`). Each issues the ordinary console command through `COM_BufAddText` rather than
   touching `player_t` directly, so there is one implementation of each cheat.
-  - **Inserted at MainMenu index 5, before Read This**, giving `MM_cheats = 5`, `MM_readthis` 6 and
-    `MM_quitdoom` 7. Before it, *not* after: the Doom 2 fixup
+  - **Inserted at MainMenu index 4, before Read This**, giving `MM_cheats = 4`, `MM_readthis` 5 and
+    `MM_quitdoom` 6. Before it, *not* after: the Doom 2 fixup
     `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--` copies Quit over the Read This slot
     and drops the last row, so anything appended past Quit would be cut off under Doom 2. The
-    lockdown's Load/Save hiding at indices 2,3 is unaffected. Those are the complete set of index
+    lockdown's Load/Save hiding at indices 1,2 is unaffected. Those are the complete set of index
     references — see the `grep` list under Single Level mode, which uses the same discipline.
   - Devmode only by default, hidden by the usual `IT_HIDDEN` treatment with `MainDef.lastOn` moved
     off it — but an operator can leave it up for players with **`cv_cheatsmenu`** ("cheatsmenu",

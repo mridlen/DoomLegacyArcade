@@ -1179,24 +1179,25 @@ static void M_QuitDOOM(int choice);
 
 enum
 {
-    // [Arcade] Single Level is inserted at index 1 and Cheats at 5, so these
-    // are 6 and 7 rather than the stock 4 and 5.  Cheats sits *before* Read
-    // This deliberately: the Doom 2 fixup below copies Quit over the Read
-    // This slot and drops one item, which would cut off anything after it.
-    MM_cheats   = 5,	// referenced
-    MM_readthis = 6,	// referenced
-    MM_quitdoom = 7,	// referenced
+    // [Arcade] Cheats is inserted at index 4, so these are 5 and 6 rather
+    // than the stock 4 and 5.  Cheats sits *before* Read This deliberately:
+    // the Doom 2 fixup below copies Quit over the Read This slot and drops
+    // one item, which would cut off anything after it.
+    MM_cheats   = 4,	// referenced
+    MM_readthis = 5,	// referenced
+    MM_quitdoom = 6,	// referenced
 } main_e;
 
 // Compatible with modifications to original graphics
 menuitem_t MainMenu[]=
 {
+    // [Arcade] Single Level used to sit at index 1 here.  It moved under
+    // New Game, beside Single Player, where it reads as the third way to
+    // start a game rather than a peer of New Game itself -- see
+    // SingleMulti_Menu.  Everything that addressed this menu by index moved
+    // back with it: MM_cheats/MM_readthis/MM_quitdoom above, and the
+    // Load/Save hiding in the lockdown below.
     {IT_SUBMENU | IT_PATCH,"M_NGAME" ,"NEW GAME" ,&SingleMultiDef,'n'},
-    // [Arcade] Inserted here rather than appended, so the player sees
-    // New Game / Single Level / Options / Quit.  Everything that addresses
-    // this menu by index was shifted to match: MM_readthis and MM_quitdoom
-    // above, and the Load/Save hiding in the lockdown below.
-    {IT_SUBMENU | IT_PATCH,"M_SINLVL","SINGLE LEVEL",&SingleLevelDef,'s'},
     {IT_CALL    | IT_PATCH,"M_LOADG" ,"LOAD GAME",M_Loadgame,'l'},
     {IT_CALL    | IT_PATCH,"M_SAVEG" ,"SAVE GAME",M_Savegame,'s'},
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"  ,&OptionsDef,'o'},
@@ -1235,10 +1236,27 @@ static void M_SingleNewGame(int choice);
 static void M_TwoPlayerMenu(int choice);
 static void M_EndGame(int choice);
 
-// DoomLegacy graphics from legacy.wad: M_SINGLE, M_2PLAYR, M_MULTI
+// [Arcade] This menu is addressed by position by the lockdown, so its
+// indices are named.  Keep the enum in step with the array below.
+enum
+{
+    singlemulti_single = 0,
+    singlemulti_singlelevel,
+    singlemulti_multi,
+    singlemulti_network,
+    singlemulti_endgame,
+};
+
+// DoomLegacy graphics from legacy.wad: M_SINGLE, M_2PLAYR, M_MULTI, M_SINLVL
 menuitem_t SingleMulti_Menu[] =
 {
     {IT_CALL | IT_PATCH,"M_SINGLE","SINGLE PLAYER",M_SingleNewGame ,'s'},
+    // [Arcade] Single Level belongs here, directly under Single Player,
+    // rather than on the main menu beside New Game: it is a third way to
+    // *start a game*, not a peer of the New Game item.  Same M_SINLVL
+    // graphic, and this menu shares the main menu's origin (both are at
+    // 97,64), so it draws in exactly the position it did before.
+    {IT_SUBMENU | IT_PATCH,"M_SINLVL","SINGLE LEVEL",&SingleLevelDef,'l'},
     // [Arcade] Local play is what a cabinet means by "multiplayer", so it
     // takes that name and the M_MULTI graphic that reads "MULTIPLAYER".
     // M_2PLAYR literally reads "TWO PLAYER GAME", which stopped being true
@@ -8390,8 +8408,8 @@ void M_Init (void)
     {
         // Locked-down (e.g. arcade cabinet) build: no multiplayer server,
         // no save/load or options tampering.
-        SingleMulti_Menu[2].status = IT_HIDDEN;  // Networked Multiplayer
-        if( SingleMultiDef.lastOn == 2 )
+        SingleMulti_Menu[singlemulti_network].status = IT_HIDDEN;
+        if( SingleMultiDef.lastOn == singlemulti_network )
             SingleMultiDef.lastOn = 0;
 
         TwoPlayerMenu[twoplayer_networked].status = IT_HIDDEN;
@@ -8412,9 +8430,10 @@ void M_Init (void)
         if( NetOptionDef.lastOn < netoption_allowexit )
             NetOptionDef.lastOn = netoption_allowexit;
 
-        MainMenu[2].status = IT_HIDDEN;  // Load Game  (2/3 since Single Level
-        MainMenu[3].status = IT_HIDDEN;  // Save Game   took index 1)
-        if( MainDef.lastOn >= 2 && MainDef.lastOn <= 3 )
+        MainMenu[1].status = IT_HIDDEN;  // Load Game  (1/2 again now that
+        MainMenu[2].status = IT_HIDDEN;  // Save Game   Single Level has moved
+                                         //             under New Game)
+        if( MainDef.lastOn >= 1 && MainDef.lastOn <= 2 )
             MainDef.lastOn = 0;
 
         // [Arcade] The Cheats entry is hidden in M_Configure instead, because
@@ -8590,8 +8609,8 @@ void M_Configure (void)
     // [Arcade] The Single Level page's map list depends on the gamemode, which
     // is not known at M_Init -- IdentifyVersion runs later.  Doom 2 has a flat
     // MAPxx list, the Doom 1 games are episode+map.  Done here rather than on
-    // menu open because the main menu reaches SingleLevelDef with IT_SUBMENU,
-    // which has no handler to hook.
+    // menu open because the New Game page reaches SingleLevelDef with
+    // IT_SUBMENU, which has no handler to hook.
     SingleLevelMenu[SL_map] = (gamemode==doom2_commercial)?
          SingleLevelMenu_Map
        : SingleLevelMenu_EpisodeMap;
@@ -8649,8 +8668,8 @@ void M_Configure (void)
     // M_Init runs, so the value would still be the default there.
     if( ! devmode && ! cv_twoplayer.EV )
     {
-        SingleMulti_Menu[1].status = IT_HIDDEN;  // Two Player Game
-        if( SingleMultiDef.lastOn == 1 )
+        SingleMulti_Menu[singlemulti_multi].status = IT_HIDDEN;
+        if( SingleMultiDef.lastOn == singlemulti_multi )
             SingleMultiDef.lastOn = 0;
 
         // Player 2's config screen is unreachable in play and meaningless

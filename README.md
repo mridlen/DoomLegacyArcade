@@ -235,8 +235,8 @@ setting, **fire** selects, **use** backs out. No keyboard is needed.
 
 ### Single Level
 
-**Single Level** on the main menu plays one map and comes straight back to the same page, so you can
-retry immediately. Pick the map and skill and the best speed and max times for that exact map are
+**Single Level**, under **New Game** beside Single Player, plays one map and comes straight back to
+the same page, so you can retry immediately. Pick the map and skill and the best speed and max times for that exact map are
 shown right there. If a record demo exists you can watch it with **Watch speed run** or **Watch max
 run**; those are greyed out when nothing has been recorded yet.
 
