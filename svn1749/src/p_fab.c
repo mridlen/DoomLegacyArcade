@@ -106,7 +106,26 @@ void A_SmokeTrailer (mobj_t* actor)
 {
     mobj_t*     th;
 
-    if (gametic % (4 * NEWTICRATERATIO))
+    // [Arcade fix] Gate the trail on game_comp_tic, not gametic.
+    //
+    // gametic free-runs from process start (it is zeroed only once, in
+    // D_Init_ClientServer) and is never reset for a new game, so its 4-tic
+    // phase at the start of a run depends on how long the cabinet had been
+    // sitting on the attract screen.  The puff below consumes
+    // PP_Random(pL_smoketrail), which advances the shared gameplay RNG index
+    // -- so a demo recorded at one phase and replayed at another diverges the
+    // instant a rocket is fired.
+    //
+    // game_comp_tic is the counter built for exactly this: it is written into
+    // the demo header by G_BeginRecording, restored by G_DoPlayDemo, and
+    // advanced once per simulated tic on both sides, so the phase survives the
+    // round trip.  A_Tracer (p_enemy.c) already had this fix -- see its
+    // "internal demos start at random gametics" comment; A_SmokeTrailer, which
+    // is Legacy's own rocket and lost-soul trail, never got it.
+    //
+    // Legacy demos before 1.47 were recorded against raw gametic, so they keep
+    // reading it, matching the condition A_Tracer uses.
+    if( ((EV_legacy && (EV_legacy < 147))? gametic : game_comp_tic) % (4 * NEWTICRATERATIO) )
         return;
 
     // spawn a puff of smoke behind the rocket

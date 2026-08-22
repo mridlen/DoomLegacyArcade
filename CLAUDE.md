@@ -1904,6 +1904,41 @@ single level splits.
   the player tires, a ~0.1% momentum error per tic that compounds. Fixed by writing them (plus
   `cv_viewheight`) into the header's spare option bytes. **When adding any new gameplay-affecting
   cvar, either add it to the demo header or to `G_demo_defaults()`, or demos will desync.**
+- **Rocket smoke trails desynced every demo where a rocket was fired (fixed).** `A_SmokeTrailer`
+  (`p_fab.c`) — Legacy's own rocket and lost-soul trail, hung on `states[S_ROCKET].action` and
+  `S_SKULL_ATK3`/`4` by `G_Downgrade` — gated its 4-tic cadence on raw **`gametic`**. `gametic`
+  is zeroed **once per process**, in `D_Init_ClientServer`; nothing resets it for a new game. So
+  its `% 4` phase at the start of a run is just how long the cabinet had been sitting on the
+  attract screen. The puff it spawns consumes `PP_Random(pL_smoketrail)`, and `PP_Random`
+  **ignores its class parameter and advances the shared `prndindex`** — the gameplay RNG. Record
+  at one phase, replay at another, and the run diverges on the **first rocket fired**.
+  - **This is a known Doom bug that upstream had already fixed one of the two copies of.**
+    `A_Tracer` (`p_enemy.c`) carries killough's comment — *"internal demos start at random
+    gametics, thus the bug in which revenants cause internal demos to go out of sync"* — and uses
+    **`game_comp_tic`**, which is reset in `G_DoPlayDemo`, **written into the demo header** by
+    `G_BeginRecording`, restored on playback, and advanced once per *simulated* tic (it skips the
+    paused/menu tics that `gametic` counts anyway). `A_SmokeTrailer` never got the same treatment.
+    The fix is one line, copied verbatim from `A_Tracer`, keeping raw `gametic` for pre-1.47
+    Legacy demos that were recorded against it.
+  - **It surfaced with the first multi-level survival demo**, not because multi-level demos are
+    special but because the earlier single-level record demos are E1M1-E1M4 runs where the player
+    never has a rocket launcher. A campaign run picks one up in E1M5 and desyncs there — which
+    reads as "the demo breaks halfway through E1M5" when the cause is one RNG call.
+  - **Diagnosing it needs an oracle, because a desync does not stop demo playback.** Level
+    transitions are driven by the recorded `XD_MAP` textcmd (`AddLmpExtradata`), and
+    `G_DoWorldDone` explicitly skips issuing its own (`if(server && !demoplayback)`), so the
+    replay marches through all eight maps whatever the player is actually doing. The check that
+    works: **temporarily log `G_ExitLevel` (sim-driven) beside `Got_NetXCmd_Mapcmd` (demo-driven)
+    and see where they stop agreeing.** In sync the sim exit lands exactly one tic before the map
+    command; E1M1-E1M4 did, E1M5 produced no sim exit at all. Then sweep the four possible tic
+    phases — exactly one resynced the whole demo through E1M8, which both proves the mechanism and
+    identifies it as a phase error rather than anything about rockets themselves.
+  - **The fix is forward-only; demos recorded before it stay broken.** An old demo's puffs were
+    emitted on the *recording session's* `gametic` phase, and nothing in the header records what
+    that was — only `game_comp_tic`, which differs by an arbitrary constant. The cabinet's
+    `doomu_ep1_sk0_speed.lmp` is off by one and cannot be repaired; it has to be re-run, or
+    deleted so the next record replaces it. Only demos where a rocket or lost soul actually fired
+    are affected, so most of the single-level table is fine.
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that
   demo back with it, and diff: the first differing line is the divergence tic. Inert without the
