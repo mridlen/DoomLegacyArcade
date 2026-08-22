@@ -139,6 +139,8 @@
   // pLocalPalette
 
 #include "i_video.h"            //rendermode
+#include "d_clisrv.h"
+  // [Arcade] D_NumViews : the view grid
 #include "m_swap.h"
 #include "m_random.h"
 #include "infoext.h"
@@ -2176,7 +2178,22 @@ void R_DrawPSprite (pspdef_t* psp)
     // store information in a vissprite
     vis = &avis;
     vis->mobj_flags = 0;
-    vis->texturemid = (cv_splitscreen.EV) ?
+    // [Arcade] The view layout, not cv_splitscreen.  This base centre is a
+    // hand tuning for the two-view split, where the weapon is drawn at the
+    // *full screen* y scale inside a half height view (pspriteyscale keeps
+    // vid.height while rdraw_viewwidth is unhalved), so it has to be shifted
+    // up to sit right.  A 2x2 cell is not that case: rdraw_viewwidth is
+    // halved with it, so the weapon is scaled proportionally and wants the
+    // ordinary BASEYCENTER, exactly as a full screen view does.
+    //
+    // Keyed on the cvar it was wrong twice over: cv_localplayers can put four
+    // views on screen with the cvar off, and the Multiplayer menu sets the
+    // cvar for a game that then runs as a 2x2 -- which shifted the weapon up
+    // by 20 base units, about 38px of a 384px cell, leaving the wrist ending
+    // in mid-air.  The hardware renderer already draws this distinction the
+    // same way (atransform.splitscreen = (D_NumViews() == 2), and its own
+    // weapon nudge).
+    vis->texturemid = (D_NumViews() == 2) ?
         (120<<(FRACBITS)) + FRACUNIT/2 - (psp->sy - sprlump->topoffset)
         : (BASEYCENTER<<FRACBITS) + FRACUNIT/2 - (psp->sy - sprlump->topoffset);
 

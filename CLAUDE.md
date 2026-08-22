@@ -513,6 +513,37 @@ silently made the flag do nothing at all.
         `dy = cv_splitscreen.EV ? rdraw_viewheight*2 : ...`). The view height is halved by the
         *view count*, and `cv_localplayers` halves it with that cvar still off — the same
         views-versus-local-players conflation that broke `G_BuildTiccmd`. It asks `D_NumViews()`.
+      - **So did the weapon sprite's base centre**, and that one was visible from across the
+        room: `R_DrawPSprite` (`r_things.c`) sets
+        `vis->texturemid = cv_splitscreen.EV ? 120 : BASEYCENTER`. The 120 is a hand tuning for
+        the **two-view** split, where the weapon is drawn at the *full screen* y scale inside a
+        half height view — `pspriteyscale` keeps `vid.height` while `rdraw_viewwidth` is not
+        halved for two views — so it has to be shifted up to sit right. A 2x2 cell is the other
+        case: `rdraw_viewwidth` is halved with it, the weapon is scaled proportionally, and it
+        wants the ordinary `BASEYCENTER`. It asks `(D_NumViews() == 2)` now, which is exactly
+        the distinction the hardware renderer already draws with `atransform.splitscreen`.
+        - Keyed on the cvar it was wrong in both directions: `cv_localplayers` puts four views
+          on screen with the cvar **off**, and the Multiplayer menu turns the cvar **on** for a
+          game that then runs as a 2x2 — shifting the weapon up by 20 base units, about 38px of
+          a 384px cell, leaving the wrist ending in mid-air above the bottom of the view.
+        - **Which route started the game therefore decided whether it looked right**, and that
+          is why it survived the first round of testing: a headless run sets `cv_localplayers`
+          straight from the config and never touches the cvar, so it takes the correct branch.
+          **To reproduce anything the Multiplayer menu can cause, set `splitscreen 1` as well** —
+          `M_StartServer` does, and `D_NumLocalPlayers` treats it as "at least two players".
+        - Verified by screenshot at 1280x800 (the cabinet's `viewfit` class, unlike a 4:3 test
+          resolution): with the cvar on and off the 2x2 weapon is now identical, the classic
+          two-view split is **0 pixels changed**, and single player is untouched.
+      - **Two more `cv_splitscreen` reads remain, both known and neither a regression.**
+        `hu_stuff.c` draws a crosshair for player 2 only, and only when that cvar is set, so
+        panels 2-4 have none in a `cv_localplayers` game; and `st_stuff.c` hides the K/I/S
+        overlay elements on that cvar, so they show or hide depending on which menu started the
+        game. Both are Phase 2 gaps rather than breakage.
+      - **Pixel comparison here has a noise floor**, so read a small diff before believing it:
+        the screenshot lands on tic 70 or 71 depending on timing, which moves monsters by one
+        animation frame and ticks the HUD clock — about 6000 pixels of 1024000 at 1280x800.
+        A real difference in this area shows up in the *weapon*; if the diff mask is monsters
+        and clock digits only, nothing changed. Render the mask and look at it.
       - **A cell with no player is filled black** (`D_Display`). Three players use the 2x2 and
         leave the fourth quadrant unused, and *neither* renderer was clearing it — the hardware
         per-frame clear (`HWR_ClearView`) is depth only, and the software renderer draws straight
