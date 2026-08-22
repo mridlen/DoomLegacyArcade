@@ -1659,8 +1659,10 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 // Widths measured against the real STCFN lumps: "RECORD" is 52px, the map
 // name at +64 is at most 38, the time right-justified at +150 is at most 64
 // (so it starts no earlier than +86, clearing the map by 24), and the
-// initials at +158 are 24 -- 182px in all, well inside the band the old
-// five-row table occupied.
+// initials at +158 are at most 27 -- "MMM"/"WWW", not the 24 of "AAA", which
+// is what the block was first measured against.  185px in all, so the call
+// site's x must be <= 135 or the last initial falls off the right of the
+// screen; wi_stuff.c passes 128.
 #define HS_IM_MAP_X    64
 #define HS_IM_TIME_R  150
 #define HS_IM_INI_X   158

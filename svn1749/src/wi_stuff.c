@@ -2192,11 +2192,14 @@ static void WI_Draw_Stats(void)
     // because the table draws its own header 14 above the y given here, which
     // otherwise lands on the Secrets percentage (lh is 18, the percent patches
     // are 12 tall, so that row ends at SP_STATSY + 2*lh + 12).
-    // [Arcade] 138, not the original 156: the two time columns widened by
-    // 40px when they went to hundredths (see HS_COL_TIME).  The block now
-    // spans 138..318 of BASEVIDWIDTH 320, and "NEW RECORD" is still centred
-    // in the free space to its left.
-    HS_Draw_IntermissionTable( 138, SP_STATSY + 3*lh + 12 );
+    // [Arcade] 128, not the original 156: the two time columns widened by
+    // 40px when they went to hundredths (see HS_COL_TIME), and the Survival
+    // block that replaced them ends in the initials, which are 27px at their
+    // widest ("MMM"/"WWW") rather than the 24 of "AAA" it was measured with --
+    // at 138 the last initial ran to 323 and was cut off by the right edge.
+    // The block now spans 128..313 of BASEVIDWIDTH 320, and "NEW RECORD" is
+    // still centred in the free space to its left (23..100).
+    HS_Draw_IntermissionTable( 128, SP_STATSY + 3*lh + 12 );
 }
 
 // Called by WI_Ticker

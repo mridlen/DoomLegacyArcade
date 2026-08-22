@@ -1273,6 +1273,13 @@ silently made the flag do nothing at all.
     the old five-row per-map table. `NEW RECORD` can now blink *during* a run rather than only at
     the end, because under Survival being ahead is knowable: get past the holder's furthest map and
     you already lead.
+    - **The block ends in the initials, and they are 27px wide, not 24.** `HS_Draw_IntermissionTable`
+      puts them at `x + HS_IM_INI_X` (158), and the block was measured with `AAA` — 8px a glyph,
+      24 in all, ending exactly on `BASEVIDWIDTH`. `M` and `W` are 9px, so real initials like `MLR`
+      (25) or `MMM` (27) ran to 323 and the last letter was cut off by the right edge. The
+      `wi_stuff.c` call site x is **128**, not 138: the block spans 128..313 and `NEW RECORD`, which
+      centres in the space to its left, still fits at 23..100. **Measure a variable-width field at
+      its widest glyphs, not at `A`** — the same rule as the rest of the `hu_font` layout work.
 
   **The pages are enumerated, not numbered** (`HS_Build_Pages`, `hs_page_t`). Three kinds:
 
