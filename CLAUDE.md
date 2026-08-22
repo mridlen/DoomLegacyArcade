@@ -96,10 +96,14 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `legacyhome/` into a scratch directory, as above. (The cabinet's old `~/.doomlegacy` has been
   renamed to `~/.doomlegacy-backup` and is no longer read by anything.)
 - **The scratch home needs a real `config.cfg`.** Copying `legacyhome/` wholesale covers this; if
-  you build one by hand instead, put a config in it. With no config the software renderer
-  segfaults in `R_DrawColumn_32` ← `R_DrawPlayerSprites` after `Change Graphics failed: err=-100`
-  — the dummy driver never set a real mode. That is a harness artifact, not a fresh-install bug,
-  but it looks alarming and wastes time.
+  you build one by hand instead, put a config in it.
+- **Software rendering runs headless too**, and this file used to say otherwise. A software-mode
+  run segfaulted in `R_DrawColumn_32` ← `R_DrawVisSprite` at any player count, which was written
+  up here as a harness artifact of the dummy driver "never setting a real mode". **It was not** —
+  it was the real, unsigned-`heightmask` bug below, and the cabinet hit it on real hardware the
+  first time anyone played in software mode. The lesson is general: **a crash that only shows up
+  in the harness is not thereby a harness bug.** Prove it against a known-good path before
+  writing it off, or the note becomes the reason nobody looks again.
 - `timeout` exit code **124 means it survived**, which is the pass condition for a smoke test;
   139 is a segfault. `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
   gets a backtrace.
@@ -518,14 +522,14 @@ silently made the flag do nothing at all.
         (`r_things.c:1919/2193/2910`), so nothing can bleed into the next cell horizontally; the
         `vid.width` tests near `r_things.c:3529` are coarse off-screen rejects, with the fine
         clip after them. The half-*height* case has relied on exactly this for years.
-      - **Software rendering cannot be exercised headless** — SDL's dummy and offscreen drivers
-        both end in the `R_DrawColumn_32` segfault, at any player count including one, because
-        the surface never matches the mode the engine thinks it set. Verified instead by
-        printing each view's draw window through a temporary console command, with `soft_grid`
-        temporarily forced true so the OpenGL harness computes the *software* numbers. At
-        1024x768, four views: cells 512x384 at `0,0` `512,0` `0,384` `512,384`, each view's
-        `columnofs` and `ylookup` confined to its own cell, and the highest byte written exactly
-        `width*height*bytepp` — the buffer end, no overrun. One and two views are unchanged.
+      - Verified first by printing each view's draw window through a temporary console command,
+        with `soft_grid` temporarily forced true so the OpenGL harness computed the *software*
+        numbers — software mode could not be run at all at that point (see the sprite crash
+        below). At 1024x768, four views: cells 512x384 at `0,0` `512,0` `0,384` `512,384`, each
+        view's `columnofs` and `ylookup` confined to its own cell, and the highest byte written
+        exactly `width*height*bytepp` — the buffer end, no overrun. One and two views unchanged.
+        Once the crash was fixed this was confirmed by **screenshot**: four quadrants each with
+        their own view and HUD, and with three players a black fourth quadrant.
       - The OpenGL path was required to stay **byte-identical**, and is: screenshots at 1, 2 and
         4 players differ in 0 of 786432 pixels. Three players differ only inside the
         bottom-right quadrant, which is now pure black instead of stale image.
@@ -1726,6 +1730,23 @@ out. Note that deleting **only** `runs.dat` is a supported way to re-run the one
 single level splits.
 
 ### Gotchas found the hard way
+
+- **The 24 and 32 bpp software column drawers had an unsigned `heightmask`, and it crashed every
+  sprite.** `R_DrawColumn_24`/`_32` (`r_draw24.c`/`r_draw32.c`) declared
+  `unsigned int heightmask = dc_texheight - 1`, where `R_DrawColumn_8` (Boom's original, killough)
+  declares it **signed**. A masked column — every sprite — runs with `dc_texheight == 0`, so
+  `heightmask` is `-1` and `(frac>>FRACBITS) & heightmask` is meant to be a no-op. Unsigned, it
+  is not one: the first row of a post can land on a slightly negative `frac`, and index `-1`
+  becomes `4294967295`, a read 4GB past `dc_source`. Signed, it stays `-1` and reads the byte
+  before the post, exactly as the 8bpp drawer always has.
+  - The cabinet is a 32bpp desktop, so **every software-mode session segfaulted within a second
+    or two of gameplay**, at any player count. It went unnoticed because the cabinet runs OpenGL;
+    it only surfaced when software mode was tried while testing the four player view grid.
+  - The `if( dc_texheight & heightmask )` power-of-two test is unaffected by the signedness, so
+    the fix is one word in each file.
+  - **Look for the same divergence elsewhere.** `r_draw8.c` is the path with decades of use
+    behind it; where the wider-bpp copies differ from it, suspect the copy. `r_draw16.c` has no
+    `heightmask` at all, which is worth a look if 16bpp is ever used.
 
 - **`V_DrawString` text is red by default; `V_WHITEMAP` makes it grey, and there is no red flag.**
   This reads backwards, so it is easy to get wrong. `V_WHITEMAP` (`v_video.h`) is the *only* colour

@@ -39,7 +39,14 @@
 //
 void R_DrawColumn_24 (void)
 {
-    unsigned int heightmask = dc_texheight - 1;
+    // [Arcade] Signed, like R_DrawColumn_8 (Boom's original).  A masked
+    // column -- every sprite -- runs with dc_texheight 0, so heightmask is -1
+    // and the mask below is meant to be a no-op.  Unsigned, it was not: the
+    // first row of a post can land on a slightly negative frac, and
+    // (frac>>FRACBITS) & 0xFFFFFFFF turns index -1 into index 4294967295,
+    // which is a read 4GB past dc_source.  Signed it stays -1, reading the
+    // byte before the post exactly as the 8bpp drawer has always done.
+    int heightmask = dc_texheight - 1;
     int     count;
     byte *  dest;  // within screen buffer
     fixed_t frac;
