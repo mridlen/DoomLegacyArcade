@@ -9173,6 +9173,17 @@ consvar_t * menu_command_cvar_list[] =
   &cv_autorun[1],
   &cv_crosshair[1],
 
+    // [Arcade] Player3 and Player4.  These are CV_SAVE and were declared
+    // [MAXSPLITSCREENPLAYERS] when the per-player cvars were widened, but
+    // registration stopped at two -- so config.cfg reported
+    // "Unknown command 'crosshair3'", the setting could not be held or saved,
+    // and panels 3 and 4 simply had no crosshair.  See the comment at the top
+    // of this list: any CV_SAVE cvar has to be registered even if unused.
+  &cv_autorun[2],
+  &cv_crosshair[2],
+  &cv_autorun[3],
+  &cv_crosshair[3],
+
 // &cv_crosshairscale, // doesn't work for now
   &cv_showmessages,
 // &cv_showmessages2,
@@ -9285,6 +9296,15 @@ consvar_t * menu_command_cvar_list[] =
   &cv_mouse2_sens_y,
 #endif
 
+    // [Arcade] Panels 3 and 4 have no mouse device -- cv_usemouse stays [2] --
+    // but these two are per *player*, are CV_SAVE, and so still need
+    // registering.  Kept out of the mouse init blocks above, where the order
+    // of cv_usemouse matters.
+  &cv_alwaysfreelook[2],
+  &cv_mouse_move[2],
+  &cv_alwaysfreelook[3],
+  &cv_mouse_move[3],
+
   &cv_mouse_double,
 #ifdef JOY_BUTTONS_DOUBLE
   &cv_joy_double,
@@ -9298,8 +9318,12 @@ consvar_t * menu_command_cvar_list[] =
   &cv_controlperkey,
   &cv_controlscheme[0],   // [Arcade]
   &cv_controlscheme[1],
+  &cv_controlscheme[2],
+  &cv_controlscheme[3],
   &cv_customcontrols[0],  // [Arcade] guided setup key table
   &cv_customcontrols[1],
+  &cv_customcontrols[2],
+  &cv_customcontrols[3],
 
     // s_sound.c
   &cv_soundvolume,

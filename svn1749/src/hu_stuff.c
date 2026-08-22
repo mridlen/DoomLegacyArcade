@@ -1348,19 +1348,43 @@ void HU_Draw_DeathmatchRankings ( byte vind )
 //
 // Crosshairs are pre-cached at HU_Init
 #ifdef HWRENDER // not win32 only 19990829 by Kin
+    extern float gr_basewindowcenterx;
     extern float gr_basewindowcentery;
     extern float gr_viewheight;
 #endif
 
+// [Arcade] One crosshair per view, in that view's own cell.
+//
+// This drew exactly two, the second only when cv_splitscreen was set, and
+// both at vid.width>>1 -- the middle of the *screen*.  That is right for the
+// stacked halves, which span the full width, but a 2x2 cell's centre is not
+// the screen's: a quadrant's crosshair would have sat on the boundary between
+// two players' views.  And with cv_localplayers the second one never appeared
+// at all unless the game was started from the Multiplayer menu, the only
+// thing that sets that cvar, so panels 2-4 usually had none.
+//
+// Each view answers for itself, like HU_Rankings_For_View: the setting is
+// read as cv_crosshair[D_Panel_Of(vind)], the panel that player is standing
+// at, so it follows them into whichever cell they occupy.
 static
 void HU_Draw_Crosshair( void )
 {
     // vid : from video setup
-    int y, yinc, chv1, chv2;
+    byte  vind, num_views = D_NumViews();
+    byte  any = 0;
+    int   span_w, span_h;   // one cell of the view grid, in screen pixels
+    int   base_x, base_y;   // centre of the first view
 
-    chv1 = cv_crosshair[0].value & 3;
-    chv2 = (cv_splitscreen.value)? (cv_crosshair[1].value & 3) : 0;
-    if( !chv1 && !chv2 )
+    for( vind=0; vind<num_views; vind++ )
+    {
+        if( localplayer[vind] < MAXPLAYERS
+            && (cv_crosshair[ D_Panel_Of(vind) ].value & 3) )
+        {
+            any = 1;
+            break;
+        }
+    }
+    if( ! any )
         return;
 
 #if 0
@@ -1372,29 +1396,43 @@ void HU_Draw_Crosshair( void )
     V_SetupDraw( 0 | V_SCALEPATCH | V_NOSCALE );
 #endif
 
+    R_View_Cell_Size( &span_w, &span_h );
+
+    // Centre of the first view.  The software draw tables and the hardware
+    // draw window are both left on view 0 by the time HU_Drawer runs, so the
+    // other cells are this plus their own offset.
     // reduce this to one rendermode test
 #ifdef HWRENDER
-    if( rendermode != render_soft ) 
+    if( rendermode != render_soft )
     {
-        y = gr_basewindowcentery;
-        yinc = gr_viewheight;
+        base_x = (int) gr_basewindowcenterx;
+        base_y = (int) gr_basewindowcentery;
     }
     else
 #endif
     {
-        y = view_window_y + (rdraw_viewheight>>1);
-        yinc = rdraw_viewheight;
+        base_x = view_window_x + (rdraw_viewwidth>>1);
+        base_y = view_window_y + (rdraw_viewheight>>1);
     }
 
-    if( chv1 )
+    for( vind=0; vind<num_views; vind++ )
     {
-        V_DrawTranslucentPatch (vid.width>>1, y, crosshair_patch[chv1-1]);
-    }
+        byte cell, col, row;
+        int  chv;
 
-    if( chv2 )
-    {
-        y += yinc;
-        V_DrawTranslucentPatch (vid.width>>1, y, crosshair_patch[chv2-1]);
+        if( localplayer[vind] >= MAXPLAYERS )  continue;   // panel with no player
+
+        chv = cv_crosshair[ D_Panel_Of(vind) ].value & 3;
+        if( ! chv )  continue;
+
+        // The panel's cell, not the join order -- see D_View_Cell.
+        cell = (num_views >= 2) ? D_View_Cell(vind) : 0;
+        col  = (num_views >= 4) ? (cell & 1) : 0;
+        row  = (num_views >= 4) ? (cell >> 1) : cell;
+
+        V_DrawTranslucentPatch( base_x + (col * span_w),
+                                base_y + (row * span_h),
+                                crosshair_patch[chv-1] );
     }
     // V_SetupDraw( drawinfo.prev_screenflags );  // restore
 }

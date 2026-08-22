@@ -534,11 +534,41 @@ silently made the flag do nothing at all.
         - Verified by screenshot at 1280x800 (the cabinet's `viewfit` class, unlike a 4:3 test
           resolution): with the cvar on and off the 2x2 weapon is now identical, the classic
           two-view split is **0 pixels changed**, and single player is untouched.
-      - **Two more `cv_splitscreen` reads remain, both known and neither a regression.**
-        `hu_stuff.c` draws a crosshair for player 2 only, and only when that cvar is set, so
-        panels 2-4 have none in a `cv_localplayers` game; and `st_stuff.c` hides the K/I/S
-        overlay elements on that cvar, so they show or hide depending on which menu started the
-        game. Both are Phase 2 gaps rather than breakage.
+      - **The crosshair is per view now** (`HU_Draw_Crosshair`). It drew exactly two, the second
+        only when `cv_splitscreen` was set, and both at `vid.width>>1` — the middle of the
+        *screen*. That is right for the stacked halves, which span the full width, but a 2x2
+        cell's centre is not the screen's, so a quadrant's crosshair would have sat on the
+        boundary between two players' views. It loops over views, places each at its own cell's
+        centre, and reads `cv_crosshair[D_Panel_Of(vind)]` so the setting follows the player's
+        panel. One and two views are unchanged (the two-view crosshair sites are byte-identical).
+      - **But the real reason panels 3 and 4 had no crosshair was that the cvar was never
+        registered.** `menu_command_cvar_list` (`m_menu.c`) stopped at Player2 for **six** of the
+        widened arrays: `cv_autorun`, `cv_crosshair`, `cv_alwaysfreelook`, `cv_mouse_move`,
+        `cv_controlscheme` and `cv_customcontrols`. That list's own comment says it: *any cv_
+        with CV_SAVE needs to be registered, even if it is not used.* Unregistered, the name is
+        an unknown command, so the setting cannot be held, cannot be set, and is never written
+        out — `config.cfg` reported `Unknown command 'crosshair3'` on every boot.
+        - **The expensive one there is `cv_customcontrols[2]`/`[3]`**, which is where the guided
+          setup stores a panel's ten keys. Unregistered means **the guided setup for panels 3
+          and 4 could never be saved** — rebind them, quit, and the bindings are gone. Same for
+          `cv_controlscheme[2]`/`[3]`. Worth re-running the guided setup for those panels now.
+        - The six arrays that *were* fully registered are the ones covered by the
+          `for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++ )` loop in `d_netcmd.c` (name, color,
+          skin, autoaim, weaponpref, originalweaponswitch). The gap was everything registered by
+          hand-written list entry instead of by loop. **When widening a per-player cvar, grep for
+          its `[1]` registration** — the declaration being `[MAXSPLITSCREENPLAYERS]` proves
+          nothing.
+        - `cv_usemouse` stays `[2]` deliberately (two mouse devices), so the panel 3/4 entries
+          for `cv_alwaysfreelook`/`cv_mouse_move` are kept out of the mouse init blocks, where
+          the order of `cv_usemouse` registration matters.
+      - **Auditing this by autoexec gives a false all-clear.** Querying each name from
+        `legacyhome/autoexec.cfg` reported no unknown commands at all — because without `-warp`
+        that run never reached `D_DoomLoop` to execute the file. The reliable signal is the
+        **config load**, which names the line: `config line 350: unknown setting "crosshair3"`.
+        Check the output has the lines you expect before concluding anything from its silence.
+      - **One `cv_splitscreen` read remains, deliberately.** `st_stuff.c` hides the K/I/S overlay
+        elements on that cvar, so they show or hide depending on which menu started the game.
+        Left alone on the user's call.
       - **Pixel comparison here has a noise floor**, so read a small diff before believing it:
         the screenshot lands on tic 70 or 71 depending on timing, which moves monsters by one
         animation frame and ticks the HUD clock — about 6000 pixels of 1024000 at 1280x800.
