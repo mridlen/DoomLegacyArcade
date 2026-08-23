@@ -714,6 +714,22 @@ gamestate_e wipegamestate = GS_DEMOSCREEN;
 CV_PossibleValue_t screenslink_cons_t[] = { {0, "None"}, {wipe_ColorXForm + 1, "Crossfade"}, {wipe_Melt + 1, "Melt"}, {0, NULL} };
 consvar_t cv_screenslink = { "screenlink", "2", CV_SAVE, screenslink_cons_t };
 
+// [Arcade] Is a menu covering attract-screen content rather than a real game?
+//
+// DEMO_seq_disabled is the engine's own "a real game is running" marker --
+// D_DisableDemo sets it from G_DeferedInitNew and load-game, and D_StartTitle
+// clears it on the way back to the attract screen.  Testing it rather than
+// (demoplayback || gamestate == GS_DEMOSCREEN) covers the awkward in-between
+// state: when an attract demo *ends* while a menu is open, its
+// D_AdvanceDemo is discarded, so demoplayback is already false while
+// gamestate is still GS_LEVEL, and that pair would have let the demo's last
+// frame sit frozen behind the menu.
+static boolean D_Menu_Over_Attract( void )
+{
+    return menuactive && !(demo_ctrl & DEMO_seq_disabled);
+}
+
+
 // Not called when dedicated.
 static
 void D_Display(void)
@@ -1003,6 +1019,26 @@ void D_Display(void)
             V_FadeRect(0, vid.width, vid.height, (0xFF - fs_fadealpha),
                        (fs_fadealpha * 32 / 0x100), fs_fadecolor );
         }
+    }
+
+    // [Arcade] A menu over the attract screen gets a black backdrop rather
+    // than whatever the attract cycle last left on screen.
+    //
+    // The cycle cannot advance while a menu is open (D_AdvanceDemo), because
+    // starting a demo would tear the menu down.  So without this the player
+    // reads the menu over a frozen title page, or over the last frame of a
+    // demo that has since ended -- both of which look like the machine has
+    // locked up.  Black says "menu", and it costs nothing to look at.
+    //
+    // Painted here, over the top, instead of skipping the draws above: the
+    // attract content comes from three different places (D_PageDrawer, the
+    // score table, and the GS_LEVEL view render) and covering all three at one
+    // point is much harder to get wrong than suppressing each.  Before
+    // CON_Drawer so the console still draws on top of it.
+    if( D_Menu_Over_Attract() )
+    {
+        V_SetupDraw( 0 | V_NOSCALE );   // screen 0, vid coords
+        V_DrawVidFill( 0, 0, vid.width, vid.height, 0 );  // 0 = palette black
     }
 
         //FIXME: draw either console or menu, not the two
@@ -1324,30 +1360,29 @@ void D_PageDrawer(const char *lumpname)
 // Called by G_CheckDemoStatus when timing or playing a demo
 void D_AdvanceDemo(void)
 {
-    // [WDJ] do not start a demo when the console is open
+    // [WDJ] do not start a demo when a menu or console is open
     //
-    // [Arcade] The menuactive half of that test is gone.  On a cabinet the
-    // attract screen has to keep running *behind* an open menu -- that is the
-    // whole job of an attract screen, and a player standing at the Options
-    // page is exactly when the machine should still be advertising itself.
+    // [Arcade] The menuactive half of this was briefly removed, to keep the
+    // attract screen advertising the machine while somebody stood at the
+    // menu.  It had to go back: **starting a demo tears the menu down.**
+    // D_DoAdvanceDemo -> G_DoPlayDemo loads a level, and the player is thrown
+    // out of whatever page they were reading -- which happens every time a
+    // page elapses, so on a cabinet it is constant.  A frozen backdrop is a
+    // far smaller cost than a menu that will not stay open.
     //
-    // With the test in place the cycle did not merely pause, it stalled hard:
-    // D_PageTicker decrements pagetic every tic whatever is on screen, so once
-    // it passed zero it called D_AdvanceDemo every single tic and this
-    // function threw every one of them away.  Measured with a menu opened at
-    // the title, pagetic ran 170 -> -495 and demosequence never left 0 -- the
-    // title page frozen for as long as the menu was up, then a jump to the
-    // next page the instant it closed.
+    // The backdrop is not frozen anyway: D_Display paints black behind a menu
+    // that is over attract content (see D_Menu_Over_Attract), so nothing
+    // stale is on screen and there is nothing to advance *to*.
     //
-    // Only the *start* of a page was ever blocked; a demo already running when
-    // the menu opened kept playing, which is why the idle timeout's menu case
-    // has always had to reason about "an attract demo running behind an open
-    // menu" (G_Idle_Timeout_Check).  This makes the two consistent.
-    //
-    // console_open is deliberately kept: someone typing at the console is
-    // working on the machine, not watching it, and having the level flip out
-    // from under the command they are half way through is unhelpful.
-    if( !(demo_ctrl & DEMO_seq_disabled) && ! console_open )
+    // Note this stalls hard rather than pausing: D_PageTicker decrements
+    // pagetic every tic whatever is on screen, so once it passes zero it calls
+    // this function every tic and every call is discarded.  That is fine and
+    // is what makes the resume instant -- the moment the menu closes, the very
+    // next tic advances the page.  The 60s idle timeout closes the menu
+    // (G_Idle_Timeout_Check), so an abandoned menu returns to the attract
+    // cycle on its own.
+    if( !(demo_ctrl & DEMO_seq_disabled) && ! menuactive
+        && ! console_open )
         demo_ctrl = DEMO_seq_advance;    // flag to trigger D_DoAdvanceDemo
 }
 

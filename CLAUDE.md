@@ -1001,23 +1001,41 @@ silently made the flag do nothing at all.
   - Verified headless with two otherwise identical `-warp 1` autoexec runs differing only by a
     `god` line: the control wrote `doom2 MAP01 2 104 speed`, the cheated run wrote nothing.
   - `hs_run_cheated` is reset in `HS_NewGame` beside `hs_run_died`.
-- **The attract cycle keeps running behind an open menu** (`d_main.c`, `D_AdvanceDemo`). Upstream
-  refused to advance the sequence while `menuactive` (*"do not start a demo when a menu or console
-  is open"*), which on a cabinet stalls the thing whose entire job is to advertise the machine: open
-  Options and the attract screen freezes on whatever page it was showing. It did not merely pause —
-  `D_PageTicker` decrements `pagetic` every tic regardless of what is on screen, so once it passed
-  zero it called `D_AdvanceDemo` on *every* tic and every one was discarded. Measured with a menu
-  opened at the title: `pagetic` ran 170 → **-495** while `demosequence` never left 0, then jumped a
-  page the instant the menu closed.
-  - Only the *start* of a page was ever blocked; a demo already running when the menu opened kept
-    playing. That is why the idle timeout's menu case has always had to reason about "an attract
-    demo running behind an open menu" — the two are consistent now.
-  - **`console_open` is deliberately kept.** Someone typing at the console is working on the
-    machine, not watching it.
-  - This is what "the Options screen doesn't go back to attract mode" actually was. The **idle
-    timeout itself was working**: instrumented at the title with the Options page up, it fired at
-    exactly `cv_idletimeout * TICRATE` (700 at 20s, 2100 at the cabinet's 60s) and closed the menu.
-    Do not go looking for a second bug there.
+- **A menu over the attract screen gets a black backdrop, and the cycle holds while it is open**
+  (`d_main.c`, `D_AdvanceDemo` and `D_Display`).
+  - Upstream refuses to advance the sequence while `menuactive` (*"do not start a demo when a menu
+    or console is open"*). That was **briefly removed** so the cabinet would keep advertising
+    itself behind an open menu, and it had to go straight back: **starting a demo tears the menu
+    down.** `D_DoAdvanceDemo` → `G_DoPlayDemo` loads a level, and the player reading a page is
+    thrown out of it — every time a page elapses, which on a cabinet is constant. A held backdrop
+    is a far smaller cost than a menu that will not stay open.
+  - So the backdrop is **painted black instead** (`D_Menu_Over_Attract`, filled just before
+    `CON_Drawer`/`M_Drawer`). Without it the player reads the menu over a frozen title page, or
+    over the last frame of a demo that has since ended — both of which look like the machine has
+    locked up. Painted *over the top* rather than by suppressing the draws beneath, because the
+    attract content comes from three different places (`D_PageDrawer`, the score table, and the
+    `GS_LEVEL` view render) and covering all three at one point is much harder to get wrong.
+  - **The test is `demo_ctrl & DEMO_seq_disabled`, not `demoplayback || gamestate ==
+    GS_DEMOSCREEN`.** That flag is the engine's own "a real game is running" marker —
+    `D_DisableDemo` sets it from `G_DeferedInitNew` and load-game, `D_StartTitle` clears it. It is
+    what covers the awkward in-between state: when an attract demo *ends* while a menu is open its
+    `D_AdvanceDemo` is discarded, so `demoplayback` is already false while `gamestate` is still
+    `GS_LEVEL`, and the naive pair would have let the demo's last frame sit frozen behind the menu.
+  - **The stall is hard, not a pause, and that is what makes the resume instant.** `D_PageTicker`
+    decrements `pagetic` every tic regardless of what is on screen, so once it passes zero it calls
+    `D_AdvanceDemo` on *every* tic and every one is discarded — `pagetic` runs deeply negative. The
+    moment the menu closes, the very next tic advances the page.
+  - **The idle timeout is what closes an abandoned menu**, so the cabinet returns to the attract
+    cycle on its own. Verified end to end at `idletimeout 10`: `demosequence` sat at 0 with
+    `pagetic` falling 170 → -180 for the whole 350 tics the menu was up, then at the timeout
+    `menuactive` went 0, `demosequence` stepped to 1 with a fresh `pagetic` of 167, and the cycle
+    carried on to 2 normally.
+  - **`console_open` is deliberately kept** in the same test. Someone typing at the console is
+    working on the machine, not watching it.
+  - Note that "the Options screen doesn't go back to attract mode" was **this**, not the timeout.
+    The idle timeout itself was always working: instrumented at the title with the Options page up
+    it fired at exactly `cv_idletimeout * TICRATE` (700 at 20s, 2100 at the cabinet's 60s). Do not
+    go looking for a second bug there.
 
 - **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
   `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` (but
