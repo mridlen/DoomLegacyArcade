@@ -365,11 +365,35 @@ static void  HS_Void_If_Ruleset_Changed( void )
 }
 
 
+// [Arcade] Is this a game the high score system has anything to say about?
+//
+// Scoring is single player only -- there is no board, no record demo and no
+// ranked ruleset for a multiplayer game, and nothing in this file writes one.
+// HS_LevelExit and HS_Player_Died have always opened with this exact test;
+// it is a function now because the *display* needs to ask it too, and having
+// the same question written out in four places is how they drift apart.
+//
+// Local splitscreen sets netgame as well as multiplayer, so a two or four
+// player game on one cabinet is correctly excluded by either half.
+boolean  HS_Scored_Game( void )
+{
+    return ! ( netgame || multiplayer || deathmatch );
+}
+
+
 boolean  HS_Run_Is_Ranked( void )
 {
     // Re-checked here rather than only at the next level exit, so the HUD's
     // UNRANKED marker appears as soon as the setting changes.
-    if( ! demoplayback )
+    //
+    // Not in a multiplayer game.  Starting one moves several cvars that are
+    // in hs_ranked_rules[] -- M_StartServer_Go issues a deathmatch mode, and
+    // Deathmatch_OnChange derives cv_itemrespawn from it -- so this would
+    // latch the run unranked within a frame of the game starting and paint
+    // UNRANKED across a game that was never being scored in the first place.
+    // Nothing else noticed, because every *writing* path already returns
+    // early on the same test; only the display reached this.
+    if( ! demoplayback && HS_Scored_Game() )
         HS_Void_If_Ruleset_Changed();
 
     return hs_run_ranked;
@@ -1533,7 +1557,7 @@ void HS_Player_Died( void )
     // Same guards as HS_LevelExit.  demoplayback matters most: attract-mode
     // record demos can contain a death, and replaying one must not void the
     // cabinet's live run or close its recorder.
-    if( netgame || multiplayer || deathmatch )  return;
+    if( ! HS_Scored_Game() )  return;
     if( demoplayback )  return;
     if( hs_run_died )  return;   // already latched, nothing left to do
 
@@ -1571,7 +1595,7 @@ void HS_Demo_Start( void )
 void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
                    boolean maxed )
 {
-    if( netgame || multiplayer || deathmatch )  return;
+    if( ! HS_Scored_Game() )  return;
     if( skill < 0 || skill >= HS_NUMSKILLS )  return;
 
     // [Arcade] Everything the intermission draws is derived here, and it must

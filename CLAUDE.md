@@ -1850,6 +1850,27 @@ silently made the flag do nothing at all.
     simulation underneath a demo that is being recorded.
     - The check-and-latch is now one function, **`HS_Void_If_Ruleset_Changed()`**, called from both
       `HS_Run_Is_Ranked()` and `HS_LevelExit` so the two cannot disagree about what voids a run.
+    - **It must not run in a multiplayer game, and neither may the marker.** Starting one moves
+      several cvars that are in `hs_ranked_rules[]` — `M_StartServer_Go` issues a deathmatch mode
+      and `Deathmatch_OnChange` derives `cv_itemrespawn` from it — so the live check latched the
+      run unranked within a frame of the game starting and painted **UNRANKED across a two or four
+      player game that was never being scored at all.** Nothing had noticed before, because every
+      *writing* path already returned early on the same test and only the display reached it.
+    - That test is now **`HS_Scored_Game()`** (`hs_stuff.c`, declared in the header):
+      `!(netgame || multiplayer || deathmatch)`, which `HS_LevelExit` and `HS_Player_Died` had
+      always opened with by hand. It is a function because the *display* has to ask it too, and the
+      same question written out in four places is how they drift apart. **Local splitscreen sets
+      `netgame`**, so a two or four player game on one cabinet is excluded by either half.
+    - The HUD marker asks it as well, not just the live check: `hs_run_ranked` is **not** reset when
+      a multiplayer game starts (`HS_NewGame` runs only on the Single Player and Single Level
+      routes), so a flag left false by an earlier solo run would otherwise paint the marker over a
+      deathmatch.
+    - **A multiplayer game cannot be exercised headlessly.** The server floods
+      `Network: HSendPacket, network unreachable` in a sandbox with no networking and never reaches
+      `GS_LEVEL`, so `HU_Drawer` never runs — millions of log lines and no useful output, with or
+      without `internetserver 0`. Verify the single player side headlessly (it does still latch:
+      `scored=1 ranked=1` clean, then `ranked=0 reason=fastmonstersopt` after a mid-run toggle) and
+      take the multiplayer side to the cabinet.
     - **Safe to call from a drawer** — which is what `HU_Drawer` does, once a frame — because the
       latch is monotonic within a run: both flags only ever go false there, and only `HS_NewGame`
       sets them true again. That satisfies the "drawers must be idempotent" rule the attract score

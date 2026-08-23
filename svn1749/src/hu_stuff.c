@@ -758,7 +758,13 @@ void HU_Drawer(void)
 
     // [Arcade] Standing reminder that this run will not be scored, so a
     // player who changed a setting is not surprised at the intermission.
-    if( !demoplayback && !devmode && !HS_Run_Is_Ranked() )
+    //
+    // Single player only.  "UNRANKED" is meaningless in a multiplayer game --
+    // there is no board for it to be off -- and hs_run_ranked is not reset
+    // when one starts (HS_NewGame runs only on the single player and Single
+    // Level routes), so without this test a flag left false by an earlier
+    // solo run would paint the marker across a deathmatch too.
+    if( !demoplayback && !devmode && HS_Scored_Game() && !HS_Run_Is_Ranked() )
     {
         // Name the reason when it was a death: "UNRANKED" alone reads as a
         // settings problem, and the player needs to know the retry they are

@@ -23,6 +23,10 @@
 // session that changes any of it plays on but scores and records nothing.
 void      HS_Apply_Ranked_Ruleset(void);
 boolean   HS_Ruleset_Is_Ranked(void);   // do the cvars match right now?
+// Is this a game the high score system scores at all?  False for anything
+// multiplayer -- including a local two or four player game, which sets
+// netgame.  Every scoring path and the HUD's UNRANKED marker ask this.
+boolean   HS_Scored_Game(void);
 boolean   HS_Run_Is_Ranked(void);       // has this run stayed ranked?
 const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
 
