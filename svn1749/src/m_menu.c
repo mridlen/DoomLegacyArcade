@@ -1454,6 +1454,41 @@ consvar_t cv_deathmatch_menu  = {"dmm"  , "3", CV_HIDEN | CV_CALL, deathmatch_co
 CV_PossibleValue_t dmtimelimit_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
 consvar_t cv_dm_timelimit = {"dmtimelimit", "5", CV_SAVE, dmtimelimit_cons_t };
 
+// [Arcade] The player's *choice* of fast monsters / monster respawn, split
+// from the engine cvars of the same names for the third time in this file --
+// the same reason as cv_deathmatch_menu and cv_dm_timelimit.
+//
+// cv_fastmonsters and cv_respawnmonsters are the engine's effective state and
+// are written from under the player twice over: G_DeferedInitNew reset both
+// to 0 in its game-start command line, so anything set in Game Options before
+// a run was wiped before the first tic (the setting only appeared to work if
+// you toggled it *during* a run, which is what made it look broken); and
+// G_InitNew forces both on for sk_nightmare, so after one Nightmare game they
+// read as on for everything afterwards.
+//
+// These two are only ever written by the player, so they keep what was set.
+// The OnChange mirrors the value into the engine cvar as well, so toggling
+// mid-game still takes effect immediately the way it always did -- and being
+// in hs_ranked_rules[] that also voids the run, which is what a mid-run
+// difficulty change has to do.  Nightmare's own forcing never touches these,
+// so a Nightmare run still ranks.
+void fastmonsters_menu_OnChange( void );
+void respawnmonsters_menu_OnChange( void );
+consvar_t cv_fastmonsters_menu =
+  {"fastmonstersopt", "0", CV_CALL, CV_OnOff, fastmonsters_menu_OnChange };
+consvar_t cv_respawnmonsters_menu =
+  {"respawnmonstersopt", "0", CV_CALL, CV_OnOff, respawnmonsters_menu_OnChange };
+
+void fastmonsters_menu_OnChange( void )
+{
+    CV_Set_by_OnChange( &cv_fastmonsters, cv_fastmonsters_menu.EV );
+}
+
+void respawnmonsters_menu_OnChange( void )
+{
+    CV_Set_by_OnChange( &cv_respawnmonsters, cv_respawnmonsters_menu.EV );
+}
+
 void deathmatch_menu_OnChange( void )
 {
     // Default monsters, because it often gets forgotten, and it is not saved.
@@ -1566,6 +1601,27 @@ static void  M_StartServer_Go( void )
 #endif   
 }
 
+// [Arcade] Addressed by position -- by the lockdown below and by
+// M_StartServerMenu's per-gamemode map row swap -- so the indices are named,
+// as they are for every other menu this file indexes.  Keep in step with the
+// array.
+enum
+{
+    server_map = 0,
+    server_skill,
+    server_deathmatch,
+    server_monsters,
+    server_bots,
+    server_botoptions,
+    server_waitplayers,
+    server_waittimeout,
+    server_internet,
+    server_name,
+    server_start,
+    server_dedicated,
+    server_numitems
+};
+
 menuitem_t  ServerMenu[] =
 {
     {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap          ,0},
@@ -1573,15 +1629,24 @@ menuitem_t  ServerMenu[] =
     {IT_STRING | IT_CVAR,0,"Coop/Deathmatch" ,&cv_deathmatch_menu  ,0},
     {IT_STRING | IT_CVAR,0,"Monsters"        ,&cv_monsters         ,0},
     {IT_STRING | IT_CVAR,0,"Bots"            ,&cv_bots             ,0},
+    // [Arcade] Directly under the Bots count, which is the number this page
+    // sets and the only thing it says about them.  Same entry point as the
+    // Game Options one, so there is a single implementation.
+    {IT_CALL | IT_WHITESTRING,
+                         0,"Bot Options >>"  ,M_BotOption          ,0},
     {IT_STRING | IT_CVAR,0,"Wait Players"    ,&cv_wait_players     ,0},
     {IT_STRING | IT_CVAR,0,"Wait Timeout"    ,&cv_wait_timeout     ,0},
     {IT_STRING | IT_CVAR,0,"Internet Server" ,&cv_internetserver   ,0},
     {IT_STRING | IT_CVAR
      | IT_CV_STRING     ,0,"Server Name"     ,&cv_servername       ,0},
+    // Placed by IT_YOFFSET, so the rows above may come and go without
+    // moving these.  Measured: ServerDef.y is 40 and an IT_STRING row is
+    // STRINGHEIGHT 10, so with every row shown Server Name occupies
+    // 130..140 and Start sits at 150.
     {IT_WHITESTRING | IT_CALL | IT_YOFFSET,
-                         0,"Start"           ,M_StartServer        ,110}, // 9
+                         0,"Start"           ,M_StartServer        ,110},
     {IT_WHITESTRING | IT_CALL | IT_YOFFSET,
-                         0,"Dedicated"       ,M_StartServer        ,120}  // 10
+                         0,"Dedicated"       ,M_StartServer        ,120}
 };
 
 menuitem_t  ServerMenu_Map =
@@ -1847,7 +1912,7 @@ void M_StartServerMenu(int choice)
     // Restore user settings
     D_End_commandline();
    
-    ServerMenu[0] = (gamemode==doom2_commercial)?
+    ServerMenu[server_map] = (gamemode==doom2_commercial)?
          ServerMenu_Map  // Doom2
        : ServerMenu_EpisodeMap;  // Ult doom, Heretic
 
@@ -2654,6 +2719,10 @@ static void M_Cheat_NoClip(int choice);
 static void M_Cheat_ExitLevel(int choice);
 static void M_Draw_Cheats(void);
 
+// Addressed by position by the state display in M_Draw_Cheats; keep in step
+// with the array.
+enum { cheat_god = 0, cheat_giveall, cheat_noclip, cheat_exitlevel };
+
 static menuitem_t  CheatsMenu[] =
 {
     {IT_WHITESTRING | IT_CALL, NULL, "God Mode",             M_Cheat_God,       'g'},
@@ -2687,31 +2756,38 @@ static boolean  M_Cheats_Usable( void )
 
 // Void the score first, then run the cheat, so the run is already marked
 // before anything in the level changes.
-static void  M_Cheat_Apply( const char * command )
+//
+// close is false for the two *toggles*, which stay on the page so the On/Off
+// the row now shows flips under the cursor.  Closing the menu on those made
+// the state unreadable: the only way to see what a toggle had just been set
+// to was to reopen the page.  The one-shot items still close, because there
+// is nothing to come back and look at.
+static void  M_Cheat_Apply( const char * command, boolean close )
 {
     if( ! M_Cheats_Usable() )  return;
 
     HS_Player_Cheated();
     COM_BufAddText( command );
     COM_BufAddText( "\n" );
-    M_Clear_Menus( true );
+    if( close )
+        M_Clear_Menus( true );
 }
 
 
 static void M_Cheat_God(int choice)
 {
-    M_Cheat_Apply( "god" );
+    M_Cheat_Apply( "god", false );
 }
 
 static void M_Cheat_GiveAll(int choice)
 {
     // IDKFA, in the terms the gimme command understands.
-    M_Cheat_Apply( "gimme health ammo armor keys weapons" );
+    M_Cheat_Apply( "gimme health ammo armor keys weapons", true );
 }
 
 static void M_Cheat_NoClip(int choice)
 {
-    M_Cheat_Apply( "noclip" );
+    M_Cheat_Apply( "noclip", false );
 }
 
 static void M_Cheat_ExitLevel(int choice)
@@ -2719,7 +2795,21 @@ static void M_Cheat_ExitLevel(int choice)
     // Not a cheat in the classic sense, but it skips the rest of the map, so
     // it voids the run like the rest.  It is also much the fastest way to
     // reach the intermission and the high score write while testing.
-    M_Cheat_Apply( "exitlevel" );
+    M_Cheat_Apply( "exitlevel", true );
+}
+
+
+// [Arcade] One row's On/Off, drawn where M_DrawGenericMenu puts a cvar's
+// value -- right justified at BASEVIDWIDTH - x -- so these read as ordinary
+// setting rows.  IT_WHITESTRING rows advance by STRINGHEIGHT, so row n sits
+// at CheatsDef.y + n*STRINGHEIGHT.
+static void  M_Draw_Cheat_State( int item, boolean on )
+{
+    const char * val = on ? "On" : "Off";
+
+    V_DrawString( BASEVIDWIDTH - CheatsDef.x - V_StringWidth((char*)val),
+                  CheatsDef.y + (item * STRINGHEIGHT),
+                  V_WHITEMAP, (char*) val );
 }
 
 
@@ -2736,6 +2826,23 @@ static void  M_Draw_Cheats( void )
                                       : (IT_WHITESTRING | IT_DISABLED);
 
     M_DrawGenericMenu();
+
+    // [Arcade] God Mode and No Clipping are *toggles*: the commands they
+    // issue XOR the flag (Command_CheatGod_f / Command_CheatNoClip_f,
+    // m_cheat.c), so a row that says only "God Mode" gives no way to tell an
+    // armed cheat from a disarmed one short of walking into a wall.  The
+    // other two rows are one-shot actions and have no state to show.
+    //
+    // Only while a level is running: players[consoleplayer] is what holds
+    // the flags, and there is no live player otherwise -- which is also
+    // exactly when the rows are greyed out.
+    if( usable )
+    {
+        const player_t * pl = &players[consoleplayer];
+
+        M_Draw_Cheat_State( cheat_god,    (pl->cheats & CF_GODMODE) != 0 );
+        M_Draw_Cheat_State( cheat_noclip, (pl->cheats & CF_NOCLIP)  != 0 );
+    }
 
     y = CheatsDef.y + (NUM_CHEATSMENU * LINEHEIGHT) + 8;
     V_DrawString( CheatsDef.x, y, 0,
@@ -4009,10 +4116,10 @@ menuitem_t GameOptionsMenu[]=
 {
     {IT_STRING | IT_CVAR,0,"Item Respawn"        ,&cv_itemrespawn        ,0},
     {IT_STRING | IT_CVAR,0,"Item Respawn time"   ,&cv_itemrespawntime    ,0},
-    {IT_STRING | IT_CVAR,0,"Monster Respawn"     ,&cv_respawnmonsters    ,0},
+    {IT_STRING | IT_CVAR,0,"Monster Respawn"     ,&cv_respawnmonsters_menu,0},
     {IT_STRING | IT_CVAR,0,"Monster Respawn time",&cv_respawnmonsterstime,0},
     {IT_STRING | IT_CVAR,0,"Monster Behavior"	 ,&cv_monbehavior        ,0},
-    {IT_STRING | IT_CVAR,0,"Fast Monsters"       ,&cv_fastmonsters       ,0},
+    {IT_STRING | IT_CVAR,0,"Fast Monsters"       ,&cv_fastmonsters_menu  ,0},
     {IT_STRING | IT_CVAR,0,"Predicting Monsters" ,&cv_predictingmonsters ,0},	//added by AC for predmonsters
     {IT_STRING | IT_CVAR,0,"Solid corpse"        ,&cv_solidcorpse        ,0},
 #ifdef ENABLE_TIRED_RUN
@@ -4286,7 +4393,22 @@ menu_t  NetOptionDef =
     M_DrawGenericMenu,
     NULL,
     sizeof(NetOptionsMenu)/sizeof(menuitem_t),
-    60,40,
+    // [Arcade] 48, not the 60 the other option pages use.  M_DrawGenericMenu
+    // writes the label at x and right-justifies the value at
+    // BASEVIDWIDTH - x, so the pair has to fit in 320 - 2x.  Measured against
+    // the real STCFN lumps: "Deathmatch Type" is 117px and the widest value
+    // deathmatch_cons_t can show is "Coop_weapons" at 96 -- 213px of the 200
+    // that x=60 leaves, so the value ran 13px back over the label.  (Upstream
+    // bug: cv_deathmatch is the only row here whose value is a long word.)
+    //
+    // Widening the page fixes it for every value rather than for the one that
+    // happened to be selected.  At 48 the label ends at 165 and the widest
+    // value starts at 176; the longest label on the page, "Frag's Weapon
+    // Falling" at 152, ends at 200 against an On/Off value starting at 248.
+    // The cursor is drawn at x + SKULLXOFF, so 16 -- still on screen.
+    // Shortening the label or the value strings was rejected: the value
+    // strings are what config.cfg stores for this cvar.
+    48,40,
     0
 };
 
@@ -8461,11 +8583,11 @@ void M_Init (void)
         if( GameOptionDef.lastOn >= GameOptionDef.numitems - 1 )
             GameOptionDef.lastOn = 0;
 
-        ServerMenu[5].status = IT_HIDDEN;  // Wait Players
-        ServerMenu[6].status = IT_HIDDEN;  // Wait Timeout
-        ServerMenu[7].status = IT_HIDDEN;  // Internet Server
-        ServerMenu[8].status = IT_HIDDEN;  // Server Name
-        ServerMenu[10].status = IT_HIDDEN; // Dedicated
+        ServerMenu[server_waitplayers].status = IT_HIDDEN;
+        ServerMenu[server_waittimeout].status = IT_HIDDEN;
+        ServerMenu[server_internet].status    = IT_HIDDEN;
+        ServerMenu[server_name].status        = IT_HIDDEN;
+        ServerMenu[server_dedicated].status   = IT_HIDDEN;
         if( (ServerDef.lastOn >= 5 && ServerDef.lastOn <= 8)
             || ServerDef.lastOn == 10 )
             ServerDef.lastOn = 0;
@@ -9201,8 +9323,10 @@ consvar_t * menu_command_cvar_list[] =
   &cv_itemrespawntime,
   &cv_itemrespawn,
   &cv_respawnmonsters,
+  &cv_respawnmonsters_menu,   // [Arcade] the player-facing pair
   &cv_respawnmonsterstime,
   &cv_fastmonsters,
+  &cv_fastmonsters_menu,
   &cv_predictingmonsters,     //added by AC for predmonsters
   &cv_splats,
   &cv_maxsplats,

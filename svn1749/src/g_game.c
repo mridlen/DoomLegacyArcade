@@ -2999,6 +2999,18 @@ beyond_std_setup:
     if (statcopy)
         memcpy (statcopy, &wminfo, sizeof(wminfo));
 
+    // [Arcade] Clear any palette tint the level left behind, before the
+    // intermission paints over the whole screen with it.
+    //
+    // ST_doPaletteStuff runs only while a player view is being rendered, so
+    // whatever it last set simply stays put once the level stops drawing:
+    // walk out of a level still wearing a radiation suit and the whole
+    // intermission is green, and it carries on into the next level until
+    // that level's first rendered frame corrects it.  D_DoAdvanceDemo
+    // already does this for the attract screen; the intermission is the
+    // other place a level's last palette outlives it.
+    ST_Palette0();
+
     gamestate = GS_INTERMISSION;
 
     WI_Start (&wminfo);
@@ -3373,9 +3385,21 @@ void G_DeferedInitNew (skill_e skill, const char* mapname, boolean StartSplitScr
     SV_StartSinglePlayerServer();
     
     // Setup before start of game.
-    COM_BufAddText (va("splitscreen %d;deathmatch 0;fastmonsters 0;"
-                       "respawnmonsters 0;timelimit 0;fraglimit 0\n",
-                       StartSplitScreenGame));
+    //
+    // [Arcade] Seed fast monsters / monster respawn from the player's own
+    // setting rather than hardcoding 0.  These two are ordinary Game Options
+    // rows, but this line ran *after* the menu and reset both before the
+    // first tic -- so choosing them before a run did nothing at all, and they
+    // only appeared to work if you toggled them once a level was already
+    // running.  cv_fastmonsters_menu / cv_respawnmonsters_menu hold what the
+    // player actually chose (the engine cvars are also overwritten by
+    // sk_nightmare in G_InitNew, just below), so reading them here both
+    // honours the choice and still clears whatever the last game left set.
+    COM_BufAddText (va("splitscreen %d;deathmatch 0;fastmonsters %d;"
+                       "respawnmonsters %d;timelimit 0;fraglimit 0\n",
+                       StartSplitScreenGame,
+                       cv_fastmonsters_menu.EV,
+                       cv_respawnmonsters_menu.EV));
 
     COM_BufAddText (va("map \"%s\" -skill %d -monsters 1\n",mapname,skill+1));
 }

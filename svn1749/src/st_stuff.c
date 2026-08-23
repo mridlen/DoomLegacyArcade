@@ -430,6 +430,17 @@ static int      st_randomnumber;
 // Doom only.
 // Icons for status bar.
 static lumpnum_t  sbo_health, sbo_frags, sbo_armor;
+// [Arcade] Blue (mega) armour gets its own icon, SBOARMBL, so the two armour
+// strengths are told apart at a glance -- green absorbs a third, blue a half.
+// Invalid (VALID_LUMP false) when the wad has no such lump, in which case the
+// green icon is drawn for both exactly as before.
+static lumpnum_t  sbo_armor_blue;
+// SBOARMBL is a Doom *patch*, while the stock SBOxxxx icons are pic_t, so the
+// two need different drawers.  Worked out once at load rather than per frame:
+// a pic_t always has byte 2 of its header zero (r_defs.h calls that out as
+// exactly the autodetection hook), while in a patch_t those bytes are the
+// height, which is never 0 for a real icon.
+static boolean    sbo_armor_blue_is_patch;
 static lumpnum_t  sbo_ammo[NUMWEAPONS];
 
 
@@ -1568,6 +1579,20 @@ void ST_Init (void)
     sbo_frags  = W_GetNumForName ("SBOFRAGS");
     sbo_armor  = W_GetNumForName ("SBOARMOR");
 
+    // [Arcade] Optional: a legacy.wad without it simply keeps one armour icon.
+    sbo_armor_blue = W_CheckNumForName ("SBOARMBL");
+    sbo_armor_blue_is_patch = false;
+    if( VALID_LUMP(sbo_armor_blue) )
+    {
+        byte hdr[8];
+        // Header only, and deliberately not through W_CacheLumpNum: this
+        // lump is handed to a patch drawer later, and reading it raw here
+        // keeps this test clear of whatever caching or endian conversion
+        // that path wants to do to it.
+        if( W_ReadLumpHeader( sbo_armor_blue, hdr, sizeof(hdr) ) >= 4 )
+            sbo_armor_blue_is_patch = ( hdr[2] != 0 );
+    }
+
     // With Heretic, NUMWEAPONS = 18.
     // Doom weapons are 0..8, chainsaw = 7.
     for (i=0;i<NUMWEAPONS;i++)
@@ -1835,17 +1860,47 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
                              plyr->armorpoints,
                              tallnum, NULL, plyr->armor_pickup);
 
-           V_DrawScalePic_Num (SCX(302, x0, xdiv), lowerbar_y, sbo_armor);
+           // [Arcade] Blue icon for blue armour.  armortype is 1 for the
+           // green (1/3 absorption) and 2 for the blue (1/2) -- p_inter.c
+           // tests "armortype == 1" for the weaker case -- so >= 2 is blue,
+           // which also picks up the megasphere.  The number beside it is the
+           // same either way; it is the *type* that this makes visible, and
+           // 100 green points are worth much less than 100 blue ones.
+           {
+               boolean blue = ( plyr->armortype >= 2 )
+                              && VALID_LUMP(sbo_armor_blue);
+               int  ix = SCX(302, x0, xdiv);
+
+               if( ! blue )
+                   V_DrawScalePic_Num( ix, lowerbar_y, sbo_armor );
+               else if( sbo_armor_blue_is_patch )
+                   V_DrawScaledPatch_Num( ix, lowerbar_y, sbo_armor_blue );
+               else
+                   V_DrawScalePic_Num( ix, lowerbar_y, sbo_armor_blue );
+           }
            break;
 
+         // [Arcade] One condition for the whole K/I/S block; see below.
+#define ST_KIS_ON  ( (! deathmatch) && (! cv_splitscreen.EV) && (! demoplayback) )
          // added by Hurdler for single player only (or coop netplay)
          // [Arcade] Labelled and stacked K/I/S so a run can be tracked against
          // the "max" high-score category (100% kills and secrets on every
          // level).  Splitscreen is excluded as before: killcount is per
          // player while totalkills is the map's, so one corner cannot speak
          // for both -- and the high-score table is single player anyway.
+         //
+         // [Arcade] Skipped during demo playback as well.  These three exist
+         // so a *player* can see whether their own run is still eligible for
+         // the max category; on the attract screen they are somebody else's
+         // counters, and they crowd the top-right corner of a screen whose
+         // whole job is to look inviting.  ST_KIS_ON keeps the three rows
+         // asking the same question -- they are one block and must appear and
+         // disappear together.  Like the gameplay-message suppression in
+         // console.c this covers the Single Level "watch run" replays too,
+         // which are the same thing: a recording, not your run.  The level
+         // clock below deliberately stays: it reads as part of the demo.
          case 'e': // number of monsters killed
-           if( (! deathmatch) && (!cv_splitscreen.EV) )
+           if( ST_KIS_ON )
            {
                char buf[24];
                sprintf(buf, "K %d/%d", plyr->killcount, totalkills);
@@ -1854,7 +1909,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            break;
 
          case 'i': // number of items picked up
-           if( (! deathmatch) && (!cv_splitscreen.EV) )
+           if( ST_KIS_ON )
            {
                char buf[24];
                sprintf(buf, "I %d/%d", plyr->itemcount, totalitems);
@@ -1863,7 +1918,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            break;
 
          case 's': // number of secrets found
-           if( (! deathmatch) && (!cv_splitscreen.EV) )
+           if( ST_KIS_ON )
            {
                char buf[24];
                sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);

@@ -20,7 +20,7 @@ and the `srcdir` symlink are leftover build-output scaffolding from the original
 usable as-is. Always work under `svn1749/`. The top-level `common/` holds the runtime asset package
 (`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified**: the `M_STSERV` menu
 graphic now reads "Start Game" instead of "Start Server", and the cabinet's own art has been added
-(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`). The user edits their live
+(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`, `SBOARMBL`). The user edits their live
 `~/games/doom/legacy.wad` and it is copied over `common/legacy.wad` to track it; verify only the
 expected lumps differ before committing.
 
@@ -271,7 +271,7 @@ silently made the flag do nothing at all.
     `cv_skill.value` raw, so it launched and scored **one skill too hard**: picking Ultra violence
     ran `sk_nightmare`, which is fast monsters (imp fireball speed 20 instead of 10) plus
     respawning. `M_SingleLevel_Skill()` now does the conversion in one place, used by all five
-    sites — the launch, the two `HS_Best_For` displays, the replay-item enable and the
+    sites — the launch, the two best-time displays, the replay-item enable and the
     `HS_Demo_Path_For` lookup. **All five have to move together**, since `HS_LevelExit` records
     `gameskill`, so the menu's lookup key must be the same number the launch produced.
     - The shift was self-consistent, which is why it hid: the run recorded under the shifted skill
@@ -286,11 +286,44 @@ silently made the flag do nothing at all.
       `doom2-sl MAP01 3 31 speed` and `doom2-sl_MAP01_sk3_speed.lmp`.
   - **Separate scoring falls out of `HS_GameId_Mode()`**, which appends `-sl`. Records, record demo
     filenames and the attract page are all selected by that id, so one change covers all three.
+  - **A Single Level run scores through `HS_Score_As_Single_Level` like any other, and the Survival
+    refactor broke that for a while.** `HS_LevelExit` called it under
+    `hs_run_levels == 1 && ! single_level_mode` — the guard was there to describe a *campaign* first
+    level, and it excluded the real thing. A run started from the Single Level menu was then left
+    writing **only** a `runs.dat` board entry:
+    - no split record in `highscores.dat`, so the attract single-level pages and the attract demo
+      rotation (both walk `hs_table`) never saw it; and
+    - its demo went to `HS_Snapshot_If_Leading`, which names snapshots the **Survival** way,
+      `<game>-sl_ep<N>_sk<M>_<cat>.lmp` — a name nothing reads back. The Single Level menu's
+      "Watch run" items ask `HS_Demo_Path_For` for the **per-map** `<game>-sl_<map>_sk<N>_<cat>.lmp`.
+
+    So the board showed a fresh time while the menu replayed whatever stale per-map file predated
+    it, and a map whose record was *only* ever set this way had no playable demo at all. On the
+    cabinet: `runs.dat` held `doomu-sl E1M5 E1M5 0 speed 2050` against a `..._E1M5_sk0_speed.lmp`
+    three days older, and `doomu-sl E1M3 E1M3 1 speed 1687` with no `..._E1M3_sk1_...` file
+    anywhere — its recording had gone to `doomu-sl_ep1_sk1_speed.lmp`.
+    - The guard is now on the *board* half only: `HS_Score_As_Single_Level` takes **`add_to_board`**,
+      false in single level mode, because such a run is committed to the same three-deep board by
+      `HS_Run_Finished` when it ends and inserting here as well would put two identical entries on
+      it. The split record and the per-map demo are written either way.
+    - `HS_Snapshot_If_Leading` returns early for a single level game id, so there is exactly one
+      snapshot per run and it lands under the name the menu looks for.
+    - **The two tables can still disagree on a cabinet that ran the broken build**, since the board
+      was updated and the split table was not. They re-converge as records are beaten — both are
+      written from the same run at the same exit — but until then the "Watch run" demo tracks the
+      *split* record, not board place 1.
   - **Single-level times never reach the attract score *pages*** — they would double the number of
     pages. `Command_ExitGame_f` clears `single_level_mode` on the way to the title, and the attract
     page asks for the *current* mode. The menu's own display therefore cannot use the flag either,
-    so `HS_Best_For`/`HS_Demo_Path_For` take the mode as a parameter. **Single-level record
+    so `HS_Board_Entry`/`HS_Demo_Path_For` take the mode as a parameter (`HS_Best_For` is gone —
+    the Single Level page reads the three-deep board now). **Single-level record
     *demos*, by contrast, are replayed in the attract cycle** — see `HS_NextRecordDemoPath` below.
+  - **The intermission shows the map's own Single Level record**, not the episode's Survival one.
+    `HS_Draw_IntermissionTable` asked `HS_Survival_Entry`, which resolves `HS_GameId_Mode(false)` —
+    always the campaign id — so a Single Level attempt was held up against a whole-episode time it
+    cannot beat on one map, and the player had no idea what they were actually chasing. In
+    `single_level_mode` it reads place 1 of that map's board (`HS_Board_Entry(true, ...)`) instead.
+    Same two rows, same measured columns, so none of the layout notes below change.
   - Ending after one map is done in **`G_DoWorldDone`**, which is where the next map is chosen. The
     intermission and `HS_LevelExit` have both already run by then, so returning early is all that is
     needed. Guarded on `! demoplayback`: a record demo replays through real level exits and would
@@ -327,7 +360,7 @@ silently made the flag do nothing at all.
   - **`single_level_mode` means "a single level run is in progress"**, not "the player is looking
     at the Single Level page". It is set by `M_SingleLevel_Start` and `M_SingleLevel_PlayDemo` for
     the run each begins, and cleared by `Command_ExitGame_f` — which every route back to the title
-    passes through. The page's own display never reads it: `HS_Best_For`/`HS_Demo_Path_For` take
+    passes through. The page's own display never reads it: `HS_Board_Entry`/`HS_Demo_Path_For` take
     the mode as a parameter, and the menu passes `true` literally.
     - `M_SingleLevel_Finished()` used to **re-set the flag** after `Command_ExitGame_f` cleared it,
       on the reasoning that the cabinet was "staying in" single level mode. That left it stuck on
@@ -752,6 +785,26 @@ silently made the flag do nothing at all.
     addresses menu items by hardcoded index.
   - Hiding *Two Player Game* removes the only player-reachable route to `TwoPlayerDef`; the other
     entry point, `MultiPlayerMenu[0]`, is already behind the hidden Multiplayer item.
+- **Start Game carries a "Bot Options >>" link**, directly under the Bots count — the number that
+  page sets is the only thing it otherwise says about them. Same entry point as the Game Options
+  one (`M_BotOption`), so there is a single implementation. `ServerMenu` is addressed by position
+  (by the lockdown, and by `M_StartServerMenu`'s per-gamemode map row swap) and inserting a row
+  shifted five indices, so its indices are now named (`server_*`) like every other menu this file
+  indexes. Geometry checked: `ServerDef.y` is 40 and an `IT_STRING` row is `STRINGHEIGHT` 10, so
+  with every row shown Server Name occupies 130..140 and the `IT_YOFFSET` Start still sits at 150.
+
+- **The Net Options page is at x=48, not the 60 the other option pages use.** `M_DrawGenericMenu`
+  writes the label at `x` and right-justifies the value at `BASEVIDWIDTH - x`, so a row has to fit
+  in `320 - 2x`. Measured against the real `STCFN` lumps: "Deathmatch Type" is **117px** and the
+  widest value `deathmatch_cons_t` can show is "Coop_weapons" at **96** — 213px of the 200 that
+  x=60 leaves, so the value ran **13px back over the label**. (Upstream bug; `cv_deathmatch` is the
+  only row on the page whose value is a long word.) Widening the page fixes it for every value
+  rather than for whichever happened to be selected: at 48 the label ends at 165 and the widest
+  value starts at 176, while the page's longest label — "Frag's Weapon Falling" at 152 — ends at
+  200 against an On/Off value starting at 248. The cursor is drawn at `x + SKULLXOFF` (-32), so 16,
+  still on screen. **Shortening the label or the value strings was rejected**: `config.cfg` stores
+  a cvar's *label*, so renaming those values would break existing configs.
+
 - **Game selector** (`m_menu.c`, `M_SelectGame` / `GameSelectDef`, reached from Options). Lists the
   installed IWADs (Ultimate Doom, Doom II, Final Doom Plutonia and TNT) and then any level packs.
 
@@ -886,6 +939,15 @@ silently made the flag do nothing at all.
       it was when nothing is selectable. **This is upstream code and a latent trap for the whole
       lockdown**: `IT_HIDDEN` is `IT_SPACE` too, so any menu the lockdown hides entirely would have
       done the same. `M_SetupMenu`'s own walk was already bounded (`&& itemOn`) and is unaffected.
+  - **God Mode and No Clipping show their state, and do not close the menu.** Both are *toggles* —
+    `Command_CheatGod_f`/`Command_CheatNoClip_f` XOR `player->cheats` — so a row reading only "God
+    Mode" gave no way to tell an armed cheat from a disarmed one. `M_Draw_Cheat_State` draws On/Off
+    where `M_DrawGenericMenu` puts a cvar's value (right justified at `BASEVIDWIDTH - x`), reading
+    `players[consoleplayer].cheats`, and only while a level is running — which is exactly when the
+    rows are not greyed out. `M_Cheat_Apply` gained a **`close`** flag, false for those two: closing
+    the menu on a toggle made the state it had just set unreadable without reopening the page. The
+    two one-shot rows (All Weapons, Exit Level) still close it. `CheatsMenu` is now addressed by
+    position, so its indices are named (`cheat_*`).
   - **Using any cheat voids the run's score**, via `HS_Player_Cheated()` (`hs_stuff.c`), modelled
     exactly on `HS_Player_Died`: it latches `hs_run_cheated`, clears `hs_run_ranked` so the existing
     early return in `HS_LevelExit` stops all further scoring, and closes the background recorder
@@ -903,6 +965,24 @@ silently made the flag do nothing at all.
   - Verified headless with two otherwise identical `-warp 1` autoexec runs differing only by a
     `god` line: the control wrote `doom2 MAP01 2 104 speed`, the cheated run wrote nothing.
   - `hs_run_cheated` is reset in `HS_NewGame` beside `hs_run_died`.
+- **The attract cycle keeps running behind an open menu** (`d_main.c`, `D_AdvanceDemo`). Upstream
+  refused to advance the sequence while `menuactive` (*"do not start a demo when a menu or console
+  is open"*), which on a cabinet stalls the thing whose entire job is to advertise the machine: open
+  Options and the attract screen freezes on whatever page it was showing. It did not merely pause —
+  `D_PageTicker` decrements `pagetic` every tic regardless of what is on screen, so once it passed
+  zero it called `D_AdvanceDemo` on *every* tic and every one was discarded. Measured with a menu
+  opened at the title: `pagetic` ran 170 → **-495** while `demosequence` never left 0, then jumped a
+  page the instant the menu closed.
+  - Only the *start* of a page was ever blocked; a demo already running when the menu opened kept
+    playing. That is why the idle timeout's menu case has always had to reason about "an attract
+    demo running behind an open menu" — the two are consistent now.
+  - **`console_open` is deliberately kept.** Someone typing at the console is working on the
+    machine, not watching it.
+  - This is what "the Options screen doesn't go back to attract mode" actually was. The **idle
+    timeout itself was working**: instrumented at the title with the Options page up, it fired at
+    exactly `cv_idletimeout * TICRATE` (700 at 20s, 2100 at the cabinet's 60s) and closed the menu.
+    Do not go looking for a second bug there.
+
 - **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
   `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` (but
   **not during `demoplayback`**, see below) so intermission time does not carry over. Ends the
@@ -1537,9 +1617,30 @@ silently made the flag do nothing at all.
   - Skipped in splitscreen, like the upstream `e`/`s` cases: `killcount` is per player while
     `totalkills` is the map's, so one corner cannot speak for both. High scores are single player
     anyway.
+  - **Skipped during `demoplayback` too.** The three exist so a *player* can see whether their own
+    run is still eligible for the max category; on the attract screen they are somebody else's
+    counters cluttering the corner of a screen that is meant to look inviting. The condition is
+    shared as **`ST_KIS_ON`** so the three rows cannot drift apart — they are one block and must
+    appear and disappear together. Like the gameplay-message suppression in `console.c` this covers
+    the Single Level "watch run" replays, which are the same thing: a recording, not your run. The
+    level clock `t` deliberately stays, since it reads as part of the demo.
   - **`config.cfg` overrides the compiled default**, and only devmode rewrites it, so changing the
     default in `st_stuff.c` does nothing on a machine with an existing config — the saved
     `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
+
+- **Blue armour gets its own overlay icon** — **`SBOARMBL`**, added to `legacy.wad`, drawn by the
+  `m` element in place of `SBOARMOR` when `armortype >= 2`. Green absorbs a third and blue a half,
+  so 100 green points are worth much less than 100 blue ones and the bare number could not say
+  which. `p_inter.c` tests `armortype == 1` for the weaker case, so `>= 2` is blue and also picks
+  up the megasphere.
+  - **The lump is a Doom patch, while every stock `SBOxxxx` icon is a `pic_t`**, and the two need
+    different drawers — `V_DrawScaledPatch_Num` versus `V_DrawScalePic_Num`. Rather than require
+    the artwork be converted, the format is detected once at load: a `pic_t` always has **byte 2 of
+    its header zero** (`r_defs.h` calls that field out as exactly this autodetection hook), while in
+    a `patch_t` those bytes are the height, never 0 for a real icon. Read with `W_ReadLumpHeader`,
+    not `W_CacheLumpNum`, so the test stays clear of whatever caching the patch path then does.
+  - `W_CheckNumForName`, not `W_GetNumForName`: a `legacy.wad` without the lump keeps one armour
+    icon instead of failing to start.
 - **Gameplay messages are off the HUD when the screen is shared, or during a demo** (`console.c`,
   the `gameplay_msg` block). A pickup line belongs to whoever triggered it but is painted across
   the top of the *whole* screen: on a splitscreen or 2x2 cabinet it covers someone else's view, and
@@ -1652,14 +1753,39 @@ silently made the flag do nothing at all.
   under the item list on the Game Options and Adv Options screens (`M_Draw_Unranked_Warning`,
   called from `M_Drawer` so all three screens are covered in one place), and an `UNRANKED` marker
   at the top of the HUD during play.
-  - **`cv_respawnmonsters` and `cv_fastmonsters` are deliberately absent from the table.**
-    `G_InitNew` turns both on for `sk_nightmare` (`g_game.c`, `CV_SetParam`), so they belong to
-    the skill, not the player. Leaving them out costs nothing: Nightmare overrides the player
-    either way, and on other skills both default to off and can only be switched *on*, which
-    makes the game harder. **This bit once already** — `cv_fastmonsters` was left in the table by
-    mistake, and every Nightmare run played MAP01 normally, then showed `UNRANKED` from MAP02 with
-    no score for MAP01. That is the signature of a rule the *engine* changes after `HS_NewGame`:
-    the run passes the check at menu time and fails it at the first level exit.
+  - **The *engine* cvars `cv_respawnmonsters` and `cv_fastmonsters` are deliberately absent from
+    the table.** `G_InitNew` turns both on for `sk_nightmare` (`g_game.c`, `CV_SetParam`), so their
+    value belongs to the skill, not the player. **This bit once already** — `cv_fastmonsters` was
+    left in the table by mistake, and every Nightmare run played MAP01 normally, then showed
+    `UNRANKED` from MAP02 with no score for MAP01. That is the signature of a rule the *engine*
+    changes after `HS_NewGame`: the run passes the check at menu time and fails it at the first
+    level exit.
+  - **What is in the table instead is the player-facing pair**, `cv_fastmonsters_menu` /
+    `cv_respawnmonsters_menu` (`m_menu.c`, console names `fastmonstersopt` / `respawnmonstersopt`).
+    Nothing in the engine ever writes those, so Nightmare cannot trip the check, while a player who
+    turns either on from Game Options does — which is what has to happen, since both change the
+    simulation and a mid-run change would desync the demo the run is being recorded into.
+
+    This is the **third** instance of the same split in this file, after `cv_deathmatch_menu` and
+    `cv_dm_timelimit`, and for the same reason: the engine cvar is written from under the player.
+    Here it happens twice over —
+    - `G_DeferedInitNew`'s game-start command line reset both to 0 (`fastmonsters 0;respawnmonsters
+      0`), so **anything chosen in Game Options before a run was wiped before the first tic**. The
+      setting only appeared to work if it was toggled *during* a run, which is what made it look
+      broken rather than merely ineffective. That line now seeds the engine pair **from the menu
+      pair**, which both honours the choice and still clears whatever the last game left set.
+    - `sk_nightmare` forces both on, so after one Nightmare game they read as on for everything
+      afterwards.
+
+    The menu cvars are `CV_CALL` and mirror into the engine pair through `CV_Set_by_OnChange`, so
+    toggling mid-game still takes effect immediately the way it always did. They are **not**
+    `CV_SAVE`: `HS_Apply_Ranked_Ruleset` pins them to 0 at every route back to the title, which is
+    also what now undoes Nightmare's pollution of the engine pair.
+    - **Nightmare still gets fast monsters and respawn.** Order at a menu start: the command line
+      sets the engine pair from the menu pair, *then* `map ... -skill 5` runs `G_InitNew`, which
+      forces both to 1. `CV_SetParam` writes `.EV` directly and calls `CV_cvar_call`
+      unconditionally — it has no unchanged-value early return — so `FastMonster_OnChange` always
+      fires and the skill is unaffected by whatever the player chose.
   - When a run is voided, `HS_LevelExit` logs `Run is unranked: "<cvar>" differs...` once via
     `GenPrintf(EMSG_info, ...)`. A run that silently scores nothing is near-impossible to diagnose
     from the outside; check the console/log first if scores stop appearing.
@@ -1859,6 +1985,23 @@ single level splits.
   is the single funnel for every route back to attract mode (End Game, the idle timeout, and the
   engine's own error paths). **If the attract screen ever looks wrong after play, suspect leftover
   state first**, and prefer fixing it in `Command_ExitGame_f` so every route is covered.
+
+- **A level's palette tint outlives the level, in two places.** `ST_doPaletteStuff` is called only
+  while a player view is being rendered (`R_SetupFrame`, `HWR_RenderPlayerView`), so whatever it
+  last set simply stays once the level stops drawing: walk out wearing a radiation suit and
+  everything after it is green, take a hit at the exit switch and it is red. `ST_Palette0()` is the
+  reset — it handles the hardware flash path as well as the 8-bit one and updates `st_palette` so
+  the next `ST_doPaletteStuff` still sees a correct previous value. It is now called from **both**
+  places a level's palette can outlive it:
+  - `D_DoAdvanceDemo`, for the attract screen (the score pages show it worst, being a full-screen
+    fill, but the title and credit pages inherit it too); and
+  - `G_Start_Intermission`, just before `gamestate = GS_INTERMISSION`, for the gap **between
+    levels** — the intermission paints the whole screen and had been doing it through the tint, and
+    the next level then kept it until its own first rendered frame.
+
+  The only other route to `ST_Palette0` is `ST_Stop` via `ST_Start`, i.e. when the next level
+  begins — far too late for anything drawn in between. `ST_Start` does set `st_palette = -1`, which
+  forces the *next* rendered frame to re-set it, but that does nothing for the frames before it.
 
 - **No PK3 support; WadSmoosh is not usable.** The file-type dispatch (`w_wad.c`, `W_...` extension
   check) recognizes only `.wad`, `.deh`, `.bex` and `.zip` — anything else is loaded as a single

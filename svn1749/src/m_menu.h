@@ -123,6 +123,15 @@ extern consvar_t cv_localplayers;
 extern consvar_t cv_jointime;       // [Arcade] join screen countdown, seconds
 extern consvar_t cv_initialstimeout;// [Arcade] initials entry timeout, seconds
 
+// [Arcade] The player's chosen fast monsters / monster respawn, as edited on
+// the Game Options page.  Split from the engine cvars of the same names,
+// which the game-start command line and sk_nightmare both overwrite; see the
+// comment beside their definitions in m_menu.c.  G_DeferedInitNew seeds the
+// engine pair from these at every menu game start, and hs_ranked_rules[]
+// checks *these* so that Nightmare's own forcing does not void a run.
+extern consvar_t cv_fastmonsters_menu;
+extern consvar_t cv_respawnmonsters_menu;
+
 // [Arcade] True while the initials entry page is up.  The idle timeout asks,
 // so a player part way through entering their initials is not closed out
 // from under them; the page runs its own (operator set) countdown instead.

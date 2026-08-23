@@ -1324,9 +1324,30 @@ void D_PageDrawer(const char *lumpname)
 // Called by G_CheckDemoStatus when timing or playing a demo
 void D_AdvanceDemo(void)
 {
-    // [WDJ] do not start a demo when a menu or console is open
-    if( !(demo_ctrl & DEMO_seq_disabled) && ! menuactive
-        && ! console_open )
+    // [WDJ] do not start a demo when the console is open
+    //
+    // [Arcade] The menuactive half of that test is gone.  On a cabinet the
+    // attract screen has to keep running *behind* an open menu -- that is the
+    // whole job of an attract screen, and a player standing at the Options
+    // page is exactly when the machine should still be advertising itself.
+    //
+    // With the test in place the cycle did not merely pause, it stalled hard:
+    // D_PageTicker decrements pagetic every tic whatever is on screen, so once
+    // it passed zero it called D_AdvanceDemo every single tic and this
+    // function threw every one of them away.  Measured with a menu opened at
+    // the title, pagetic ran 170 -> -495 and demosequence never left 0 -- the
+    // title page frozen for as long as the menu was up, then a jump to the
+    // next page the instant it closed.
+    //
+    // Only the *start* of a page was ever blocked; a demo already running when
+    // the menu opened kept playing, which is why the idle timeout's menu case
+    // has always had to reason about "an attract demo running behind an open
+    // menu" (G_Idle_Timeout_Check).  This makes the two consistent.
+    //
+    // console_open is deliberately kept: someone typing at the console is
+    // working on the machine, not watching it, and having the level flip out
+    // from under the command they are half way through is unhelpful.
+    if( !(demo_ctrl & DEMO_seq_disabled) && ! console_open )
         demo_ctrl = DEMO_seq_advance;    // flag to trigger D_DoAdvanceDemo
 }
 

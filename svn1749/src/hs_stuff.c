@@ -191,6 +191,10 @@ static hs_rule_t  hs_ranked_rules[] =
     { &cv_allowjump,             0 },   // vanilla Doom has no jumping
     { &cv_rndsoundpitch,         0 },   // consumes M_Random, perturbs the RNG
     { &cv_mbf_dogs,              0 },   // no helper dogs fighting for you
+    // [Arcade] The player-facing pair, NOT the engine cv_fastmonsters /
+    // cv_respawnmonsters -- see the note below the table.
+    { &cv_fastmonsters_menu,     0 },
+    { &cv_respawnmonsters_menu,  0 },
 #ifdef DOORDELAY_CONTROL
     { &cv_doordelay,             1 },
 #endif
@@ -239,15 +243,20 @@ static hs_rule_t  hs_ranked_rules[] =
 
 #define HS_NUM_RULES  (sizeof(hs_ranked_rules)/sizeof(hs_ranked_rules[0]))
 
-// Deliberately NOT in the table: cv_respawnmonsters and cv_fastmonsters.
-// G_InitNew turns both on for sk_nightmare (g_game.c, "skill == sk_nightmare"
-// -> CV_SetParam), so they are part of the skill rather than a player
-// setting, and gameskill is still the *previous* game's value at HS_NewGame
-// time -- checking them there flagged legitimate runs as unranked.  Leaving
-// them out costs nothing: on Nightmare the engine overrides the player
-// either way, and on every other skill both default to off and can only be
-// switched on, which makes the game harder rather than easier.  Both are
-// recorded in the demo header, so records still replay correctly.
+// Deliberately NOT in the table: the *engine* cvars cv_respawnmonsters and
+// cv_fastmonsters.  G_InitNew turns both on for sk_nightmare (g_game.c,
+// "skill == sk_nightmare" -> CV_SetParam), so their value is part of the
+// skill rather than a player setting: checking them directly made every
+// Nightmare run play MAP01 normally and then report UNRANKED from MAP02, the
+// signature of a rule the *engine* changes after HS_NewGame.
+//
+// What is in the table instead is the player-facing pair,
+// cv_fastmonsters_menu / cv_respawnmonsters_menu (m_menu.c).  Nothing in the
+// engine ever writes those, so Nightmare no longer trips the check, while a
+// player who turns either on from Game Options does -- which is what has to
+// happen: both change the simulation, and a mid-run change would desync the
+// record demo the run is being recorded into.  The engine pair is still
+// recorded in the demo header, so saved records replay correctly.
 
 // What the simulation is actually running with.  command.c stores wide and
 // float values in .value and everything else in the .EV byte (which is also
@@ -1039,6 +1048,14 @@ static void  HS_Snapshot_If_Leading( skill_e skill )
 
     if( ! demorecording )  return;
 
+    // [Arcade] A single level run's demo is per *map*, not per episode, and
+    // it is written by HS_Score_As_Single_Level below -- which is also what
+    // updates the split record the Single Level menu and the attract
+    // rotation read.  Taking a Survival snapshot here as well would put a
+    // second copy of the same one-map run at "<game>-sl_ep<N>_...", a name
+    // nothing ever reads back.
+    if( HS_Id_Is_Single( hs_run_gameid ) )  return;
+
     for( cat=0; cat<HS_NUMCAT; cat++ )
     {
         char demopath[MAX_WADPATH];
@@ -1087,8 +1104,11 @@ static void  HS_Record_Placement( const hs_run_t * run )
 // carried out of MAP01, while a Single Level MAP02 is a pistol start, so
 // merging those would compare two different things.  Later exits of a
 // campaign run never reach here.
+// add_to_board is false for a run that is *already* a Single Level run: it
+// is committed to the same board by HS_Run_Finished when it ends, and doing
+// it here as well would put two identical entries on a three deep board.
 static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
-                                       tic_t tics )
+                                       tic_t tics, boolean add_to_board )
 {
     const char *      sl_id = HS_GameId_Mode( true );
     char              gid[HS_GAMEID_LEN];
@@ -1130,6 +1150,8 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
         // hold a top three place beside runs started from the Single Level
         // menu.  Recorded now, but the initials prompt is still only raised
         // when the whole run ends.
+        if( ! add_to_board )  continue;
+
         memset( &run, 0, sizeof(run) );
         dl_strncpy( run.game, gid, HS_GAMEID_LEN-1 );
         dl_strncpy( run.startmap, mapname, 8 );
@@ -1598,8 +1620,17 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // run's cumulative time is exactly that level's time -- so it competes
     // on the single level tables too.  hs_run_levels was incremented above,
     // so 1 means "this is the first scored exit of the run".
-    if( hs_run_levels == 1 && ! single_level_mode )
-        HS_Score_As_Single_Level( mapname, skill, hs_cumulative_time );
+    //
+    // [Arcade] A run started from the Single Level menu is scored here as
+    // well.  It used to be excluded, which left it writing *only* a runs.dat
+    // board entry: the split record went unwritten, so the Single Level
+    // menu's "Watch run" items and the attract rotation -- both of which key
+    // off the split table and its per-map demo -- kept serving whatever
+    // stale file predated the record, and a map whose only record was set
+    // this way had no playable demo at all.
+    if( hs_run_levels == 1 )
+        HS_Score_As_Single_Level( mapname, skill, hs_cumulative_time,
+                                  ! single_level_mode );
 }
 
 
@@ -1676,9 +1707,25 @@ void HS_Draw_IntermissionTable( int x, int y )
 
     if( hs_last_exit_mapname[0] == 0 )  return;
 
-    ep   = HS_Episode_Of( hs_last_exit_mapname );
-    have = HS_Survival_Entry( ep, hs_last_exit_skill, HS_CAT_speed,
-                              mapname, ini, &tics );
+    if( single_level_mode )
+    {
+        // [Arcade] A Single Level attempt competes on that map's own three
+        // deep board, not on the episode's Survival board.  Showing the
+        // Survival record here held the run up against a different game
+        // entirely -- a whole-episode time it cannot ever beat on one map --
+        // so the player had no idea what they were actually chasing.  Place
+        // 1 of the map's own board is the number to beat, and the layout is
+        // unchanged: same two rows, same measured columns.
+        have = HS_Board_Entry( true, hs_last_exit_mapname, hs_last_exit_skill,
+                               HS_CAT_speed, 0, ini, NULL, &tics );
+        dl_strncpy( mapname, hs_last_exit_mapname, 8 );
+    }
+    else
+    {
+        ep   = HS_Episode_Of( hs_last_exit_mapname );
+        have = HS_Survival_Entry( ep, hs_last_exit_skill, HS_CAT_speed,
+                                  mapname, ini, &tics );
+    }
 
     V_DrawString( x, y, 0, "RECORD" );
     if( have )
