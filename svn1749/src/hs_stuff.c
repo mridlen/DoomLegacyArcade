@@ -322,8 +322,56 @@ static boolean hs_run_died = false;
 // Latched by HS_Player_Cheated, the same way and for the same reason.
 static boolean hs_run_cheated = false;
 
+// [Arcade] Void the run the moment the ruleset stops matching, and say which
+// cvar did it.
+//
+// This used to live only in HS_LevelExit, which meant a Game Option changed in
+// the middle of a level voided the run correctly but *said nothing* until the
+// level ended -- so a player carried on believing they were still on the
+// board, and the one setting most likely to be poked mid-run (Fast Monsters)
+// was the one that gave no feedback at all.  It is also the change that most
+// needs to be visible immediately: it alters the simulation underneath a demo
+// that is being recorded.
+//
+// Safe to call from a drawer, which is how HU_Drawer reaches it once a frame:
+// the latch is monotonic within a run -- both flags only ever go false here,
+// and only HS_NewGame sets them true again -- so calling it any number of
+// times is the same as calling it once.
+//
+// Deliberately does NOT return early when hs_run_ranked is already false: a
+// run that has died is unranked but still on the board (hs_run_board_ok), and
+// altering the ruleset after dying has to take it off the board too.  Skipping
+// that case is what a "nothing left to do" early return would quietly get
+// wrong.
+static void  HS_Void_If_Ruleset_Changed( void )
+{
+    // Both already false: this can have no further effect (the log below is
+    // gated on hs_run_ranked), so skip the table walk.
+    if( ! hs_run_ranked && ! hs_run_board_ok )  return;
+
+    if( HS_Ruleset_Is_Ranked() )  return;
+
+    // Name the cvar.  A run silently scoring nothing is very hard to diagnose
+    // from the outside -- this is exactly how the Nightmare cv_fastmonsters
+    // bug presented (played fine, then UNRANKED with no score for the level
+    // just finished).  Once per run, on the transition.
+    if( hs_run_ranked )
+        GenPrintf( EMSG_info,
+            "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
+            HS_Unranked_Reason() );
+
+    hs_run_ranked   = false;
+    hs_run_board_ok = false;   // [Arcade] off the board as well
+}
+
+
 boolean  HS_Run_Is_Ranked( void )
 {
+    // Re-checked here rather than only at the next level exit, so the HUD's
+    // UNRANKED marker appears as soon as the setting changes.
+    if( ! demoplayback )
+        HS_Void_If_Ruleset_Changed();
+
     return hs_run_ranked;
 }
 
@@ -1555,19 +1603,10 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // Re-checked per level, not just at HS_NewGame: the Options menu is
     // reachable mid-game, so a run started under the ranked ruleset can be
     // altered part way through.  Once voided it stays voided for this run.
-    if( ! HS_Ruleset_Is_Ranked() )
-    {
-        // Name the cvar.  A run silently scoring nothing is very hard to
-        // diagnose from the outside -- this is exactly how the Nightmare
-        // cv_fastmonsters bug presented (played fine, then UNRANKED with no
-        // score for the level just finished).
-        if( hs_run_ranked )
-            GenPrintf( EMSG_info,
-                "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
-                HS_Unranked_Reason() );
-        hs_run_ranked = false;
-        hs_run_board_ok = false;   // [Arcade] off the board as well
-    }
+    // Shared with the live check in HS_Run_Is_Ranked so the two can never
+    // disagree.  Unreachable during demoplayback -- that returned above.
+    HS_Void_If_Ruleset_Changed();
+
     if( ! hs_run_ranked )
         return;
 

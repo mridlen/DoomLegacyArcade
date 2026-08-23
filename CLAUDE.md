@@ -1748,11 +1748,31 @@ silently made the flag do nothing at all.
 
   Rather than hide the menus, an altered ruleset **plays on but records nothing**:
   `HS_Ruleset_Is_Ranked()` is checked in `HS_NewGame` (which then skips starting the background
-  recording at all) and again at every `HS_LevelExit`, latching `hs_run_ranked` false so a change
-  made *mid-run* voids it rather than only the levels after. The player is told twice — a warning
+  recording at all), again at every `HS_LevelExit`, and — since the marker was reported as not
+  appearing — **live, from `HS_Run_Is_Ranked()`**, latching `hs_run_ranked` false so a change made
+  *mid-run* voids it rather than only the levels after. The player is told twice — a warning
   under the item list on the Game Options and Adv Options screens (`M_Draw_Unranked_Warning`,
   called from `M_Drawer` so all three screens are covered in one place), and an `UNRANKED` marker
   at the top of the HUD during play.
+  - **The HUD marker reads a latched flag, so whatever sets that flag decides when the player is
+    told.** `HS_Run_Is_Ranked()` (its only caller is `HU_Drawer`) returned `hs_run_ranked`, which
+    was recomputed *only* at `HS_NewGame` and `HS_LevelExit` — so changing any Game Option in the
+    middle of a level voided the run correctly but said nothing until the level ended. This
+    affected **every** cvar in the table, not just the one it was reported against
+    (Fast Monsters), and it is the setting that most needs immediate feedback: it changes the
+    simulation underneath a demo that is being recorded.
+    - The check-and-latch is now one function, **`HS_Void_If_Ruleset_Changed()`**, called from both
+      `HS_Run_Is_Ranked()` and `HS_LevelExit` so the two cannot disagree about what voids a run.
+    - **Safe to call from a drawer** — which is what `HU_Drawer` does, once a frame — because the
+      latch is monotonic within a run: both flags only ever go false there, and only `HS_NewGame`
+      sets them true again. That satisfies the "drawers must be idempotent" rule the attract score
+      pages are subject to. The table walk is ~55 pointer compares and short-circuits once both
+      flags are already false.
+    - It deliberately does **not** early-return when `hs_run_ranked` is already false. A run that
+      has *died* is unranked but still on the board (`hs_run_board_ok`), so altering the ruleset
+      after dying has to take it off the board too — which is exactly what a "nothing left to do"
+      early return would quietly get wrong.
+    - Guarded on `demoplayback` at the call site: a replay is not the cabinet's run.
   - **The *engine* cvars `cv_respawnmonsters` and `cv_fastmonsters` are deliberately absent from
     the table.** `G_InitNew` turns both on for `sk_nightmare` (`g_game.c`, `CV_SetParam`), so their
     value belongs to the skill, not the player. **This bit once already** — `cv_fastmonsters` was
