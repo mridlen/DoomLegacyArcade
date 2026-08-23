@@ -1073,11 +1073,27 @@ silently made the flag do nothing at all.
     underneath. `last_input_tic` is re-armed so it cannot re-fire on the next tic.
   - No countdown warning is shown for this case: `D_Display` only calls `HU_Drawer` for `GS_LEVEL`,
     so `HU_SetTip` would draw nothing on the attract screen.
-  - **`GS_DEMOSCREEN` is not enough on its own.** While an attract *demo* is playing behind the
-    menu the gamestate is `GS_LEVEL`, not `GS_DEMOSCREEN`, and the plain check bails on
-    `demoplayback` — so the menu only timed out during the attract screen's *title* pages and
-    looked broken whenever a demo happened to be on. The `GS_LEVEL` call therefore passes
-    `demoplayback && menuactive`. A real game with the menu open has `demoplayback` false and still
+  - **The menu is closed before anything else happens, on every path.** `D_StartTitle` restarts
+    the attract cycle through `D_AdvanceDemo`, and that is discarded while a menu is open — so
+    ending a game underneath an open menu left `gamestate` at `GS_LEVEL` with no game running, no
+    title, and the menu still up. Only the menu-only path re-arms `last_input_tic`, so the check
+    then re-fired *every tic* for ever without ever getting out. **That is what "the menus do not
+    time out" was**: not the timeout failing to fire, but firing repeatedly with nothing to show
+    for it. Reproduced at `idletimeout 2` with a menu opened during a `-warp` game — `closed=0`,
+    `gamestate` still `GS_LEVEL` after ten seconds of firing.
+  - **The menu-only path kicks `D_AdvanceDemo()` when `gamestate != GS_DEMOSCREEN`.** When an
+    attract demo *ends* behind an open menu its own `D_AdvanceDemo` is discarded, leaving
+    `GS_LEVEL` with nothing playing and no page pending; `D_PageTicker` only runs in
+    `GS_DEMOSCREEN`, so nothing else would ever restart the cycle. Harmless in the ordinary case,
+    where `pagetic` is already deeply negative and the next tic would advance anyway.
+  - **`GS_DEMOSCREEN` is not enough on its own, and neither is `demoplayback`.** While an attract
+    demo plays behind the menu the gamestate is `GS_LEVEL`, so the `GS_LEVEL` call has to
+    distinguish "menu over the attract screen" from "menu over a real game". It used to pass
+    `demoplayback && menuactive`, which is only *most* of the attract case — when the demo ends
+    behind the menu, `demoplayback` goes false while `gamestate` stays `GS_LEVEL`, and the timeout
+    then treated the attract screen as a game to tear down. It passes **`D_Menu_Over_Attract()`**
+    now (`d_main.c`), which asks the engine's own `DEMO_seq_disabled` "a real game is running"
+    flag and covers both. A real game with the menu open has that flag set and still
     takes the normal path, ending the game rather than merely closing the menu.
   - **It does nothing in devmode**, like every other idle timeout (`if( devmode || ... ) return`).
     An operator session will never see a menu time out; that is intentional, but it is the first
@@ -1093,6 +1109,16 @@ silently made the flag do nothing at all.
     stand in for an open menu: fires at exactly 700/1400/2100/2800/3500/4200 (20s) — including
     across a demo load at 2250 — and at 2100 (60s). The same build with the re-arm unconditional
     never fired in 115s at 60, which is the reported symptom exactly.
+
+  **Verified across every menu, not by spot check.** A temporary console harness
+  (`tmpopen <n>` / `tmpstat <n>` over a table of every `menu_t` in `m_menu.c`) walks the list at
+  `idletimeout 2`, opening each page, idling past the timeout and reporting whether it closed.
+  All 37 testable menus close over the attract screen, and a representative in-game spread (Main,
+  New Game, Single Level, Cheats, Options, Game Options, Start Game) closes *and* lands back at
+  `GS_DEMOSCREEN`. Four menus cannot be pushed raw by such a harness and segfault it —
+  `SetupMultiPlayerDef`, `ControlDef`, `LoadDef`, `SaveDef` — because they need state their real
+  entry points set up first; that is a harness limitation, not a timeout failure, and they are
+  reached in play through those entry points.
 
   It runs in **`GS_LEVEL`, `GS_INTERMISSION` and `GS_FINALE`**, not just during play — both of the
   other two wait *indefinitely* for a keypress the walk-away player never gives, so covering only

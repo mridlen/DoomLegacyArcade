@@ -97,6 +97,11 @@ void D_DisableDemo (void);
 enum { DEMO_seq_advance = 1, DEMO_seq_playdemo = 2, DEMO_seq_disabled = 8 };  // bits
 extern byte demo_ctrl;
 
+// [Arcade] True when a menu is open over attract-screen content rather than
+// over a real game.  Used by D_Display for the black backdrop and by
+// G_Idle_Timeout_Check to decide whether the timeout has a game to tear down.
+boolean D_Menu_Over_Attract( void );
+
 void D_StartTitle (void);
 void D_End_commandline(void);
 

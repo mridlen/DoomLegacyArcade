@@ -1824,15 +1824,38 @@ static void G_Idle_Timeout_Check( boolean in_menu )
     {
         last_warn_secs_shown = -1;
 
-        // [Arcade] A menu abandoned on the attract screen just needs closing
-        // -- the attract cycle is already running behind it.  There is no
-        // game to tear down, and calling Command_ExitGame_f here would
-        // restart the title needlessly.  single_level_mode is cleared for the
-        // same reason it is cleared there: the attract page keys off it.
-        if( in_menu )
+        // [Arcade] Close the menu first, whatever else this does.
+        //
+        // D_StartTitle restarts the attract cycle through D_AdvanceDemo, and
+        // that is discarded while a menu is open.  So ending a game
+        // underneath an open menu left gamestate at GS_LEVEL with no game
+        // running, no title, and the menu still up -- and since only the
+        // menu-only path below re-arms last_input_tic, it then re-fired every
+        // tic for ever without ever getting out. That is what "the menus do
+        // not time out" was: not the timeout failing to fire, but firing
+        // repeatedly with nothing to show for it.
+        //
+        // single_level_mode is cleared here for the same reason
+        // Command_ExitGame_f clears it: the attract page keys off it.
+        if( menuactive )
         {
             M_Clear_Menus( true );
             single_level_mode = 0;
+        }
+
+        // [Arcade] A menu abandoned over the attract screen just needed
+        // closing -- the cycle is already running behind it, and calling
+        // Command_ExitGame_f would restart the title needlessly.
+        if( in_menu )
+        {
+            // Kick the cycle if a demo ended while the menu was up: that
+            // leaves GS_LEVEL with nothing playing and no page pending, and
+            // D_PageTicker only runs in GS_DEMOSCREEN, so nothing else would
+            // ever restart it.  Harmless in the ordinary GS_DEMOSCREEN case,
+            // where pagetic is already deeply negative and the next tic would
+            // advance anyway.
+            if( gamestate != GS_DEMOSCREEN )
+                D_AdvanceDemo();
             last_input_tic = gametic;   // do not re-fire on the next tic
             return;
         }
@@ -2012,15 +2035,17 @@ main_actions:
 
         G_Synclog_Tic();   // [Arcade] demo desync diagnostic, -synclog
 
-        // [Arcade] demoplayback && menuactive means an attract demo is running
-        // behind an open menu -- gamestate is GS_LEVEL there, not
-        // GS_DEMOSCREEN, and the plain check bails on demoplayback, so without
-        // this the menu only timed out during the attract screen's *title*
-        // pages and appeared not to work at all while a demo was on.
-        // A real game with the menu open has demoplayback false and still
-        // takes the normal path, which ends the game rather than just closing
-        // the menu.
-        G_Idle_Timeout_Check( demoplayback && menuactive );   // [Arcade]
+        // [Arcade] Is this a menu over the attract screen, or over a real
+        // game?  gamestate is GS_LEVEL for both, so the distinction has to
+        // come from somewhere else.
+        //
+        // It used to be `demoplayback && menuactive`, which is only *most* of
+        // the attract case: when an attract demo ends while a menu is open its
+        // D_AdvanceDemo is discarded, so demoplayback goes false while
+        // gamestate stays GS_LEVEL -- and the timeout then treated the attract
+        // screen as a game to tear down.  D_Menu_Over_Attract asks the engine's
+        // own "a real game is running" flag instead and covers both.
+        G_Idle_Timeout_Check( D_Menu_Over_Attract() );   // [Arcade]
         break;
 
       case GS_INTERMISSION:

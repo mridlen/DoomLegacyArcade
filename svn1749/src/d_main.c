@@ -724,7 +724,7 @@ consvar_t cv_screenslink = { "screenlink", "2", CV_SAVE, screenslink_cons_t };
 // D_AdvanceDemo is discarded, so demoplayback is already false while
 // gamestate is still GS_LEVEL, and that pair would have let the demo's last
 // frame sit frozen behind the menu.
-static boolean D_Menu_Over_Attract( void )
+boolean D_Menu_Over_Attract( void )
 {
     return menuactive && !(demo_ctrl & DEMO_seq_disabled);
 }
