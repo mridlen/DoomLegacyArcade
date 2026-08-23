@@ -1512,6 +1512,28 @@ static boolean StartSplitScreenGame = false;
 // and the caller should return; the callback runs the real start.
 boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts );
 
+// [Arcade] ServerMenu is addressed by position -- by the lockdown, by
+// M_StartServerMenu's per-gamemode map row swap, and (the one that bit) by
+// M_StartServer_Go, which is handed the item index as its `choice` argument
+// and used a bare 10 to recognise the Dedicated row.  Keep in step with the
+// ServerMenu[] array further down.
+enum
+{
+    server_map = 0,
+    server_skill,
+    server_deathmatch,
+    server_monsters,
+    server_bots,
+    server_botoptions,
+    server_waitplayers,
+    server_waittimeout,
+    server_internet,
+    server_name,
+    server_start,
+    server_dedicated,
+    server_numitems
+};
+
 static void  M_StartServer_Go( void );
 static int   startserver_choice;
 
@@ -1543,7 +1565,13 @@ static void  M_StartServer_Go( void )
     netgame = true;
     multiplayer = true;
 
-    if( choice == 10 )  // menu
+    // [Arcade] The Dedicated row, by name.  This was a bare 10, which is
+    // what the row's index happened to be until "Bot Options >>" was
+    // inserted above it -- after that "Start" was 10 and every Multiplayer
+    // game started as a *dedicated server*: no local player, and
+    // I_ShutdownGraphics() pulled the video out from under a cabinet that
+    // then carried on running.  It crashed every time.
+    if( choice == server_dedicated )
     {
         // Dedicated server menu choice.
         dedicated = true;
@@ -1601,27 +1629,8 @@ static void  M_StartServer_Go( void )
 #endif   
 }
 
-// [Arcade] Addressed by position -- by the lockdown below and by
-// M_StartServerMenu's per-gamemode map row swap -- so the indices are named,
-// as they are for every other menu this file indexes.  Keep in step with the
-// array.
-enum
-{
-    server_map = 0,
-    server_skill,
-    server_deathmatch,
-    server_monsters,
-    server_bots,
-    server_botoptions,
-    server_waitplayers,
-    server_waittimeout,
-    server_internet,
-    server_name,
-    server_start,
-    server_dedicated,
-    server_numitems
-};
-
+// The server_* indices for this array are defined further up, next to
+// M_StartServer_Go, which needs them.  Keep the two in step.
 menuitem_t  ServerMenu[] =
 {
     {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap          ,0},

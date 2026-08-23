@@ -828,6 +828,21 @@ silently made the flag do nothing at all.
   shifted five indices, so its indices are now named (`server_*`) like every other menu this file
   indexes. Geometry checked: `ServerDef.y` is 40 and an `IT_STRING` row is `STRINGHEIGHT` 10, so
   with every row shown Server Name occupies 130..140 and the `IT_YOFFSET` Start still sits at 150.
+  - **An `IT_CALL` handler's `choice` argument *is* the item index** — `M_Responder` dispatches
+    `routine(itemOn)` — so a menu's indices leak into its handlers as well as into any
+    `Menu[i]` reference elsewhere. Grepping for `ServerMenu[` finds the array references and
+    misses these entirely.
+  - That is how inserting this row **crashed every Multiplayer game**. `M_StartServer_Go` tested
+    `if( choice == 10 )` to recognise the Dedicated row; once "Bot Options >>" pushed *Start* to
+    10, pressing Start started a **dedicated server** — no local player, and `I_ShutdownGraphics()`
+    pulled the video out from under a cabinet that then carried on running. It reads as an instant
+    hard crash on a menu item that has nothing to do with bots or dedicated servers.
+  - The enum therefore lives **above `M_StartServer_Go`**, not beside the array it describes,
+    because that is where it is first used; the array carries a comment pointing back to it.
+  - **When inserting a row into any menu in this file, grep for the handlers too**, not just for
+    `<Name>Menu[`: `grep -n "choice ==" m_menu.c` lists every handler that reads its index. The
+    other two live ones are `M_Episode` (episode number) and the file browser, neither of which is
+    positional in this sense.
 
 - **The Net Options page is at x=48, not the 60 the other option pages use.** `M_DrawGenericMenu`
   writes the label at `x` and right-justifies the value at `BASEVIDWIDTH - x`, so a row has to fit
