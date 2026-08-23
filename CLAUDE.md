@@ -84,10 +84,29 @@ RD=/tmp/rundir            # NOT svn1749/bin -- that is the live cabinet now
 mkdir -p "$RD" && cp svn1749/bin/doomlegacy "$RD"/
 cp -a svn1749/bin/legacyhome "$RD"/               # a COPY of the live home
 ln -sf /home/mridlen/games/doom/* "$RD"/          # DOOM.WAD, DOOM2.WAD, legacy.wad, ...
-cd "$RD" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+cd "$RD" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_NO_SIGNAL_HANDLERS=1 \
     timeout 40 ./doomlegacy -game doom2 -skill 5 -warp 1 > out.txt 2>&1
 sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color escapes
 ```
+
+- **`SDL_NO_SIGNAL_HANDLERS=1` is not optional, and leaving it off looks like anything but a
+  missing environment variable.** SDL2 installs its own SIGINT/SIGTERM handlers which synthesise
+  an `SDL_QUIT` event, and `sdl/i_system.c` maps `SDL_QUIT` straight onto `I_Quit()`. Run
+  non-interactively and a signal reaches the process almost at once, so the engine performs a
+  perfectly *clean* quit: no error, no message, the log simply stops — and then it hangs in
+  shutdown rather than exiting.
+
+  Every symptom of that points somewhere else. The run dies a second or two in, wherever it
+  happened to be, so it reads as a crash in whatever ran last: with a level loading it stops after
+  `Solving T-joins` and looks like an OpenGL failure; with `drawmode` forced to software it stops
+  after the config check and looks like the video mode; with nothing at all it stops after
+  `HU_Init`. It was misread for a while as "`-warp` no longer works", which it never was — plain
+  `./doomlegacy -game doomu` with no other argument dies exactly the same way.
+
+  What identifies it: `SDL_NO_SIGNAL_HANDLERS=1` makes it stop happening, and so does running
+  under gdb, which intercepts signals before SDL sees them. **A headless run that quits early with
+  no error at all is this, until proven otherwise** — check the variable is set before reading
+  anything into where the log stopped.
 
 - **Isolating `HOME` is no longer enough, and running from `svn1749/bin` is now dangerous.** Since
   the portable install landed, `legacyhome` is found *next to the binary* and `$HOME` is never
@@ -104,9 +123,20 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   first time anyone played in software mode. The lesson is general: **a crash that only shows up
   in the harness is not thereby a harness bug.** Prove it against a known-good path before
   writing it off, or the note becomes the reason nobody looks again.
-- `timeout` exit code **124 means it survived**, which is the pass condition for a smoke test;
-  139 is a segfault. `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
-  gets a backtrace.
+- **`timeout` exit code 124 does *not* prove the run survived**, and this file used to say it did.
+  A quit through `I_Quit` hangs in shutdown instead of exiting, so `timeout` kills it and reports
+  124 exactly as it does for a healthy run. Every run in the `SDL_QUIT` episode above returned 124.
+  139 is still a segfault.
+  - **The reliable check is whether the ENDOOM banner was printed**, since that only happens on a
+    real quit: `sed 's/\x1b\[[0-9;]*m//g' out.txt | grep -c 'READ THE DOCS'` — 0 means it was
+    still running when `timeout` killed it, 1 means it quit on its own.
+  - **Strip the colour escapes first.** ENDOOM text is interleaved with them per character, so a
+    plain `grep 'READ THE DOCS' out.txt` on the raw file finds nothing and hands back a false
+    "still running". That mistake is what kept the `SDL_QUIT` diagnosis pointing at `-warp`.
+  - The other positive signal is per-tic output from temporary instrumentation: if it is still
+    printing when the timeout hits, the loop was genuinely running.
+  - `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
+    gets a backtrace.
 - Temporary `GenPrintf(EMSG_warn, ...)` instrumentation plus a headless run is the fastest way to
   answer "what is this cvar actually set to at runtime" — it is how the Nightmare `cv_fastmonsters`
   bug and the high-score page timing were both pinned down. Remove it before committing.
