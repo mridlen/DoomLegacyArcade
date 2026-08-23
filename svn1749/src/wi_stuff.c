@@ -1817,7 +1817,8 @@ static void WI_update_NetgameStats(void)
         if (accelerate_stage)
         {
             S_StartSound(sfx_sgcock);
-            if ( gamemode == doom2_commercial || finale_after_intermission )
+            if ( gamemode == doom2_commercial || finale_after_intermission
+                 || single_level_mode )
                 WI_Init_NoState();   // [Arcade] no next location, see WI_update_Stats
             else
                 WI_Init_ShowNextLoc();
@@ -2100,7 +2101,15 @@ static void WI_update_Stats(void)
             // has no next location, so showing the "Entering ..." map would
             // point at E?M1.  Go straight to NoState, which is what
             // doom2_commercial already does.
-            if (gamemode == doom2_commercial || finale_after_intermission)
+            //
+            // single_level_mode: same reasoning, for a different reason --
+            // the run ends here by definition (G_DoWorldDone returns early),
+            // so "Entering E1M2" names a level the player is not going to
+            // and directly contradicts the mode they chose.  Doom II never
+            // showed it, being doom2_commercial, so this only ever appeared
+            // on the ExMy games.
+            if (gamemode == doom2_commercial || finale_after_intermission
+                || single_level_mode)
                 WI_Init_NoState();
             else
                 WI_Init_ShowNextLoc();
@@ -2199,7 +2208,7 @@ static void WI_Draw_Stats(void)
     // at 138 the last initial ran to 323 and was cut off by the right edge.
     // The block now spans 128..313 of BASEVIDWIDTH 320, and "NEW RECORD" is
     // still centred in the free space to its left (23..100).
-    HS_Draw_IntermissionTable( 128, SP_STATSY + 3*lh + 12 );
+    HS_Draw_IntermissionTable( 116, SP_STATSY + 3*lh + 12 );
 }
 
 // Called by WI_Ticker

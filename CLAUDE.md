@@ -408,6 +408,12 @@ silently made the flag do nothing at all.
       points. End to end, a campaign level entered after a single level run ended took
       `G_DoReborn -> RELOAD LEVEL` on death, while a run with the flag genuinely set still took
       `G_DoReborn -> SINGLE LEVEL MENU`.
+  - **No "Entering &lt;next map&gt;" page.** `WI_update_Stats` (and the netgame path beside it) send
+    the intermission to `WI_Init_ShowNextLoc` unless the game is `doom2_commercial` or the map ends
+    the episode; a Single Level run is neither, so it announced the level the player had explicitly
+    chosen not to play on to. `single_level_mode` joins that condition and goes straight to
+    `WI_Init_NoState`, exactly as the other two cases do. Only the ExMy games ever showed it —
+    Doom II already took the `doom2_commercial` branch — which is why it reads as a Doom 1 bug.
   - The two "Watch … run" items go `IT_DISABLED` rather than `IT_HIDDEN` when no demo exists, so the
     page does not change height as the player scrolls maps.
   - **Never set `singledemo` to play a demo from a menu.** `G_CheckDemoStatus` reacts to it with
@@ -1383,13 +1389,31 @@ silently made the flag do nothing at all.
     the old five-row per-map table. `NEW RECORD` can now blink *during* a run rather than only at
     the end, because under Survival being ahead is knowable: get past the holder's furthest map and
     you already lead.
-    - **The block ends in the initials, and they are 27px wide, not 24.** `HS_Draw_IntermissionTable`
-      puts them at `x + HS_IM_INI_X` (158), and the block was measured with `AAA` — 8px a glyph,
-      24 in all, ending exactly on `BASEVIDWIDTH`. `M` and `W` are 9px, so real initials like `MLR`
-      (25) or `MMM` (27) ran to 323 and the last letter was cut off by the right edge. The
-      `wi_stuff.c` call site x is **128**, not 138: the block spans 128..313 and `NEW RECORD`, which
-      centres in the space to its left, still fits at 23..100. **Measure a variable-width field at
-      its widest glyphs, not at `A`** — the same rule as the rest of the `hu_font` layout work.
+    - **Every column of this block is measured at its widest glyphs, and twice now it was not.**
+      `HS_Draw_IntermissionTable` lays out four columns left to right with an 8px gap between each:
+
+      | column | widest | width | offset from `x` |
+      | --- | --- | --- | --- |
+      | label | `RECORD` | 48 | 0 |
+      | map | `MAP01`/`MAP31` | 38 | `HS_IM_MAP_X` **56** |
+      | time | `888:88.99` | 64 | right-justified at `HS_IM_TIME_R` **166** |
+      | initials | `MMM`/`WWW` | 27 | `HS_IM_INI_X` **174** |
+
+      201px in all, so the `wi_stuff.c` call site x must be ≤ 119; it passes **116**, leaving 3px
+      at the right edge. `NEW RECORD` centres in the space to the left and fits at 19..96.
+      - The **initials** were first measured with `AAA` — 8px a glyph, 24 in all, ending exactly on
+        `BASEVIDWIDTH`. `M` and `W` are 9px, so real initials like `MLR` (25) or `MMM` (27) ran to
+        323 and the last letter was cut off.
+      - The **map and time columns** were then compared wrongly: the note claimed the widest time
+        "starts no earlier than +86, clearing the map by 24", which compares the time's start
+        against the map column's *start* (+64) instead of its *end* (+102). At the old constants
+        they overlapped by up to 16px. It stayed hidden while times were short and map names
+        narrow, and surfaced on **Doom II**, where the map name is 38px (`MAP01`) against Doom 1's
+        27 (`E1M1`) and a run past ten minutes widens the time too: `MAP01` ended at +102 and a
+        `10:20.55` began at +99, printing as **`MAP010:20`**.
+      - **Measure a variable-width field at its widest glyphs, and check each gap end-to-start**,
+        not start-to-start — the same rule as the rest of the `hu_font` layout work. The arithmetic
+        is easy to get wrong by hand; derive it in a script against the real `STCFN` lumps.
 
   **The pages are enumerated, not numbered** (`HS_Build_Pages`, `hs_page_t`). Three kinds:
 

@@ -1726,16 +1726,28 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 //   RECORD   E1M6  12:34.56  MLR
 //   YOU      E1M4   8:12.30
 //
-// Widths measured against the real STCFN lumps: "RECORD" is 52px, the map
-// name at +64 is at most 38, the time right-justified at +150 is at most 64
-// (so it starts no earlier than +86, clearing the map by 24), and the
-// initials at +158 are at most 27 -- "MMM"/"WWW", not the 24 of "AAA", which
-// is what the block was first measured against.  185px in all, so the call
-// site's x must be <= 135 or the last initial falls off the right of the
-// screen; wi_stuff.c passes 128.
-#define HS_IM_MAP_X    64
-#define HS_IM_TIME_R  150
-#define HS_IM_INI_X   158
+// Widths measured against the real STCFN lumps, every column at its widest
+// glyphs rather than at "A" (the rule the initials field already taught us):
+//
+//   RECORD    48    map  MAP01/MAP31  38    time  888:88.99  64    ini  MMM/WWW  27
+//
+// Laid out left to right with an 8px gap between every pair, which is what
+// the earlier numbers were missing: they compared the widest time's *start*
+// (+86) against the map column's *start* (+64) instead of its end (+102), so
+// the two overlapped by 16px in the worst case and nobody noticed while the
+// times were narrow.  It surfaced on Doom II, where the map name is 38px
+// ("MAP01") against Doom 1's 27 ("E1M1") and a run past ten minutes widens
+// the time as well -- at the old constants "MAP01" ended at +102 and a
+// "10:20.55" began at +99, printing as "MAP010:20".
+//
+//   RECORD  0..48 | map  56..94 | time  ..166 | initials  174..201
+//
+// 201px in all, so the call site's x must be <= 119; wi_stuff.c passes 116,
+// leaving 3px at the right edge.  A narrower time simply starts further
+// right, so 8px is the minimum gap and not the typical one.
+#define HS_IM_MAP_X    56
+#define HS_IM_TIME_R  166
+#define HS_IM_INI_X   174
 
 void HS_Draw_IntermissionTable( int x, int y )
 {
