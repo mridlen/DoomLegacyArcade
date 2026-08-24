@@ -1769,78 +1769,105 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 // 201px in all, so the call site's x must be <= 119; wi_stuff.c passes 116,
 // leaving 3px at the right edge.  A narrower time simply starts further
 // right, so 8px is the minimum gap and not the typical one.
+#define HS_IM_ROW      12   // row pitch; hu_font glyphs are 7 tall
 #define HS_IM_MAP_X    56
 #define HS_IM_TIME_R  166
 #define HS_IM_INI_X   174
+
+// Row labels for the table.  hs_catname[] is the on-disk spelling and is
+// lower case; these are what the player reads.
+static const char * hs_cat_label[HS_NUMCAT] = { "SPEED", "MAX" };
+
+// The record this intermission holds the run up against, for one category.
+//
+// [Arcade] A Single Level attempt competes on that map's own three deep
+// board, not on the episode's Survival board.  Showing the Survival record
+// there held the run up against a different game entirely -- a whole-episode
+// time it cannot ever beat on one map -- so the player had no idea what they
+// were actually chasing.  HS_Board_Entry does not fill a map name (a single
+// level run is one map by definition), so it is set from the exit.
+static boolean  HS_Intermission_Record( int cat, char * out_map,
+                                        char * out_ini, tic_t * out_tics )
+{
+    if( single_level_mode )
+    {
+        dl_strncpy( out_map, hs_last_exit_mapname, 8 );
+        return HS_Board_Entry( true, hs_last_exit_mapname, hs_last_exit_skill,
+                               cat, 0, out_ini, NULL, out_tics );
+    }
+
+    return HS_Survival_Entry( HS_Episode_Of(hs_last_exit_mapname),
+                              hs_last_exit_skill, cat,
+                              out_map, out_ini, out_tics );
+}
 
 void HS_Draw_IntermissionTable( int x, int y )
 {
     char   mapname[9], ini[HS_INITIALS_LEN], timebuf[16];
     tic_t  tics;
-    int    ep;
-    boolean have;
+    int    cat, row_y = y;
+    boolean any_new = false;
+    // gametic (not leveltime) because only gametic advances through the
+    // intermission; & 16 matches the cadence wi_stuff.c blinks its own
+    // "you are here" pointer at.
+    boolean blink_on = (gametic & 16) != 0;
 
     if( hs_last_exit_mapname[0] == 0 )  return;
 
-    if( single_level_mode )
+    // [Arcade] Both categories are shown, one row each.  It used to be the
+    // speed record alone, which said nothing about the run a player going for
+    // 100% is actually competing in -- and the two are independent records
+    // with independent holders.
+    for( cat = 0; cat < HS_NUMCAT; cat++, row_y += HS_IM_ROW )
     {
-        // [Arcade] A Single Level attempt competes on that map's own three
-        // deep board, not on the episode's Survival board.  Showing the
-        // Survival record here held the run up against a different game
-        // entirely -- a whole-episode time it cannot ever beat on one map --
-        // so the player had no idea what they were actually chasing.  Place
-        // 1 of the map's own board is the number to beat, and the layout is
-        // unchanged: same two rows, same measured columns.
-        have = HS_Board_Entry( true, hs_last_exit_mapname, hs_last_exit_skill,
-                               HS_CAT_speed, 0, ini, NULL, &tics );
-        dl_strncpy( mapname, hs_last_exit_mapname, 8 );
-    }
-    else
-    {
-        ep   = HS_Episode_Of( hs_last_exit_mapname );
-        have = HS_Survival_Entry( ep, hs_last_exit_skill, HS_CAT_speed,
-                                  mapname, ini, &tics );
-    }
+        boolean have = HS_Intermission_Record( cat, mapname, ini, &tics );
 
-    V_DrawString( x, y, 0, "RECORD" );
-    if( have )
-    {
+        // Latched at the level exit, before the board is updated -- so on a
+        // *first* record `have` is false and there is no old time to blink;
+        // the marker below still fires.
+        if( hs_new_record[cat] )  any_new = true;
+
+        V_DrawString( x, row_y, 0, (char*) hs_cat_label[cat] );
+
+        if( ! have )
+        {
+            V_DrawString( x + HS_IM_MAP_X, row_y, 0, "NONE YET" );
+            continue;
+        }
+
         HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
-        V_DrawString( x + HS_IM_MAP_X, y, 0, mapname );
-        V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), y, 0, timebuf );
-        V_DrawString( x + HS_IM_INI_X, y, 0, ini );
-    }
-    else
-    {
-        V_DrawString( x + HS_IM_MAP_X, y, 0, "NONE YET" );
+        V_DrawString( x + HS_IM_MAP_X, row_y, 0, mapname );
+        V_DrawString( x + HS_IM_INI_X, row_y, 0, ini );
+
+        // [Arcade] The *time* blinks on the category this run just took, so
+        // the player can see which record they set rather than only that they
+        // set one.  Both blink when a run takes both.
+        if( hs_new_record[cat] && ! blink_on )
+            continue;   // blink off: leave this time out this frame
+
+        V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), row_y, 0,
+                      timebuf );
     }
 
-    V_DrawString( x, y + 12, 0, "YOU" );
+    V_DrawString( x, row_y, 0, "YOU" );
     HS_Format_Time_CS( hs_cumulative_time, timebuf, sizeof(timebuf) );
-    V_DrawString( x + HS_IM_MAP_X, y + 12, 0, hs_last_exit_mapname );
-    V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), y + 12, 0, timebuf );
+    V_DrawString( x + HS_IM_MAP_X, row_y, 0, hs_last_exit_mapname );
+    V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), row_y, 0, timebuf );
 
     // Blinking marker, shown the moment the run is ahead of the record --
     // which under Survival is knowable *during* the run rather than only at
     // the end: get past the holder's furthest map and you are already ahead.
+    // Which record it was is in the blinking time above; this just announces
+    // that there was one, and blinks in step so the two read as one thing.
     //
-    // gametic (not leveltime) because only gametic advances through the
-    // intermission; & 16 matches the cadence wi_stuff.c blinks its own
-    // "you are here" pointer at.  Option 0 is the font's native red -- see
-    // the V_DrawString colour note in CLAUDE.md; white vanishes into this
-    // screen's grey background.
+    // Centred in the free space to the left of the block and on its middle
+    // row.  Option 0 is the font's native red -- see the V_DrawString colour
+    // note in CLAUDE.md; white vanishes into this screen's grey background.
+    if( any_new && blink_on )
     {
-        boolean any_new = false;
-        int cat;
-        for( cat=0; cat<HS_NUMCAT; cat++ )
-        {
-            if( hs_new_record[cat] )  any_new = true;
-        }
-        if( any_new && (gametic & 16) )
-        {
-            const char * msg = "NEW RECORD";
-            V_DrawString( (x - V_StringWidth(msg)) / 2, y + 26, 0, (char*) msg );
-        }
+        const char * msg = "NEW RECORD";
+        V_DrawString( (x - V_StringWidth(msg)) / 2, y + HS_IM_ROW, 0,
+                      (char*) msg );
     }
 }
 

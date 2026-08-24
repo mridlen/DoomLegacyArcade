@@ -104,6 +104,8 @@
 
 // SINGPLE-PLAYER STUFF
 #define SP_STATSX               50
+// [Arcade] x of the blinking MAX indicator, clear of the percentages.
+#define SP_MAXIND_X            287
 #define SP_STATSY               50
 
 #define SP_TIMEX                16
@@ -397,6 +399,10 @@ static int              cnt;
 // used for timing of background animation
 static uint32_t         bcnt;
 
+// [Arcade] Did the level just finished satisfy the max category (100% kills
+// and 100% secrets)?  Set by WI_Init_Stats from the same expression it hands
+// to HS_LevelExit, so the indicator and the scoring cannot disagree.
+static boolean          sp_maxed;
 static int              cnt_kills[MAXPLAYERS];
 static int              cnt_items[MAXPLAYERS];
 static int              cnt_secret[MAXPLAYERS];
@@ -2003,6 +2009,7 @@ static void WI_Init_Stats(void)
     boolean maxed =
         ( wbs->maxkills  <= 0 || wb_plyr[me].skills  >= wbs->maxkills )
      && ( wbs->maxsecret <= 0 || wb_plyr[me].ssecret >= wbs->maxsecret );
+    sp_maxed = maxed;   // [Arcade] for the MAX indicator, see WI_Draw_Stats
     HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime, maxed );
 
     WI_Init_AnimatedBack();
@@ -2184,6 +2191,23 @@ static void WI_Draw_Stats(void)
     WI_Draw_Percent(BASEVIDWIDTH - SP_STATSX, SP_STATSY, cnt_kills[0]);
     WI_Draw_Percent(BASEVIDWIDTH - SP_STATSX, SP_STATSY+lh, cnt_items[0]);
     WI_Draw_Percent(BASEVIDWIDTH - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0]);
+
+    // [Arcade] Blinking MAX beside the two rows the max category is scored
+    // on, when this level satisfied it -- 100% kills and 100% secrets, the
+    // same test WI_Init_Stats hands to HS_LevelExit.  Items deliberately get
+    // none: they are not part of the category, and the gap says so.
+    //
+    // Measured: the percentages are right-justified so their WIPCNT '%' patch
+    // (13 wide) sits at BASEVIDWIDTH - SP_STATSX = 270 and ends at 283.
+    // "MAX" is 26px against the real STCFN lumps, so at 287 it spans 287..313
+    // of 320.  The percent patches are 12 tall and hu_font glyphs 7, so +2
+    // centres the text on the row.  Option 0 is the font's native red, which
+    // reads on this screen's grey where V_WHITEMAP would not.
+    if( sp_maxed && (gametic & 16) )
+    {
+        V_DrawString( SP_MAXIND_X, SP_STATSY + 2,        0, "MAX" );
+        V_DrawString( SP_MAXIND_X, SP_STATSY + 2*lh + 2, 0, "MAX" );
+    }
     WI_Draw_Time(BASEVIDWIDTH/2 - SP_TIMEX, SP_TIMEY, cnt_time);
 
     if (draw_pars)

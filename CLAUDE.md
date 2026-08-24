@@ -1326,6 +1326,21 @@ silently made the flag do nothing at all.
   - Drawn with option **`0`, which is red** — it was white at first and disappeared against the
     grey intermission background. See the `V_DrawString` colour note below.
 
+  **A blinking `MAX` sits beside the Kills and Secrets percentages** (`wi_stuff.c`,
+  `WI_Draw_Stats`) when the level just finished satisfied the max category — 100% kills and 100%
+  secrets. It is drawn from **`sp_maxed`**, which `WI_Init_Stats` sets from the very same
+  expression it hands to `HS_LevelExit`, so the indicator and the scoring cannot disagree about
+  what "max" means.
+  - **Items deliberately get no indicator.** They are not part of the category, and the gap in the
+    column is what says so.
+  - Measured: the percentages are right-justified so their `WIPCNT` `%` patch (13 wide) sits at
+    `BASEVIDWIDTH - SP_STATSX` = 270 and ends at 283. `MAX` is 26px against the real `STCFN`
+    lumps, so `SP_MAXIND_X` 287 spans 287..313 of 320 — 4px clear of the `%`, 7px of right margin.
+    The percent patches are 12 tall and `hu_font` glyphs 7, so `+2` centres the text on the row.
+  - Blink is `gametic & 16`, the same cadence as `NEW RECORD` and as `wi_stuff.c`'s own "you are
+    here" pointer. Option 0 is the font's native red, which reads on this screen's grey where
+    `V_WHITEMAP` would not.
+
   **Cumulative run time** is shown under the intermission's Time row by `HS_Draw_TotalTime`, as
   `TOTAL` plus `hs_cumulative_time`. It already includes the level just finished — `WI_Init_Stats`
   calls `HS_LevelExit`, which adds that level's `leveltime`, before the intermission draws. Shown
@@ -1448,6 +1463,20 @@ silently made the flag do nothing at all.
     the old five-row per-map table. `NEW RECORD` can now blink *during* a run rather than only at
     the end, because under Survival being ahead is knowable: get past the holder's furthest map and
     you already lead.
+    - **Both categories get a row, and the new record's *time* blinks.** The block is
+      `SPEED` / `MAX` / `YOU`, one row each at `HS_IM_ROW` (12) pitch. It used to show the speed
+      record alone, which said nothing to a player going for 100% — the two are independent
+      records with independent holders. `hs_new_record[cat]` already tracked which category a run
+      took, so the time on that row is simply left out on the blink-off frames; both blink when a
+      run takes both. `NEW RECORD` stays, centred in the free space to the left and blinking in
+      step, so the two read as one announcement — it says *that* a record fell, the blinking time
+      says *which*.
+      - `hs_new_record[]` is latched at the level exit, **before** the board is updated, so on a
+        first-ever record the row still reads `NONE YET` and there is no old time to blink. The
+        marker fires regardless, which is the right way round.
+      - `HS_Intermission_Record()` picks the source: the map's own three deep board in
+        `single_level_mode`, the episode's Survival board otherwise. `HS_Board_Entry` does not
+        fill a map name — a single level run is one map by definition — so it is set from the exit.
     - **Every column of this block is measured at its widest glyphs, and twice now it was not.**
       `HS_Draw_IntermissionTable` lays out four columns left to right with an 8px gap between each:
 
