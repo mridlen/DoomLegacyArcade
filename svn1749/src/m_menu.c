@@ -3178,9 +3178,27 @@ void  M_Initials_Ticker( void )
 
     if( ! HS_Initials_Pending() )  return;
 
-    // Never over a live game.  A demo playing behind the menus is fine --
-    // that is just the attract screen running underneath.
-    if( gamestate == GS_LEVEL && ! demoplayback )  return;
+    // Never over a game the player is still *playing*.  Two things do not
+    // count as that: a demo behind the menus, which is just the attract
+    // screen running underneath, and a corpse.
+    //
+    // [Arcade] The dead case is the point.  Under Survival the run is over
+    // the moment the player dies -- HS_Player_Died commits it to the board
+    // right there -- but the prompt used to sit armed until gamestate left
+    // GS_LEVEL, which on a campaign death it does not: pressing use reloads
+    // the map and play continues (unranked).  So the page ambushed the player
+    // minutes later, at whatever unrelated moment they finally left the
+    // level -- typically while starting their next game, which is exactly
+    // when a modal page asking for initials makes no sense at all.
+    //
+    // Asked over the corpse it lands where the player expects it and where an
+    // arcade machine has always asked: you died, sign the board.  M_Responder
+    // runs before G_Responder, so the page takes the keys and the use press
+    // that would respawn cannot fire underneath it; once the initials are in,
+    // the page closes and use works again.
+    if( gamestate == GS_LEVEL && ! demoplayback
+        && players[consoleplayer].playerstate != PST_DEAD )
+        return;
 
     // [Arcade] The ending is deliberately NOT excluded, though it looks like
     // it should be.  Waiting for the finale to finish meant the player was

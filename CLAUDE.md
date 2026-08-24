@@ -1727,6 +1727,19 @@ silently made the flag do nothing at all.
   - **The idle timeout is held off while the page is up** (`G_Idle_Timeout_Check` asks
     `M_Initials_Active()`), or a player part way through entering would be closed out from under
     them. The page's own countdown still clears an abandoned one, so the cabinet can never stick.
+  - **Asked over the corpse on a death, not only once the level is left.** Under Survival the run
+    is over the moment the player dies -- `HS_Player_Died` commits it to the board right there --
+    but `M_Initials_Ticker` refused to open over `GS_LEVEL`, and on a *campaign* death gamestate
+    does not leave `GS_LEVEL`: pressing use reloads the map and play continues unranked. So the
+    page sat armed and then ambushed the player minutes later, at whatever unrelated moment they
+    finally left the level -- in practice while starting their next game, which is the worst
+    possible time for a modal page asking for initials. The gate now also lets it through when
+    `players[consoleplayer].playerstate == PST_DEAD`.
+    - Safe over a live level because `M_Responder` runs before `G_Responder`: the page takes the
+      keys, so the use press that would respawn cannot fire underneath it. Once the initials are
+      in, the page closes and use works again.
+    - Multiplayer cannot reach this: `HS_Player_Died` returns early there, so the prompt is never
+      armed in the first place.
   - **Raised from `M_Ticker`, not from the run-end path.** `Command_ExitGame_f` only *arms* it
     (`HS_Initials_Pending`). Opening from the ticker keeps it independent of the order things
     happen in on the way back to the title — `M_SingleLevel_Finished` calls `Command_ExitGame_f`
