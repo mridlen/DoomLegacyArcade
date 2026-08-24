@@ -79,6 +79,22 @@ typedef struct
 static hs_maprecord_t  hs_table[HS_MAX_MAPS];
 static int              hs_table_count = 0;
 
+// [Arcade] Bumped every time a record demo file is written.  The attract
+// shuffle bag watches this to know a new demo exists and rebuild, so a run
+// recorded during the session joins the rotation without waiting.
+//
+// It used to watch hs_table_count alone, which was enough while the bag held
+// only per-map records: a new map scoring adds a row and changes the count.
+// Once Survival demos joined the same pool that stopped being true -- a
+// Survival record lives on the board, changes no table row, and so could not
+// trigger a refill at all.  The demo then waited for the bag to run dry,
+// which on a cabinet with forty demos is half an hour of attract screen.
+//
+// A new record on a row that already exists still does not change the count,
+// so this is also what makes *that* case immediate rather than "at most one
+// pass" as it was before.
+static unsigned int     hs_demo_gen = 0;
+
 // -------------------------------------------------------------------------
 // [Arcade] The run board.  See the header for why this is a separate table
 // and a separate file from the per-map splits above.
@@ -1138,6 +1154,7 @@ static void  HS_Snapshot_If_Leading( skill_e skill )
         HS_BuildSurvivalDemoPath( demopath, hs_run_gameid,
                                   HS_Episode_Of(hs_run_endmap), skill, cat );
         G_SnapshotDemo( demopath );
+        hs_demo_gen++;
     }
 }
 
@@ -1215,6 +1232,7 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
                 char demopath[MAX_WADPATH];
                 HS_BuildDemoPath( demopath, gid, mapname, skill, cat );
                 G_SnapshotDemo( demopath );
+                hs_demo_gen++;
             }
         }
 
@@ -2865,6 +2883,7 @@ static uint16_t  hs_bag[HS_BAG_MAX];
 static int       hs_bag_count = 0;   // slots in the bag
 static int       hs_bag_pos   = 0;   // next to deal
 static int       hs_bag_built_for = -1;  // hs_table_count when built
+static unsigned int hs_bag_built_gen = 0;   // hs_demo_gen when built
 static int       hs_bag_last = -1;   // last slot dealt, to avoid a repeat
 
 // Self-contained PRNG, deliberately not one of the engine's.  P_Random is
@@ -2903,6 +2922,7 @@ static void  HS_Refill_DemoBag( void )
     hs_bag_count = 0;
     hs_bag_pos = 0;
     hs_bag_built_for = hs_table_count;
+    hs_bag_built_gen = hs_demo_gen;
 
     // [Arcade] The bag is the *short* demos, wherever their record lives --
     // per-map or Survival.  Anything at or over HS_LONG_DEMO_TICS is dealt
@@ -2949,7 +2969,13 @@ const char * HS_NextRecordDemoPath( void )
 
     if( HS_Demo_Slot_Count() == 0 )  return NULL;
 
-    if( hs_bag_pos >= hs_bag_count || hs_bag_built_for != hs_table_count )
+    // Rebuild when the bag runs dry, when the table gains a row, or when any
+    // new demo has been written -- see hs_demo_gen.  Without the last of
+    // those a Survival record set this session could not join the rotation
+    // until the bag emptied of its own accord.
+    if( hs_bag_pos >= hs_bag_count
+        || hs_bag_built_for != hs_table_count
+        || hs_bag_built_gen != hs_demo_gen )
         HS_Refill_DemoBag();
 
     // Bounded by the bag size: a slot can still have become unusable since

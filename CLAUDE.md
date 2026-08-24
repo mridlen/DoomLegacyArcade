@@ -461,10 +461,21 @@ silently made the flag do nothing at all.
     `M_Random`/`N_Random` index a shared 256 entry table that **`M_ClearRandom` resets at every
     game start**, so a bag shuffled from those would come out identical after every boot. A
     self-contained generator also cannot perturb anything a recording depends on.
-  - The bag is refilled when exhausted **and whenever `hs_table_count` changes**, so a record set
-    during the session joins the rotation without a restart. A new record on a map row that
-    already exists does not change that count and waits for the next natural refill — at most one
-    pass of the cycle.
+  - The bag is refilled when exhausted, when `hs_table_count` changes, **and whenever a demo file
+    is written** (`hs_demo_gen`, bumped at both `G_SnapshotDemo` sites), so a run recorded during
+    the session joins the rotation without waiting.
+    - `hs_table_count` alone was enough while the bag held only per-map records: a new map scoring
+      adds a row and changes the count. Once Survival demos joined the same pool that stopped
+      being true — a Survival record lives on the board, changes no table row, and so could not
+      trigger a refill at all. The demo then waited for the bag to run dry, which on a cabinet
+      with forty demos is half an hour of attract screen. It presented as the new demo simply
+      never coming up.
+    - A new record on a row that already exists does not change the count either, so the
+      generation counter is what makes *that* case immediate too — it used to be "at most one pass
+      of the cycle".
+    - A refill mid-pass reshuffles, so the "each demo once before any repeats" guarantee restarts
+      from there. That is the same thing a `hs_table_count` change always did, it is rare, and
+      `hs_bag_last` still blocks an immediate repeat.
   - `hs_bag_last` stops a new bag opening with the demo that closed the previous one, the single
     repeat a shuffle cannot rule out by itself. Needs `hs_bag_count > 1`; with exactly one demo
     recorded it necessarily repeats.
