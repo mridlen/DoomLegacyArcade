@@ -2001,23 +2001,36 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
          // two modes agree.  Re-check both if the row format changes.
 #define CLK_CX  104   // 160 minus ~9 characters at the ~6px average glyph width
 #define CLK_DY    9   // base units below lowerbar_y
-         // [Arcade] Ammo breakdown, all four types with their maximum, in
-         // the small font up the right hand side above the keys.  The stock
+         // [Arcade] Ammo breakdown: all four types with their maximum, in
+         // half-size text up the right hand side above the keys.  The stock
          // 'a' element shows only the *ready weapon's* count in the big
-         // status numbers, which says nothing about what is worth picking up.
+         // status numbers, which says nothing about what is worth picking up
+         // -- that was checked before writing a new one.
          //
-         // Order is the panel's, not the enum's: BULL, SHEL, RCKT, CELL.
-         // am_misl and am_cell are the other way round in ammotype_t, so the
-         // rows are listed explicitly rather than looped over the enum.
+         // Row order is the panel's, not the enum's.  ammotype_t runs clip,
+         // shell, **cell, misl**, so the rows are listed out rather than
+         // looped over the enum.
          //
-         // Measured against the real STCFN lumps: the widest line a backpack
-         // can produce is "CELL 600/600" at 91px, right justified at 318 so
-         // it starts at 227 -- clear of everything on the left.  Rows are 8
-         // base units apart and hu_font glyphs are 7 tall, so the block sits
-         // at base y 138..169 against keys at 174: four lines, 5px clear of
-         // the keys and far below the K/I/S corner at 1..28.
-#define AMMO_ROW_H   8   // base units between rows
-#define AMMO_GAP     4   // base units clear of the keys
+         // Drawn in four fixed columns -- label, current, "/", maximum --
+         // rather than as one right-justified string, so the numbers line up
+         // down the block instead of the labels going ragged.  The current
+         // count is zero padded *and* right aligned on its column: hu_font
+         // digits are not fixed width ("1" is 5px against "0" at 8), so
+         // padding alone does not align them.
+         //
+         // Column widths in base units, measured against the real STCFN
+         // lumps: the widest label is 32 ("BULL"/"RCKT"/"CELL"), three
+         // digits at their widest are 24, "/" is 7.  With the gaps that is
+         // AMMO_W_TOTAL across.
+#define AMMO_W_LABEL  32
+#define AMMO_W_NUM    24
+#define AMMO_W_SLASH   7
+#define AMMO_G1        6   // label -> count
+#define AMMO_G2        3   // around the slash
+#define AMMO_W_TOTAL  (AMMO_W_LABEL + AMMO_G1 + AMMO_W_NUM + AMMO_G2 \
+                       + AMMO_W_SLASH + AMMO_G2 + AMMO_W_NUM)
+#define AMMO_ROW_H     9   // base units between rows (glyphs are 7 tall)
+#define AMMO_KEYGAP    6   // base units clear of the keys
          case 'b': // ammo breakdown
            if( ST_SOLO_HUD )
            {
@@ -2030,21 +2043,70 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
                    { am_misl,  "RCKT" },
                    { am_cell,  "CELL" },
                };
-               char buf[24];
-               int  keys_y = lowerbar_y - (int)( 8 * sf_dupy );
-               int  r;
+               char  buf[16];
+               int   keys_y  = lowerbar_y - (int)( 8 * sf_dupy );
+               int   right_x = SCX(318, x0, xdiv);
+               // The scale in force for the rest of the overlay, to restore.
+               byte  hd_dupx = vid.dupx,  hd_dupy = vid.dupy;
+               float hf_dupx = vid.fdupx, hf_dupy = vid.fdupy;
+               float sdupx, sdupy;
+               int   left_x, x_cur_r, x_slash, x_max, r;
+
+               // [Arcade] Half scale, the same way the 2x2 HUD does it and
+               // for the same reasons: halve the *global* vid scale (not
+               // drawinfo's copy, which the draw calls re-read), halve the
+               // floats and round the integers to them so a 4,3 dup gives
+               // 2,2 rather than 2,1, and re-issue the V_SetupDraw the
+               // element loop runs under.  Restored immediately after, so
+               // the elements that follow are untouched.
+               //
+               // The column positions are computed from right_x, which was
+               // taken at the *outer* scale: the block still sits against the
+               // right edge of the screen, it is only the glyphs that shrink.
+               // Computing them after the halving would have put SCX(318) at
+               // half the screen width instead.
+               vid.fdupx = hf_dupx / 2.0f;
+               vid.fdupy = hf_dupy / 2.0f;
+               vid.dupx  = (byte)(vid.fdupx + 0.5f);
+               vid.dupy  = (byte)(vid.fdupy + 0.5f);
+               if( vid.dupx < 1 )  vid.dupx = 1;
+               if( vid.dupy < 1 )  vid.dupy = 1;
+               V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
+
+               sdupx = (rendermode == render_soft)? (float)vid.dupx : vid.fdupx;
+               sdupy = (rendermode == render_soft)? (float)vid.dupy : vid.fdupy;
+
+               left_x  = right_x - (int)( AMMO_W_TOTAL * sdupx );
+               x_cur_r = left_x  + (int)( (AMMO_W_LABEL + AMMO_G1
+                                           + AMMO_W_NUM) * sdupx );
+               x_slash = left_x  + (int)( (AMMO_W_LABEL + AMMO_G1
+                                           + AMMO_W_NUM + AMMO_G2) * sdupx );
+               x_max   = left_x  + (int)( (AMMO_W_LABEL + AMMO_G1
+                                           + AMMO_W_NUM + AMMO_G2
+                                           + AMMO_W_SLASH + AMMO_G2) * sdupx );
 
                for( r = 0; r < 4; r++ )
                {
                    byte at = ammorow[r].type;
-                   sprintf( buf, "%s %d/%d", ammorow[r].name,
-                            plyr->ammo[at], plyr->maxammo[at] );
-                   V_DrawString(
-                       SCX(318 - V_StringWidth(buf), x0, xdiv),
-                       keys_y - (int)( (AMMO_GAP + ((4 - r) * AMMO_ROW_H))
-                                       * sf_dupy ),
-                       0, buf );
+                   int  y  = keys_y - (int)( (AMMO_KEYGAP
+                                              + ((4 - r) * AMMO_ROW_H))
+                                             * sdupy );
+
+                   V_DrawString( left_x, y, 0, ammorow[r].name );
+
+                   sprintf( buf, "%03d", plyr->ammo[at] );
+                   V_DrawString( x_cur_r - (int)( V_StringWidth(buf) * sdupx ),
+                                 y, 0, buf );
+
+                   V_DrawString( x_slash, y, 0, "/" );
+
+                   sprintf( buf, "%03d", plyr->maxammo[at] );
+                   V_DrawString( x_max, y, 0, buf );
                }
+
+               vid.dupx  = hd_dupx;   vid.dupy  = hd_dupy;
+               vid.fdupx = hf_dupx;   vid.fdupy = hf_dupy;
+               V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
            }
            break;
 

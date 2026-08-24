@@ -1902,10 +1902,22 @@ silently made the flag do nothing at all.
   up — that was checked before writing a new one.
   - Row order is the panel's, not the enum's. `ammotype_t` runs clip, shell, **cell, misl**, so the
     rows are listed explicitly rather than looped over the enum.
-  - Measured against the real `STCFN` lumps: the widest line a backpack can produce is
-    `CELL 600/600` at 91px, right-justified at 318 so it starts at 227. Rows are 8 base units apart
-    and `hu_font` glyphs are 7 tall, so the block sits at base y 138..169 against keys at 174 —
-    5px clear of the keys, far below the K/I/S corner at 1..28.
+  - **Drawn at half scale**, the same size the 2x2 HUD uses, by the same mechanism and with the
+    same trap avoided: halve the **global** `vid` scale (not `drawinfo`'s copy, which the draw
+    calls re-read), halve the floats and round the integers to them so a 4,3 dup gives 2,2 rather
+    than 2,1, re-issue the element loop's `V_SetupDraw`, and restore immediately after so the
+    elements that follow are untouched.
+    - **The column positions are computed from `SCX(318)` taken at the *outer* scale.** The block
+      still sits against the right edge of the screen; only the glyphs shrink. Computing them
+      after the halving would have put `SCX(318)` at half the screen width.
+  - **Four fixed columns** — label, current, `/`, maximum — rather than one right-justified
+    string, so the numbers line up down the block instead of the labels going ragged. The current
+    count is zero padded *and* right aligned on its column: `hu_font` digits are **not** fixed
+    width (`1` is 5px against `0` at 8), so padding alone does not align them.
+  - Column widths in base units, measured against the real `STCFN` lumps: widest label 32
+    (`BULL`/`RCKT`/`CELL`), three digits at their widest 24, `/` is 7 — 99 across with the gaps.
+    Verified at 1366x768, 1280x800, 1024x768 and 640x400: the block clears the right edge by
+    4..9px, clears the keys by 8..16px, and starts far below the K/I/S corner.
   - Shares **`ST_SOLO_HUD`** with the K/I/S block (renamed from `ST_KIS_ON` now that two things use
     it): solo, full screen, not a demo. All of these describe *your* run and say nothing useful
     about somebody else's recording on the attract screen.
