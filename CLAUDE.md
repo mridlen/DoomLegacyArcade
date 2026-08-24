@@ -1052,6 +1052,34 @@ silently made the flag do nothing at all.
     it fired at exactly `cv_idletimeout * TICRATE` (700 at 20s, 2100 at the cabinet's 60s). Do not
     go looking for a second bug there.
 
+- **A death ends the run, arcade style** (`g_game.c`, `G_Arcade_Death_Check`). Vanilla Doom retries
+  by reloading the map, which on a scored cabinet is a free second attempt at a run
+  `HS_Player_Died` has already voided — an unranked do-over with nothing to say why. The player now
+  watches the corpse, signs the board if they placed, and the cabinet returns to the attract screen.
+  - **`G_Player_Death_Settled()` is the "hit the ground" test**, and there is one of it because two
+    things wait on it: the initials page (a prompt over a corpse still falling looks like it fired
+    at the wrong moment) and the teardown. `P_DeathThink` lowers `viewheight` by one unit a tic to
+    `6*FRACUNIT`, so from a standing 41 that is about a second. Measured: the page opens **35 tics**
+    after the death, at `viewheight` 6.
+  - Order after landing: the initials page gets its turn first (`HS_Initials_Pending()` /
+    `M_Initials_Active()` hold the teardown off), then **`DEATH_LINGER_TICS`** (2s) on the ground.
+    With no placement that is death → attract in about **3 seconds**; with one, it leaves as soon as
+    the initials are in.
+  - **The teardown is deferred through `gameaction = ga_worlddone`**, consumed by `G_DoWorldDone`,
+    not called inline — the same route Single Level takes, and for the same reason: `G_Ticker`'s
+    reborn loop is above the point where tearing the level down is safe. `death_ended_run`
+    distinguishes it there from an ordinary level completion, which is what everything below that
+    hook is about.
+  - **`G_DoReborn` takes the same exit**, so the "use" press that used to retry leaves early
+    instead of reloading — *unless* the initials page is pending or up, in which case it puts the
+    player back to `PST_DEAD` and lets the death play out. Without that, a use press in the second
+    before the page opens tore the game down and the player met the prompt back at the title, which
+    is the disjointedness this was meant to remove.
+  - **Skipped in devmode**, like the idle timeout: `-devmode` keeps stock behaviour, and an operator
+    testing a level does not want to be thrown to the title on every death.
+  - Single Level mode keeps its own route (`single_level_mode` → `M_SingleLevel_Finished`), which
+    returns to its menu rather than the attract screen.
+
 - **Idle-to-title timeout** (`g_game.c`, `G_Idle_Timeout_Check`). `last_input_tic` is stamped in
   `D_PostEvent`, checked once per tic from `G_Ticker`, and re-armed in `G_DoLoadLevel` (but
   **not during `demoplayback`**, see below) so intermission time does not carry over. Ends the

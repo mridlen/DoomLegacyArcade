@@ -509,6 +509,28 @@ tic_t           gametic;
 tic_t           levelstarttic;          // gametic at level start
 tic_t           last_input_tic;         // gametic of last player input event
 
+// [Arcade] Set when a death has ended a scored campaign run.  Consumed by
+// G_DoWorldDone, which returns to the attract screen instead of loading a
+// next map.  Single Level mode has its own route through single_level_mode.
+static boolean  death_ended_run = false;
+
+// [Arcade] Has the player's death finished playing out -- have they hit the
+// ground?  P_DeathThink lowers viewheight by one unit a tic until it reaches
+// 6*FRACUNIT, which from the standing 41 takes about a second.
+//
+// One definition, because two things ask: the initials page waits for it (a
+// prompt over a still-falling corpse looks wrong) and the run teardown waits
+// for it too.  They must agree, or the page opens against a body still on its
+// way down.
+boolean G_Player_Death_Settled( void )
+{
+    player_t * pl = &players[consoleplayer];
+
+    return ( pl->playerstate == PST_DEAD )
+        && ( pl->mo != NULL )
+        && ( pl->viewheight <= (6*FRACUNIT) );
+}
+
 // [Arcade] The episode's last level owes a finale once its intermission is
 // done.  Vanilla skips the intermission entirely on those maps and jumps
 // straight to the finale, which cost the cabinet both the summary page and
@@ -1793,6 +1815,57 @@ void G_Synclog_Tic( void )
 // cannot reach without -devmode, is exempt.
 // in_menu: called for a menu left open on the attract screen, rather than
 // for an abandoned game.  See the two differences below.
+// [Arcade] A death ends the run, the way an arcade cabinet does: no retry,
+// sign the board, back to the attract screen.
+//
+// Vanilla Doom retries by reloading the map, which on a scored cabinet is a
+// free second attempt at a run that HS_Player_Died has already voided --
+// nothing after the death can score, so the reload only hands out an
+// unranked do-over with no indication why.
+//
+// Skipped in devmode, like the idle timeout: -devmode is the development
+// mode and keeps stock behaviour, and an operator testing a level does not
+// want to be thrown to the title on every death.
+#define DEATH_LINGER_TICS  (2*TICRATE)   // a beat on the ground before leaving
+
+static void G_Arcade_Death_Check( void )
+{
+    static tic_t settled_tic = 0;
+
+    if( devmode || demoplayback || single_level_mode
+        || ! HS_Scored_Game() )
+    {
+        settled_tic = 0;
+        return;
+    }
+
+    if( death_ended_run )  return;   // already on the way out
+
+    if( ! G_Player_Death_Settled() )
+    {
+        // Either alive, or still falling.  Reset so the linger below is
+        // measured from the moment they actually land.
+        if( players[consoleplayer].playerstate != PST_DEAD )
+            settled_tic = 0;
+        return;
+    }
+
+    if( settled_tic == 0 )
+        settled_tic = gametic;
+
+    // The initials page gets its turn first: HS_Player_Died arms it and
+    // M_Initials_Ticker opens it once the death has settled.  Tearing the
+    // game down underneath it would throw away the entry the player is in
+    // the middle of signing.
+    if( HS_Initials_Pending() || M_Initials_Active() )  return;
+
+    if( gametic - settled_tic < DEATH_LINGER_TICS )  return;
+
+    death_ended_run = true;
+    gameaction = ga_worlddone;   // deferred; see G_DoWorldDone
+}
+
+
 static void G_Idle_Timeout_Check( boolean in_menu )
 {
     static int last_warn_secs_shown = -1;
@@ -2045,6 +2118,7 @@ main_actions:
         // gamestate stays GS_LEVEL -- and the timeout then treated the attract
         // screen as a game to tear down.  D_Menu_Over_Attract asks the engine's
         // own "a real game is running" flag instead and covers both.
+        G_Arcade_Death_Check();   // [Arcade] a death ends the run
         G_Idle_Timeout_Check( D_Menu_Over_Attract() );   // [Arcade]
         break;
 
@@ -2682,6 +2756,28 @@ void G_DoReborn (int playernum)
             return;
         }
 
+        // [Arcade] The same for a scored campaign run: a death ends it, so
+        // the "use" press that would retry the level returns to the attract
+        // screen instead.  G_Arcade_Death_Check gets there on its own after a
+        // moment; this is the impatient player taking the same exit early.
+        if( ! demoplayback && ! devmode && HS_Scored_Game() )
+        {
+            // ...but not while the initials page is pending or up.  Pressing
+            // use in the second before it opens would otherwise tear the game
+            // down and the player would meet the prompt back at the title,
+            // which is the disjointed thing this was meant to fix.  Back to
+            // PST_DEAD so the death keeps playing out underneath it.
+            if( HS_Initials_Pending() || M_Initials_Active() )
+            {
+                player->playerstate = PST_DEAD;
+                return;
+            }
+
+            death_ended_run = true;
+            gameaction = ga_worlddone;
+            return;
+        }
+
         // reload the level from scratch
         G_DoLoadLevel (true);
     }
@@ -3165,6 +3261,18 @@ void G_DoWorldDone (void)
     if( single_level_mode && ! demoplayback )
     {
         M_SingleLevel_Finished();
+        return;
+    }
+
+    // [Arcade] A death ended a scored campaign run.  Everything below chooses
+    // and loads the *next* map, which is exactly what must not happen: the
+    // run is over, so go back to the attract screen.  Deferred to here rather
+    // than torn down from G_Ticker's reborn loop, which is above the point
+    // where that is safe -- the same route Single Level takes above.
+    if( death_ended_run )
+    {
+        death_ended_run = false;
+        Command_ExitGame_f();
         return;
     }
 

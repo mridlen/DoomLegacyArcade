@@ -156,6 +156,10 @@ extern  tic_t     levelstarttic;
 // [Arcade lockdown] gametic of last player input event (see D_PostEvent)
 extern  tic_t     last_input_tic;
 
+// [Arcade] Has the player's death finished playing out (have they hit the
+// ground)?  The initials page and the run teardown both wait for this.
+boolean G_Player_Death_Settled( void );
+
 // [Arcade] Set by G_Start_Intermission when the map that just ended owes a
 // finale once its intermission is over (Doom 1 / Heretic E?M8, Chex E1M5).
 // Read by wi_stuff.c, to skip the "Entering ..." screen, and by G_NextLevel,

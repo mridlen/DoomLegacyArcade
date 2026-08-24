@@ -3196,8 +3196,11 @@ void  M_Initials_Ticker( void )
     // runs before G_Responder, so the page takes the keys and the use press
     // that would respawn cannot fire underneath it; once the initials are in,
     // the page closes and use works again.
+    // G_Player_Death_Settled, not merely PST_DEAD: P_DeathThink takes about a
+    // second to lower the view to the ground, and the page popping up over a
+    // corpse that is still falling looks like it fired at the wrong moment.
     if( gamestate == GS_LEVEL && ! demoplayback
-        && players[consoleplayer].playerstate != PST_DEAD )
+        && ! G_Player_Death_Settled() )
         return;
 
     // [Arcade] The ending is deliberately NOT excluded, though it looks like
