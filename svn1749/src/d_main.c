@@ -1146,6 +1146,10 @@ void D_DoomLoop(void)
     // time the loop starts the values have settled.
     M_Verify_Config( configfile_main );
 
+    // [Arcade] And say so if the saved overlay string predates an element
+    // this build added -- otherwise the new HUD item just never appears.
+    ST_Check_Overlay_Elements();
+
     if (demorecording)
         G_BeginRecording();
 

@@ -1622,6 +1622,48 @@ void ST_Change_DemoView (void)
 // 11, which is what sets st_overlay_on (r_main.c, R_SetViewSize).
 consvar_t cv_stbaroverlay = {"overlay","kahmfeistb",CV_SAVE,NULL};
 
+
+// [Arcade] Warn when the saved config is missing overlay elements this build
+// provides.
+//
+// The `overlay` cvar is a string of one-letter element codes, and config.cfg
+// overrides the compiled default -- so adding an element to that default does
+// nothing at all on a machine with an existing config, and the new element
+// simply never appears.  That has now bitten twice, with the level clock
+// ('t') and the ammo breakdown ('b'), and both times it presented as the
+// feature being broken rather than merely unconfigured, which is slow to work
+// out from the outside.
+//
+// Compares against cv_stbaroverlay.defaultvalue rather than a hardcoded list,
+// so whatever gets added next is covered without this being maintained.
+//
+// Called from D_DoomLoop next to M_Verify_Config, and for the same reason:
+// at config load time the cvar has not settled yet.
+void ST_Check_Overlay_Elements( void )
+{
+    const char * have = cv_stbaroverlay.string;
+    const char * def  = cv_stbaroverlay.defaultvalue;
+    char  missing[16];
+    int   nm = 0;
+
+    if( ! have || ! def )  return;
+
+    for( ; *def && nm < (int)sizeof(missing) - 1; def++ )
+    {
+        if( strchr( have, *def ) )  continue;
+        missing[nm++] = *def;
+    }
+
+    if( nm == 0 )  return;
+    missing[nm] = 0;
+
+    GenPrintf( EMSG_warn,
+       "Status overlay is missing element(s) \"%s\" that this build provides.\n"
+       "  config.cfg overrides the compiled default; set overlay \"%s\"\n"
+       "  (only a -devmode session saves it).\n",
+       missing, cv_stbaroverlay.defaultvalue );
+}
+
 boolean   st_overlay_on;  // status overlay for Doom and Heretic
 
 

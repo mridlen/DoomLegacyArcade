@@ -101,6 +101,10 @@ void ST_doPaletteStuff( player_t * plyr );
 // Set status palette 0 for camera.
 void ST_Palette0( void );
 
+// [Arcade] Warn about overlay elements the saved config.cfg does not carry.
+// Called from D_DoomLoop, after the config has settled.
+void ST_Check_Overlay_Elements( void );
+
 // States for status bar code.
 typedef enum
 {

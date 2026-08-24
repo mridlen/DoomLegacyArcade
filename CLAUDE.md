@@ -1913,6 +1913,14 @@ silently made the flag do nothing at all.
     so an existing install needs the `b` added by hand or re-saved from a `-devmode` session. The
     tracked `cabinet/legacyhome/config.cfg` has it; a live `svn1749/bin/legacyhome/config.cfg`
     does not, because `make` stages that with `cp -n`.
+  - **`ST_Check_Overlay_Elements()` now says so at startup**, because this caveat had already
+    caught the level clock and then caught the ammo breakdown the same way — both times presenting
+    as the feature being broken rather than unconfigured, which is slow to work out from outside.
+    It compares the running string against `cv_stbaroverlay.defaultvalue` (not a hardcoded list, so
+    the next element is covered for free) and names the missing letters and the value to set.
+    Called from `D_DoomLoop` beside `M_Verify_Config`, for the same reason: at config load time the
+    cvar has not settled. **Note `M_Verify_Config` cannot catch this** — the `overlay` line *did*
+    take effect, it is simply short.
 
 - **Level clock on the HUD** — element code **`t`**, new, so the default is now `"kahmfeist"`.
   Counts *down* the time remaining when a time limit is set and counts elapsed time *up* when one
