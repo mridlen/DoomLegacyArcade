@@ -1611,6 +1611,26 @@ silently made the flag do nothing at all.
   - `HS_Run_Finished()` is hooked into **`Command_ExitGame_f`**, the single funnel every route back
     to the title passes through. Idempotent — it zeroes `hs_run_levels` — because some routes reach
     it twice.
+  - **It is also called from `HS_Player_Died`, at the moment of death.** Under Survival a death is
+    the end of the run in every sense that matters: nothing more can be scored, and the thing the
+    board credits — how far it got — is already final. Leaving the commit to `Command_ExitGame_f`
+    made the entry depend on how the session happened to unwind afterwards, and a player who died
+    deep into an episode could find no board entry and no initials prompt for progress they had
+    genuinely earned. Committing at the death makes the place safe the instant it is decided.
+    - The idempotence is what makes this safe: the later `Command_ExitGame_f` call is a no-op, and
+      a player who presses use and carries on playing unranked cannot commit twice.
+    - It only *arms* the prompt. `M_Initials_Ticker` will not raise the page over a live level
+      (`gamestate == GS_LEVEL && ! demoplayback`), so it still appears on the way out, which is
+      where the player expects it.
+  - **The three ways a run gets dropped are logged now**, instead of returning in silence: no level
+    scored, `hs_run_board_ok` false (altered ruleset or a cheat), and placed nothing. "My run did
+    not go on the board" was otherwise impossible to tell from "my run did not place", and neither
+    is visible from the outside. Same reasoning as the `Run is unranked: "<cvar>"` line.
+  - **A multi-level run cannot be driven headlessly**, which is worth knowing before trying: the
+    intermission will not advance. Setting `accelerate_stage` twice from the console reaches
+    `WI_Init_NoState` but the run still sits at `GS_INTERMISSION` on the same map, so a scripted
+    second level exit never happens and `hs_run_levels` stays at 1. Single level runs, and a death
+    on the level after the first, both drive fine.
   - **That funnel is not enough on its own: a completed episode never reaches it.** Finishing
     E?M8 (or Doom 2's MAP30) goes intermission → `G_NextLevel` → `F_StartFinale()`, and the player
     then presses through the ending or quits — neither of which passes through

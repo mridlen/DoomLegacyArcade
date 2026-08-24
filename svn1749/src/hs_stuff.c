@@ -1252,9 +1252,26 @@ void  HS_Run_Finished( void )
     hs_run_t  run;
     int  cat;
 
-    if( hs_run_levels == 0 )  return;   // nothing was ever scored
-    if( ! hs_run_board_ok )             // altered ruleset, or a cheat
+    // [Arcade] Both of these used to return in silence, which made "my run
+    // did not go on the board" impossible to tell apart from "my run did not
+    // place".  Name the reason, the same way HS_LevelExit names the cvar that
+    // made a run unranked.
+    if( hs_run_levels == 0 )
     {
+        // Not necessarily wrong: this is also the idempotent second call from
+        // Command_ExitGame_f after a death already committed the run.
+        GenPrintf( EMSG_debug,
+                   "Run not committed: no level was scored.\n" );
+        return;
+    }
+
+    if( ! hs_run_board_ok )
+    {
+        GenPrintf( EMSG_info,
+            "Run not committed to the board: the ruleset was altered or a"
+            " cheat was used (%s..%s, %d level(s)).\n",
+            hs_run_startmap[0] ? hs_run_startmap : "?",
+            hs_run_endmap[0] ? hs_run_endmap : "?", hs_run_levels );
         HS_Run_Reset();
         return;
     }
@@ -1274,6 +1291,14 @@ void  HS_Run_Finished( void )
         run.tics  = hs_run_tics;
 
         HS_Record_Placement( &run );
+    }
+
+    if( hs_placed_n == 0 )
+    {
+        GenPrintf( EMSG_info,
+            "Run finished %s..%s (%d level(s)) but did not make the board.\n",
+            hs_run_startmap[0] ? hs_run_startmap : "?",
+            hs_run_endmap[0] ? hs_run_endmap : "?", hs_run_levels );
     }
 
     if( hs_placed_n > 0 )
@@ -1575,6 +1600,27 @@ void HS_Player_Died( void )
     // each one to its own file at the level exit that earned it.
     if( demorecording )
         G_CheckDemoStatus();
+
+    // [Arcade] Commit the run to the board *here*, at the death, rather than
+    // waiting for the way back to the title.
+    //
+    // Under Survival a death is the end of the run in every sense that
+    // matters: nothing more can be scored, and what the board credits -- how
+    // far it got -- is already final.  Leaving the commit to
+    // Command_ExitGame_f meant the entry depended on how the session happened
+    // to unwind afterwards, and a player who died deep into an episode could
+    // find no entry and no initials prompt for progress they had genuinely
+    // earned.  Committing at the death makes the place safe the instant it is
+    // decided.
+    //
+    // HS_Run_Finished is idempotent -- it zeroes hs_run_levels -- so the
+    // Command_ExitGame_f call that follows later is a no-op, and a player who
+    // presses use and carries on playing unranked cannot commit twice.
+    //
+    // It only *arms* the initials prompt; M_Initials_Ticker will not raise
+    // the page over a live level, so it still appears on the way out, which
+    // is where the player expects it.
+    HS_Run_Finished();
 }
 
 
