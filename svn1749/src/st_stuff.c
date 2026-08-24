@@ -1620,7 +1620,7 @@ void ST_Change_DemoView (void)
 // [Arcade] Stock default is "kahmf"; e/i/s (kills/items/secrets) added so the
 // cabinet shows run progress out of the box.  Only takes effect at viewsize
 // 11, which is what sets st_overlay_on (r_main.c, R_SetViewSize).
-consvar_t cv_stbaroverlay = {"overlay","kahmfeist",CV_SAVE,NULL};
+consvar_t cv_stbaroverlay = {"overlay","kahmfeistb",CV_SAVE,NULL};
 
 boolean   st_overlay_on;  // status overlay for Doom and Heretic
 
@@ -1880,8 +1880,12 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            }
            break;
 
-         // [Arcade] One condition for the whole K/I/S block; see below.
-#define ST_KIS_ON  ( (! deathmatch) && (! cv_splitscreen.EV) && (! demoplayback) )
+         // [Arcade] The condition for the solo-play extras: the K/I/S block
+         // below and the ammo breakdown ('b').  All of them are about *your*
+         // run -- they say nothing useful about somebody else's recording on
+         // the attract screen, and there is no room for them once the screen
+         // is shared.
+#define ST_SOLO_HUD  ( (! deathmatch) && (! cv_splitscreen.EV) && (! demoplayback) )
          // added by Hurdler for single player only (or coop netplay)
          // [Arcade] Labelled and stacked K/I/S so a run can be tracked against
          // the "max" high-score category (100% kills and secrets on every
@@ -1900,7 +1904,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
          // which are the same thing: a recording, not your run.  The level
          // clock below deliberately stays: it reads as part of the demo.
          case 'e': // number of monsters killed
-           if( ST_KIS_ON )
+           if( ST_SOLO_HUD )
            {
                char buf[24];
                sprintf(buf, "K %d/%d", plyr->killcount, totalkills);
@@ -1909,7 +1913,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            break;
 
          case 'i': // number of items picked up
-           if( ST_KIS_ON )
+           if( ST_SOLO_HUD )
            {
                char buf[24];
                sprintf(buf, "I %d/%d", plyr->itemcount, totalitems);
@@ -1918,7 +1922,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            break;
 
          case 's': // number of secrets found
-           if( ST_KIS_ON )
+           if( ST_SOLO_HUD )
            {
                char buf[24];
                sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);
@@ -1955,6 +1959,53 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
          // two modes agree.  Re-check both if the row format changes.
 #define CLK_CX  104   // 160 minus ~9 characters at the ~6px average glyph width
 #define CLK_DY    9   // base units below lowerbar_y
+         // [Arcade] Ammo breakdown, all four types with their maximum, in
+         // the small font up the right hand side above the keys.  The stock
+         // 'a' element shows only the *ready weapon's* count in the big
+         // status numbers, which says nothing about what is worth picking up.
+         //
+         // Order is the panel's, not the enum's: BULL, SHEL, RCKT, CELL.
+         // am_misl and am_cell are the other way round in ammotype_t, so the
+         // rows are listed explicitly rather than looped over the enum.
+         //
+         // Measured against the real STCFN lumps: the widest line a backpack
+         // can produce is "CELL 600/600" at 91px, right justified at 318 so
+         // it starts at 227 -- clear of everything on the left.  Rows are 8
+         // base units apart and hu_font glyphs are 7 tall, so the block sits
+         // at base y 138..169 against keys at 174: four lines, 5px clear of
+         // the keys and far below the K/I/S corner at 1..28.
+#define AMMO_ROW_H   8   // base units between rows
+#define AMMO_GAP     4   // base units clear of the keys
+         case 'b': // ammo breakdown
+           if( ST_SOLO_HUD )
+           {
+               static const struct {
+                   byte          type;
+                   const char *  name;
+               } ammorow[4] = {
+                   { am_clip,  "BULL" },
+                   { am_shell, "SHEL" },
+                   { am_misl,  "RCKT" },
+                   { am_cell,  "CELL" },
+               };
+               char buf[24];
+               int  keys_y = lowerbar_y - (int)( 8 * sf_dupy );
+               int  r;
+
+               for( r = 0; r < 4; r++ )
+               {
+                   byte at = ammorow[r].type;
+                   sprintf( buf, "%s %d/%d", ammorow[r].name,
+                            plyr->ammo[at], plyr->maxammo[at] );
+                   V_DrawString(
+                       SCX(318 - V_StringWidth(buf), x0, xdiv),
+                       keys_y - (int)( (AMMO_GAP + ((4 - r) * AMMO_ROW_H))
+                                       * sf_dupy ),
+                       0, buf );
+               }
+           }
+           break;
+
          case 't': // level time / time limit remaining
            {
                char buf[24];

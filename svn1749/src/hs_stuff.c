@@ -1595,9 +1595,25 @@ void HS_Player_Died( void )
         hs_run_ranked = false;
     }
 
+    // [Arcade] Save the run one last time, *including the death*, before
+    // closing the recorder.
+    //
+    // The snapshots taken at level exits (HS_Snapshot_If_Leading) each stop
+    // at that exit, so a Survival demo used to end at the last level the
+    // player completed and the run appeared to simply stop.  Under Survival
+    // the death is the end of the run and the most interesting part of it --
+    // how far they got and what got them -- so the replay should show it.
+    //
+    // Taken before HS_Run_Finished below: that inserts this run into the
+    // board, after which HS_Run_Leads is false (it is no longer *beating*
+    // the entry, it is the entry) and nothing would be saved.
+    //
+    // This costs the scoring nothing.  The tables are written from the run
+    // state, not from the demo; a snapshot is a copy of the recording buffer.
+    HS_Snapshot_If_Leading( hs_run_skill );
+
     // The run can no longer set a record, so stop spending the demo buffer
-    // on it.  Records earned earlier are unaffected -- G_SnapshotDemo copied
-    // each one to its own file at the level exit that earned it.
+    // on it.
     if( demorecording )
         G_CheckDemoStatus();
 
@@ -2696,7 +2712,154 @@ const char * HS_DemoLabel( void )
 //
 // The bag holds packed (map, skill, category) slot numbers, the same encoding
 // the old cursor used.
-#define HS_BAG_MAX  (HS_MAX_MAPS * HS_NUMSKILLS * HS_NUMCAT)
+// [Arcade] Sized for the whole unified pool: every per-map record plus one
+// Survival record per episode (4 is the most any supported game has).
+#define HS_BAG_MAX  ((HS_MAX_MAPS + 4) * HS_NUMSKILLS * HS_NUMCAT)
+
+// [Arcade] Attract demos are sorted by how *long* they run, not by which
+// table their record lives in.
+//
+// The split used to be Single Level (short, the ordinary filler between
+// pages) versus Survival (a whole episode, far too long for that, so shown
+// once per full pass of the score pages).  Mode is only a proxy for length
+// and a poor one in both directions: a Survival run that died two minutes in
+// is short, and now that deaths are recorded (HS_Player_Died) those are
+// common; a 100% run of a big single map can easily pass four minutes.
+// Ask the length instead -- it is exactly the record's own time.
+#define HS_LONG_DEMO_TICS   (4 * 60 * TICRATE)
+
+// The two record tables laid end to end, so one cursor can walk both: the
+// per-map split records first (hs_table -- Single Level runs and campaign
+// first levels), then the Survival board records, one per episode.
+static int  HS_Demo_Slot_Count( void )
+{
+    return ( hs_table_count + HS_Num_Episodes() ) * HS_NUMSKILLS * HS_NUMCAT;
+}
+
+static boolean  HS_Demo_Slot( int slot, boolean * out_surv, int * out_idx,
+                              int * out_sk, int * out_cat )
+{
+    int per  = HS_NUMSKILLS * HS_NUMCAT;
+    int nmap = hs_table_count * per;
+
+    if( slot < 0 )  return false;
+
+    *out_sk  = (slot / HS_NUMCAT) % HS_NUMSKILLS;
+    *out_cat = slot % HS_NUMCAT;
+
+    if( slot < nmap )
+    {
+        *out_surv = false;
+        *out_idx  = slot / per;          // hs_table index
+        return true;
+    }
+
+    slot -= nmap;
+    if( slot >= HS_Num_Episodes() * per )  return false;
+
+    *out_surv = true;
+    *out_idx  = (slot / per) + 1;        // episode, 1 based
+    return true;
+}
+
+// Resolve one slot: is there a playable demo there, how long does it run, and
+// what should the attract screen caption it with?  label may be NULL when
+// only the length is wanted.
+//
+// Captions carry the record holder's initials now.  The split table is
+// anonymous -- it keeps a time and nothing else -- so they come from the
+// board, which is where initials are actually stored.
+static boolean  HS_Demo_At( int slot, char * path, tic_t * out_tics,
+                            char * label, size_t labelsz )
+{
+    boolean surv;
+    int     idx, sk, cat;
+    char    ini[HS_INITIALS_LEN];
+    char    timebuf[16];
+    tic_t   tics;
+
+    if( ! HS_Demo_Slot( slot, &surv, &idx, &sk, &cat ) )  return false;
+
+    ini[0] = 0;
+
+    if( surv )
+    {
+        char mapname[9];
+        char gid[HS_GAMEID_LEN];
+
+        if( ! HS_Survival_Entry( idx, (skill_e)sk, cat, mapname, ini, &tics ) )
+            return false;
+
+        dl_strncpy( gid, HS_GameId_Mode(false), HS_GAMEID_LEN-1 );
+        HS_BuildSurvivalDemoPath( path, gid, idx, (skill_e)sk, cat );
+        if( access(path, R_OK) != 0 )  return false;   // record kept, demo gone
+
+        if( out_tics )  *out_tics = tics;
+        if( label )
+        {
+            // e.g. "SURVIVAL  UV  SPEED  E1M8  7:03.22  MLR".  The episode
+            // number is not printed: the end map already carries it, and the
+            // width is needed for the initials.  Measured against the real
+            // STCFN lumps, the widest realistic form is 304px of 320.
+            HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
+            snprintf( label, labelsz, "Survival  %s  %s  %s  %s  %s",
+                      hs_skillnames[sk], hs_catname[cat], mapname, timebuf,
+                      ini[0] ? ini : "---" );
+            strupr( label );
+        }
+        return true;
+    }
+
+    {
+        char  single_id[HS_GAMEID_LEN];
+        const hs_maprecord_t * rec = &hs_table[idx];
+
+        if( idx >= hs_table_count )  return false;
+        if( ! rec->has_record[cat][sk] )  return false;
+
+        // Only the running game: the same map name is a different level in
+        // Doom 2, Plutonia and TNT, so another game's demo desyncs at once.
+        dl_strncpy( single_id, HS_GameId_Mode(true), HS_GAMEID_LEN-1 );
+        if( strncmp(rec->game, single_id, HS_GAMEID_LEN-1) != 0 )  return false;
+
+        HS_BuildDemoPath( path, rec->game, rec->mapname, (skill_e)sk, cat );
+        if( access(path, R_OK) != 0 )  return false;
+
+        tics = rec->besttime[cat][sk];
+        if( out_tics )  *out_tics = tics;
+
+        if( label )
+        {
+            char range[24];
+
+            // The board is where initials live; the split table is anonymous.
+            HS_Board_Entry( true, rec->mapname, (skill_e)sk, cat, 0,
+                            ini, NULL, NULL );
+
+            // Formatted through HS_Format_Range for the sake of older
+            // entries.  In practice this table now holds only one-map
+            // records -- HS_Score_As_Single_Level always stores startmap
+            // equal to the map -- so the range comes out bare; the multi
+            // level runs live on the Survival board and are captioned above.
+            HS_Format_Range( rec->startmap[cat][sk], rec->mapname, true,
+                             range, sizeof(range) );
+
+            // e.g. "E1M1-E1M5  UV  MAX  4:32.17  MLR".  The old
+            // "SINGLE LEVEL: " prefix is gone: it cost 100px that the
+            // initials now need, the range already says whether this was one
+            // map or several, and it was never quite true anyway -- a
+            // campaign *first* level scores on this same table.
+            // Measured: widest is 283px of 320.
+            HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
+            snprintf( label, labelsz, "%s  %s  %s  %s  %s",
+                      range, hs_skillnames[sk], hs_catname[cat], timebuf,
+                      ini[0] ? ini : "---" );
+            strupr( label );
+        }
+        return true;
+    }
+}
+
 
 static uint16_t  hs_bag[HS_BAG_MAX];
 static int       hs_bag_count = 0;   // slots in the bag
@@ -2735,24 +2898,26 @@ static void  HS_Shuffle_Seed( void )
 // one pass of the cycle away.
 static void  HS_Refill_DemoBag( void )
 {
-    int  mi, sk, cat, i;
+    int  slot, nslot, i;
 
     hs_bag_count = 0;
     hs_bag_pos = 0;
     hs_bag_built_for = hs_table_count;
 
-    for( mi=0; mi<hs_table_count; mi++ )
+    // [Arcade] The bag is the *short* demos, wherever their record lives --
+    // per-map or Survival.  Anything at or over HS_LONG_DEMO_TICS is dealt
+    // by HS_NextLongDemoPath instead, once per full pass of the score pages.
+    nslot = HS_Demo_Slot_Count();
+    for( slot = 0; slot < nslot; slot++ )
     {
-        for( sk=0; sk<HS_NUMSKILLS; sk++ )
-        {
-            for( cat=0; cat<HS_NUMCAT; cat++ )
-            {
-                if( ! hs_table[mi].has_record[cat][sk] )  continue;
-                if( hs_bag_count >= HS_BAG_MAX )  goto filled;
-                hs_bag[hs_bag_count++] =
-                    (uint16_t)((mi * HS_NUMSKILLS + sk) * HS_NUMCAT + cat);
-            }
-        }
+        char   path[MAX_WADPATH];
+        tic_t  tics;
+
+        if( ! HS_Demo_At( slot, path, &tics, NULL, 0 ) )  continue;
+        if( tics >= HS_LONG_DEMO_TICS )  continue;
+
+        if( hs_bag_count >= HS_BAG_MAX )  goto filled;
+        hs_bag[hs_bag_count++] = (uint16_t) slot;
     }
 
 filled:
@@ -2780,88 +2945,30 @@ filled:
 const char * HS_NextRecordDemoPath( void )
 {
     static char path[MAX_WADPATH];
-    // HS_GameId_Mode returns a pointer to one static buffer, so both ids
-    // have to be copied out before the second call overwrites the first.
-    char single_id[HS_GAMEID_LEN];
-    int  slot;
     int  tries;
-    int  mi, sk, cat;
-    boolean is_single;
 
-    if( hs_table_count == 0 )  return NULL;
-
-    dl_strncpy( single_id,   HS_GameId_Mode(true),  HS_GAMEID_LEN-1 );
+    if( HS_Demo_Slot_Count() == 0 )  return NULL;
 
     if( hs_bag_pos >= hs_bag_count || hs_bag_built_for != hs_table_count )
         HS_Refill_DemoBag();
 
-    // Bounded by the bag size: a slot can still be unusable here (another
-    // game's demo, or the file gone), and the search must end even if none
-    // of them is playable.
+    // Bounded by the bag size: a slot can still have become unusable since
+    // the bag was built (the file deleted, a level pack swapped in), and the
+    // search must end even if none of them is playable.
     for( tries=0; tries<hs_bag_count; tries++ )
     {
+        int slot;
+
         if( hs_bag_pos >= hs_bag_count )
             hs_bag_pos = 0;   // wrap within this pass; refilled on the next call
 
         slot = hs_bag[hs_bag_pos++];
 
-        mi  = slot / (HS_NUMSKILLS * HS_NUMCAT);
-        sk  = (slot / HS_NUMCAT) % HS_NUMSKILLS;
-        cat = slot % HS_NUMCAT;
-        // Only demos from the running game: the same map name is a
-        // different level in Doom 2, Plutonia and TNT, so replaying another
-        // game's demo would desync immediately.
-        // [Arcade] **Single level demos only in the normal rotation.**  A
-        // Survival demo is a whole episode -- ten or twenty minutes -- which
-        // would park the attract screen on one run.  Those are handed out by
-        // HS_NextSurvivalDemoPath instead, once per full pass of the score
-        // pages, so the long run is an occasional feature rather than the
-        // filler between them.
-        if( strncmp(hs_table[mi].game, single_id, HS_GAMEID_LEN-1) != 0 )
-            continue;
-        is_single = true;
-
-        if( hs_table[mi].has_record[cat][sk] )
+        if( HS_Demo_At( slot, path, NULL,
+                        hs_demo_label, sizeof(hs_demo_label) ) )
         {
-            HS_BuildDemoPath(path, hs_table[mi].game, hs_table[mi].mapname,
-                             (skill_e)sk, cat);
-            if( access(path, R_OK) == 0 )
-            {
-                char timebuf[16];
-                char range[20];
-                const char * sm = hs_table[mi].startmap[cat][sk];
-
-                HS_Format_Time_CS(hs_table[mi].besttime[cat][sk],
-                                  timebuf, sizeof(timebuf));
-
-                // [Arcade] Name the whole span the run covered.  These times
-                // are cumulative from the start of a run, so the demo for the
-                // E1M5 record is a five level run -- captioned with the bare
-                // map name it was indistinguishable from a single level one,
-                // which badly undersold the longer runs.  A campaign record
-                // with no stored start map (written before that was tracked)
-                // falls back to the inference in HS_Format_Range.
-                HS_Format_Range( sm, hs_table[mi].mapname, is_single,
-                                 range, sizeof(range) );
-
-                // e.g. "E1M1-E1M5  ITYTD  MAX  4:32.17", or
-                // "SINGLE LEVEL: MAP01  ITYTD  SPEED  4:32.17".  Measured
-                // against the real STCFN lumps, the widest either form can
-                // reach is "SINGLE LEVEL: MAP01  ITYTD  SPEED  888:88.99" at
-                // 295px of BASEVIDWIDTH 320 -- a single level run is one map
-                // so it never carries a range, and a range costs less width
-                // than the prefix does.  HU_Drawer centres on V_StringWidth,
-                // so this follows any rewording.
-                snprintf(hs_demo_label, sizeof(hs_demo_label),
-                         "%s%s  %s  %s  %s",
-                         is_single? "Single Level: " : "",
-                         range,
-                         hs_skillnames[sk], hs_catname[cat], timebuf);
-                strupr(hs_demo_label);
-
-                hs_bag_last = slot;
-                return path;
-            }
+            hs_bag_last = slot;
+            return path;
         }
     }
 
@@ -2869,61 +2976,43 @@ const char * HS_NextRecordDemoPath( void )
 }
 
 
-
-
-
-// [Arcade] The Survival record demo to show at the end of a full pass of the
-// score pages.  A whole-episode run is far too long to be the ordinary
-// filler between attract pages, so it appears once per rotation instead --
-// roughly once every several attract cycles.
+// [Arcade] The long demo to show at the end of a full pass of the score
+// pages.  A run of ten or twenty minutes cannot be the ordinary filler
+// between attract pages -- it would park the screen on one recording -- so it
+// appears once per rotation instead, roughly once every several cycles.
 //
-// Walks (episode, skill, category) from a cursor that persists, so a
-// different record run comes up each time rather than always the first.
-const char * HS_NextSurvivalDemoPath( void )
+// "Long" is HS_LONG_DEMO_TICS of actual running time, from either table: a
+// Survival run that died early is short and rotates normally, while a slow
+// 100% run of one big map is long and comes here.  Named for what it does
+// rather than for Survival, which is no longer what selects it.
+//
+// Walks a cursor that persists, so a different run comes up each time rather
+// than always the first.
+const char * HS_NextLongDemoPath( void )
 {
     static char path[MAX_WADPATH];
     static int  cursor = 0;
-    char  gid[HS_GAMEID_LEN];
-    int   neps  = HS_Num_Episodes();
-    int   total = neps * HS_NUMSKILLS * HS_NUMCAT;
-    int   tries;
+    int  nslot = HS_Demo_Slot_Count();
+    int  tries;
 
-    if( total <= 0 )  return NULL;
-    dl_strncpy( gid, HS_GameId_Mode(false), HS_GAMEID_LEN-1 );
+    if( nslot <= 0 )  return NULL;
 
-    for( tries=0; tries<total; tries++ )
+    for( tries=0; tries<nslot; tries++ )
     {
-        char  mapname[9], ini[HS_INITIALS_LEN], timebuf[16];
-        tic_t tics;
-        int   slot = cursor % total;
-        int   ep   = (slot / (HS_NUMSKILLS * HS_NUMCAT)) + 1;
-        int   sk   = (slot / HS_NUMCAT) % HS_NUMSKILLS;
-        int   cat  = slot % HS_NUMCAT;
+        int    slot = cursor % nslot;
+        tic_t  tics;
 
         cursor++;
 
-        if( ! HS_Survival_Entry( ep, (skill_e)sk, cat, mapname, ini, &tics ) )
+        if( ! HS_Demo_At( slot, path, &tics,
+                          hs_demo_label, sizeof(hs_demo_label) ) )
             continue;
+        if( tics < HS_LONG_DEMO_TICS )  continue;   // the bag deals these
 
-        HS_BuildSurvivalDemoPath( path, gid, ep, (skill_e)sk, cat );
-        if( access(path, R_OK) != 0 )  continue;   // record kept, demo gone
-
-        // e.g. "SURVIVAL EP1  UV  SPEED  E1M8  7:03.22".  Measured against
-        // the real STCFN lumps at 231px of 320 for the widest realistic
-        // form; HU_Drawer centres on V_StringWidth so it follows a rewording.
-        HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
-        if( neps > 1 )
-            snprintf( hs_demo_label, sizeof(hs_demo_label),
-                      "Survival EP%d  %s  %s  %s  %s",
-                      ep, hs_skillnames[sk], hs_catname[cat], mapname, timebuf );
-        else
-            snprintf( hs_demo_label, sizeof(hs_demo_label),
-                      "Survival  %s  %s  %s  %s",
-                      hs_skillnames[sk], hs_catname[cat], mapname, timebuf );
-        strupr( hs_demo_label );
         return path;
     }
 
     return NULL;
 }
+
 

@@ -136,8 +136,9 @@ int   HS_Attract_Cycle_Pages(void);
 // the usual short single level demo, so the long whole-episode demo appears
 // roughly once every several attract cycles.
 boolean  HS_Attract_Rotation_Done(void);
-// The Survival record demo for that occasion, or NULL.
-const char *  HS_NextSurvivalDemoPath(void);
+// The long record demo for that occasion, or NULL.  "Long" is by running
+// time (HS_LONG_DEMO_TICS), not by which table the record lives in.
+const char *  HS_NextLongDemoPath(void);
 // The Survival record for one (episode, skill, category): furthest map, its
 // time, and who holds it.  Depth is 1, so there is at most one.
 boolean  HS_Survival_Entry(int episode, skill_e skill, int cat,

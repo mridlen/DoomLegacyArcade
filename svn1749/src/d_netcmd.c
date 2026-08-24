@@ -1106,6 +1106,19 @@ void Command_ExitGame_f(void)
     // SplitScreen_OnChange, which takes the player 2 menu entries back down.
     CV_SetValue( &cv_splitscreen, 0 );
 
+    // [Arcade] So must the deathmatch time limit.  M_StartServer sets
+    // cv_timelimit for a DM round and nothing cleared it on the way out, so
+    // the HUD clock kept counting *down* over the attract demos -- a five
+    // minute deathmatch timer on a single player recording.  It looked like
+    // the clock was broken; it was reading a limit left behind by a game
+    // that had already ended.  Starting a single player game happened to fix
+    // it, because G_DeferedInitNew issues "timelimit 0" in its own setup
+    // line, which is why it came and went.
+    //
+    // Setting the cvar is what matters: TimeLimit_OnChange derives
+    // timelimit_tics from it, and that is what st_stuff.c reads.
+    CV_SetValue( &cv_timelimit, 0 );
+
     // [Arcade] Restore the ranked ruleset, so one player's tinkering under
     // Options does not leave the next player at the cabinet unable to set a
     // record.  Settings are not saved outside devmode, so this is only ever

@@ -1315,6 +1315,14 @@ silently made the flag do nothing at all.
     `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
   - Hooked at the moment of death rather than at `G_DoReborn`, so a player who dies and walks away
     still voids the run and releases the demo buffer.
+  - **It takes one last snapshot first, so the demo contains the death.** The snapshots taken at
+    level exits each stop at that exit, so a Survival demo used to end at the last level completed
+    and the run simply appeared to stop. Under Survival the death *is* the end of the run and the
+    most interesting part of it. This costs the scoring nothing — the tables are written from the
+    run state, and a snapshot is a copy of the recording buffer.
+    - It must come **before** `HS_Run_Finished()`, which inserts this run into the board: after
+      that `HS_Run_Leads` is false (it is no longer beating the entry, it *is* the entry) and
+      nothing would be saved.
   - **Guarded on `demoplayback`** like `HS_LevelExit` is. Attract-mode record demos can contain a
     death, and replaying one must not void the cabinet's live run or close its recorder.
   - This closed a real hole rather than just adding a rule. Doom traditionally lets you retry a
@@ -1449,6 +1457,16 @@ silently made the flag do nothing at all.
     `D_Display` does not call `HU_Drawer` for; they draw through `D_PageDrawer` and would need
     their own call.
 
+  **The title track is a one-shot** — `S_ChangeMusic(..., false)` in the `attract_title` case,
+  not `S_StartMusic`, which is `S_ChangeMusic(..., true)` and loops. Ultimate Doom's `D_INTRO` is
+  short enough that the loop restarted it before the page was over, so the same sting played twice
+  every time the title came round; Doom II's is long enough to hide it but is the same one-shot
+  piece, and Final Doom is `doom2_commercial` and takes the Doom II track with it. The silence
+  afterwards is deliberate — that is what a one-shot means, and it beats the repeat.
+  - It still plays on **every** appearance of the title, despite `S_ChangeMusic`'s
+    `mus_playing == music` early-out: the demo in between changes `mus_playing`, so the next call
+    is not swallowed.
+
   **The attract cycle is a fixed four steps** (`d_main.c`, the `attract_*` enum): title → `CREDIT`
   → `CREDIT2` → one demo, repeating. It replaces the stock 6-step sequence (7 under the retail
   divisor), which showed `CREDIT` only once per three demos and filled the rest with the help and
@@ -1564,11 +1582,27 @@ silently made the flag do nothing at all.
       rule for these pages: the drawers must be idempotent.
   - **The page block steps once more on the way out** (`D_DoAdvanceDemo`), or the page an
     appearance ended on would be the first page of the next one.
-  - **Demos: the normal rotation is single level only.** A Survival demo is a whole episode — ten
-    or twenty minutes — which would park the attract screen on one run. `HS_NextSurvivalDemoPath`
-    hands one out instead when `HS_Attract_Rotation_Done()` reports a full pass of the score pages
-    has finished, so the long run appears roughly once every several attract cycles rather than as
-    the filler between pages.
+  - **Demos are sorted by how long they run, not by which table their record lives in.** Anything
+    under **`HS_LONG_DEMO_TICS`** (4 minutes) goes in the shuffled bag as ordinary filler between
+    pages; anything over is dealt by **`HS_NextLongDemoPath`** when `HS_Attract_Rotation_Done()`
+    reports a full pass of the score pages, so it appears roughly once every several cycles rather
+    than parking the screen on one run.
+    - It used to split on Single Level versus Survival, which is only a *proxy* for length and
+      wrong in both directions: a Survival run that died two minutes in is short — and common, now
+      that deaths are recorded — while a 100% run of one big map can easily pass four minutes.
+      The record's own time *is* the demo's length, so ask that.
+    - The two tables are laid end to end (`HS_Demo_Slot_Count` / `HS_Demo_Slot`) so one cursor
+      walks both: per-map split records first, then one Survival record per episode.
+      `HS_Demo_At` resolves a slot to a path, a length and a caption, and is the only place that
+      knows the difference between the two.
+  - **Captions carry the holder's initials.** The split table is anonymous — a time and nothing
+    else — so they come from the board (`HS_Board_Entry`), which is where initials are stored.
+    `---` when nobody claimed the entry.
+    - The `SINGLE LEVEL: ` prefix is gone to pay for them: it cost 100px, the range already says
+      whether the run was one map or several, and it was never quite true anyway — a campaign
+      *first* level scores on that same table. Measured against the real `STCFN` lumps: the per-map
+      form is at worst **283px** of 320 (narrower than the 295 it replaced) and the Survival form
+      **304px**. The Survival caption also drops its `EP%d`, which the end map already implies.
 
   **The per-map single level page** (`HS_Draw_SL_Map_Page`) is laid out **difficulty x place**
   rather than a stacked block per difficulty, which reads in one glance: skill label at x=10, then
@@ -1861,6 +1895,25 @@ silently made the flag do nothing at all.
     four players 3, splitscreen 4; and an attract cycle suppressed 20 demo messages while a normal
     single player game suppressed none.
 
+- **Ammo breakdown on the HUD** — element code **`b`**, new, so the compiled default is now
+  **`"kahmfeistb"`**. All four ammo types with their maximum, in the small font up the right hand
+  side above the keys: `BULL 200/400`, `SHEL`, `RCKT`, `CELL`. The stock `a` element shows only the
+  *ready weapon's* count in the big status numbers, which says nothing about what is worth picking
+  up — that was checked before writing a new one.
+  - Row order is the panel's, not the enum's. `ammotype_t` runs clip, shell, **cell, misl**, so the
+    rows are listed explicitly rather than looped over the enum.
+  - Measured against the real `STCFN` lumps: the widest line a backpack can produce is
+    `CELL 600/600` at 91px, right-justified at 318 so it starts at 227. Rows are 8 base units apart
+    and `hu_font` glyphs are 7 tall, so the block sits at base y 138..169 against keys at 174 —
+    5px clear of the keys, far below the K/I/S corner at 1..28.
+  - Shares **`ST_SOLO_HUD`** with the K/I/S block (renamed from `ST_KIS_ON` now that two things use
+    it): solo, full screen, not a demo. All of these describe *your* run and say nothing useful
+    about somebody else's recording on the attract screen.
+  - Same `config.cfg` caveat as the rest: the saved `overlay` line overrides the compiled default,
+    so an existing install needs the `b` added by hand or re-saved from a `-devmode` session. The
+    tracked `cabinet/legacyhome/config.cfg` has it; a live `svn1749/bin/legacyhome/config.cfg`
+    does not, because `make` stages that with `cp -n`.
+
 - **Level clock on the HUD** — element code **`t`**, new, so the default is now `"kahmfeist"`.
   Counts *down* the time remaining when a time limit is set and counts elapsed time *up* when one
   is not, so it serves both a deathmatch round and a speed run. Format `T 4:59`.
@@ -1896,6 +1949,13 @@ silently made the flag do nothing at all.
 - **Deathmatch defaults** — a DM round gets a time limit from **`cv_dm_timelimit`** ("dmtimelimit",
   default 5 minutes, `CV_SAVE`), and coop explicitly clears the limit, appended to the game-start
   command in `M_StartServer` (`m_menu.c`).
+  - **It is cleared in `Command_ExitGame_f`**, beside `cv_splitscreen` and for the same reason.
+    Nothing used to clear it, so after a deathmatch the HUD clock kept counting *down* over the
+    attract demos — a five minute DM timer on a single player recording. It read as a broken clock;
+    it was a limit left behind by a game that had already ended. Starting a single player game
+    appeared to fix it, because `G_DeferedInitNew` issues `timelimit 0` in its own setup line,
+    which is why it came and went. Setting the cvar is what matters: `TimeLimit_OnChange` derives
+    `timelimit_tics`, and that is what `st_stuff.c` reads.
   - **`cv_timelimit` is the engine's limit and is rewritten at every game start**, so the Net
     Options menu row could never edit it usefully: whatever was typed there was overwritten before
     it was read, and the row then displayed the 0 that a coop start had left behind — "it says 0

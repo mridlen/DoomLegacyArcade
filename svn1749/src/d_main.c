@@ -1464,19 +1464,33 @@ void D_DoAdvanceDemo(void)
             pagename = "TITLEPIC";
             switch (gamemode)
             {
+                // [Arcade] S_ChangeMusic(..., false), not S_StartMusic,
+                // which is S_ChangeMusic(..., true) -- the title track plays
+                // once rather than looping.  Ultimate Doom's D_INTRO is short
+                // enough that the loop restarted it before the page was over,
+                // so the same sting played twice in a row; Doom II's is long
+                // enough to hide it but is the same one-shot piece.  Final
+                // Doom is doom2_commercial and takes the Doom II track with
+                // it.  The silence afterwards is deliberate -- that is what a
+                // one-shot means, and it is better than the repeat.
+                //
+                // It still plays on *every* appearance of the title: the demo
+                // in between changes mus_playing, so the `mus_playing ==
+                // music` early-out in S_ChangeMusic does not swallow the
+                // second call.
                 case hexen:
                 case heretic:
                     pagetic = 210 + 140;
                     pagename = "TITLE";
-                    S_StartMusic(mus_htitl);
+                    S_ChangeMusic(mus_htitl, false);
                     break;
                 case doom2_commercial:
                     pagetic = TICRATE * 11;
-                    S_StartMusic(mus_dm2ttl);
+                    S_ChangeMusic(mus_dm2ttl, false);
                     break;
                 default:
                     pagetic = 170;
-                    S_StartMusic(mus_intro);
+                    S_ChangeMusic(mus_intro, false);
                     break;
             }
             gamestate = GS_DEMOSCREEN;
@@ -1510,7 +1524,7 @@ void D_DoAdvanceDemo(void)
             // single level demo when there is no Survival demo to show.
             demo_name = NULL;
             if( HS_Attract_Rotation_Done() )
-                demo_name = HS_NextSurvivalDemoPath();
+                demo_name = HS_NextLongDemoPath();
 
             if( demo_name == NULL )
                 demo_name = HS_NextRecordDemoPath();
