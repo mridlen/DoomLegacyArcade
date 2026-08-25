@@ -194,28 +194,46 @@ void Command_CfgCheck_f(void);   // [Arcade]
 
 // [WDJ] Or could just send both when any change is made?
 // See Send_PlayerConfig
+//
+// [Arcade] cv_playername[N] and friends are **panel** N's identity, so a
+// change has to reach whichever local player is standing at that panel --
+// which is not pind N once the panels join out of order.  Nobody at that
+// panel means nothing to send.
+//
+// This also covers the config load, which fires these long before any game
+// exists: localplayer[] starts {255,255,255,255}, so D_Pind_Of_Panel finds
+// nobody and no netxcmd is sent with no server to receive it.
+static
+void Send_NameColor_panel( byte panel )
+{
+    byte pind = D_Pind_Of_Panel( panel );
+
+    if( pind < MAXSPLITSCREENPLAYERS )
+        Send_NameColor_pind( pind );
+}
+
 static
 void Send_NameColor1(void)
 {
-    Send_NameColor_pind(0);
+    Send_NameColor_panel(0);
 }
 static
 void Send_NameColor2(void)
 {
-    Send_NameColor_pind(1);
+    Send_NameColor_panel(1);
 }
 
-// [Arcade] Panels 3 and 4.  One OnChange per player because consvar_t has no
+// [Arcade] Panels 3 and 4.  One OnChange per panel because consvar_t has no
 // way to tell the callback which cvar fired.
 static
 void Send_NameColor3(void)
 {
-    Send_NameColor_pind(2);
+    Send_NameColor_panel(2);
 }
 static
 void Send_NameColor4(void)
 {
-    Send_NameColor_pind(3);
+    Send_NameColor_panel(3);
 }
 static
 void Send_WeaponPref3(void)
@@ -474,8 +492,22 @@ void Send_NameColor_player( byte pn, byte pind )
 void  Send_NameColor_pind( byte pind )
 {
     byte pn = localplayer[pind];
+    // [Arcade] Name, colour and skin belong to the **panel**, not to the join
+    // order -- the same distinction the controls already make through
+    // D_Panel_Of (gamecontrol_pl).  SV_commit_player hands out pind
+    // sequentially, so with panels 2+3+4 joining, the player standing at
+    // panel 2 became pind 0 and was announced with panel 1's name and colour:
+    // "P1 Doomguy" at the second panel.  On a cabinet where each panel is a
+    // fixed station -- and especially one painted to match its player's
+    // colour -- the identity has to follow the panel.
+    //
+    // The last argument stays pind: that is the textcmd channel, which really
+    // is per local player.
+    byte pan = D_Panel_Of( pind );
+
     if( pn < MAXPLAYERS )
-        Send_NameColor_pn( pn, cv_playername[pind].string, cv_playercolor[pind].EV, cv_skin[pind].string, pind );
+        Send_NameColor_pn( pn, cv_playername[pan].string,
+                           cv_playercolor[pan].EV, cv_skin[pan].string, pind );
 }
 
 // Server, Client

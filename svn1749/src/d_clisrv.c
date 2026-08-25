@@ -427,6 +427,26 @@ byte  D_Panel_Of( byte pind )
     return (pind < MAXSPLITSCREENPLAYERS) ? localplayer_panel[pind] : pind;
 }
 
+// [Arcade] Which local player this panel drives, or MAXSPLITSCREENPLAYERS if
+// none does.  The inverse of D_Panel_Of.
+//
+// It must skip slots with no player.  localplayer_panel[] keeps its identity
+// default for pinds that never joined, so with panels 2+3+4 it reads
+// [1,2,3,3] and the unjoined pind 3 would otherwise answer for panel 4
+// instead of pind 2, who is actually playing there.
+byte  D_Pind_Of_Panel( byte panel )
+{
+    byte pind;
+
+    for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        if( localplayer[pind] >= MAXPLAYERS )  continue;   // no player here
+        if( D_Panel_Of(pind) == panel )  return pind;
+    }
+
+    return MAXSPLITSCREENPLAYERS;
+}
+
 void  D_Set_Panel( byte pind, byte panel )
 {
     if( pind < MAXSPLITSCREENPLAYERS && panel < MAXSPLITSCREENPLAYERS )

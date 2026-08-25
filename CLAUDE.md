@@ -811,6 +811,27 @@ silently made the flag do nothing at all.
     **`cv_localplayers`** the panel count — both operator settings under **Options → Menu Options**
     beside `cv_twoplayer`, so only a `-devmode` session writes them. `jointime 0` or a single panel
     skips the page entirely and the game starts exactly as it always did.
+  - **A player's identity follows their panel too.** `cv_playername[N]`, `cv_playercolor[N]` and
+    `cv_skin[N]` (`name`/`name2`..`name4`, `color`..`color4`, `skin`..`skin4`) are **panel N's**
+    name, colour and skin, which is what Options → Player → "Player N config" has always edited.
+    `Send_NameColor_pind` reads them through `D_Panel_Of(pind)`.
+    - It used to index them by pind. `SV_commit_player` hands out pind sequentially, so with
+      panels **2+3+4** joining, the player standing at panel 2 became pind 0 and was announced as
+      "P1 Doomguy" — panel 1's identity at the second station. On a cabinet where each panel is a
+      fixed station, and especially one painted to match its player's colour, identity has to
+      follow the panel.
+    - **The OnChange callbacks had to be inverted with it.** `cv_playername[1]`'s callback means
+      "panel 2 changed", and the local player at panel 2 is not pind 1 once the panels join out of
+      order. `Send_NameColor_panel` maps through **`D_Pind_Of_Panel`**, the inverse of
+      `D_Panel_Of`, which skips slots with no player — `localplayer_panel[]` keeps its identity
+      default for pinds that never joined, so with 2+3+4 it reads `[1,2,3,3]` and the unjoined
+      pind 3 would otherwise answer for panel 4 instead of pind 2, who is actually playing there.
+    - It also makes the config load safer than before: those callbacks fire long before any game
+      exists, and `localplayer[]` starts `{255,255,255,255}`, so `D_Pind_Of_Panel` finds nobody and
+      no netxcmd is sent with no server to receive it.
+    - Verified by simulating the join assignment for all fifteen panel combinations: every live
+      player takes their own panel's identity, the panel→pind round trip agrees, and no two
+      players ever claim the same one.
   - **Which panel drives a player is a different question from which cell they occupy**, and
     conflating the two was a bug. `D_View_Cell(pind)` is the screen cell; `D_Panel_Of(pind)` is the
     physical panel, and `G_BuildTiccmd` indexes `gamecontrol_pl[]` by the latter. A lone player who

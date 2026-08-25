@@ -606,6 +606,10 @@ byte  D_View_Cell( byte pind );
 // [Arcade] The control panel driving a local player, which is a different
 // question from which screen cell they occupy.
 byte  D_Panel_Of( byte pind );
+
+// [Arcade] The local player driven by this panel, or MAXSPLITSCREENPLAYERS.
+// Inverse of D_Panel_Of; skips slots with no player.
+byte  D_Pind_Of_Panel( byte panel );
 void  D_Set_Panel( byte pind, byte panel );
 void  D_Set_View_Cell( byte pind, byte cell );
 void  D_Reset_View_Cells( void );
