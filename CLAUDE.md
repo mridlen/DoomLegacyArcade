@@ -1253,7 +1253,10 @@ silently made the flag do nothing at all.
     after the first loaded PWAD instead of the game.
 
 - **Analog joystick axes are translated to hat keys** (`sdl/i_system.c`, the `SDL_JOYAXISMOTION`
-  case). Upstream produced **no bindable input from any analog axis**: the only handling was for
+  case). **See also the gamepad section below**, which fixes the event routing this depends
+  on: the `.which` these handlers index by is an SDL2 *instance id*, not a slot index, and
+  `previous_jhat` used to be shared by every joystick.
+  Upstream produced **no bindable input from any analog axis**: the only handling was for
   Xbox triggers, gated on `check_Joystick_Xbox[]`, which requires the joystick's *name* to match
   one of two literal strings (`"Xbox 360 Wireless Receiver (XBOX)"` / `"Microsoft X-Box 360 pad"`)
   and covers only axes 2 and 5. An arcade stick in analog mode was therefore completely dead, while
@@ -1369,6 +1372,154 @@ silently made the flag do nothing at all.
     on the next prompt and bind two actions to the same button.
   - ESC abandons the whole table rather than keeping a partial one — a half-taught panel is worse
     than the layout that was already working.
+- **Xbox-style gamepads, one per panel** (`g_input.c`, `m_menu.c`, `sdl/i_system.c`). A four panel
+  cabinet can be driven by four gamepads instead of (or beside) wired arcade panels.
+
+  **Most of this already existed and nobody had used it.** `keys.h` has always given all four
+  joysticks their own button, hat and trigger key codes (`KEY_JOY0BUT0`..`KEY_JOY3BUT15`,
+  `KEY_JOY*HAT*`, `KEY_JOY*LEFTTRIGGER/RIGHTTRIGGER`), `keynames[]` in `g_input.c` names every one
+  of them (`"Joy2 b4"`, `"Joy3 hl"`, `"Joy1 rt"`) so `setcontrol` persists them, and
+  `gamecontrol_pl[panel]` is per panel. So *a pad has always been bindable* -- run the guided setup
+  for panel 3 and press its buttons. What was missing was a way to say "this pad drives panel 3"
+  without ten prompts, and four bugs that only appear once there is more than one pad.
+
+  - **`.which` is an SDL2 *instance id*, not a slot index -- this is the one that matters.**
+    `Translate_Joybutton(Uint8 which, ...)` took the event's `.which` straight from SDL and clamped
+    `which >= MAXJOYSTICKS` down to `MAXJOYSTICKS-1`. Under SDL2 that field is an instance id which
+    increments for the life of the process, so a pad that sleeps and wakes -- or is unplugged and
+    replugged -- comes back as instance 4, 5, ... and was folded onto **Joy3, on top of whatever
+    real pad was already there**: two players silently sharing one identity. Four pads plugged in
+    before launch happen to get ids 0..3, which is exactly why single-pad testing never saw it.
+    `Joystick_Index_Of()` resolves instance to slot now, and an unknown device is ignored rather
+    than folded. **SDL1's `.which` really is the device index**, so that path is unchanged and the
+    resolver is `#ifdef SDL2`.
+  - **Hotplug.** `I_JoystickInit` enumerated once at startup and never looked again, so a pad
+    plugged in after launch was invisible for the life of the process -- which on a cabinet, where
+    the pads live in a drawer and come out for a four player game, is the normal case.
+    `SDL_JOYDEVICEADDED`/`REMOVED` are handled, both going through the same
+    `Joystick_Open_Device`/`Joystick_Close_Slot` as startup so a pad present at boot and one
+    plugged in later end up in identical state.
+    - **`SDL_JOYDEVICEADDED` is queued at init for devices that were already present**, so startup
+      enumeration and the hotplug handler both see the same pad. Without a dedup the one controller
+      opened **twice** -- slot 0 from `I_JoystickInit`, slot 1 from the queued event -- and a single
+      physical pad appeared as two joysticks with two sets of key codes. Caught headlessly on the
+      first run: `1 joystick(s) found.` followed by `Joystick connected in slot 1.`
+    - **`.which` is a *device index* on ADDED and an *instance id* on REMOVED.** That asymmetry is
+      SDL's, and getting it backwards silently does nothing.
+    - **Slots are sticky by device path** (`SDL_JoystickPathForIndex`, SDL 2.24+), so a pad that
+      reconnects lands back in the slot it had rather than shuffling everyone one seat along. On a
+      cabinet the pads stay in the same USB ports, which is what the path names -- and **four
+      identical pads share an SDL GUID**, so there is no other way to tell them apart. Without that
+      SDL version the slot is simply not sticky, which is the old behaviour.
+    - Slots therefore need not be contiguous. `num_joysticks` is a *count* (`I_Joystick_Count`) for
+      display and bounds, **never an index**; `I_JoystickNumAxes`/`I_JoystickGetAxis` test
+      `joysticks[n]` itself, and `I_ShutdownJoystick` walks slots rather than a count.
+  - **`previous_jhat` was a single global pair** (`Uint8 previous_jhat[2]`), so four pads shared one
+    hat state and cleared each other's d-pad directions. It is `[MAX_JOYSTICKS][2]` now, matching
+    `previous_jaxis` beside it, which had been done correctly.
+  - **`M_key_is_control` only tested panels 1 and 2** (`gamecontrol`/`gamecontrol2` literally), so a
+    panel 3 or 4 control -- a third arcade panel, or a pad bound to one -- could play but **could
+    not work a single menu**. Same family as the six per-player cvars that stopped being registered
+    at Player2: the array was widened and a hand-written site was not. It loops
+    `MAXSPLITSCREENPLAYERS` now, and refuses `key == 0` so an unbound row cannot match.
+  - **Analog axis bindings were keyed by local player index, not panel.** `G_BuildTiccmd` does
+    `gcc = gamecontrol_pl[D_Panel_Of(pind)]` and then, twenty lines later, the joybinding loop did
+    `if (jb.playnum != pind) continue`. The same views-versus-panels conflation that broke the
+    player lookup itself; it asks `D_Panel_Of(pind)` now.
+
+  **Options -> Setup Controls -> "Xbox Controllers >>"** (`m_menu.c`, `XboxMenu`/`XboxDef`) is one
+  row per panel. Its job is **assignment, not binding**: press the row, press a button on the pad
+  you mean, and `G_Apply_Xbox_Preset` stamps the whole layout onto that panel at once.
+  - Assignment rather than a second per-device config screen, because the rest of `m_menu.c` is
+    organised per *panel* -- a device-oriented page would make the operator hold both "which pad is
+    Joy2" and "which panel does it drive" in their head at once. Here they never learn the joystick
+    number; they press the pad in their hands.
+  - **Nothing new is persisted.** The ten controls the scheme owns go through
+    `G_Save_CustomControls` into `cv_customcontrols[panel]` (already `CV_SAVE`, already preferred by
+    `ControlScheme_Apply` over the compiled `scheme_keys[]`), so **"Look and Move" / "WASD" keeps
+    working on a pad**; the rest are ordinary `gamecontrol_pl` entries, already written out as
+    `setcontrol`/`setcontrol2/3/4` lines. This is what makes the feature small.
+    - It also fills the gap `scheme_keys[]` documents: there is no third or fourth *keyboard* preset
+      because the Dvorak clusters would collide, but Joy2 and Joy3 have their own key codes, so for
+      pads there is nothing to collide.
+  - **The assignment shown is derived back out of the bindings** (`M_Xbox_Joy_Of_Panel` reads
+    `gamecontrol_pl[panel][gc_fire][0]`, falling back to `gc_forward`, through `G_Joy_Num_Of_Key`),
+    so the page cannot drift out of step with what the pad actually does. A pad that is bound but
+    not plugged in shows `Joy2 - off`, which otherwise reads as the binding having failed.
+  - **The handler gets the *raw* key, and that is load-bearing.** `M_Cabinet_Menu_Key` rewrites
+    `M_Responder`'s local `key` early -- and now that `M_key_is_control` covers four panels it
+    claims *more* keys than before -- but the `IT_MSGHANDLER` dispatch calls `cc_action(ev)` with
+    the original event, so `ev->data1` is untranslated. Without that, pressing a pad button already
+    bound to a control (the likely case) would arrive as `KEY_ENTER`. The guided setup relies on the
+    same thing.
+  - The row is **appended** to `MControlMenu`: that menu is addressed by position (`mcontrol_*`,
+    used by the lockdown) and nothing indexes past `mcontrol_p4_controls`. Rows for panels the
+    cabinet does not have are hidden in `M_Configure` beside the guided-setup ones. Rows 0 and 1 are
+    never hidden, so the page can never become all-hidden -- which is what hard-locked the Cheats
+    menu.
+  - **Measured against the real `STCFN` lumps**, at `x` 60: label `"Panel 1 gamepad"` is 110px
+    ending at 170, and the widest value `"Joy0 - off"` is 70px, right-justified at
+    `BASEVIDWIDTH - x` = 260 and so starting at 190 -- 20px clear. **`"Panel 1 controller"` was the
+    first wording and did not fit**: 133px, ending at 193, three pixels into the value. Rows are
+    `IT_WHITESTRING` and step by `STRINGHEIGHT`, so the four sit at y 40..70 and the footer at 88.
+
+  **The preset**, per joystick N (`G_Apply_Xbox_Preset`):
+
+  | control | pad | control | pad |
+  | --- | --- | --- | --- |
+  | move / turn | stick or d-pad | fire | RT |
+  | strafe left / right | LB / RB | run | LT |
+  | use / open | A | jump | B |
+  | weapon down / up | X / Y | menu | Start |
+  | automap | Back | scores | L3 |
+
+  - **The left stick and the d-pad both work from one binding**, because `sdl/i_system.c` translates
+    axes 0/1 into the same `KEY_JOY*HAT*` codes the hat emits. That is also why the pad is digital:
+    analog move/turn is a separate job, and would double-apply against these bindings.
+  - **`gc_pause` is explicitly cleared.** Upstream binds pause to Back on Joy0
+    (`G_Default_Controls`); Back is the automap here, and a cabinet nobody is watching must not be
+    freezable by one player.
+  - Guide and R3 are deliberately left unbound -- Guide is often taken by the desktop before it
+    reaches SDL.
+  - Only a `-devmode` session writes `config.cfg`, and Setup Controls is devmode-only, so assignment
+    is an operator task like every other one.
+  - Verified headlessly through a temporary `tmpxbox <panel> <joy>` console command: all sixteen
+    controls resolve to the intended `Joy<N>` codes for panels 0 and 2 against joysticks 0 and 1,
+    and `G_Joy_Num_Of_Key` reads the joystick back out of both `gc_fire` and `gc_forward`.
+
+  **Hardware facts**, probed directly rather than guessed -- a **PowerA Xbox Series X Controller**
+  enumerates as 6 axes, 11 buttons, **1 hat**, GUID `03001c62d62000000920000001010000`, path
+  `/dev/input/event15`, and SDL has a GameController mapping for it:
+  - **The d-pad is the hat**, so the existing generic hat translation already covers it.
+  - **11 buttons is the whole pad**: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=Back 7=Start 8=Guide 9=L3 10=R3.
+    The **back paddles (AGL/AGR) and the unlabelled centre button emit no button number of their
+    own** -- they are firmware remaps that mirror one of these -- and the **volume rocker is a
+    separate HID consumer device that never reaches SDL at all**. Do not design around any of them.
+  - **Axes 2 and 5 (the triggers) rest at full negative** (-32768), which is the convention the
+    existing `> 0` threshold was written for; axes 0/1 rest around 900-2600, well inside the 16384
+    deadzone; axes 3/4 are the right stick and are unused.
+
+- **`gamecontrolname[]` was one entry out of step with `gamecontrols_e`** (`g_input.c`), and had
+  been for as long as `ENABLE_COME_HERE` has been defined (it is, `doomdef.h:307`). The enum puts
+  `gc_comehere` between `gc_screenshot` and `gc_menuesc`; the name table put `"comehere"` last,
+  after `"automap"`. So every name from that point slipped one control along --
+  `gamecontrolname[gc_menuesc]` was `"pause"`, `[gc_pause]` was `"automap"`, `[gc_automap]` was
+  `"comehere"`.
+  - **It survived because it round-trips.** `G_SaveKeySetting` and `Command_Setcontrol_f` both
+    resolve through this one table, so a binding saved under the wrong name loaded back onto the
+    right control, and both arrays were the same length so nothing ran off the end. The only
+    symptom was `config.cfg` **naming the wrong control**, which matters the moment anyone reads or
+    hand-edits it. The cabinet's own file recorded the upstream Xbox defaults as
+    `setcontrol "pause" "Joy0 b7"` (really `gc_menuesc`, Start), `setcontrol "automap" "Joy0 b6"`
+    (really `gc_pause`, Back) and `setcontrol "comehere" "Joy0 b8"` (really `gc_automap`, Guide) --
+    which is how it was found, and is proof from real data rather than from inspection.
+  - **Fixing it changes what an existing `config.cfg` means.** Those lines have to move up one
+    control or the bindings shift on the next load. `cabinet/legacyhome/config.cfg` was updated in
+    the same commit; **a live untracked `svn1749/bin/legacyhome/config.cfg` is fixed by re-saving
+    from any `-devmode` session** -- which an operator assigning gamepads is doing anyway.
+  - A `typedef` length check now fails the build if the two ever differ in *count*. It cannot catch
+    a re-ordering, which is what actually went wrong, but it is free.
+
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
   **(wad combination, map, skill, category)** for single player, shown on the intermission screen
   and as a page in the attract cycle.

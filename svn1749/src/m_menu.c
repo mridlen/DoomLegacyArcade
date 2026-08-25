@@ -184,6 +184,9 @@
 #include "g_game.h"
 #include "hs_stuff.h"
 #include "g_input.h"
+#ifdef JOYSTICK_SUPPORT
+#include "i_joy.h"   // [Arcade] I_Joystick_Count/Connected for the pad page
+#endif
 
 #include "m_argv.h"
 
@@ -650,6 +653,7 @@ menu_t MainDef, SoundDef, EpiDef, NewDef,
   ControlDef, ControlDef2, ControlDef3, MControlDef,
 #ifdef JOYSTICK_SUPPORT
   JoystickOptionsDef,
+  XboxDef,            // [Arcade] per-panel gamepad assignment
 #endif
   OptionsDef, EffectsOption1Def, EffectsOption2Def, AdvOption1Def, AdvOption2Def,
   GameOptionDef, MenuOptionsDef, LightingDef, BotDef,
@@ -4746,6 +4750,10 @@ menuitem_t MControlMenu[]=
     {IT_CALL | IT_WHITESTRING, 0,"Player4 Controls >>", M_Setup_P4_Controls, '4'},
 #ifdef JOYSTICK_SUPPORT   
     {IT_SUBMENU | IT_WHITESTRING, 0,"Joystick Options >>" ,&JoystickOptionsDef   , 'j'},
+    // [Arcade] Appended deliberately: this menu is addressed by position (the
+    // enum below, used by the lockdown), so a row added anywhere else shifts
+    // indices.  Nothing indexes past mcontrol_p4_controls.
+    {IT_SUBMENU | IT_WHITESTRING, 0,"Xbox Controllers >>" ,&XboxDef              , 'x'},
 #endif
 };
 
@@ -4778,6 +4786,168 @@ menu_t  MControlDef =
     60,40,
     0
 };
+
+
+//===========================================================================
+//  [Arcade] Xbox controller assignment
+//===========================================================================
+// One row per panel.  The row's job is *assignment*, not binding: press it,
+// press a button on the pad you mean, and the whole Xbox layout is stamped
+// onto that panel in one go (G_Apply_Xbox_Preset).
+//
+// Assignment rather than a second per-device config screen, because the rest
+// of this file is organised per *panel* -- a device-oriented page would make
+// the operator hold both "which pad is Joy2" and "which panel does it drive"
+// in their head at once.  Here they never learn the joystick number at all;
+// they press the pad in their hands.
+//
+// Nothing new is persisted.  The preset goes through cv_customcontrols (which
+// is already CV_SAVE) plus ordinary gamecontrol_pl entries (already written by
+// G_SaveKeySetting as setcontrol/setcontrol2/3/4 lines), and the assignment
+// *shown* is derived back out of those bindings -- so the page cannot drift
+// out of step with what the pad actually does.
+
+#ifdef JOYSTICK_SUPPORT
+
+static void M_Xbox_Assign(int choice);
+static void M_Draw_Xbox(void);
+
+// Rows are panels 1..4 in order, and an IT_CALL handler's choice argument *is*
+// the item index (M_Responder dispatches routine(itemOn)), so the row index is
+// the panel.  Keep them in order.
+menuitem_t XboxMenu[]=
+{
+    {IT_CALL | IT_WHITESTRING, 0,"Panel 1 gamepad", M_Xbox_Assign, 0},
+    {IT_CALL | IT_WHITESTRING, 0,"Panel 2 gamepad", M_Xbox_Assign, 1},
+    {IT_CALL | IT_WHITESTRING, 0,"Panel 3 gamepad", M_Xbox_Assign, 2},
+    {IT_CALL | IT_WHITESTRING, 0,"Panel 4 gamepad", M_Xbox_Assign, 3},
+};
+
+menu_t  XboxDef =
+{
+    "M_OPTTTL",
+    "Xbox Controllers",
+    XboxMenu,
+    M_Draw_Xbox,
+    NULL,
+    sizeof(XboxMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+// The panel whose row raised the "press a button" prompt.
+static int  xbox_panel = 0;
+
+// Which joystick this panel is bound to, read back out of the bindings, or -1.
+// Fire is the defining control of the preset; forward is checked as well so a
+// panel wired by the guided setup instead still reports its pad.
+static int  M_Xbox_Joy_Of_Panel( int panel )
+{
+    int joynum = G_Joy_Num_Of_Key( gamecontrol_pl[panel][gc_fire][0] );
+    if( joynum < 0 )
+        joynum = G_Joy_Num_Of_Key( gamecontrol_pl[panel][gc_forward][0] );
+    return joynum;
+}
+
+static void  M_Draw_Xbox( void )
+{
+    int  panel;
+    int  y;
+
+    M_DrawGenericMenu();
+
+    // Each row's value, right justified at BASEVIDWIDTH - x, exactly where
+    // M_DrawGenericMenu puts a cvar's -- IT_WHITESTRING rows advance by
+    // STRINGHEIGHT, so row n is at XboxDef.y + n*STRINGHEIGHT.
+    for( panel = 0; panel < MAXSPLITSCREENPLAYERS; panel++ )
+    {
+        char  val[32];
+        int   joynum;
+
+        if( (XboxMenu[panel].status & IT_TYPE) == IT_SPACE )  continue;  // hidden
+
+        joynum = M_Xbox_Joy_Of_Panel( panel );
+        if( joynum < 0 )
+            snprintf( val, sizeof(val), "none" );
+        else if( I_Joystick_Connected( joynum ) )
+            snprintf( val, sizeof(val), "Joy%d", joynum );
+        else
+            snprintf( val, sizeof(val), "Joy%d - off", joynum );
+        val[sizeof(val)-1] = '\0';
+
+        V_DrawString( BASEVIDWIDTH - XboxDef.x - V_StringWidth(val),
+                      XboxDef.y + (panel * STRINGHEIGHT),
+                      V_WHITEMAP, val );
+    }
+
+    // Measured against the real STCFN lumps, at x=60: the label
+    // "Panel 1 gamepad" is 110px and ends at 170; the widest value
+    // "Joy0 - off" is 70px and, right justified at BASEVIDWIDTH - x = 260,
+    // starts at 190 -- 20px clear.  "Panel 1 controller" was the first
+    // wording and did *not* fit: 133px ending at 193, three pixels into the
+    // value.  Rows are IT_WHITESTRING so they step by STRINGHEIGHT, putting
+    // the four at y 40..70 and the footer at 88.
+    y = XboxDef.y + (MAXSPLITSCREENPLAYERS * STRINGHEIGHT) + 8;
+    if( I_Joystick_Count() > 0 )
+        V_DrawString( XboxDef.x, y, 0, "PRESS A ROW, THEN A PAD BUTTON" );
+    else
+        V_DrawString( XboxDef.x, y, 0, "NO CONTROLLERS CONNECTED" );
+}
+
+static void  M_Xbox_Response( event_t * ev )
+{
+    int  ch, joynum;
+
+    // Presses only, as in the guided setup: taking the key-up as well would
+    // let one press answer two prompts.
+    if( ev->type != ev_keydown )  return;
+
+    // ev->data1 is the *raw* key.  M_Cabinet_Menu_Key rewrites M_Responder's
+    // local copy, not the event, so a pad button that already drives the menu
+    // still arrives here as its own joystick code -- which is the whole point,
+    // since the operator is most likely pressing a button that is already
+    // bound to something.
+    ch = ev->data1;
+
+    M_StopMessage(0);
+
+    if( ch == KEY_ESCAPE || ch == KEY_PAUSE || ch == KEY_NULL )
+        return;   // cancelled; bindings untouched
+
+    joynum = G_Joy_Num_Of_Key( ch );
+    if( joynum < 0 )
+    {
+        M_SimpleMessage( "That is not a controller button.\n\n"
+                         "Nothing was changed." );
+        return;
+    }
+
+    G_Apply_Xbox_Preset( xbox_panel, joynum );
+
+    snprintf( msgtmp, MSGTMP_LEN,
+              "Joy%d assigned to panel %d.\n\n"
+              "Written to config.cfg when this\ndevmode session quits.",
+              joynum, xbox_panel + 1 );
+    msgtmp[MSGTMP_LEN-1] = '\0';
+    M_SimpleMessage( msgtmp );
+}
+
+static void  M_Xbox_Assign( int choice )
+{
+    if( choice < 0 || choice >= MAXSPLITSCREENPLAYERS )  return;
+    xbox_panel = choice;
+
+    snprintf( msgtmp, MSGTMP_LEN,
+              "PANEL %d CONTROLLER\n\n"
+              "Press any button on the\ncontroller for this panel.\n\n"
+              "ESC to cancel",
+              choice + 1 );
+    msgtmp[MSGTMP_LEN-1] = '\0';
+
+    M_StartMessage( msgtmp, M_Xbox_Response, MM_EVENTHANDLER );
+}
+
+#endif // JOYSTICK_SUPPORT
 
 
 //===========================================================================
@@ -7554,8 +7724,19 @@ boolean M_Change_cvar_string(int key, char ch)
 static
 boolean  M_key_is_control( uint16_t key, int gcnum )
 {
-    return ( gamecontrol[gcnum][0]  == key || gamecontrol[gcnum][1]  == key
-          || gamecontrol2[gcnum][0] == key || gamecontrol2[gcnum][1] == key );
+    // [Arcade] All four panels, not just gamecontrol/gamecontrol2.  This tested
+    // panels 1 and 2 only, so a panel 3 or 4 control -- a third arcade panel, or
+    // a gamepad bound to one -- could play but could not work a single menu.
+    // Same family as the six per-player cvars that stopped being registered at
+    // Player2: the array was widened and one hand-written site was not.
+    byte pind;
+    if( key == 0 )  return false;   // unbound rows are 0; never match them
+    for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        if( gamecontrol_pl[pind][gcnum][0] == key
+         || gamecontrol_pl[pind][gcnum][1] == key )  return true;
+    }
+    return false;
 }
 
 // [Arcade] The cabinet panel has no arrow keys, Enter or Escape, so map both
@@ -8897,6 +9078,13 @@ void M_Configure (void)
             if( MControlDef.lastOn == (mcontrol_guided_p1 + i)
                 || MControlDef.lastOn == (mcontrol_p1_controls + i) )
                 MControlDef.lastOn = 0;
+
+#ifdef JOYSTICK_SUPPORT
+            // Same for this panel's row on the gamepad assignment page.
+            XboxMenu[i].status = IT_HIDDEN;
+            if( XboxDef.lastOn == i )
+                XboxDef.lastOn = 0;
+#endif
         }
     }
 
