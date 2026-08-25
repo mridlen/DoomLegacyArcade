@@ -566,14 +566,44 @@ char * gamecontrolname[num_gamecontrols] =
     "inventoryuse",
     "down",
     "screenshot",
+// [Arcade] "comehere" belongs *here*, not after "automap": gamecontrols_e puts
+// gc_comehere between gc_screenshot and gc_menuesc (inside the same
+// ENABLE_COME_HERE guard), so with that define on -- and it is on, doomdef.h --
+// this table was one entry short at that point and every name from there
+// slipped one control along:
+//     gamecontrolname[gc_comehere] was "menuesc"
+//     gamecontrolname[gc_menuesc]  was "pause"
+//     gamecontrolname[gc_pause]    was "automap"
+//     gamecontrolname[gc_automap]  was "comehere"
+// Both arrays still had the same length, so nothing ran off the end, and the
+// config round-tripped *consistently* -- G_SaveKeySetting and
+// Command_Setcontrol_f both resolve through this one table, so a binding saved
+// under the wrong name loaded back onto the right control.  That is why it
+// survived: the only visible symptom was config.cfg naming the wrong control,
+// which matters the moment anyone reads or hand-edits it.  The cabinet's own
+// file recorded the upstream Xbox defaults as
+//     setcontrol "pause" "Joy0 b7"      (really gc_menuesc, Start)
+//     setcontrol "automap" "Joy0 b6"    (really gc_pause,   Back)
+//     setcontrol "comehere" "Joy0 b8"   (really gc_automap, Guide)
+//
+// NOTE this changes what an *existing* config.cfg means.  Those three lines
+// have to move up one control, or the bindings shift when it is next loaded.
+// The tracked cabinet/legacyhome/config.cfg was updated with this change; a
+// live untracked config is fixed by re-saving from any -devmode session.
+#ifdef ENABLE_COME_HERE
+    "comehere",
+#endif
 // Mouse and joystick only, Fixed assignment for keyboard.
     "menuesc",  // joystick enter menu, and menu escape key
     "pause",
     "automap",
-#ifdef ENABLE_COME_HERE
-    "comehere",
-#endif
 };
+
+// Catches a length mismatch between the enum and the table above at compile
+// time.  It cannot catch a re-*ordering*, which is what actually went wrong,
+// but it is free and the two failures often arrive together.
+typedef char gamecontrolname_len_check
+    [ (sizeof(gamecontrolname)/sizeof(gamecontrolname[0]) == num_gamecontrols) ? 1 : -1 ];
 
 #define NUMKEYNAMES (sizeof(keynames)/sizeof(keyname_t))
 
@@ -766,6 +796,120 @@ static void ControlScheme_Apply( int pind )
 
 #undef HS_BIND
 }
+
+// =========================================================================
+//  [Arcade] Xbox pad preset
+// =========================================================================
+// An Xbox-style pad is already fully expressible in the existing machinery --
+// keys.h gives all four joysticks their own button, hat and trigger codes,
+// keynames[] names every one of them so setcontrol persists them, and
+// gamecontrol_pl[] is per panel.  What was missing was any way to *say* "this
+// pad drives panel 3" without walking the operator through ten prompts.
+//
+// So this stamps a whole layout in one go, through cv_customcontrols exactly
+// as the guided setup does: the ten controls the scheme owns go through
+// G_Save_CustomControls, so "Look and Move" / "WASD" keeps working on a pad,
+// and the rest are bound directly because ControlScheme_Apply leaves them be.
+
+// Button numbers on the standard Linux xpad / SDL layout.  Verified against a
+// PowerA Xbox Series X Controller: 11 buttons, 1 hat, 6 axes, d-pad reported
+// as the hat and both triggers resting at full negative.  The back paddles
+// (AGL/AGR) and the unlabelled centre button are firmware remaps that mirror
+// one of these, and emit no button number of their own; the volume rocker is a
+// separate HID consumer device and never reaches SDL at all.
+#define XPAD_A      0
+#define XPAD_B      1
+#define XPAD_X      2
+#define XPAD_Y      3
+#define XPAD_LB     4
+#define XPAD_RB     5
+#define XPAD_BACK   6
+#define XPAD_START  7
+#define XPAD_GUIDE  8
+#define XPAD_L3     9
+#define XPAD_R3    10
+
+// keys.h lays each family out as contiguous per-joystick blocks.
+#define JOY_BUT(n,b)  (KEY_JOY0BUT0 + JOYBUTTONS*(n) + (b))
+#define JOY_HAT(n,d)  (KEY_JOY0HATUP + JOYHATBUTTONS*(n) + (d))
+#define JOY_HAT_UP    0
+#define JOY_HAT_RIGHT 1
+#define JOY_HAT_DOWN  2
+#define JOY_HAT_LEFT  3
+#define JOY_LT(n)     (KEY_JOY0LEFTTRIGGER  + XBOXTRIGGERS*(n))
+#define JOY_RT(n)     (KEY_JOY0RIGHTTRIGGER + XBOXTRIGGERS*(n))
+
+
+// Which joystick a key code belongs to, or -1 when it is not a joystick key.
+// Used both to recognise the pad an operator just pressed and to report, on
+// the assignment page, which pad a panel is currently bound to -- so the page
+// reads the bindings themselves and cannot drift out of step with them.
+int  G_Joy_Num_Of_Key( int key )
+{
+#ifdef JOYSTICK_SUPPORT
+    if( key >= KEY_JOY0BUT0 && key <= KEY_JOYLAST )
+        return (key - KEY_JOY0BUT0) / JOYBUTTONS;
+
+    if( key >= KEY_JOY0HATUP && key <= KEY_JOY3HATLEFT )
+        return (key - KEY_JOY0HATUP) / JOYHATBUTTONS;
+
+    if( key >= KEY_JOY0LEFTTRIGGER && key <= KEY_JOY3RIGHTTRIGGER )
+        return (key - KEY_JOY0LEFTTRIGGER) / XBOXTRIGGERS;
+#else
+    (void) key;
+#endif
+    return -1;
+}
+
+
+// Bind joystick joynum to panel pind, as a complete Xbox layout.
+//   stick / d-pad  move and turn      RT  fire        A  use / open
+//   LB / RB        strafe             LT  run         B  jump
+//   X / Y          weapon down / up   Start  menu     Back  automap
+//
+// The left stick and the d-pad both work: sdl/i_system.c translates axes 0/1
+// into the same KEY_JOY*HAT* codes the hat emits, so one binding covers both.
+void  G_Apply_Xbox_Preset( int pind, int joynum )
+{
+    int  keys[CK_NUMKEYS];
+    int (* gc)[2] = gamecontrol_pl[pind];
+
+    if( pind < 0 || pind >= MAXSPLITSCREENPLAYERS )  return;
+    if( joynum < 0 || joynum >= MAX_JOYSTICKS )  return;
+
+    keys[CK_forward]      = JOY_HAT(joynum, JOY_HAT_UP);
+    keys[CK_backward]     = JOY_HAT(joynum, JOY_HAT_DOWN);
+    keys[CK_pair_a_left]  = JOY_HAT(joynum, JOY_HAT_LEFT);
+    keys[CK_pair_a_right] = JOY_HAT(joynum, JOY_HAT_RIGHT);
+    keys[CK_fire]         = JOY_RT(joynum);
+    keys[CK_use]          = JOY_BUT(joynum, XPAD_A);
+    keys[CK_nextweapon]   = JOY_BUT(joynum, XPAD_Y);
+    keys[CK_prevweapon]   = JOY_BUT(joynum, XPAD_X);
+    keys[CK_pair_b_left]  = JOY_BUT(joynum, XPAD_LB);
+    keys[CK_pair_b_right] = JOY_BUT(joynum, XPAD_RB);
+
+    // Applies immediately: cv_customcontrols is CV_CALL onto ControlScheme_Apply.
+    G_Save_CustomControls( pind, keys );
+
+    // Everything outside the ten the scheme owns.  ControlScheme_Apply does
+    // not touch these, so they survive a later Look-and-Move / WASD switch.
+#define XB_BIND(act,key)   { gc[act][0] = (key);  gc[act][1] = KEY_NULL; }
+    XB_BIND( gc_speed,   JOY_LT(joynum) );
+    XB_BIND( gc_jump,    JOY_BUT(joynum, XPAD_B) );
+    XB_BIND( gc_menuesc, JOY_BUT(joynum, XPAD_START) );
+    XB_BIND( gc_automap, JOY_BUT(joynum, XPAD_BACK) );
+    XB_BIND( gc_scores,  JOY_BUT(joynum, XPAD_L3) );
+
+    // Upstream binds pause to Back, on Joy0 only (see G_Default_Controls).
+    // Back is the automap here, and a cabinet nobody is watching must not be
+    // freezable by one player, so the pad gets no pause button at all.
+    XB_BIND( gc_pause,   KEY_NULL );
+#undef XB_BIND
+
+    // Deliberately left unbound: Guide (often taken by the desktop before it
+    // reaches SDL) and R3.
+}
+
 
 void ControlScheme1_OnChange(void)  { ControlScheme_Apply(0); }
 void ControlScheme2_OnChange(void)  { ControlScheme_Apply(1); }

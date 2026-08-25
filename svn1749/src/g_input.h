@@ -147,6 +147,12 @@ enum {
 // of the hardcoded table and into config.cfg.
 extern consvar_t   cv_customcontrols[MAXSPLITSCREENPLAYERS];
 
+// [Arcade] Which joystick a key code belongs to, or -1 if it is not one.
+int   G_Joy_Num_Of_Key( int key );
+
+// [Arcade] Bind joystick joynum to panel pind as a complete Xbox layout.
+void  G_Apply_Xbox_Preset( int pind, int joynum );
+
 // Store keys[CK_NUMKEYS] into cv_customcontrols[pind] and apply immediately.
 void  G_Save_CustomControls( int pind, const int * keys );
 
