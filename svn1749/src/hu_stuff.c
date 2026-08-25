@@ -165,7 +165,10 @@ static byte  hu_HWR_patchstore;  // the HWR_patchstore setting used by fonts.
 // -------
 // protos.
 // -------
-static void  HU_Draw_DeathmatchRankings( byte vind );
+// [Arcade] Takes the grid *cell* to draw in, not a local player index.  Those
+// are different questions -- see D_View_Cell -- and the empty quadrant of a
+// three player game has a cell but no player to derive it from.
+static void  HU_Draw_Rankings_In_Cell( byte cell );
 
 // [Arcade] Should this view show the ranking overlay?  Each panel answers for
 // itself: its own player's death, or its own scores key.  gamecontrol_pl[vind]
@@ -700,37 +703,50 @@ void HU_Drawer(void)
     if( deathmatch )
     {
         byte vind, num_views = D_NumViews();
+        byte cell_used = 0;   // [Arcade] bitmask of cells a player occupies
+
         for( vind=0; vind<num_views; vind++ )
         {
             byte pn = localplayer[vind];
+            if( pn >= MAXPLAYERS )  continue;   // panel with no player
 
-            if( pn >= MAXPLAYERS )
-            {
-                // [Arcade] A cell with no player gets the rankings, always.
-                //
-                // Three players use the 2x2 grid and leave one quadrant
-                // unclaimed, which D_Display fills black -- dead space on a
-                // screen where the one thing everybody keeps wanting is the
-                // score, and the only way to see it is to hold your own
-                // scores key and lose your view while you do.  Put it in the
-                // empty quadrant instead, permanently, where all three can
-                // glance at it without giving anything up.
-                //
-                // Safe for a cell with no player: HU_Draw_DeathmatchRankings
-                // positions from D_View_Cell(vind) and takes its highlighted
-                // player from consoleplayer, never from localplayer[vind].
-                // HU_Drawer runs after the black fill in D_Display, so this
-                // paints over it rather than being erased by it.
-                //
-                // Only three players can reach this -- one and two get
-                // layouts with no spare cell, four fill the grid -- so it
-                // needs no player-count test of its own.
-                HU_Draw_DeathmatchRankings( vind );
-                continue;
-            }
+            cell_used |= (byte)( 1 << ((num_views >= 2)? D_View_Cell(vind) : 0) );
 
             if( HU_Rankings_For_View( vind, pn ) )
-                HU_Draw_DeathmatchRankings( vind );
+                HU_Draw_Rankings_In_Cell( (num_views >= 2)? D_View_Cell(vind) : 0 );
+        }
+
+        // [Arcade] The spare quadrant gets the rankings permanently.
+        //
+        // Three players use the 2x2 grid and leave one cell unclaimed, which
+        // D_Display fills black -- dead space on a screen where the score is
+        // the one thing everybody keeps wanting, and the only way to see it
+        // was to hold your own scores key and lose your view while you did.
+        //
+        // **Which** cell is empty depends on the panels that joined, not on
+        // how many did: M_Join_Start assigns cells by panel once three or
+        // more are in, so panels 1+2+3 leave cell 3 empty, 1+2+4 leave cell 2,
+        // 1+3+4 leave cell 1 and 2+3+4 leave cell 0.  So the empty cell has
+        // to be found by elimination.
+        //
+        // It cannot be found by walking local players and taking the cell of
+        // the one that is missing: localplayer_cell[] is only assigned for
+        // pinds that actually joined, and the rest keep the identity default.
+        // With panels 1+2+4 that makes pind 2 (the real third player) and the
+        // unused pind 3 *both* report cell 3 -- so drawing at the missing
+        // player's cell would paint over a live view and leave the genuinely
+        // empty quadrant black.
+        //
+        // HU_Drawer runs after the black fill in D_Display, so this paints
+        // over it rather than being erased by it.
+        if( num_views >= 4 )
+        {
+            byte c;
+            for( c = 0; c < 4; c++ )
+            {
+                if( ! (cell_used & (1 << c)) )
+                    HU_Draw_Rankings_In_Cell( c );
+            }
         }
     }
 
@@ -1238,7 +1254,7 @@ static
 // lose their view to his score table -- see HU_Drawer, which now asks per
 // view whether that player is dead.
 //   vind : which view, 0 .. D_NumViews()-1
-void HU_Draw_DeathmatchRankings ( byte vind )
+void HU_Draw_Rankings_In_Cell ( byte cell )
 {
     fragsort_t   fragtab[MAXPLAYERS];
     int          i;
@@ -1249,10 +1265,9 @@ void HU_Draw_DeathmatchRankings ( byte vind )
     boolean	 large;
 
     byte  num_views = D_NumViews();
-    byte  cell  = (num_views >= 2) ? D_View_Cell(vind) : 0;   // [Arcade] panel's cell, not join order.
-    // Clamped to 0 for a single view: one player gets the whole screen
-    // whichever panel they are at, and an unclamped cell 1 would still
-    // push row to 1 and offset everything into a half that is not drawn.
+    // [Arcade] The caller resolves the cell, because the two callers get it
+    // from different places: a player's view from D_View_Cell(pind), and the
+    // spare quadrant from whichever cell no player claimed.
     byte  col   = (num_views >= 4) ? (cell & 1) : 0;
     byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
     int   offx  = 0, offy = 0;   // in base units, at the scale set below

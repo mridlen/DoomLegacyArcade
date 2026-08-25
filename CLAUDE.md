@@ -705,17 +705,24 @@ silently made the flag do nothing at all.
       `HU_Draw_DeathmatchRankings` now takes a view index, halves the scale and draws in that
       view's cell, and `HU_Drawer` asks per view via `HU_Rankings_For_View`: that view's own
       player's death, or that panel's own `gamecontrol_pl[vind][gc_scores]` key.
-    - **A cell with no player shows the rankings permanently.** Three players use the 2x2 grid and
-      leave one quadrant unclaimed, which `D_Display` fills black — dead space on a screen where
-      the score is the one thing everybody keeps wanting, and the only way to see it was to hold
-      your own scores key and lose your view while you did. It goes in the empty quadrant instead,
-      where all three can glance at it for free.
-      - Only three players can reach it: one and two get layouts with no spare cell, four fill the
-        grid. So it needs no player-count test of its own.
-      - Safe for a cell with no player, which is worth knowing before moving it:
-        `HU_Draw_DeathmatchRankings` positions from `D_View_Cell(vind)`, takes its highlighted
-        player from `consoleplayer`, and builds the table by walking `playeringame[]` — it never
-        touches `localplayer[vind]`.
+    - **The spare quadrant shows the rankings permanently.** Three players use the 2x2 grid and
+      leave one cell unclaimed, which `D_Display` fills black — dead space on a screen where the
+      score is the one thing everybody keeps wanting, and the only way to see it was to hold your
+      own scores key and lose your view while you did.
+      - **The empty cell must be found by elimination, not by looking up the missing player.**
+        `M_Join_Start` assigns cells by *panel* once three or more join
+        (`D_Set_View_Cell(i, joined_panel[i])`), so which quadrant is spare depends on which panels
+        joined: 1+2+3 leaves cell 3, 1+2+4 leaves cell 2, 1+3+4 leaves cell 1, 2+3+4 leaves cell 0.
+      - **`localplayer_cell[]` is only assigned for pinds that actually joined**, and the rest keep
+        the identity default — so with panels 1+2+4 it reads `[0,1,3,3]`, and pind 2 (the real
+        third player) and the unused pind 3 *both* report cell 3. Drawing at the missing player's
+        cell therefore painted over a live view and left the genuinely empty quadrant black. Three
+        of the four combinations were wrong that way; only 1+2+3 happened to work, which is exactly
+        the one a quick test would try. `HU_Drawer` marks each live player's cell in a bitmask and
+        draws in the one left over.
+      - `HU_Draw_Rankings_In_Cell` takes the **cell**, not a local player index — the empty
+        quadrant has a cell but no player to derive one from. It builds the table from
+        `playeringame[]` and highlights `consoleplayer`, so it never needs the view's player.
       - `HU_Drawer` runs *after* the black fill in `D_Display`, so this paints over it rather than
         being erased by it.
       - Deathmatch only, like the rest of the block. A three player coop game still gets a black
