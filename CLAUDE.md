@@ -1751,6 +1751,22 @@ silently made the flag do nothing at all.
     level board is drawn on the **Single Level menu page**, where the player has just highlighted a
     map and is about to play it. The attract cycle still shows one row per map. That is the rule
     that stops the page count exploding.
+  - **The same rule puts the episode's board under the New Game skill selector**
+    (`HS_Draw_Skill_Board`, called from `M_DrawNewGame`): one row per skill — `<skill> <map>
+    <time> <initials>` — so a player choosing a difficulty can see what it is worth before
+    committing to it.
+    - **Speed only.** Both categories will not fit beside each other — the pair needs about 280px
+      before the initials against 189 for one — and the initials are the half worth keeping on a
+      cabinet where people sign the board. Max is on the Single Level page and in the attract
+      rotation.
+    - `epi + 1` is the episode either way: the episode menu sets `epi` for the ExMy games, and
+      `doom2_commercial` goes straight to the skill menu leaving it at 0, which is the one episode
+      a flat `MAPxx` game has. It is the same expression `M_ChooseSkill` uses to build the
+      starting map.
+    - Measured: `NewDef` sits at y 63 and its five `IT_PATCH` rows step by `LINEHEIGHT` 16, so
+      they occupy 63/79/95/111/127 — and `M_NMARE`, the tall one at 19, ends at **146**. Five rows
+      of 9 from 152 run to 195 of `BASEVIDHEIGHT` 200: 6px clear of the menu, 5px of the bottom.
+      Columns keep 8px at their widest glyphs and the block ends at 237 of 320.
   - **`hs_run_board_ok` is not `hs_run_ranked`.** A death clears `hs_run_ranked` (it gates the split
     records, where the free level reload would otherwise make dying a costless retry) but must not
     take the run off the board. So `hs_run_board_ok` tracks the ruleset and cheating **only**, and

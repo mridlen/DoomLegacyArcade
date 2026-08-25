@@ -2018,6 +2018,53 @@ void HS_Draw_IntermissionTable( int x, int y )
     }
 }
 
+// [Arcade] The episode's Survival board, one row per skill, drawn under the
+// New Game skill selector so a player can see what each difficulty is worth
+// before choosing one.
+//
+// Speed only.  Both categories will not fit beside each other -- the pair
+// needs about 280px before the initials, against 189 for one -- and the
+// initials are the half worth keeping on a cabinet where people sign the
+// board.  The max times are on the Single Level page and in the attract
+// rotation.
+//
+// Column widths measured against the real STCFN lumps: skill 36 ("ITYTD"),
+// map 38 ("MAP01"; Doom 1's "E1M8" is 30), time 64 at its widest
+// ("888:88.99"), initials 27 ("MMM"/"WWW", not the 24 of "AAA").  With 8px
+// gaps that is 189 across, so from the menu's x of 48 it ends at 237 of 320.
+#define HS_SKB_MAP_X    44
+#define HS_SKB_TIME_R  154
+#define HS_SKB_INI_X   162
+#define HS_SKB_ROW      9   // hu_font glyphs are 7 tall
+
+void  HS_Draw_Skill_Board( int episode, int x, int y )
+{
+    int  sk;
+
+    for( sk = 0; sk < HS_NUMSKILLS; sk++, y += HS_SKB_ROW )
+    {
+        char   mapname[9], ini[HS_INITIALS_LEN], timebuf[16];
+        tic_t  tics;
+
+        // Option 0 is the font's native red -- see the V_DrawString colour
+        // note in CLAUDE.md; V_WHITEMAP is the grey one.
+        V_DrawString( x, y, 0, (char*) hs_skillnames[sk] );
+
+        if( ! HS_Survival_Entry( episode, (skill_e)sk, HS_CAT_speed,
+                                 mapname, ini, &tics ) )
+        {
+            V_DrawString( x + HS_SKB_MAP_X, y, 0, "NONE YET" );
+            continue;
+        }
+
+        HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
+        V_DrawString( x + HS_SKB_MAP_X, y, 0, mapname );
+        V_DrawString( x + HS_SKB_TIME_R - V_StringWidth(timebuf), y, 0, timebuf );
+        V_DrawString( x + HS_SKB_INI_X, y, 0, ini );
+    }
+}
+
+
 // [Arcade] Is there anything for the attract screen to show?  Asked by
 // D_DoAdvanceDemo before it interposes the score pages, so that a fresh
 // cabinet does not flash an empty page after every demo.  Answered by the
