@@ -1490,8 +1490,13 @@ silently made the flag do nothing at all.
   - Strafe sits on the right stick rather than the shoulders, which is what pushed the weapon keys
     onto LB/RB and left **X and Y free** for the operator. The strafe pair goes in through
     `CK_pair_b`, so the "Look and Move" / "WASD" selector still swaps it with turning -- on a pad
-    that means WASD makes the right stick turn and the left stick strafe, which is a consequence
-    worth knowing rather than an accident.
+    that means WASD makes the **right stick turn and the left stick strafe**.
+    - **That is a feature, and both layouts are play-tested.** It fell out of reusing the scheme
+      machinery rather than being designed, so it was first written down here as a caveat; on the
+      cabinet it turned out to be a good second option, the modern twin-stick arrangement sitting
+      behind a selector the player can already reach. **Do not "fix" it.** Making the right stick
+      always strafe would mean extending `controlkeys_t` and the `cv_customcontrols` format from ten
+      keys to twelve, and would remove the better of the two layouts to do it.
   - **`gc_pause` is explicitly cleared.** Upstream binds pause to Back on Joy0
     (`G_Default_Controls`); Back is the automap here, and a cabinet nobody is watching must not be
     freezable by one player.
