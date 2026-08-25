@@ -703,7 +703,32 @@ void HU_Drawer(void)
         for( vind=0; vind<num_views; vind++ )
         {
             byte pn = localplayer[vind];
-            if( pn >= MAXPLAYERS )  continue;   // panel with no player
+
+            if( pn >= MAXPLAYERS )
+            {
+                // [Arcade] A cell with no player gets the rankings, always.
+                //
+                // Three players use the 2x2 grid and leave one quadrant
+                // unclaimed, which D_Display fills black -- dead space on a
+                // screen where the one thing everybody keeps wanting is the
+                // score, and the only way to see it is to hold your own
+                // scores key and lose your view while you do.  Put it in the
+                // empty quadrant instead, permanently, where all three can
+                // glance at it without giving anything up.
+                //
+                // Safe for a cell with no player: HU_Draw_DeathmatchRankings
+                // positions from D_View_Cell(vind) and takes its highlighted
+                // player from consoleplayer, never from localplayer[vind].
+                // HU_Drawer runs after the black fill in D_Display, so this
+                // paints over it rather than being erased by it.
+                //
+                // Only three players can reach this -- one and two get
+                // layouts with no spare cell, four fill the grid -- so it
+                // needs no player-count test of its own.
+                HU_Draw_DeathmatchRankings( vind );
+                continue;
+            }
+
             if( HU_Rankings_For_View( vind, pn ) )
                 HU_Draw_DeathmatchRankings( vind );
         }

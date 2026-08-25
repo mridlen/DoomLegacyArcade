@@ -705,6 +705,21 @@ silently made the flag do nothing at all.
       `HU_Draw_DeathmatchRankings` now takes a view index, halves the scale and draws in that
       view's cell, and `HU_Drawer` asks per view via `HU_Rankings_For_View`: that view's own
       player's death, or that panel's own `gamecontrol_pl[vind][gc_scores]` key.
+    - **A cell with no player shows the rankings permanently.** Three players use the 2x2 grid and
+      leave one quadrant unclaimed, which `D_Display` fills black — dead space on a screen where
+      the score is the one thing everybody keeps wanting, and the only way to see it was to hold
+      your own scores key and lose your view while you did. It goes in the empty quadrant instead,
+      where all three can glance at it for free.
+      - Only three players can reach it: one and two get layouts with no spare cell, four fill the
+        grid. So it needs no player-count test of its own.
+      - Safe for a cell with no player, which is worth knowing before moving it:
+        `HU_Draw_DeathmatchRankings` positions from `D_View_Cell(vind)`, takes its highlighted
+        player from `consoleplayer`, and builds the table by walking `playeringame[]` — it never
+        touches `localplayer[vind]`.
+      - `HU_Drawer` runs *after* the black fill in `D_Display`, so this paints over it rather than
+        being erased by it.
+      - Deathmatch only, like the rest of the block. A three player coop game still gets a black
+        quadrant; the frag table would say little there anyway.
     - **`V_CENTERHORZ` must be off for the multi-view case, and this is a trap worth knowing.**
       It puts its centering into `drawinfo.start_offset`, and in hardware mode **`V_DrawString`
       does not apply that** — it positions text as `x * drawfont.fdupx0` with no start offset,
