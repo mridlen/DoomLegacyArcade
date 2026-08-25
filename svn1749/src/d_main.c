@@ -493,6 +493,9 @@ byte    devmode = 0;
     // (e.g. arcade cabinet) build, such as Multiplayer.
 
 byte    demo_ctrl;
+// [Arcade] An attract advance asked for while a menu was open, to be replayed
+// once it closes.  See D_AdvanceDemo / D_Demo_Advance_Retry.
+static boolean  demo_advance_deferred = false;
 byte    init_sequence = 0;
 byte    fatal_error = 0;
 
@@ -1385,9 +1388,42 @@ void D_AdvanceDemo(void)
     // next tic advances the page.  The 60s idle timeout closes the menu
     // (G_Idle_Timeout_Check), so an abandoned menu returns to the attract
     // cycle on its own.
-    if( !(demo_ctrl & DEMO_seq_disabled) && ! menuactive
-        && ! console_open )
-        demo_ctrl = DEMO_seq_advance;    // flag to trigger D_DoAdvanceDemo
+    if( demo_ctrl & DEMO_seq_disabled )  return;   // a real game is running
+
+    if( menuactive || console_open )
+    {
+        // [Arcade] Deferred, *not* dropped, and that distinction is the whole
+        // bug this fixes.
+        //
+        // Dropping it was fine while the request came from D_PageTicker: the
+        // page simply stayed up, pagetic ran negative, and the next tic after
+        // the menu closed advanced it.  But a demo *ending* asks through
+        // G_CheckDemoStatus, and by then the engine has already left the
+        // demo -- gamestate is GS_NULL, not GS_DEMOSCREEN.  With the request
+        // thrown away nothing ever moved it on: no page, no demo, and
+        // G_Ticker's switch has no case for GS_NULL, so even
+        // G_Idle_Timeout_Check stopped being called and the open menu could
+        // never time out.  The cabinet sat there until someone touched it.
+        //
+        // D_Demo_Advance_Retry replays this the moment the menu closes.
+        demo_advance_deferred = true;
+        return;
+    }
+
+    demo_ctrl = DEMO_seq_advance;    // flag to trigger D_DoAdvanceDemo
+}
+
+
+// [Arcade] Fire an advance that was deferred while a menu or the console was
+// open.  Called every tic from G_Ticker, so it runs whatever the gamestate --
+// including GS_NULL, which is exactly where the dropped request stranded it.
+void D_Demo_Advance_Retry( void )
+{
+    if( ! demo_advance_deferred )  return;
+    if( menuactive || console_open )  return;
+
+    demo_advance_deferred = false;
+    D_AdvanceDemo();
 }
 
 //
@@ -1559,6 +1595,7 @@ void D_DisableDemo(void)
         G_StopDemo();
     // stop DEMO_seq_advance, but preserve DEMO_seq_playdemo so can abort it
     demo_ctrl = (demo_ctrl & DEMO_seq_playdemo) | DEMO_seq_disabled;
+    demo_advance_deferred = false;   // [Arcade] a real game outranks it
 }
 
 // =========================================================================

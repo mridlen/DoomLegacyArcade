@@ -1047,6 +1047,21 @@ silently made the flag do nothing at all.
     what covers the awkward in-between state: when an attract demo *ends* while a menu is open its
     `D_AdvanceDemo` is discarded, so `demoplayback` is already false while `gamestate` is still
     `GS_LEVEL`, and the naive pair would have let the demo's last frame sit frozen behind the menu.
+  - **A blocked advance is deferred, never dropped** (`demo_advance_deferred`,
+    `D_Demo_Advance_Retry`, called every tic from `G_Ticker`). Dropping it was fine while the
+    request came from `D_PageTicker` — the page stayed up, `pagetic` ran negative, and the tic
+    after the menu closed advanced it. But a demo *ending* asks through `G_CheckDemoStatus`, and by
+    then the engine has already left the demo: **gamestate is `GS_NULL`, not `GS_DEMOSCREEN`**.
+    With the request thrown away nothing ever moved it on — no page, no demo, and `G_Ticker`'s
+    switch has no case for `GS_NULL`, so `G_Idle_Timeout_Check` stopped being called and the open
+    menu could never time out. The cabinet sat there until someone touched it.
+    - The retry runs **before** the gamestate switch precisely so it works in `GS_NULL`.
+    - `D_DisableDemo` clears the flag: a real game outranks a pending attract advance.
+    - **`G_Ticker`'s `default` case now runs the idle check when a menu is open**, as a backstop.
+      The deferral stops the cabinet reaching that state at all; this makes sure no future route
+      can strand an open menu the same way. Verified: with the demo ended under an open menu at
+      `GS_NULL`, the menu closed at exactly the configured timeout and the attract screen came
+      back (`gs` 0 -> 4, `menuactive` 1 -> 0).
   - **The stall is hard, not a pause, and that is what makes the resume instant.** `D_PageTicker`
     decrements `pagetic` every tic regardless of what is on screen, so once it passes zero it calls
     `D_AdvanceDemo` on *every* tic and every one is discarded — `pagetic` runs deeply negative. The

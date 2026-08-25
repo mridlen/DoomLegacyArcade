@@ -2101,6 +2101,11 @@ void G_Ticker (void)
 
 main_actions:
 
+    // [Arcade] An attract advance deferred while a menu was open (see
+    // D_AdvanceDemo) is replayed here, before the switch, so it runs whatever
+    // the gamestate is -- including GS_NULL, which the switch below ignores.
+    D_Demo_Advance_Retry();
+
     // do main actions
     switch (gamestate)
     {
@@ -2157,6 +2162,15 @@ main_actions:
       case GS_DEDICATEDSERVER:
       case GS_NULL:
       default:
+        // [Arcade] A menu must be able to time out from *any* gamestate, not
+        // just the ones with something to draw.  GS_NULL in particular is
+        // reachable with a menu open -- a demo ending under one leaves it
+        // there -- and with no check running the menu stayed up for ever.
+        // D_Demo_Advance_Retry above now stops the cabinet reaching that
+        // state at all; this is the backstop, so no future route can strand
+        // an open menu the same way.
+        if( menuactive )
+            G_Idle_Timeout_Check( D_Menu_Over_Attract() );
         // do nothing
         gameplay_msg = false;
         break;

@@ -102,6 +102,10 @@ extern byte demo_ctrl;
 // G_Idle_Timeout_Check to decide whether the timeout has a game to tear down.
 boolean D_Menu_Over_Attract( void );
 
+// [Arcade] Replay an attract advance that was deferred while a menu was open.
+// Called every tic from G_Ticker.
+void D_Demo_Advance_Retry( void );
+
 void D_StartTitle (void);
 void D_End_commandline(void);
 
