@@ -389,6 +389,25 @@ static int Translate_Joybutton(int which, Uint8 button)
   return KEY_JOY0BUT0 + JOYBUTTONS*which + button;
 }
 
+// [Arcade] Right stick directions.  Its own key codes rather than the hat's,
+// so the left stick / d-pad and the right stick can be bound to different
+// actions -- which is the whole point of reading it.  Takes SDL_HAT_* as a
+// direction, as Translate_Joyhat does, since the caller already thinks in them.
+static int Translate_Joy_RStick(int which, Uint8 value)
+{
+  if (which >= MAXJOYSTICKS)
+    which = MAXJOYSTICKS-1;
+
+  switch( value )
+  {
+    case SDL_HAT_UP:     return KEY_JOY0RSTICKUP    + JOYRSTICKDIRS*which;
+    case SDL_HAT_RIGHT:  return KEY_JOY0RSTICKRIGHT + JOYRSTICKDIRS*which;
+    case SDL_HAT_DOWN:   return KEY_JOY0RSTICKDOWN  + JOYRSTICKDIRS*which;
+    case SDL_HAT_LEFT:   return KEY_JOY0RSTICKLEFT  + JOYRSTICKDIRS*which;
+    default:             return 0;
+  }
+}
+
 static int Translate_Joyhat(int which, Uint8 value)
 {
   if (which >= MAXJOYSTICKS) 
@@ -541,6 +560,11 @@ Uint8 previous_jaxis[MAX_JOYSTICKS][JOYAXIS_DIRS] = {{0}};
 // so only the transitions are posted.
 Uint8 previous_jtrigger[MAX_JOYSTICKS][XBOXTRIGGERS] = {{0}};
 
+// [Arcade] Right stick latched direction, [joystick][0=X axis 3, 1=Y axis 4].
+// Separate from previous_jaxis so the two sticks cannot clear each other, the
+// same mistake previous_jhat used to make across joysticks.
+Uint8 previous_jraxis[MAX_JOYSTICKS][2] = {{0}};
+
 
 #ifdef JOYSTICK_SUPPORT
 // [Arcade] Open one device into a slot, and report it.  Shared by the startup
@@ -609,6 +633,7 @@ static int  Joystick_Open_Device( int device_index )
   // Anything this slot was holding down belongs to the pad that just left.
   previous_jhat[slot][0] = previous_jhat[slot][1] = 0;
   previous_jaxis[slot][0] = previous_jaxis[slot][1] = 0;
+  previous_jraxis[slot][0] = previous_jraxis[slot][1] = 0;
 #ifdef XBOX_CONTROLLER
   previous_jtrigger[slot][0] = previous_jtrigger[slot][1] = 0;
 #endif
@@ -1052,6 +1077,52 @@ void I_GetEvent(void)
                   }
 
                   previous_jaxis[which][axis] = dir;
+              }
+          }
+
+          // [Arcade] Right stick, axes 3 and 4, as a second hat.  Upstream read
+          // these nowhere at all -- the trigger case covered 2 and 5 and the
+          // stick case covers 0 and 1 -- so the right stick was dead input on
+          // every pad.  Digital rather than analog on purpose: it feeds the
+          // ordinary key bindings, so it works with the menus, the guided
+          // setup and setcontrol exactly as every other control does.
+          if(inputEvent.jaxis.axis == 3 || inputEvent.jaxis.axis == 4)
+          {
+              int   rwhich = Joystick_Index_Of(inputEvent.jaxis.which);
+              Uint8 raxis  = (inputEvent.jaxis.axis == 3) ? 0 : 1;  // 0 = X
+              Uint8 rdir   = 0;   // 0 = centred
+
+              if( rwhich < 0 )  break;   // not one of ours
+
+              if(inputEvent.jaxis.value <= -JOYAXIS_DEADZONE)
+                  rdir = raxis ? SDL_HAT_UP : SDL_HAT_LEFT;
+              else if(inputEvent.jaxis.value >= JOYAXIS_DEADZONE)
+                  rdir = raxis ? SDL_HAT_DOWN : SDL_HAT_RIGHT;
+
+              // Transitions only, as for the left stick: an analog stick emits
+              // a stream of events while held, and every one of them would
+              // otherwise re-post a keydown.
+              if(rdir != previous_jraxis[rwhich][raxis])
+              {
+                  event.data2 = 0;
+
+                  // Release what this axis was holding first, so a straight
+                  // left-to-right flick cannot leave both directions down.
+                  if(previous_jraxis[rwhich][raxis] != 0)
+                  {
+                      event.type = ev_keyup;
+                      event.data1 = Translate_Joy_RStick(rwhich, previous_jraxis[rwhich][raxis]);
+                      D_PostEvent(&event);
+                  }
+
+                  if(rdir != 0)
+                  {
+                      event.type = ev_keydown;
+                      event.data1 = Translate_Joy_RStick(rwhich, rdir);
+                      D_PostEvent(&event);
+                  }
+
+                  previous_jraxis[rwhich][raxis] = rdir;
               }
           }
           break;

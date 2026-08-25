@@ -525,6 +525,29 @@ static keyname_t keynames[] =
   
   {KEY_JOY3LEFTTRIGGER, "Joy3 lt"},
   {KEY_JOY3RIGHTTRIGGER, "Joy3 rt"},
+
+  // [Arcade] Right stick directions.  Without names here a key cannot be bound
+  // by setcontrol or written to config.cfg at all -- see the six per-player
+  // cvars that were never registered.
+  {KEY_JOY0RSTICKUP, "Joy0 ru"},
+  {KEY_JOY0RSTICKRIGHT, "Joy0 rr"},
+  {KEY_JOY0RSTICKDOWN, "Joy0 rd"},
+  {KEY_JOY0RSTICKLEFT, "Joy0 rl"},
+
+  {KEY_JOY1RSTICKUP, "Joy1 ru"},
+  {KEY_JOY1RSTICKRIGHT, "Joy1 rr"},
+  {KEY_JOY1RSTICKDOWN, "Joy1 rd"},
+  {KEY_JOY1RSTICKLEFT, "Joy1 rl"},
+
+  {KEY_JOY2RSTICKUP, "Joy2 ru"},
+  {KEY_JOY2RSTICKRIGHT, "Joy2 rr"},
+  {KEY_JOY2RSTICKDOWN, "Joy2 rd"},
+  {KEY_JOY2RSTICKLEFT, "Joy2 rl"},
+
+  {KEY_JOY3RSTICKUP, "Joy3 ru"},
+  {KEY_JOY3RSTICKRIGHT, "Joy3 rr"},
+  {KEY_JOY3RSTICKDOWN, "Joy3 rd"},
+  {KEY_JOY3RSTICKLEFT, "Joy3 rl"},
 #endif
 };
 
@@ -838,6 +861,11 @@ static void ControlScheme_Apply( int pind )
 #define JOY_HAT_LEFT  3
 #define JOY_LT(n)     (KEY_JOY0LEFTTRIGGER  + XBOXTRIGGERS*(n))
 #define JOY_RT(n)     (KEY_JOY0RIGHTTRIGGER + XBOXTRIGGERS*(n))
+#define JOY_RS(n,d)   (KEY_JOY0RSTICKUP + JOYRSTICKDIRS*(n) + (d))
+#define JOY_RS_UP     0
+#define JOY_RS_RIGHT  1
+#define JOY_RS_DOWN   2
+#define JOY_RS_LEFT   3
 
 
 // Which joystick a key code belongs to, or -1 when it is not a joystick key.
@@ -855,6 +883,9 @@ int  G_Joy_Num_Of_Key( int key )
 
     if( key >= KEY_JOY0LEFTTRIGGER && key <= KEY_JOY3RIGHTTRIGGER )
         return (key - KEY_JOY0LEFTTRIGGER) / XBOXTRIGGERS;
+
+    if( key >= KEY_JOY0RSTICKUP && key <= KEY_JOY3RSTICKLEFT )
+        return (key - KEY_JOY0RSTICKUP) / JOYRSTICKDIRS;
 #else
     (void) key;
 #endif
@@ -863,12 +894,21 @@ int  G_Joy_Num_Of_Key( int key )
 
 
 // Bind joystick joynum to panel pind, as a complete Xbox layout.
-//   stick / d-pad  move and turn      RT  fire        A  use / open
-//   LB / RB        strafe             LT  run         B  jump
-//   X / Y          weapon down / up   Start  menu     Back  automap
+//   left stick / d-pad  move and turn     RT  fire        A  use / open
+//   right stick L/R     strafe            LT  run         B  jump
+//   LB / RB             weapon down / up  Start  menu     Back  automap
+//                                         L3  scores
 //
-// The left stick and the d-pad both work: sdl/i_system.c translates axes 0/1
-// into the same KEY_JOY*HAT* codes the hat emits, so one binding covers both.
+// The left stick and the d-pad both work from one binding: sdl/i_system.c
+// translates axes 0/1 into the same KEY_JOY*HAT* codes the hat emits.  The
+// right stick has its own codes, so it can do a different job -- strafe.
+//
+// Strafe is on the right stick rather than the shoulders, which is what pushed
+// the weapon keys onto LB/RB and left X and Y free for the operator.  Note the
+// strafe pair goes in through CK_pair_b, so the "Look and Move" / "WASD"
+// selector still swaps it with turning; on a pad that means WASD makes the
+// right stick turn and the left stick strafe, which is a deliberate choice
+// rather than an accident.
 void  G_Apply_Xbox_Preset( int pind, int joynum )
 {
     int  keys[CK_NUMKEYS];
@@ -883,10 +923,10 @@ void  G_Apply_Xbox_Preset( int pind, int joynum )
     keys[CK_pair_a_right] = JOY_HAT(joynum, JOY_HAT_RIGHT);
     keys[CK_fire]         = JOY_RT(joynum);
     keys[CK_use]          = JOY_BUT(joynum, XPAD_A);
-    keys[CK_nextweapon]   = JOY_BUT(joynum, XPAD_Y);
-    keys[CK_prevweapon]   = JOY_BUT(joynum, XPAD_X);
-    keys[CK_pair_b_left]  = JOY_BUT(joynum, XPAD_LB);
-    keys[CK_pair_b_right] = JOY_BUT(joynum, XPAD_RB);
+    keys[CK_nextweapon]   = JOY_BUT(joynum, XPAD_RB);
+    keys[CK_prevweapon]   = JOY_BUT(joynum, XPAD_LB);
+    keys[CK_pair_b_left]  = JOY_RS(joynum, JOY_RS_LEFT);
+    keys[CK_pair_b_right] = JOY_RS(joynum, JOY_RS_RIGHT);
 
     // Applies immediately: cv_customcontrols is CV_CALL onto ControlScheme_Apply.
     G_Save_CustomControls( pind, keys );
@@ -906,8 +946,10 @@ void  G_Apply_Xbox_Preset( int pind, int joynum )
     XB_BIND( gc_pause,   KEY_NULL );
 #undef XB_BIND
 
-    // Deliberately left unbound: Guide (often taken by the desktop before it
-    // reaches SDL) and R3.
+    // Deliberately left unbound: X and Y (freed when the weapon keys moved to
+    // the shoulders -- there for the operator to bind), the right stick's up
+    // and down, Guide (often taken by the desktop before it reaches SDL), and
+    // R3.
 }
 
 

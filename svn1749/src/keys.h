@@ -27,6 +27,7 @@ enum aux_controller_e
   JOYBUTTONS   = 16,  // Max number of buttons for a joystick.
   JOYHATBUTTONS = 4,  // Four hat directions.
   XBOXTRIGGERS =  2,  // Two triggers on Xbox-like controllers.
+  JOYRSTICKDIRS = 4,  // Four right-stick directions, treated as a second hat.
 };
 
 /// These are the key event codes posted by the keyboard handler, and closely match the SDLKey symbols.
@@ -239,6 +240,35 @@ enum key_input_e
   KEY_JOY3BUT0DBL = KEY_JOY0BUT0DBL + JOYBUTTONS,
   KEY_JOYLASTDBL  = KEY_JOY0BUT0DBL + JOYBUTTONS - 1,
 #endif
+
+  // [Arcade] Right stick (axes 3 and 4), translated to digital directions the
+  // same way the left stick and the hat are -- see sdl/i_system.c.  Upstream
+  // read these axes nowhere at all, so the right stick was dead input.
+  //
+  // *Appended at the very end on purpose.*  cv_customcontrols stores raw key
+  // *numbers* (G_Save_CustomControls writes "%d %d ..."), so inserting a code
+  // anywhere above here would silently repoint every saved custom layout.
+  // Everything else -- config.cfg's setcontrol lines -- stores names and would
+  // have survived, which is exactly what would make such a bug hard to see.
+  KEY_JOY0RSTICKUP,
+  KEY_JOY0RSTICKRIGHT,
+  KEY_JOY0RSTICKDOWN,
+  KEY_JOY0RSTICKLEFT,
+
+  KEY_JOY1RSTICKUP,
+  KEY_JOY1RSTICKRIGHT,
+  KEY_JOY1RSTICKDOWN,
+  KEY_JOY1RSTICKLEFT,
+
+  KEY_JOY2RSTICKUP,
+  KEY_JOY2RSTICKRIGHT,
+  KEY_JOY2RSTICKDOWN,
+  KEY_JOY2RSTICKLEFT,
+
+  KEY_JOY3RSTICKUP,
+  KEY_JOY3RSTICKRIGHT,
+  KEY_JOY3RSTICKDOWN,
+  KEY_JOY3RSTICKLEFT,
 
   // number of total 'button' inputs, includes keyboard keys, plus virtual
   // keys (mousebuttons and joybuttons become keys)

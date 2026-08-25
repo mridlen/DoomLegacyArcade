@@ -1475,15 +1475,23 @@ silently made the flag do nothing at all.
 
   | control | pad | control | pad |
   | --- | --- | --- | --- |
-  | move / turn | stick or d-pad | fire | RT |
-  | strafe left / right | LB / RB | run | LT |
+  | move / turn | left stick or d-pad | fire | RT |
+  | **strafe left / right** | **right stick** | run | LT |
   | use / open | A | jump | B |
-  | weapon down / up | X / Y | menu | Start |
+  | weapon down / up | LB / RB | menu | Start |
   | automap | Back | scores | L3 |
 
   - **The left stick and the d-pad both work from one binding**, because `sdl/i_system.c` translates
-    axes 0/1 into the same `KEY_JOY*HAT*` codes the hat emits. That is also why the pad is digital:
-    analog move/turn is a separate job, and would double-apply against these bindings.
+    axes 0/1 into the same `KEY_JOY*HAT*` codes the hat emits. **The right stick has its own key
+    codes**, which is the whole reason it can do a different job -- see the right-stick section
+    below. Everything is digital, deliberately: it feeds the ordinary key bindings, so it works with
+    the menus, the guided setup and `setcontrol` exactly as every other control does, and true
+    analog movement would double-apply against these same bindings.
+  - Strafe sits on the right stick rather than the shoulders, which is what pushed the weapon keys
+    onto LB/RB and left **X and Y free** for the operator. The strafe pair goes in through
+    `CK_pair_b`, so the "Look and Move" / "WASD" selector still swaps it with turning -- on a pad
+    that means WASD makes the right stick turn and the left stick strafe, which is a consequence
+    worth knowing rather than an accident.
   - **`gc_pause` is explicitly cleared.** Upstream binds pause to Back on Joy0
     (`G_Default_Controls`); Back is the automap here, and a cabinet nobody is watching must not be
     freezable by one player.
@@ -1504,8 +1512,35 @@ silently made the flag do nothing at all.
     own** -- they are firmware remaps that mirror one of these -- and the **volume rocker is a
     separate HID consumer device that never reaches SDL at all**. Do not design around any of them.
   - **Axes 2 and 5 (the triggers) rest at full negative** (-32768), which is the convention the
-    existing `> 0` threshold was written for; axes 0/1 rest around 900-2600, well inside the 16384
-    deadzone; axes 3/4 are the right stick and are unused.
+    existing `> 0` threshold was written for; axes 0/1 rest around 900-2600 and axes 3/4 (the right
+    stick) around -400 to -650, both well inside the 16384 deadzone.
+
+  **The right stick is a second hat** (`sdl/i_system.c`, `Translate_Joy_RStick`). Upstream read axes
+  3 and 4 *nowhere at all* -- the trigger case covers 2 and 5, the stick case covers 0 and 1 -- so
+  the right stick was dead input on every pad. It is translated to its own key codes, latched per
+  joystick and per axis in `previous_jraxis` so the two sticks cannot clear each other, with the
+  same `JOYAXIS_DEADZONE` and the same release-before-press ordering as the left stick.
+  - **Its own codes, not the hat's**, so the left stick / d-pad and the right stick can be bound to
+    different actions. `KEY_JOY0RSTICKUP`..`KEY_JOY3RSTICKLEFT` in `keys.h`, four per joystick
+    (`JOYRSTICKDIRS`), named `"Joy0 ru"` / `"rr"` / `"rd"` / `"rl"` in `keynames[]` -- **without
+    those names a key cannot be bound by `setcontrol` or written to `config.cfg` at all**, the same
+    trap as the six per-player cvars that were never registered.
+  - **They are appended at the very end of the `key_input_e` enum, after the `JOY_BUTTONS_DOUBLE`
+    block, and that placement is load-bearing.** `cv_customcontrols` stores raw key *numbers*
+    (`G_Save_CustomControls` writes `"%d %d ..."`), so a code inserted anywhere above would silently
+    repoint every saved custom layout. `config.cfg`'s `setcontrol` lines store *names* and would
+    have survived unharmed -- which is exactly what would have made such a bug hard to see.
+    `NUMINPUTS` goes 440 -> 456; the only things sized by it are `gamekeydown`/`gamekeytapped`,
+    which scale automatically, and `ev->data1` is bounds-checked against it.
+  - Up and down are deliberately left unbound. A digital right stick has four directions and the
+    preset only needs two.
+  - Verified headlessly through the temporary `tmpxbox` command: strafe resolves to `Joy0 rl`/`rr`,
+    weapons to `b4`/`b5`, and all sixteen new codes round-trip through the name table
+    (`G_KeynumToString` then `G_KeyStringtoNum` returns the same number) with `G_Joy_Num_Of_Key`
+    reporting the right joystick.
+  - **An existing `cv_customcontrols` from before this change still parses** -- LB/RB are still
+    valid key codes in the `CK_pair_b` slots -- so nothing breaks; the panel simply keeps the old
+    layout until the assignment page is run again.
 
 - **`gamecontrolname[]` was one entry out of step with `gamecontrols_e`** (`g_input.c`), and had
   been for as long as `ENABLE_COME_HERE` has been defined (it is, `doomdef.h:307`). The enum puts
