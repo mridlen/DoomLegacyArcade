@@ -1460,6 +1460,35 @@ silently made the flag do nothing at all.
     the original event, so `ev->data1` is untranslated. Without that, pressing a pad button already
     bound to a control (the likely case) would arrive as `KEY_ENTER`. The guided setup relies on the
     same thing.
+  - **Backspace on a row takes the gamepad off that panel** (`M_Xbox_Clear` /
+    `G_Clear_Xbox_Preset`), which is what Backspace already does on an `IT_CONTROL` row -- the same
+    `case KEY_BACKSPACE` in `M_Responder` handles both. No confirmation and no message: the row's
+    value is derived from the bindings, so it changes to `none` under the cursor the instant it
+    runs, which says it better than a message box would.
+    - **Keyboard only, and that test is load-bearing.** `button_key` is set for any mouse or
+      joystick press, and upstream remaps `KEY_JOY0BUT1` -- **B on an Xbox pad** -- straight onto
+      `KEY_BACKSPACE` in the virtual-key switch far above. Without `! button_key`, pressing B on
+      this page would wipe a panel's whole layout instead of backing out of the page, which is what
+      B does on every other menu. Safe because clearing is an operator action and this page is
+      devmode-only, so a keyboard is always present.
+    - **It restores, rather than merely unbinding.** The five extras are cleared explicitly
+      (`ControlScheme_Apply` never touches them, so emptying the custom table would leave them on
+      the pad for ever), the ten scheme actions are cleared explicitly too, and then
+      `cv_customcontrols[pind]` is emptied and `ControlScheme_Apply` called **directly** -- not left
+      to the cvar's OnChange, because `CV_Set` returns early on an unchanged value and a panel whose
+      table was already empty would never be re-stamped. Net effect: **panels 1 and 2 come back on
+      their compiled Dvorak keyboard preset, panels 3 and 4 have none and are left unbound.** That
+      is "undo the assignment", not "make this panel dead".
+    - Clearing the ten explicitly is what makes panels 3 and 4 work: `ControlScheme_Apply`
+      deliberately returns without touching anything when there is no custom table *and* no
+      compiled preset, so emptying the cvar alone would have left the pad bindings exactly where
+      they were and the row still reporting its pad.
+    - Verified headlessly: panel 1 assigned then cleared reports `, o a e t n h space w v` with the
+      extras null; panel 3 assigned then cleared reports every one of the fifteen as null.
+  - **Assigning a pad overwrites whatever the guided setup put in that panel's
+    `cv_customcontrols`**, and clearing cannot bring it back -- it falls to the compiled preset. On
+    a cabinet whose panels are wired arcade controls, assigning a pad to a panel therefore discards
+    that panel's hand-taught layout. Re-run the guided setup to get it back.
   - The row is **appended** to `MControlMenu`: that menu is addressed by position (`mcontrol_*`,
     used by the lockdown) and nothing indexes past `mcontrol_p4_controls`. Rows for panels the
     cabinet does not have are hidden in `M_Configure` beside the guided-setup ones. Rows 0 and 1 are
@@ -1469,7 +1498,8 @@ silently made the flag do nothing at all.
     ending at 170, and the widest value `"Joy0 - off"` is 70px, right-justified at
     `BASEVIDWIDTH - x` = 260 and so starting at 190 -- 20px clear. **`"Panel 1 controller"` was the
     first wording and did not fit**: 133px, ending at 193, three pixels into the value. Rows are
-    `IT_WHITESTRING` and step by `STRINGHEIGHT`, so the four sit at y 40..70 and the footer at 88.
+    `IT_WHITESTRING` and step by `STRINGHEIGHT`, so the four sit at y 40..70 and the footer at 88,
+    with the Backspace hint (178px, ending at 238) one `STRINGHEIGHT` below it at 98.
 
   **The preset**, per joystick N (`G_Apply_Xbox_Preset`):
 

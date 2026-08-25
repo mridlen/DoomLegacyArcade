@@ -4892,6 +4892,10 @@ static void  M_Draw_Xbox( void )
         V_DrawString( XboxDef.x, y, 0, "PRESS A ROW, THEN A PAD BUTTON" );
     else
         V_DrawString( XboxDef.x, y, 0, "NO CONTROLLERS CONNECTED" );
+
+    // Second line, one row lower.  Measured: 178px from x=60, ending at 238 of
+    // 320, and the block runs to y 105 of BASEVIDHEIGHT 200.
+    V_DrawString( XboxDef.x, y + STRINGHEIGHT, 0, "BACKSPACE CLEARS A PANEL" );
 }
 
 static void  M_Xbox_Response( event_t * ev )
@@ -4930,6 +4934,19 @@ static void  M_Xbox_Response( event_t * ev )
               joynum, xbox_panel + 1 );
     msgtmp[MSGTMP_LEN-1] = '\0';
     M_SimpleMessage( msgtmp );
+}
+
+// [Arcade] Take the gamepad off one panel.  Reached with Backspace, which is
+// what already clears a binding on an IT_CONTROL row -- see M_Responder.
+// No confirmation and no message: the row's value is derived from the bindings,
+// so it changes to "none" under the cursor the instant this runs, which says it
+// better than a message box would.
+static void  M_Xbox_Clear( int panel )
+{
+    if( panel < 0 || panel >= MAXSPLITSCREENPLAYERS )  return;
+    if( (XboxMenu[panel].status & IT_TYPE) == IT_SPACE )  return;   // hidden row
+
+    G_Clear_Xbox_Preset( panel );
 }
 
 static void  M_Xbox_Assign( int choice )
@@ -8385,6 +8402,24 @@ boolean M_Responder (event_t* ev)
         goto ret_true;
 
       case KEY_BACKSPACE:
+#ifdef JOYSTICK_SUPPORT
+        // [Arcade] Clear this panel's gamepad, the same thing Backspace does on
+        // an IT_CONTROL row just below.
+        //
+        // *Keyboard only.*  button_key is set for any mouse or joystick press,
+        // and upstream remaps KEY_JOY0BUT1 -- B on an Xbox pad -- straight onto
+        // KEY_BACKSPACE in the virtual-key switch far above.  Without that test
+        // pressing B on this page would wipe a panel's whole layout instead of
+        // backing out of the page, which is what B does on every other menu.
+        // Clearing is an operator action and this page is devmode-only, so a
+        // keyboard is always present.
+        if( currentMenu == &XboxDef && ! button_key )
+        {
+            S_StartSound(menu_sfx_val);
+            M_Xbox_Clear( itemOn );
+            goto ret_true;
+        }
+#endif
         if( r_menuline->status == IT_CONTROL )
         {
             S_StartSound(menu_sfx_val);

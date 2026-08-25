@@ -153,6 +153,9 @@ int   G_Joy_Num_Of_Key( int key );
 // [Arcade] Bind joystick joynum to panel pind as a complete Xbox layout.
 void  G_Apply_Xbox_Preset( int pind, int joynum );
 
+// [Arcade] Undo that: take the gamepad off panel pind.
+void  G_Clear_Xbox_Preset( int pind );
+
 // Store keys[CK_NUMKEYS] into cv_customcontrols[pind] and apply immediately.
 void  G_Save_CustomControls( int pind, const int * keys );
 

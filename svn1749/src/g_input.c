@@ -953,6 +953,52 @@ void  G_Apply_Xbox_Preset( int pind, int joynum )
 }
 
 
+// Undo G_Apply_Xbox_Preset for one panel: take the pad off it and put the panel
+// back to how it would be with no gamepad ever assigned.  Panels 1 and 2 come
+// back on their compiled keyboard preset; panels 3 and 4 have none and are left
+// unbound.  That is "undo the assignment", not "make this panel dead".
+void  G_Clear_Xbox_Preset( int pind )
+{
+    int (* gc)[2] = gamecontrol_pl[pind];
+
+    if( pind < 0 || pind >= MAXSPLITSCREENPLAYERS )  return;
+
+#define XB_CLEAR(act)   { gc[act][0] = gc[act][1] = KEY_NULL; }
+
+    // The extras first.  ControlScheme_Apply never touches these, so emptying
+    // the custom table below would leave them bound to the pad for ever.
+    XB_CLEAR( gc_speed );
+    XB_CLEAR( gc_jump );
+    XB_CLEAR( gc_menuesc );
+    XB_CLEAR( gc_automap );
+    XB_CLEAR( gc_scores );
+
+    // The ten the scheme owns, cleared explicitly as well.  For a panel with no
+    // compiled preset -- 3 and 4, whose scheme_keys entries are all KEY_NULL --
+    // ControlScheme_Apply deliberately returns without touching a thing, so
+    // emptying the cvar alone would leave the pad bindings exactly where they
+    // were and the row would still report the pad it had.
+    XB_CLEAR( gc_forward );
+    XB_CLEAR( gc_backward );
+    XB_CLEAR( gc_fire );
+    XB_CLEAR( gc_use );
+    XB_CLEAR( gc_nextweapon );
+    XB_CLEAR( gc_prevweapon );
+    XB_CLEAR( gc_turnleft );
+    XB_CLEAR( gc_turnright );
+    XB_CLEAR( gc_strafeleft );
+    XB_CLEAR( gc_straferight );
+#undef XB_CLEAR
+
+    CV_Set( &cv_customcontrols[pind], "" );
+
+    // Applied directly rather than left to the cvar's OnChange: CV_Set returns
+    // early when the value has not changed, so a panel whose custom table was
+    // already empty would never have the preset re-stamped.
+    ControlScheme_Apply( pind );
+}
+
+
 void ControlScheme1_OnChange(void)  { ControlScheme_Apply(0); }
 void ControlScheme2_OnChange(void)  { ControlScheme_Apply(1); }
 void ControlScheme3_OnChange(void)  { ControlScheme_Apply(2); }
