@@ -1099,6 +1099,12 @@ void Command_ExitGame_f(void)
     // and arms the initials prompt if it earned a place; M_Initials_Ticker
     // raises the page on a later tic, once whatever menu this route ends on
     // has settled.  Idempotent, so the routes that reach here twice are fine.
+    // [Arcade] Backstop for a run that died: the demos it earned are written
+    // when the death lands (G_Arcade_Death_Check), but a route that never
+    // gets there -- the player quitting mid-death -- must not leave the
+    // recorder open.  Idempotent, and a no-op when nothing is pending.
+    HS_Death_Demo_Finish();
+
     HS_Run_Finished();
 
     // [Arcade] Splitscreen otherwise persists into the attract screen, and

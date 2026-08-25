@@ -1326,6 +1326,20 @@ silently made the flag do nothing at all.
     `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
   - Hooked at the moment of death rather than at `G_DoReborn`, so a player who dies and walks away
     still voids the run and releases the demo buffer.
+  - **The demo is written when the death *lands*, not when the blow does.**
+    `HS_Player_Died` runs from `P_KillMobj`, inside the tic the killing blow arrives on, so writing
+    the snapshot there ends the recording on that tic: no death animation, no corpse, the replay
+    simply cuts out mid-fight. It reads as a demo that stopped rather than a run that ended in a
+    death. So `HS_Player_Died` only *decides* which demos the run earned (`hs_death_demo_pending`,
+    plus the paths) and leaves the recorder running; `HS_Death_Demo_Finish` writes them and closes
+    it, called from `G_Arcade_Death_Check` the moment `G_Player_Death_Settled()` is true.
+    - **Deciding at the death is what makes it possible at all**: `HS_Run_Finished` runs there too
+      and inserts the run into the board, after which `HS_Run_Leads` is false — it is no longer
+      *beating* the entry, it *is* the entry — so nothing could be chosen afterwards.
+    - `Command_ExitGame_f` calls it as a backstop, so a route that never reaches the settle (the
+      player quitting during the death) cannot leave the recorder open.
+    - **devmode keeps the old behaviour** — snapshot at the blow and close — because
+      `G_Arcade_Death_Check` is skipped there, so nothing would ever finish the recording.
   - **It takes one last snapshot first, so the demo contains the death.** The snapshots taken at
     level exits each stop at that exit, so a Survival demo used to end at the last level completed
     and the run simply appeared to stop. Under Survival the death *is* the end of the run and the

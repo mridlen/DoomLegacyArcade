@@ -95,6 +95,11 @@ static int              hs_table_count = 0;
 // pass" as it was before.
 static unsigned int     hs_demo_gen = 0;
 
+// [Arcade] Demos this run earned at the moment it died, written once the
+// death has actually played out.  See HS_Player_Died / HS_Death_Demo_Finish.
+static char  hs_death_demo_path[HS_NUMCAT][MAX_WADPATH];
+static byte  hs_death_demo_pending = 0;   // bitmask of categories
+
 // -------------------------------------------------------------------------
 // [Arcade] The run board.  See the header for why this is a separate table
 // and a separate file from the per-map splits above.
@@ -1613,27 +1618,57 @@ void HS_Player_Died( void )
         hs_run_ranked = false;
     }
 
-    // [Arcade] Save the run one last time, *including the death*, before
-    // closing the recorder.
+    // [Arcade] Save the run one last time, *including the death*.
     //
     // The snapshots taken at level exits (HS_Snapshot_If_Leading) each stop
     // at that exit, so a Survival demo used to end at the last level the
     // player completed and the run appeared to simply stop.  Under Survival
-    // the death is the end of the run and the most interesting part of it --
-    // how far they got and what got them -- so the replay should show it.
+    // the death is the end of the run and the most interesting part of it.
     //
-    // Taken before HS_Run_Finished below: that inserts this run into the
-    // board, after which HS_Run_Leads is false (it is no longer *beating*
-    // the entry, it is the entry) and nothing would be saved.
+    // But it cannot be written *here*.  This runs from P_KillMobj, inside the
+    // tic the killing blow lands on, so the recording would end on that tic:
+    // no death animation, no corpse, the replay just cuts out mid-fight.  It
+    // reads as a demo that stopped, not as a run that ended in a death --
+    // which is exactly how the first attempt at this looked.
+    //
+    // So decide *now* which demos the run has earned, and write them once the
+    // death has played out (HS_Death_Demo_Finish, called from
+    // G_Arcade_Death_Check when the body reaches the ground).  Deciding now
+    // matters: HS_Run_Finished below inserts this run into the board, after
+    // which HS_Run_Leads is false -- it is no longer *beating* the entry, it
+    // is the entry -- and nothing would be saved.
     //
     // This costs the scoring nothing.  The tables are written from the run
     // state, not from the demo; a snapshot is a copy of the recording buffer.
-    HS_Snapshot_If_Leading( hs_run_skill );
+    hs_death_demo_pending = 0;
+    if( demorecording && ! HS_Id_Is_Single( hs_run_gameid ) && ! devmode )
+    {
+        int cat;
+        for( cat = 0; cat < HS_NUMCAT; cat++ )
+        {
+            if( ! HS_Run_Leads( hs_run_skill, cat ) )  continue;
+            HS_BuildSurvivalDemoPath( hs_death_demo_path[cat], hs_run_gameid,
+                                      HS_Episode_Of(hs_run_endmap),
+                                      hs_run_skill, cat );
+            hs_death_demo_pending |= (1 << cat);
+        }
+    }
 
-    // The run can no longer set a record, so stop spending the demo buffer
-    // on it.
-    if( demorecording )
-        G_CheckDemoStatus();
+    if( hs_death_demo_pending )
+    {
+        // Keep recording through the death animation.  The buffer is only
+        // spent for the second or so it takes to hit the ground.
+    }
+    else
+    {
+        // Nothing to wait for -- in devmode the death does not end the run at
+        // all (G_Arcade_Death_Check is skipped there), so there would be
+        // nothing to close the recorder later.  Take the old behaviour: save
+        // what the run earned up to the blow, and release the buffer.
+        HS_Snapshot_If_Leading( hs_run_skill );
+        if( demorecording )
+            G_CheckDemoStatus();
+    }
 
     // [Arcade] Commit the run to the board *here*, at the death, rather than
     // waiting for the way back to the title.
@@ -1655,6 +1690,38 @@ void HS_Player_Died( void )
     // the page over a live level, so it still appears on the way out, which
     // is where the player expects it.
     HS_Run_Finished();
+}
+
+
+// [Arcade] Write the demos the run earned when it died, now that the death
+// has finished playing out, and release the recording buffer.
+//
+// Called from G_Arcade_Death_Check the moment the body reaches the ground, so
+// the replay carries the whole run: the fatal hit, the fall, and the corpse.
+// Also called from Command_ExitGame_f as a backstop, so a recorder can never
+// be left open by a route that did not reach the settle -- the player
+// quitting during the death, say.
+//
+// Idempotent: the pending mask is cleared, so the second call only makes sure
+// the recorder is shut.
+void  HS_Death_Demo_Finish( void )
+{
+    int cat;
+
+    if( hs_death_demo_pending && demorecording )
+    {
+        for( cat = 0; cat < HS_NUMCAT; cat++ )
+        {
+            if( hs_death_demo_pending & (1 << cat) )
+                G_SnapshotDemo( hs_death_demo_path[cat] );
+        }
+        hs_demo_gen++;   // let the attract bag pick it up this session
+    }
+
+    hs_death_demo_pending = 0;
+
+    if( demorecording )
+        G_CheckDemoStatus();
 }
 
 

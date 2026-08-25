@@ -1851,7 +1851,14 @@ static void G_Arcade_Death_Check( void )
     }
 
     if( settled_tic == 0 )
+    {
         settled_tic = gametic;
+
+        // [Arcade] The body has reached the ground, so the recording now
+        // holds the whole run including the death.  Write it and release the
+        // buffer -- see HS_Death_Demo_Finish.
+        HS_Death_Demo_Finish();
+    }
 
     // The initials page gets its turn first: HS_Player_Died arms it and
     // M_Initials_Ticker opens it once the death has settled.  Tearing the

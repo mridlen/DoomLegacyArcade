@@ -27,6 +27,11 @@ boolean   HS_Ruleset_Is_Ranked(void);   // do the cvars match right now?
 // multiplayer -- including a local two or four player game, which sets
 // netgame.  Every scoring path and the HUD's UNRANKED marker ask this.
 boolean   HS_Scored_Game(void);
+
+// [Arcade] Write the demos a run earned when it died, once the death has
+// played out, and close the recorder.  Called from G_Arcade_Death_Check on
+// landing, and from Command_ExitGame_f as a backstop.  Idempotent.
+void      HS_Death_Demo_Finish(void);
 boolean   HS_Run_Is_Ranked(void);       // has this run stayed ranked?
 const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
 
