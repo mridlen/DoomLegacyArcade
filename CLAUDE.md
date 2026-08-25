@@ -65,6 +65,14 @@ Adding a new `.c` file requires manually adding its `.o` to the hand-maintained 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
 `make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`.
 
+**`make -j` races in the dependency phase**, and the error points nowhere near the cause: every
+`../dep/*.dep` rule pipes through the *same* intermediate `../dep/sed.dep` and then `mv`s it, so two
+parallel dep rules clobber each other and it fails with `mv: cannot stat '../dep/sed.dep'` followed
+by `../dep/umapinfo.dep: No such file or directory`. Nothing is wrong with the source. Run
+**`make depend` serially first, then `make -j8`** — the compile phase parallelises fine. It only
+bites when the dep files are missing or stale, i.e. on a fresh checkout, a new worktree, or after
+`make clean`, which is exactly when someone reaches for `-j`.
+
 Do not run the built binary from inside the build tree — it expects to run from an installed
 directory (see `make install`, `install_user`, `install_sys`, `install_games` targets, or just copy
 everything from `bin/` to a run directory alongside a `legacy.wad`).
