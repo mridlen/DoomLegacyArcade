@@ -1398,7 +1398,12 @@ void G_BuildTiccmd(ticcmd_t* cmd, int realtics, byte pind)
     {
       joybinding_t jb = joybindings[ji];
 
-      if (jb.playnum != pind)
+      // [Arcade] The panel, not the local player index.  Controls two lines
+      // above come from gamecontrol_pl[D_Panel_Of(pind)], so an axis binding
+      // keyed on the raw pind drove the wrong player the moment the panels
+      // joined out of order -- the same views-versus-panels conflation that
+      // broke G_BuildTiccmd's player lookup.
+      if (jb.playnum != D_Panel_Of(pind))
         continue;
 
       int joyvalue = I_JoystickGetAxis(jb.joynum, jb.axisnum);

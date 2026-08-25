@@ -52,7 +52,20 @@ typedef struct
 
 
 #define MAX_JOYSTICKS 4 // 4 should be enough for most purposes
-extern int num_joysticks;
+extern int num_joysticks;   //!< Count of open joystick slots.
+
+// [Arcade] Joystick slots are stable, and need not be contiguous: a pad that
+// disconnects leaves its slot empty and reclaims it when it comes back, so
+// bindings made against "Joy2" keep meaning the same physical pad.
+
+//! Count of open slots.  For display and bounds; never use it to index.
+int  I_Joystick_Count(void);
+
+//! True when that slot currently holds an open joystick.
+int  I_Joystick_Connected(int joynum);
+
+//! Resolve an SDL event .which field to a slot index, or -1 if unknown.
+int  Joystick_Index_Of( int which );
 
 #define MAX_JOYBINDINGS 4*MAX_JOYSTICKS // hope this is enough
 extern int num_joybindings;

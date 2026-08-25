@@ -129,6 +129,28 @@ extern void D_PostEvent(event_t*);
 #define MAX_JOYSTICKS 4
 int num_joysticks = 0;
 SDL_Joystick *joysticks[MAX_JOYSTICKS]; 
+
+// [Arcade] An SDL2 event's .which field carries a joystick *instance id*, not
+// the 0..3 index into joysticks[].  The instance id increments for the life of
+// the process, so a pad that sleeps and wakes -- or is unplugged and replugged
+// -- comes back as instance 4, 5, ...  That went straight into
+// Translate_Joybutton, which clamped anything >= MAXJOYSTICKS down to
+// MAXJOYSTICKS-1: the reconnected pad then typed as Joy3 on top of whatever
+// real pad was already in that slot, and two players silently shared one
+// identity.  Four pads plugged in before launch happen to get ids 0..3, which
+// is exactly why this never showed up in single-pad testing.
+//
+// SDL1's .which really is the device index, so that path is left alone.
+#define JOY_INSTANCE_NONE  (-1)
+int  joystick_instance[MAX_JOYSTICKS] =
+  { JOY_INSTANCE_NONE, JOY_INSTANCE_NONE, JOY_INSTANCE_NONE, JOY_INSTANCE_NONE };
+
+// Remembered device path per slot, so a pad that reconnects lands back in the
+// slot it had instead of shuffling everyone's bindings one seat along.  On a
+// cabinet the pads stay in the same USB ports, which is what the path names;
+// four identical pads share an SDL GUID and cannot be told apart any other way.
+#define JOY_PATH_LEN  128
+char  joystick_path[MAX_JOYSTICKS][JOY_PATH_LEN] = {{0}};
 #endif
 
 
@@ -301,8 +323,62 @@ static uint16_t  xlatekey(uint32_t keycode)
 
 
 #ifdef JOYSTICK_SUPPORT
+// [Arcade] Resolve an SDL event .which field to an index into joysticks[].
+// Returns -1 for a device that is not one of ours, which every caller treats
+// as "ignore this event" rather than folding it onto the last slot.
+int  Joystick_Index_Of( int which )
+{
+#ifdef SDL2
+  int i;
+  for( i = 0; i < MAX_JOYSTICKS; i++ )
+  {
+      if( joysticks[i] && joystick_instance[i] == which )  return i;
+  }
+  return -1;
+#else
+  // SDL1: .which is already the device index.
+  return ( which >= 0 && which < MAX_JOYSTICKS ) ? which : -1;
+#endif
+}
+
+// Device path for a device index, or "" when SDL cannot supply one.
+// SDL_JoystickPathForIndex arrived in SDL 2.24; without it the slot is simply
+// not sticky across a reconnect, which is the old behaviour.
+static void  Joystick_Get_Path( int device_index, char * out, size_t len )
+{
+  out[0] = '\0';
+#if defined(SDL2) && SDL_VERSION_ATLEAST(2,24,0)
+  {
+    const char * pathstr = SDL_JoystickPathForIndex( device_index );
+    if( pathstr )
+    {
+        strncpy( out, pathstr, len-1 );
+        out[len-1] = '\0';
+    }
+  }
+#else
+  (void) device_index;
+  (void) len;
+#endif
+}
+
+// Prefer the slot this device path last occupied, so a reconnect is stable;
+// otherwise the lowest free slot.  -1 when all MAX_JOYSTICKS are taken.
+static int  Joystick_Choose_Slot( const char * path )
+{
+  int i, free_slot = -1;
+  for( i = 0; i < MAX_JOYSTICKS; i++ )
+  {
+      if( joysticks[i] )  continue;                  // slot in use
+      if( free_slot < 0 )  free_slot = i;
+      if( path[0] && strcmp( joystick_path[i], path ) == 0 )  return i;
+  }
+  return free_slot;
+}
+
 //! Translates a SDL joystick button to a doom key_input_e number.
-static int Translate_Joybutton(Uint8 which, Uint8 button)
+//  [Arcade] Takes a resolved slot index, never a raw event .which.
+static int Translate_Joybutton(int which, Uint8 button)
 {
   if (which >= MAXJOYSTICKS) 
     which = MAXJOYSTICKS-1;
@@ -313,7 +389,7 @@ static int Translate_Joybutton(Uint8 which, Uint8 button)
   return KEY_JOY0BUT0 + JOYBUTTONS*which + button;
 }
 
-static int Translate_Joyhat(Uint8 which, Uint8 value)
+static int Translate_Joyhat(int which, Uint8 value)
 {
   if (which >= MAXJOYSTICKS) 
     which = MAXJOYSTICKS-1;
@@ -343,7 +419,7 @@ static int Translate_Joyhat(Uint8 which, Uint8 value)
 
 #ifdef JOYSTICK_SUPPORT
 #ifdef XBOX_CONTROLLER
-static int Translate_Xbox_controller_Trigger(Uint8 which, Uint8 axis)
+static int Translate_Xbox_controller_Trigger(int which, Uint8 axis)
 {
   if (which >= MAXJOYSTICKS) 
     which = MAXJOYSTICKS-1;
@@ -365,9 +441,31 @@ static int Translate_Xbox_controller_Trigger(Uint8 which, Uint8 axis)
 #endif
 
 #ifdef JOYSTICK_SUPPORT
+// [Arcade] Count of open slots.  With hotplug the open slots are not
+// necessarily the first N, so this is for display and bounds, never indexing.
+int I_Joystick_Count(void)
+{
+  int i, n = 0;
+  for( i = 0; i < MAX_JOYSTICKS; i++ )
+  {
+      if( joysticks[i] )  n++;
+  }
+  return n;
+}
+
+// [Arcade] Is this slot currently filled?  The assignment page reports a pad
+// that is bound but not plugged in, which otherwise looks like the binding
+// itself failed.
+int I_Joystick_Connected(int joynum)
+{
+  return ( joynum >= 0 && joynum < MAX_JOYSTICKS && joysticks[joynum] ) ? 1 : 0;
+}
+
 int I_JoystickNumAxes(int joynum)
 {
-  if (joynum < num_joysticks)
+  // [Arcade] Test the slot itself.  "joynum < num_joysticks" was wrong the
+  // moment a slot could be empty while a later one was in use.
+  if (joynum >= 0 && joynum < MAX_JOYSTICKS && joysticks[joynum])
     return SDL_JoystickNumAxes(joysticks[joynum]);
   else
     return 0;
@@ -375,7 +473,7 @@ int I_JoystickNumAxes(int joynum)
 
 int I_JoystickGetAxis(int joynum, int axisnum)
 {
-  if (joynum < num_joysticks)
+  if (joynum >= 0 && joynum < MAX_JOYSTICKS && joysticks[joynum])
     return SDL_JoystickGetAxis(joysticks[joynum], axisnum);
   else
     return 0;
@@ -408,7 +506,10 @@ Uint8 jhat_directions[8] = {
   SDL_HAT_LEFT,
   SDL_HAT_LEFTUP
 };
-Uint8 previous_jhat[2] = {0, 0};
+// [Arcade] Was a single global pair, so four pads shared one hat state and
+// cleared each other's d-pad directions.  Indexed [joystick][slot] now, to
+// match previous_jaxis below.
+Uint8 previous_jhat[MAX_JOYSTICKS][2] = {{0}};
 
 // [Arcade] Analog stick treated as a second hat.
 //
@@ -439,6 +540,93 @@ Uint8 previous_jaxis[MAX_JOYSTICKS][JOYAXIS_DIRS] = {{0}};
 // past the threshold, so holding one produced a stream of them; this latches
 // so only the transitions are posted.
 Uint8 previous_jtrigger[MAX_JOYSTICKS][XBOXTRIGGERS] = {{0}};
+
+
+#ifdef JOYSTICK_SUPPORT
+// [Arcade] Open one device into a slot, and report it.  Shared by the startup
+// enumeration and the hotplug handler so both take exactly the same path.
+// Returns the slot, or -1 when the device could not be opened or every slot is
+// already in use.
+static int  Joystick_Open_Device( int device_index )
+{
+  char path[JOY_PATH_LEN];
+  SDL_Joystick * joy;
+  int slot;
+
+#ifdef SDL2
+  // [Arcade] SDL2 queues a SDL_JOYDEVICEADDED for every device that was
+  // already present when the joystick subsystem came up, so the startup
+  // enumeration and the hotplug handler both see the same pad.  Without this
+  // the one controller opened twice -- once into slot 0 by I_JoystickInit and
+  // again into slot 1 by the queued event -- and a single physical pad showed
+  // up as two joysticks with two sets of key codes.
+  {
+    int existing = Joystick_Index_Of( SDL_JoystickGetDeviceInstanceID( device_index ) );
+    if( existing >= 0 )  return existing;   // already open, nothing to do
+  }
+#endif
+
+  Joystick_Get_Path( device_index, path, sizeof(path) );
+  slot = Joystick_Choose_Slot( path );
+  if( slot < 0 )  return -1;
+
+  joy = SDL_JoystickOpen( device_index );
+  if( ! joy )  return -1;
+
+  joysticks[slot] = joy;
+#ifdef SDL2
+  joystick_instance[slot] = SDL_JoystickInstanceID( joy );
+  {
+    const char * jname = SDL_JoystickNameForIndex( device_index );
+#else
+  joystick_instance[slot] = device_index;
+  {
+    const char * jname = SDL_JoystickName( device_index );
+#endif
+    // Same-sized buffers, and Joystick_Get_Path always terminates.
+    memcpy( joystick_path[slot], path, JOY_PATH_LEN );
+
+    if (devparm || verbose > 1)
+    {
+        CONS_Printf(" Properties of joystick %d:\n", slot);
+        if( jname )  CONS_Printf("    %s.\n", jname);
+        if( path[0] )  CONS_Printf("    path %s.\n", path);
+        CONS_Printf("    %d axes.\n", SDL_JoystickNumAxes(joy));
+        CONS_Printf("    %d buttons.\n", SDL_JoystickNumButtons(joy));
+        CONS_Printf("    %d hats.\n", SDL_JoystickNumHats(joy));
+        CONS_Printf("    %d trackballs.\n", SDL_JoystickNumBalls(joy));
+    }
+
+#ifdef XBOX_CONTROLLER
+    // Assigned but no longer read -- the triggers and axes are handled on any
+    // joystick now.  Kept because it is upstream code and harmless.
+    check_Joystick_Xbox[slot] = jname &&
+      (  strcmp(jname, "Xbox 360 Wireless Receiver (XBOX)") == 0
+      || strcmp(jname, "Microsoft X-Box 360 pad") == 0  );
+#endif
+  }
+
+  // Anything this slot was holding down belongs to the pad that just left.
+  previous_jhat[slot][0] = previous_jhat[slot][1] = 0;
+  previous_jaxis[slot][0] = previous_jaxis[slot][1] = 0;
+#ifdef XBOX_CONTROLLER
+  previous_jtrigger[slot][0] = previous_jtrigger[slot][1] = 0;
+#endif
+
+  return slot;
+}
+
+// Release a slot.  The remembered path is deliberately kept, so the same pad
+// coming back lands here again rather than one seat along.
+static void  Joystick_Close_Slot( int slot )
+{
+  if( slot < 0 || slot >= MAX_JOYSTICKS || ! joysticks[slot] )  return;
+
+  SDL_JoystickClose( joysticks[slot] );
+  joysticks[slot] = NULL;
+  joystick_instance[slot] = JOY_INSTANCE_NONE;
+}
+#endif
 
 
 // MOUSE2_NIX dependent upon DoomLegacy headers.
@@ -477,6 +665,10 @@ void I_GetEvent(void)
 #endif
 
   event_t event;
+
+#ifdef JOYSTICK_SUPPORT
+  int jhat_ind;   // [Arcade] resolved joystick slot for the hat case
+#endif
 
 #ifdef MOUSE2_NIX
   if( mouse2_started )
@@ -671,21 +863,17 @@ void I_GetEvent(void)
 
 #ifdef JOYSTICK_SUPPORT
         case SDL_JOYBUTTONDOWN:
-          event.type = ev_keydown;
-          event.data1 = Translate_Joybutton(inputEvent.jbutton.which,
-                                           inputEvent.jbutton.button);
-          event.data2 = 0;
-          D_PostEvent(&event);
-#endif
-          break;
-
-#ifdef JOYSTICK_SUPPORT
         case SDL_JOYBUTTONUP:
-          event.type = ev_keyup;
-          event.data1 = Translate_Joybutton(inputEvent.jbutton.which,
-                                           inputEvent.jbutton.button);
-          event.data2 = 0;
-          D_PostEvent(&event);
+          {
+            // [Arcade] .which is an instance id under SDL2, not a slot index.
+            int jbut_ind = Joystick_Index_Of(inputEvent.jbutton.which);
+            if( jbut_ind < 0 )  break;   // not one of ours
+
+            event.type = (inputEvent.type == SDL_JOYBUTTONDOWN) ? ev_keydown : ev_keyup;
+            event.data1 = Translate_Joybutton(jbut_ind, inputEvent.jbutton.button);
+            event.data2 = 0;
+            D_PostEvent(&event);
+          }
 #endif
           break;
 
@@ -693,6 +881,9 @@ void I_GetEvent(void)
         case SDL_JOYHATMOTION: // Adding event to allow joy hat mapping
           // [Leonardo Montenegro]
           event.data2 = 0;
+          // [Arcade] Resolve the slot once; previous_jhat is per joystick.
+          jhat_ind = Joystick_Index_Of(inputEvent.jhat.which);
+          if( jhat_ind < 0 )  break;   // not one of ours
           if(inputEvent.jhat.value != SDL_HAT_CENTERED)
           {
               // Joy hat pressed
@@ -701,13 +892,13 @@ void I_GetEvent(void)
               int i;
               for(i=0; i<2; i++)
               {
-                  if(previous_jhat[i] != 0)
+                  if(previous_jhat[jhat_ind][i] != 0)
                   {
                       event.type = ev_keyup;
-                      event.data1 = Translate_Joyhat(inputEvent.jhat.which, previous_jhat[i]);
+                      event.data1 = Translate_Joyhat(jhat_ind, previous_jhat[jhat_ind][i]);
                       D_PostEvent(&event);
 
-                      previous_jhat[i] = 0;
+                      previous_jhat[jhat_ind][i] = 0;
                   }
               }
 
@@ -715,58 +906,58 @@ void I_GetEvent(void)
               if(inputEvent.jhat.value == SDL_HAT_RIGHTUP)
               {
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_RIGHT);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_RIGHT);
                   D_PostEvent(&event);
-                  previous_jhat[0] = SDL_HAT_RIGHT;
+                  previous_jhat[jhat_ind][0] = SDL_HAT_RIGHT;
 
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_UP);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_UP);
                   D_PostEvent(&event);
-                  previous_jhat[1] = SDL_HAT_UP;
+                  previous_jhat[jhat_ind][1] = SDL_HAT_UP;
               }
               else if(inputEvent.jhat.value == SDL_HAT_RIGHTDOWN)
               {
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_RIGHT);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_RIGHT);
                   D_PostEvent(&event);
-                  previous_jhat[0] = SDL_HAT_RIGHT;
+                  previous_jhat[jhat_ind][0] = SDL_HAT_RIGHT;
 
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_DOWN);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_DOWN);
                   D_PostEvent(&event);
-                  previous_jhat[1] = SDL_HAT_DOWN;
+                  previous_jhat[jhat_ind][1] = SDL_HAT_DOWN;
               }
               else if(inputEvent.jhat.value == SDL_HAT_LEFTDOWN)
               {
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_LEFT);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_LEFT);
                   D_PostEvent(&event);
-                  previous_jhat[0] = SDL_HAT_LEFT;
+                  previous_jhat[jhat_ind][0] = SDL_HAT_LEFT;
 
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_DOWN);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_DOWN);
                   D_PostEvent(&event);
-                  previous_jhat[1] = SDL_HAT_DOWN;
+                  previous_jhat[jhat_ind][1] = SDL_HAT_DOWN;
               }
               else if(inputEvent.jhat.value == SDL_HAT_LEFTUP)
               {
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_LEFT);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_LEFT);
                   D_PostEvent(&event);
-                  previous_jhat[0] = SDL_HAT_LEFT;
+                  previous_jhat[jhat_ind][0] = SDL_HAT_LEFT;
 
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, SDL_HAT_UP);
+                  event.data1 = Translate_Joyhat(jhat_ind, SDL_HAT_UP);
                   D_PostEvent(&event);
-                  previous_jhat[1] = SDL_HAT_UP;
+                  previous_jhat[jhat_ind][1] = SDL_HAT_UP;
               }
               else
               {
                   event.type = ev_keydown;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, inputEvent.jhat.value);
+                  event.data1 = Translate_Joyhat(jhat_ind, inputEvent.jhat.value);
                   D_PostEvent(&event);
 
-                  previous_jhat[0] = inputEvent.jhat.value;
+                  previous_jhat[jhat_ind][0] = inputEvent.jhat.value;
               }
           }
           else
@@ -776,12 +967,12 @@ void I_GetEvent(void)
               for(i=0; i<8; i++)
               {
                   event.type = ev_keyup;
-                  event.data1 = Translate_Joyhat(inputEvent.jhat.which, jhat_directions[i]);
+                  event.data1 = Translate_Joyhat(jhat_ind, jhat_directions[i]);
                   D_PostEvent(&event);
               }
 
-              previous_jhat[0] = 0;
-              previous_jhat[1] = 0;
+              previous_jhat[jhat_ind][0] = 0;
+              previous_jhat[jhat_ind][1] = 0;
           }
 #endif	  
           break;
@@ -803,14 +994,14 @@ void I_GetEvent(void)
           // costs nothing unless the player binds them.
           if(inputEvent.jaxis.axis == 2 || inputEvent.jaxis.axis == 5)
           {
-              Uint8 twhich = inputEvent.jaxis.which;
+              int   twhich = Joystick_Index_Of(inputEvent.jaxis.which);
               Uint8 tidx   = (inputEvent.jaxis.axis == 2) ? 0 : 1;
               // Threshold at 0 rather than the direction deadzone: triggers
               // rest at full negative on the Linux xpad driver and at zero on
               // others, so positive means pressed under both.
               Uint8 pressed = (inputEvent.jaxis.value > 0);
 
-              if( twhich >= MAX_JOYSTICKS )  break;   // state array bound
+              if( twhich < 0 )  break;   // not one of ours
 
               if( pressed != previous_jtrigger[twhich][tidx] )
               {
@@ -826,11 +1017,11 @@ void I_GetEvent(void)
           // [Arcade] Left stick as a hat.  See previous_jaxis above.
           if(inputEvent.jaxis.axis < JOYAXIS_DIRS)
           {
-              Uint8 which = inputEvent.jaxis.which;
+              int   which = Joystick_Index_Of(inputEvent.jaxis.which);
               Uint8 axis  = inputEvent.jaxis.axis;
               Uint8 dir   = 0;   // 0 = centred
 
-              if( which >= MAX_JOYSTICKS )  break;   // state array bound
+              if( which < 0 )  break;   // not one of ours
 
               if(inputEvent.jaxis.value <= -JOYAXIS_DEADZONE)
                   dir = axis ? SDL_HAT_UP : SDL_HAT_LEFT;
@@ -864,6 +1055,47 @@ void I_GetEvent(void)
               }
           }
           break;
+
+#ifdef SDL2
+        // [Arcade] Hotplug.  Upstream enumerated joysticks once at startup and
+        // never looked again, so a pad plugged in after launch was invisible
+        // for the life of the process -- which on a cabinet, where the pads
+        // live in a drawer and come out for a four player game, is the normal
+        // case rather than the exception.  Wireless pads that sleep and wake
+        // hit the same path.
+        case SDL_JOYDEVICEADDED:
+          // Note .which is a *device index* here, unlike every other joystick
+          // event, where it is an instance id.  That asymmetry is SDL's.
+          {
+            int slot;
+            // Queued at init for pads that were already present and opened by
+            // I_JoystickInit; those are not news.
+            if( Joystick_Index_Of( SDL_JoystickGetDeviceInstanceID( inputEvent.jdevice.which ) ) >= 0 )
+                break;
+
+            slot = Joystick_Open_Device( inputEvent.jdevice.which );
+            num_joysticks = I_Joystick_Count();
+            if( slot >= 0 )
+                CONS_Printf("Joystick connected in slot %d.\n", slot);
+            else
+                CONS_Printf("Joystick connected, but all %d slots are in use.\n",
+                            MAX_JOYSTICKS);
+          }
+          break;
+
+        case SDL_JOYDEVICEREMOVED:
+          // .which is an instance id here.
+          {
+            int slot = Joystick_Index_Of( inputEvent.jdevice.which );
+            if( slot >= 0 )
+            {
+                Joystick_Close_Slot( slot );
+                num_joysticks = I_Joystick_Count();
+                CONS_Printf("Joystick in slot %d disconnected.\n", slot);
+            }
+          }
+          break;
+#endif
 #endif
  
         case SDL_QUIT:
@@ -970,38 +1202,23 @@ static void I_JoystickInit(void)
   // Joystick subsystem was initialized at the same time as video,
   // because otherwise it won't work. (don't know why, though ...)
 
-  num_joysticks = min(MAX_JOYSTICKS, SDL_NumJoysticks());
-  CONS_Printf(" %d joystick(s) found.\n", num_joysticks);
+  int found = SDL_NumJoysticks();
+  int i;
 
-  // Start receiving joystick events.
+  // Start receiving joystick events, hotplug included.
   SDL_JoystickEventState(SDL_ENABLE);
 
-  int i;
-  for (i=0; i < num_joysticks; i++)
+  // [Arcade] Opening goes through Joystick_Open_Device, which is also the
+  // hotplug path, so a pad present at startup and one plugged in later end up
+  // in identical state.  num_joysticks is now the count of *open slots*, kept
+  // by I_Joystick_Count, rather than a high-water enumeration mark.
+  for (i=0; i < found; i++)
   {
-      SDL_Joystick *joy = SDL_JoystickOpen(i);
-#ifdef SDL2
-      const char * jname = SDL_JoystickNameForIndex(i);
-#else
-      const char * jname = SDL_JoystickName(i);
-#endif
-      joysticks[i] = joy;
-      if (devparm || verbose > 1)
-      {
-          CONS_Printf(" Properties of joystick %d:\n", i);
-          if( jname )  CONS_Printf("    %s.\n", jname);
-          CONS_Printf("    %d axes.\n", SDL_JoystickNumAxes(joy));
-          CONS_Printf("    %d buttons.\n", SDL_JoystickNumButtons(joy));
-          CONS_Printf("    %d hats.\n", SDL_JoystickNumHats(joy));
-          CONS_Printf("    %d trackballs.\n", SDL_JoystickNumBalls(joy));
-      }
-      
-#ifdef XBOX_CONTROLLER     
-      check_Joystick_Xbox[i] = jname &&
-        (  strcmp(jname, "Xbox 360 Wireless Receiver (XBOX)") == 0
-        || strcmp(jname, "Microsoft X-Box 360 pad") == 0  );
-#endif     
+      Joystick_Open_Device(i);
   }
+
+  num_joysticks = I_Joystick_Count();
+  CONS_Printf(" %d joystick(s) found.\n", num_joysticks);
 }
 #endif
 
@@ -1011,17 +1228,16 @@ static void I_ShutdownJoystick(void)
 {
   CONS_Printf("Shutting down joysticks.\n");
   int i;
-  for(i=0; i < num_joysticks; i++)
+  // [Arcade] Walk the slots, not a count: with hotplug the open slots need not
+  // be the first num_joysticks of them, and a closed slot must not be closed
+  // twice.
+  for(i=0; i < MAX_JOYSTICKS; i++)
   {
-#ifdef SDL2
-    const char * jname = SDL_JoystickNameForIndex(i);
-#else
-    const char * jname = SDL_JoystickName(i);
-#endif
-    if( jname )  CONS_Printf("Closing joystick %s.\n", jname);
-    SDL_JoystickClose(joysticks[i]);
-    joysticks[i] = NULL;
+    if( ! joysticks[i] )  continue;
+    CONS_Printf("Closing joystick in slot %d.\n", i);
+    Joystick_Close_Slot(i);
   }
+  num_joysticks = 0;
   
   CONS_Printf("Joystick subsystem closed cleanly.\n");
 }
