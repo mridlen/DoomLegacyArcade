@@ -2688,19 +2688,24 @@ void M_DrawNewGame(void)
     //    V_DrawScaledPatch_Name (54,38, "M_SKILL" );
     M_DrawGenericMenu();
 
-    // [Arcade] What each difficulty is worth, under the selector.
+    // [Arcade] What the difficulty under the cursor is worth, both
+    // categories, updating as the player scrolls.
+    //
+    // itemOn *is* the skill: NewGameMenu's five rows are skills 0..4 in
+    // order, which is why M_ChooseSkill takes its `choice` as the skill
+    // directly.
     //
     // Measured: NewDef sits at y 63 and the five IT_PATCH rows step by
     // LINEHEIGHT 16, so they occupy 63, 79, 95, 111 and 127 -- and M_NMARE,
-    // the tall one at 19, ends at 146.  Five rows of HS_SKB_ROW from 152 run
-    // to 195 of BASEVIDHEIGHT 200.
+    // the tall one at 19, ends at 146.  A header plus two rows from 152 runs
+    // to 179 of BASEVIDHEIGHT 200.
     //
     // epi + 1 is the episode either way: the episode menu sets epi for the
     // ExMy games, and doom2_commercial goes straight to this menu leaving it
     // at 0, which is the one episode a flat MAPxx game has (HS_Episode_Of
     // answers 1 for those).  It is the same expression M_ChooseSkill uses to
     // build the starting map.
-    HS_Draw_Skill_Board( epi + 1, NewDef.x, 152 );
+    HS_Draw_Skill_Records( epi + 1, (skill_e) itemOn, NewDef.x, 152 );
 }
 
 static

@@ -149,9 +149,9 @@ const char *  HS_NextLongDemoPath(void);
 boolean  HS_Survival_Entry(int episode, skill_e skill, int cat,
                            char * out_map, char * out_initials,
                            tic_t * out_tics);
-// [Arcade] The episode's Survival board, one row per skill, for the New Game
-// skill selector.  Speed category; see the note at the definition.
-void  HS_Draw_Skill_Board( int episode, int x, int y );
+// [Arcade] Both records for one skill, for the New Game skill selector: a
+// shared header with the category as a row label.  See the definition.
+void  HS_Draw_Skill_Records( int episode, skill_e skill, int x, int y );
 void  HS_Draw_AttractTable(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);
