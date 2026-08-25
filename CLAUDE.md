@@ -655,10 +655,20 @@ silently made the flag do nothing at all.
         A real difference in this area shows up in the *weapon*; if the diff mask is monsters
         and clock digits only, nothing changed. Render the mask and look at it.
       - **A cell with no player is filled black** (`D_Display`). Three players use the 2x2 and
-        leave the fourth quadrant unused, and *neither* renderer was clearing it — the hardware
-        per-frame clear (`HWR_ClearView`) is depth only, and the software renderer draws straight
-        into the screen buffer — so it kept the last thing drawn there, frozen, which reads as a
-        crashed renderer.
+        leave one quadrant unused, and *neither* renderer clears it — the hardware per-frame clear
+        (`HWR_ClearView`) is depth only, and the software renderer draws straight into the screen
+        buffer — so it keeps the last thing drawn there, frozen, which reads as a crashed renderer.
+        - **The empty cell is found by elimination, after the render loop**, exactly as the spare
+          quadrant's rankings are. It used to black out `D_View_Cell(vind)` for each *pind with no
+          player*, which is only the empty cell when the panels joined in order.
+          `D_Set_View_Cell` is called only for pinds that actually joined and the rest keep the
+          identity default, so with panels **1+3+4** the table reads `[0,2,3,3]`: the unjoined
+          pind 3 reports cell 3, which is the **third player's** cell. That blacked out a view
+          that had just been rendered — the quadrant went black with only its HUD surviving on
+          top, since `ST_Drawer` runs later — while the genuinely empty cell 1 was never cleared
+          and flickered with stale frames. Only 1+2+3 ever worked.
+        - Done **after** the render loop, not inside it, so a cell can never be cleared before the
+          player who owns it has drawn into it.
       - Sprite, psprite and corona clipping already clamp to `rdraw_viewwidth`
         (`r_things.c:1919/2193/2910`), so nothing can bleed into the next cell horizontally; the
         `vid.width` tests near `r_things.c:3529` are coarse off-screen rejects, with the fine

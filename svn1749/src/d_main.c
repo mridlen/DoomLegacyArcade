@@ -917,30 +917,24 @@ void D_Display(void)
             // draw tables (R_Set_View_Window).
             {
                 byte vind, num_views = D_NumViews();
+                byte cell_used = 0;   // [Arcade] cells a live player occupies
+
+                // [Arcade] Which cells are claimed, worked out before drawing
+                // anything.  Note view 0 is rendered above, so it is counted
+                // here rather than in the loop below.
+                for( vind=0; vind<num_views; vind++ )
+                {
+                    if( localplayer[vind] < MAXPLAYERS )
+                        cell_used |= (byte)( 1 <<
+                            ((num_views >= 2)? D_View_Cell(vind) : 0) );
+                }
+
                 for( vind=1; vind<num_views; vind++ )
                 {
                     byte pn = localplayer[vind];
                     player_t * vpl;
 
-                    if( pn >= MAXPLAYERS )
-                    {
-                        // [Arcade] Panel with no player: black out its cell.
-                        // Three players use the 2x2 grid and leave the fourth
-                        // quadrant unused, and nothing else clears it -- the
-                        // hardware renderer's per-frame clear is depth only
-                        // (HWR_ClearView) and the software renderer draws
-                        // straight into the screen buffer -- so the cell kept
-                        // whatever was last drawn there, frozen, which reads
-                        // as the renderer having crashed.
-                        int span_w, span_h;
-                        byte cell = D_View_Cell(vind);
-                        R_View_Cell_Size( &span_w, &span_h );
-                        V_SetupDraw( 0 | V_NOSCALE );  // screen 0, vid coords
-                        V_DrawVidFill( (num_views >= 4)? ((cell & 1) * span_w) : 0,
-                                       ((num_views >= 4)? (cell >> 1) : cell) * span_h,
-                                       span_w, span_h, 0 );
-                        continue;
-                    }
+                    if( pn >= MAXPLAYERS )  continue;   // panel with no player
                     vpl = &players[pn];
                     if( ! vpl->mo )  continue;
 
@@ -962,6 +956,45 @@ void D_Display(void)
 #ifdef CLIENTPREDICTION2
                     vpl->mo->flags2 &= ~MF2_DONTDRAW;
 #endif
+                }
+
+                // [Arcade] Black out every cell no player claimed.
+                //
+                // Nothing else clears one: the hardware renderer's per-frame
+                // clear is depth only (HWR_ClearView) and the software
+                // renderer draws straight into the screen buffer, so an
+                // unclaimed cell keeps whatever was last drawn there, frozen
+                // -- which reads as the renderer having crashed.
+                //
+                // **Found by elimination, not from the missing player's
+                // cell.**  D_Set_View_Cell is only called for pinds that
+                // actually joined and the rest keep the identity default, so
+                // with panels 1+3+4 the table reads [0,2,3,3]: the unjoined
+                // pind 3 reports cell 3, which is the *third player's* cell.
+                // Blacking that out painted over a view that had just been
+                // rendered -- the quadrant went black with only its HUD left
+                // on top, drawn later -- while the genuinely empty cell 1 was
+                // never cleared and flickered with stale frames.  Only
+                // panels 1+2+3 ever worked.
+                //
+                // Done after the render loop rather than inside it, so a cell
+                // cannot be cleared before the player who owns it draws.
+                if( num_views >= 2 )
+                {
+                    int  span_w, span_h;
+                    byte c;
+
+                    R_View_Cell_Size( &span_w, &span_h );
+                    V_SetupDraw( 0 | V_NOSCALE );  // screen 0, vid coords
+
+                    for( c = 0; c < num_views; c++ )
+                    {
+                        if( cell_used & (1 << c) )  continue;
+
+                        V_DrawVidFill( (num_views >= 4)? ((c & 1) * span_w) : 0,
+                                       ((num_views >= 4)? (c >> 1) : c) * span_h,
+                                       span_w, span_h, 0 );
+                    }
                 }
 
                 // Restore the draw tables to the first view, which the border,
