@@ -2196,7 +2196,11 @@ boolean P_SetupLevel (int      to_episode,
     int   i;
     mapformat_t mapformat;
 
-    GenPrintf( (verbose? (EMSG_ver|EMSG_now) : (EMSG_console|EMSG_now)),
+    // [Arcade] No EMSG_now: once the display loop is running, that forces a
+    // V_Clear_Display + console repaint + page flip, which shows up as a
+    // full-screen flash on every level load.  The startup screen is not
+    // affected -- it repaints from con_self_refresh, not from this flag.
+    GenPrintf( (verbose? EMSG_ver : EMSG_console),
                "Setup Level\n" );
 
     //Initialize Boom sector node list.

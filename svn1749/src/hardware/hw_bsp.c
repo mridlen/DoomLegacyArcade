@@ -2098,25 +2098,22 @@ void set_divline(node_t* bsp, fdivline_t *divline)
 
 //Hurdler: implement a loading status
 static int ls_count = 0;
-static int ls_percent = 0;
 
+// [Arcade] Hurdler's "Loading... N%" box used to be drawn here, and it
+// strobed the screen on every level load.  It painted a small text box over
+// whatever the OpenGL back buffer happened to hold -- it never cleared -- and
+// then swapped, ~50 times in a fraction of a second, so the display flickered
+// between two stale frames.  Bad to look at and a genuine photosensitivity
+// hazard on a cabinet that loads a level every couple of minutes.
+//
+// Nothing depended on the drawing: it touched no game state, no cvars and no
+// RNG (so demos are unaffected), and the software renderer has never called
+// any of this at all.  The OS poll is kept so the window stays responsive
+// while the BSP is walked, which is all this needs to do now.
 static
-void loading_status( void )
+void bsp_walk_poll( void )
 {
-    char s[16];
-    int x, y;
-
     I_OsPolling();
-    CON_Drawer();
-    sprintf(s, "%d%%", (++ls_percent)<<1);
-    x = BASEVIDWIDTH/2;
-    y = BASEVIDHEIGHT/2;
-    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
-    M_DrawTextBox(x-58, y-8, 13, 1);
-    V_DrawString(x-50, y, V_WHITEMAP, "Loading...");
-    V_DrawString(x+50-V_StringWidth(s), y, V_WHITEMAP, s);
-
-    I_FinishUpdate ();
 }
 
 
@@ -2227,11 +2224,12 @@ void HWR_WalkBSPNode (int bspnum, wpoly_t* poly, bsp_child_t * leafnode, fixed_t
             trigger_trace = 0;
 #endif
 
-        //Hurdler: implement a loading status
+        // [Arcade] Was Hurdler's loading status; now just an OS poll, see
+        // bsp_walk_poll().
         if (ls_count-- <= 0)
         {
            ls_count = numsubsectors/50;
-           loading_status();
+           bsp_walk_poll();
         }
         return;
     }
@@ -2527,7 +2525,9 @@ void SolveTProblem (void)
     if (cv_grsolvetjoin.value == 0)
         return;
 
-    GenPrintf( EMSG_all | EMSG_now, "Solving T-joins. This may take a while. Please wait...\n");
+    // [Arcade] EMSG_now dropped, see the "Setup Level" message in p_setup.c:
+    // it forced a whole-screen console repaint and flip on every level load.
+    GenPrintf( EMSG_all, "Solving T-joins. This may take a while. Please wait...\n");
 
     num_T_vertex_fixed=0;
 
@@ -2927,8 +2927,8 @@ void HWR_Create_PlanePolygons ( void )
 
     fixed_t     rootbbox[4];
 
-    GenPrintf( EMSG_all | EMSG_now, "Creating polygons, please wait...\n");
-    ls_percent = ls_count = 0; // reset the loading status
+    GenPrintf( EMSG_all, "Creating polygons, please wait...\n");
+    ls_count = 0; // reset the poll throttle
 
     HWR_Clear_Polys ();
 
