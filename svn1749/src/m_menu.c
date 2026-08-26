@@ -2128,6 +2128,7 @@ menuitem_t  PlayerOptionsMenu[] =
     {IT_STRING | IT_CVAR,0, "Use Mouse" ,  &cv_usemouse[0]       ,0},
     {IT_STRING | IT_CVAR,0, "Mouse Move",  &cv_mouse_move[0]     ,0},
     {IT_STRING | IT_CVAR,0, "Always MouseLook", &cv_alwaysfreelook[0], 0},
+    {IT_STRING | IT_CVAR,0, "Original Weapon Switch", &cv_originalweaponswitch[0], 0},
     {IT_STRING | IT_CVAR | IT_CV_STRING,0, "WeaponPref", &cv_weaponpref[1] ,0},
 //    {IT_STRING | IT_CVAR,"Control per key" ,&cv_controlperkey2   ,0},
     {IT_CALL | IT_WHITESTRING, 0,"Player1 setup >>", M_SetupMultiPlayer1, 's'},
@@ -2142,18 +2143,64 @@ enum {
     playeroption_usemouse,
     playeroption_mousemove,
     playeroption_mouselook,
+    playeroption_origweapon,
     playeroption_weaponpref,
     playeroption_setupplayer,
     playeroption_setupcontrol,
     playeroption_end
 };
 
+
+// [Arcade] "Original Weapon Switch" overrides "WeaponPref" completely: with
+// GF_original_weapon set, favoritweapon[] is never consulted -- not by the
+// ammo-out fallback (P_CheckAmmo, p_pspr.c) and not by either weapon pickup
+// path (p_inter.c).  Leaving the preference string editable underneath it
+// would be an edit box that changes nothing, so it is greyed and made
+// unselectable while the switch is On.
+//
+// Applied from the drawroutine so it tracks the toggle live -- the operator
+// moves the row above and watches this one grey out.  Safe there because it is
+// idempotent: the same status is recomputed from the same cvar every frame,
+// which is the rule the attract score page drawers follow.
+//
+// IT_DISABLED is deliberately NOT used here.  It is (IT_SPACE | IT_GRAYPATCH),
+// and the IT_GRAYPATCH drawer needs either FontBBaseLump -- Heretic's FONTB_S,
+// which does not exist under Doom -- or a patch, and these rows carry neither.
+// It would draw nothing at all and leave a blank gap.  IT_WHITESTRING is the
+// grey small font, which is what "greyed out" means on this page.
+static
+void M_Draw_PlayerOptions(void)
+{
+    menuitem_t * ow = &PlayerOptionsMenu[playeroption_origweapon];
+    menuitem_t * wp = &PlayerOptionsMenu[playeroption_weaponpref];
+    consvar_t * cv = (consvar_t *) ow->itemaction;
+
+    // Never fight the lockdown, which hides both rows outside devmode.
+    if( cv && wp->status != IT_HIDDEN )
+    {
+        if( cv->EV )
+        {
+            wp->status = IT_WHITESTRING;  // grey, and IT_SPACE so not selectable
+            // The cursor must not be left resting on a row that can no longer
+            // be chosen -- M_Responder only steps over IT_SPACE on a keypress.
+            if( itemOn == playeroption_weaponpref )
+                itemOn = playeroption_origweapon;
+        }
+        else
+        {
+            wp->status = IT_STRING | IT_CVAR | IT_CV_STRING;
+        }
+    }
+
+    M_DrawGenericMenu();
+}
+
 menu_t  PlayerOptionsDef =
 {
     NULL,
     "Player1",
     PlayerOptionsMenu,
-    M_DrawGenericMenu,
+    M_Draw_PlayerOptions,
     NULL,
     sizeof(PlayerOptionsMenu)/sizeof(menuitem_t),
     27,40,
@@ -2307,6 +2354,7 @@ void M_SetupMultiPlayer_pind( byte pind )
     PlayerOptionsMenu[playeroption_alwaysrun].itemaction = &cv_autorun[pind];
     PlayerOptionsMenu[playeroption_crosshair].itemaction = &cv_crosshair[pind];
     PlayerOptionsMenu[playeroption_autoaim].itemaction = &cv_autoaim[pind];
+    PlayerOptionsMenu[playeroption_origweapon].itemaction = &cv_originalweaponswitch[pind];
     PlayerOptionsMenu[playeroption_weaponpref].itemaction = &cv_weaponpref[pind];
     PlayerOptionsMenu[playeroption_setupplayer].itemaction = M_SetupMultiPlayer[pind];
     PlayerOptionsMenu[playeroption_setupcontrol].itemaction = M_Setup_P_Controls[pind];
@@ -8876,6 +8924,7 @@ void M_Init (void)
         PlayerOptionsMenu[playeroption_usemouse].status = IT_HIDDEN;  // Use Mouse
         PlayerOptionsMenu[playeroption_mousemove].status = IT_HIDDEN;  // Mouse Move
         PlayerOptionsMenu[playeroption_mouselook].status = IT_HIDDEN;  // Always MouseLook
+        PlayerOptionsMenu[playeroption_origweapon].status = IT_HIDDEN;  // Original Weapon Switch
         PlayerOptionsMenu[playeroption_weaponpref].status = IT_HIDDEN;  // WeaponPref
         PlayerOptionsMenu[playeroption_setupcontrol].status = IT_HIDDEN;  // Player1/2 controls >>
         PlayerOptionsDef.lastOn = playeroption_crosshair;  // first item still shown
