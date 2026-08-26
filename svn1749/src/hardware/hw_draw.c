@@ -713,3 +713,30 @@ byte *  HWR_Get_Screenshot ( byte * bitpp )
 }
 
 
+// [Arcade] Screen wipe support.
+//
+// The wipe (f_wipe.c) composes its frames on the CPU, so it needs whole
+// screens out of the framebuffer and back again.  Buffers are linear,
+// top-down, 24 bit RGB with no row padding -- vid.bytepp and vid.ybytes
+// describe the software renderer's format and mean nothing here.
+
+// A backend that does not implement the two entry points leaves them NULL,
+// which disables the wipe for it rather than drawing garbage.
+boolean HWR_Wipe_Supported( void )
+{
+    return ( HWD.pfnReadScreenRect != NULL ) && ( HWD.pfnDrawScreenRect != NULL );
+}
+
+// from_front: capture what the monitor is showing rather than what is being
+// drawn.  The outgoing frame has to be read that way -- see wipe_StartScreen.
+void HWR_Wipe_ReadScreen( byte * buf, boolean from_front )
+{
+    HWD.pfnReadScreenRect( 0, 0, vid.width, vid.height, /*OUT*/ buf, from_front );
+}
+
+void HWR_Wipe_DrawScreen( byte * buf )
+{
+    HWD.pfnDrawScreenRect( 0, 0, vid.width, vid.height, buf );
+}
+
+

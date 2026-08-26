@@ -798,10 +798,19 @@ void D_Display(void)
     }
 
     // save the current screen if about to wipe
-    if (gamestate != wipegamestate && rendermode == render_soft)
+    // [Arcade] Was "&& rendermode == render_soft", which switched the melt and
+    // the crossfade off entirely under OpenGL -- the cabinet's renderer -- so
+    // the Screens Link setting had no effect there however it was set.  The
+    // wipe now works in both, and wipe_Available() covers a hardware backend
+    // that cannot read and write whole screens.
+    // Testing cv_screenslink here too: without it the capture below ran even
+    // when the wipe was turned off, and the wipe was then abandoned further
+    // down, wasting a full screen read (and, in hardware, leaking its buffers).
+    if (gamestate != wipegamestate && cv_screenslink.value && wipe_Available())
     {
-        wipe = true;
-        wipe_StartScreen();
+        // Non-zero means it could not capture (hardware, out of memory); go on
+        // without a wipe rather than melting from a buffer that is not there.
+        wipe = ( wipe_StartScreen() == 0 );
     }
 
     // draw buffered stuff to screen

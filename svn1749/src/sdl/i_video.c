@@ -1123,6 +1123,8 @@ int I_Rendermode_setup( void )
        HWD.pfnClearBuffer      = hwSym("ClearBuffer");
        HWD.pfnSetTexture       = hwSym("SetTexture");
        HWD.pfnReadRect         = hwSym("ReadRect");
+       HWD.pfnReadScreenRect   = hwSym("ReadScreenRect");  // [Arcade] wipe
+       HWD.pfnDrawScreenRect   = hwSym("DrawScreenRect");  // [Arcade] wipe
        HWD.pfnGClipRect        = hwSym("GClipRect");
        HWD.pfnClearMipMapCache = hwSym("ClearMipMapCache");
        HWD.pfnSetSpecialState  = hwSym("SetSpecialState");

@@ -47,6 +47,11 @@ typedef enum
 } wipe_type_t;
 
 
+// [Arcade] Can a wipe run at all in the current render mode?  False means the
+// renderer cannot capture or present whole screens, so D_Display should not
+// bother starting one.
+boolean wipe_Available( void );
+
 int wipe_StartScreen( void );  // copy start screen for wipe
 int wipe_EndScreen( void );  // copy end screen for wipe
 

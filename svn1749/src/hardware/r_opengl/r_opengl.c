@@ -692,6 +692,102 @@ EXPORT void HWRAPI( ReadRect ) (int x, int y, int width, int height,
 
 
 // -----------------+
+// ReadScreenRect   : Read a rectangle of the framebuffer into a linear,
+//                    top-down, 24 bit RGB buffer with no row padding.
+//                  : from_front reads the front buffer -- what the monitor is
+//                    showing now -- instead of the back buffer, which is what
+//                    is being drawn.
+// Note             : ReadRect above is for screenshots: it returns BGR, which
+//                    is what Targa wants.  This returns true RGB so it pairs
+//                    with DrawScreenRect, and neither has to care what the
+//                    other format is doing.
+// -----------------+
+EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height,
+                                      /*OUT*/ byte * buf, boolean from_front )
+{
+    const size_t rowbytes = (size_t)width * 3;
+    GLubyte * image;
+    int i;
+
+    image = (GLubyte *) malloc( rowbytes * (size_t)height );
+    if( ! image )   return;
+
+    // The screen wipe captures its outgoing frame at the top of D_Display,
+    // just after a buffer swap, where the back buffer holds nothing defined.
+    if( from_front )
+        glReadBuffer( GL_FRONT );
+
+    // A row of 1366 pixels is 4098 bytes, which is not a multiple of 4, so
+    // the default 4 byte row alignment would pad every row and skew the
+    // image.  Set it for the transfer and put it back.
+    glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+    glReadPixels( x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image );
+    glPixelStorei( GL_PACK_ALIGNMENT, 4 );
+
+    if( from_front )
+        glReadBuffer( GL_BACK );
+
+    // GL rows run bottom to top; everything above the renderer wants top down.
+    for( i = 0; i < height; i++ )
+        memcpy( &buf[ (size_t)i * rowbytes ],
+                &image[ (size_t)(height-1-i) * rowbytes ], rowbytes );
+
+    free( image );
+}
+
+
+// -----------------+
+// DrawScreenRect   : Put a linear, top-down, 24 bit RGB buffer straight onto
+//                    the framebuffer, bypassing the 3D pipeline.
+// Note             : For the screen wipe, which composes whole frames on the
+//                    CPU.  There is no geometry involved -- the pixels must
+//                    land unfiltered, unmodulated and unblended.
+// -----------------+
+EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height,
+                                      byte * buf )
+{
+    glDisable( GL_TEXTURE_2D );
+    glDisable( GL_BLEND );
+    glDisable( GL_ALPHA_TEST );
+    glDisable( GL_FOG );
+    glDisable( GL_DEPTH_TEST );
+    glDepthMask( GL_FALSE );
+
+    // Own the transform rather than inherit whatever the last 3D frame left
+    // set.  glRasterPos goes through the modelview and projection matrices,
+    // and a raster position that lands outside the viewport is marked invalid
+    // -- glDrawPixels then silently draws nothing at all.
+    glMatrixMode( GL_PROJECTION );
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho( 0.0, (GLdouble)screen_width, 0.0, (GLdouble)screen_height,
+             -1.0, 1.0 );
+    glMatrixMode( GL_MODELVIEW );
+    glPushMatrix();
+    glLoadIdentity();
+
+    // The buffer is top down, so start on the top row and let a negative
+    // vertical zoom walk down the screen.  screen_height itself is off the
+    // edge and would be an invalid raster position, hence the -1.
+    glRasterPos2i( x, screen_height - 1 - y );
+    glPixelZoom( 1.0f, -1.0f );
+    glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );  // see ReadScreenRect
+    glDrawPixels( width, height, GL_RGB, GL_UNSIGNED_BYTE, buf );
+    glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
+    glPixelZoom( 1.0f, 1.0f );
+
+    glPopMatrix();  // modelview
+    glMatrixMode( GL_PROJECTION );
+    glPopMatrix();
+    glMatrixMode( GL_MODELVIEW );
+
+    glDepthMask( GL_TRUE );
+    glEnable( GL_DEPTH_TEST );
+    glEnable( GL_TEXTURE_2D );
+}
+
+
+// -----------------+
 // GClipRect        : Defines the 2D hardware clipping window
 // -----------------+
 EXPORT void HWRAPI( GClipRect ) (int minx, int miny, int maxx, int maxy, float nearclip)
@@ -1292,7 +1388,7 @@ EXPORT void HWRAPI( DrawPolygon ) ( FSurfaceInfo_t  *pSurf,
         scalef /= 64;
         //DBG_Printf("Scale factor: %f\n", scalef);
 
-        if (scalef < 0.05f) // ça sert à rien de tracer la light
+        if (scalef < 0.05f) // ï¿½a sert ï¿½ rien de tracer la light
             return;
 
         c.alpha *= scalef; // change the alpha value (it seems better than changing the size of the corona)

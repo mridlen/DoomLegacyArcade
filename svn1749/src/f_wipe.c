@@ -41,6 +41,9 @@
 #include "i_system.h"
 #include "i_video.h"
 #include "v_video.h"
+#ifdef HWRENDER
+#include "hardware/hw_main.h"
+#endif
 
 //--------------------------------------------------------------------------
 //                        SCREEN WIPE PACKAGE
@@ -56,9 +59,100 @@ static byte*    wipe_scr;
 
 #if defined( ENABLE_DRAW15 ) || defined( ENABLE_DRAW16 ) || defined( ENABLE_DRAW24 ) || defined( ENABLE_DRAW32 )
 #define ENABLE_DRAWEXT
-static int fadecnt;
 static uint16_t  mask1 = 0, mask2 = 0;
 #endif
+static int fadecnt;
+
+// [Arcade] Geometry of the three buffers the wipe works on.
+//
+// The wipe used to read vid.* directly, which only describes the software
+// renderer's framebuffer.  Under OpenGL those fields say nothing useful --
+// vid.screen_size is not even set -- so the wipe now carries its own
+// geometry, filled from vid.* for a software wipe and from the 24 bit RGB
+// capture format for a hardware one.  Everything below works off these.
+static int  wipe_width, wipe_height;
+static int  wipe_bytepp;       // bytes per pixel
+static int  wipe_ybytes;       // bytes per row, including any padding
+static int  wipe_widthbytes;   // bytes of actual picture per row
+static int  wipe_screen_size;  // bytes of the whole buffer
+static int  wipe_dupy;         // vertical scale, keeps melt speed the same
+                               // at any resolution
+static boolean  wipe_wide_pixel;  // pixel is more than one byte
+
+#ifdef HWRENDER
+// True while wiping under a hardware renderer.
+static boolean  wipe_hardware = false;
+// Hardware wipes cannot borrow screens[]: those are the software renderer's
+// buffers and are not sized for this.  Three whole screens of 24 bit RGB,
+// held only for the duration of one wipe.
+static byte *   hw_wipe_buf[3] = { NULL, NULL, NULL };
+
+static
+void wipe_hw_free( void )
+{
+    int i;
+    for( i=0; i<3; i++ )
+    {
+        if( hw_wipe_buf[i] )
+        {
+            free( hw_wipe_buf[i] );
+            hw_wipe_buf[i] = NULL;
+        }
+    }
+}
+#endif
+
+
+// Set the buffer geometry for the wipe that is about to start.
+static
+void wipe_set_geometry( void )
+{
+    wipe_width  = vid.width;
+    wipe_height = vid.height;
+
+    // The melt steps in 320x200 units, so scale it to keep the same apparent
+    // speed at any resolution.  vid.dupy is not guaranteed meaningful under
+    // a hardware renderer, hence the fallback.
+    wipe_dupy = vid.dupy;
+    if( wipe_dupy < 1 )
+        wipe_dupy = vid.height / 200;
+    if( wipe_dupy < 1 )
+        wipe_dupy = 1;
+
+#ifdef HWRENDER
+    if( wipe_hardware )
+    {
+        // 24 bit RGB, tightly packed, top down.
+        wipe_bytepp = 3;
+        wipe_widthbytes = wipe_ybytes = wipe_width * 3;
+        wipe_screen_size = wipe_ybytes * wipe_height;
+        wipe_wide_pixel = true;
+        return;
+    }
+#endif
+
+    wipe_bytepp = vid.bytepp;
+    wipe_ybytes = vid.ybytes;
+    wipe_widthbytes = vid.widthbytes;
+    wipe_screen_size = vid.screen_size;
+#ifdef ENABLE_DRAWEXT
+    wipe_wide_pixel = ( vid.drawmode != DRAW8PAL );
+#else
+    wipe_wide_pixel = false;
+#endif
+}
+
+
+// Can a wipe run at all in the current render mode?
+// Called by D_Display before it bothers capturing anything.
+boolean wipe_Available( void )
+{
+#ifdef HWRENDER
+    if( rendermode != render_soft )
+        return HWR_Wipe_Supported();
+#endif
+    return true;
+}
 
 static
 void wipe_initColorXForm ( void )
@@ -68,8 +162,15 @@ void wipe_initColorXForm ( void )
 //    memcpy(wipe_scr, wipe_scr_start, width*height*vid.bytepp);
     // copy wipe_scr_start to wipe_scr
     VID_BlitLinearScreen( wipe_scr_start, wipe_scr,
-			  vid.widthbytes, vid.height,
-			  vid.ybytes, vid.ybytes );
+			  wipe_widthbytes, wipe_height,
+			  wipe_ybytes, wipe_ybytes );
+#ifdef HWRENDER
+    if( wipe_hardware )
+    {
+        fadecnt = 0;
+        return;
+    }
+#endif
 #ifdef ENABLE_DRAWEXT
     switch( vid.drawmode )
     {
@@ -134,6 +235,40 @@ int wipe_doColorXForm ( int width,  int height,  int ticks )
 }
 */
 
+#ifdef HWRENDER
+// [Arcade] Crossfade for the hardware path.  The screens here are 24 bit RGB,
+// where the packed 15/16 bit odd/even field trick used below does not apply,
+// so this is a straight per channel interpolation from the start screen to
+// the end screen over 16 steps.
+static
+int wipe_doColorXForm_hw ( int ticks )
+{
+    byte * w = wipe_scr;
+    byte * s = wipe_scr_start;
+    byte * e = wipe_scr_end;
+    int  n = wipe_screen_size;
+    int  fade1, fade2;
+
+    fadecnt += ticks;
+    if( fadecnt >= 16 )
+    {
+        // Land exactly on the end screen, then report done.
+        memcpy( w, e, wipe_screen_size );
+        return true;
+    }
+
+    fade2 = fadecnt;
+    fade1 = 16 - fade2;
+    // Always interpolate from the original start screen rather than stepping
+    // the working screen toward the end, so rounding cannot accumulate.
+    while( n-- )
+        *(w++) = (byte)(( ((int)(*(s++)) * fade1) + ((int)(*(e++)) * fade2) ) >> 4);
+
+    return false;
+}
+#endif
+
+
 // repeated until returns done
 static
 int wipe_doColorXForm ( int ticks )
@@ -141,6 +276,11 @@ int wipe_doColorXForm ( int ticks )
 {
     // vid : from video setup
     static int  slowdown=0;
+
+#ifdef HWRENDER
+    if( wipe_hardware )
+        return wipe_doColorXForm_hw( ticks );
+#endif
     boolean     changed = false;
     int y;
 #ifdef ENABLE_DRAWEXT
@@ -231,15 +371,20 @@ static int*  melty;  // y indexes for melt
 static
 void wipe_initMelt ( void )
 {
-    // vid : from video setup
     int i, my;
-    int meltwidth = vid.width/2;  // melt is 2 pixels at a time
+    int meltwidth = wipe_width/2;  // melt is 2 pixels at a time
+
+    // [Arcade] D_Display gives up on a wipe after 2 seconds, which leaves the
+    // previous one un-exited and its melty[] still allocated.  Reclaim it
+    // rather than leaking, and never inherit stale column positions.
+    if( melty )
+        Z_Free( melty );
 
     // copy start screen to main screen
 //    memcpy(wipe_scr, wipe_scr_start, width*height*scr_bytepp);
     VID_BlitLinearScreen( wipe_scr_start, wipe_scr,
-			  vid.widthbytes, vid.height,
-			  vid.ybytes, vid.ybytes );
+			  wipe_widthbytes, wipe_height,
+			  wipe_ybytes, wipe_ybytes );
 
     // setup initial column positions
     // (y<0 => not ready to scroll yet)
@@ -247,11 +392,11 @@ void wipe_initMelt ( void )
     my = melty[0] = -(M_Random()%16);  // set neg numbers as delay for a column
     for (i=1;i<meltwidth;i++)
     {
-        my += (M_Random()%3) - 1; 
+        my += (M_Random()%3) - 1;
         if (my > 0) my = 0;  // start immediately
         else if (my <= -16) my = -15;  // max delay
         // dup to keep normal speed in high res screens
-        melty[i] = my * vid.dupy;
+        melty[i] = my * wipe_dupy;
     }
 }
 
@@ -259,13 +404,10 @@ void wipe_initMelt ( void )
 static
 int wipe_doMelt ( int ticks )
 {
-    // vid : from video setup
     boolean  done = true;
-#ifdef ENABLE_DRAWEXT
-    int  cpycnt = vid.bytepp + vid.bytepp;  // 2 pixels
-#endif
-    int  meltwidth = vid.width/2;  // melt is 2 pixels at a time
-    int  height = vid.height;
+    int  cpycnt = wipe_bytepp + wipe_bytepp;  // 2 pixels
+    int  meltwidth = wipe_width/2;  // melt is 2 pixels at a time
+    int  height = wipe_height;
     int  i, j;
     int  dy;
 
@@ -283,49 +425,51 @@ int wipe_doMelt ( int ticks )
             else if (melty[i] < height)  // moving
             {
                 dy = (melty[i] < 16) ? melty[i]+1 : 8;
-                dy *= vid.dupy;
+                dy *= wipe_dupy;
                 if (melty[i]+dy >= height) dy = height - melty[i];  // bottom
-	        int idx = ((i+i)*vid.bytepp);  // x offset only
+	        int idx = ((i+i)*wipe_bytepp);  // x offset only
                 s = &wipe_scr_start[idx];
-	        idx += (melty[i]*vid.ybytes);  // with melty offset
+	        idx += (melty[i]*wipe_ybytes);  // with melty offset
                 d = &wipe_scr[idx];
                 e = &wipe_scr_end[idx];
                 melty[i] += dy;
-#ifdef ENABLE_DRAWEXT
-	        if( vid.drawmode != DRAW8PAL )
+                // [Arcade] Was a compile time ENABLE_DRAWEXT choice on
+                // vid.drawmode.  Both paths are now always built and picked at
+                // run time, because a hardware wipe is 3 bytes per pixel
+                // whatever the software renderer was configured for.
+	        if( wipe_wide_pixel )
 	        {
 		    // copy end screen over newly exposed dy area
 		    for (j=dy;j;j--)
 		    {
 		        memcpy(d, e, cpycnt);  // 2 pixels
-		        e += vid.ybytes;
-		        d += vid.ybytes;
+		        e += wipe_ybytes;
+		        d += wipe_ybytes;
 		    }
 		    // redraw start screen columns shifted down by melty[i]
 		    for (j=height-melty[i];j;j--)
 		    {
 		        memcpy(d, s, cpycnt);  // 2 pixels
-		        s += vid.ybytes;
-		        d += vid.ybytes;
+		        s += wipe_ybytes;
+		        d += wipe_ybytes;
 		    }
 		}
 	        else
-#endif
 	        {
 		    // Simpler, faster for older slow machines
 		    // copy end screen over newly exposed dy area
 		    for (j=dy;j;j--)
 		    {
 		        *(uint16_t*)d = *(uint16_t*)e;  // 2 pixels
-		        e += vid.ybytes;
-		        d += vid.ybytes;
+		        e += wipe_ybytes;
+		        d += wipe_ybytes;
 		    }
 		    // redraw start screen columns shifted down by melty[i]
 		    for (j=height-melty[i];j;j--)
 		    {
 		        *(uint16_t*)d = *(uint16_t*)s;  // 2 pixels
-		        s += vid.ybytes;
-		        d += vid.ybytes;
+		        s += wipe_ybytes;
+		        d += wipe_ybytes;
 		    }
 		}
                 done = false;
@@ -341,6 +485,7 @@ static
 void wipe_exitMelt ( void )
 {
     Z_Free(melty);
+    melty = NULL;
 }
 
 
@@ -349,6 +494,46 @@ void wipe_exitMelt ( void )
 // [WDJ] always full copy
 int wipe_StartScreen ( void )
 {
+    // [Arcade] A wipe that hit D_Display's 2 second timeout never finished and
+    // left go set, which would make the next one skip its init and run on the
+    // previous wipe's freed state.  A new capture always starts a new wipe.
+    go = 0;
+
+#ifdef HWRENDER
+    wipe_hardware = ( rendermode != render_soft );
+    if( wipe_hardware )
+    {
+        size_t bufsize;
+        int i;
+
+        wipe_set_geometry();
+        bufsize = (size_t) wipe_screen_size;
+
+        wipe_hw_free();  // defensive: a previous wipe that never ran
+        for( i=0; i<3; i++ )
+        {
+            hw_wipe_buf[i] = malloc( bufsize );
+            if( ! hw_wipe_buf[i] )
+            {
+                wipe_hw_free();
+                return 1;  // no wipe, D_Display carries on without one
+            }
+        }
+        wipe_scr_start = hw_wipe_buf[0];
+        wipe_scr_end   = hw_wipe_buf[1];
+
+        // [Arcade] Read the FRONT buffer, not the back one.  This runs at the
+        // top of D_Display, immediately after the previous frame was swapped
+        // to the monitor, and the contents of the back buffer at that moment
+        // are undefined -- capturing it gives whatever stale frame the driver
+        // left there.  The front buffer is the outgoing frame the melt is
+        // supposed to slide away.
+        HWR_Wipe_ReadScreen( wipe_scr_start, true );
+        return 0;
+    }
+#endif
+
+    wipe_set_geometry();
     wipe_scr_start = screens[2];
     I_ReadScreen(wipe_scr_start);  // copy vid.display in screen format
     return 0;
@@ -360,6 +545,16 @@ int wipe_StartScreen ( void )
 // [WDJ] always full copy
 int wipe_EndScreen ( void )
 {
+#ifdef HWRENDER
+    if( wipe_hardware )
+    {
+        // The incoming frame has just been drawn and not yet swapped, so it
+        // is the back buffer -- the normal read.
+        HWR_Wipe_ReadScreen( wipe_scr_end, false );
+        return 0;
+    }
+#endif
+
     // vid : from video setup
     wipe_scr_end = screens[3];
     I_ReadScreen(wipe_scr_end);  // copy vid.display in screen format
@@ -404,7 +599,14 @@ int wipe_ScreenWipe( int wipeno, int ticks )
     {
         go = 1;
         // wipe_scr = (byte *) Z_Malloc(width*height*vid.bytepp, PU_STATIC, 0); // DEBUG
+#ifdef HWRENDER
+        // Software composes into the visible framebuffer, which I_FinishUpdate
+        // then blits.  Hardware has no such buffer to write, so it composes
+        // into its own and pushes the result over below.
+        wipe_scr = wipe_hardware ? hw_wipe_buf[2] : screens[0];
+#else
         wipe_scr = screens[0];
+#endif
         (*wipes_init[wipeno])();
     }
 
@@ -415,11 +617,23 @@ int wipe_ScreenWipe( int wipeno, int ticks )
     rc = (*wipes_do[wipeno])(ticks);
     //  V_CopyBlock(x, y, width, height, wipe_scr, screens[0]); // DEBUG
 
+#ifdef HWRENDER
+    if( wipe_hardware )
+        HWR_Wipe_DrawScreen( wipe_scr );  // put this frame on the screen
+#endif
+
     // final stuff
     if (rc)
     {
         go = 0;
         (*wipes_exit[wipeno])();
+#ifdef HWRENDER
+        if( wipe_hardware )
+        {
+            wipe_hw_free();
+            wipe_scr = wipe_scr_start = wipe_scr_end = NULL;
+        }
+#endif
     }
 
     return !go;
