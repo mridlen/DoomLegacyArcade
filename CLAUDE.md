@@ -145,6 +145,28 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
     printing when the timeout hits, the loop was genuinely running.
   - `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
     gets a backtrace.
+- **The OpenGL renderer can be tested headlessly too, on the real GPU — use
+  `SDL_VIDEODRIVER=offscreen`, not `dummy`.** This file used to say the hardware path needed a play
+  session, and that mistake is exactly how a GL state leak shipped to the cabinet. `dummy` gives no
+  GL context and silently falls back to software (the tell is `Creating polygons` / `HWR_Startup`
+  being *absent* from the log). `offscreen` brings up a real accelerated context — the log names
+  the actual card, e.g. `Renderer : AMD Radeon Vega 8 Graphics (radeonsi, ...)` — with no window,
+  so it does not disturb the live X session:
+  ```
+  cd "$RD" && DISPLAY= SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy \
+      SDL_NO_SIGNAL_HANDLERS=1 timeout 40 ./doomlegacy -game doom2 -skill 3 -warp 1 > gl.txt 2>&1
+  ```
+  Set `drawmode "OpenGL"` and `fullscreen "No"` in the scratch config. Blank `DISPLAY` so it cannot
+  fall back to the real screen. The drawmode string must be one of the exact values in
+  `drawmode_sel_t` (`v_video.c`) — `"8 bit"` is not one, silently leaves OpenGL selected, and
+  looks like the setting being ignored; the software value is `"Software 8bit"`.
+- **Never restore OpenGL state by hand — the renderer caches it.** `SetBlend` (`r_opengl.c`) only
+  issues the GL calls for bits that differ from its `cur_polyflags` shadow copy, so anything changed
+  behind its back stays wrong for the rest of the session, and the damage shows up as general
+  renderer corruption nowhere near the code that caused it. Wrap any direct GL work in
+  `glPushAttrib`/`glPopAttrib` (plus `glPushClientAttrib` for pixel-store state, which `glPushAttrib`
+  does not cover). Verify by reading `glIsEnabled` before and after and diffing — and prove the
+  check works by reinstating the bug before trusting a clean result. → `screen-wipe.md`
 - Temporary `GenPrintf(EMSG_warn, ...)` instrumentation plus a headless run is the fastest way to
   answer "what is this cvar actually set to at runtime" — it is how the Nightmare `cv_fastmonsters`
   bug and the high-score page timing were both pinned down. Remove it before committing.

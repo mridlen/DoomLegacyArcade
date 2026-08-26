@@ -53,6 +53,39 @@ reused unchanged in substance. All the work is in getting whole screens in and o
   not an oversight: `ReadRect` feeds screenshots, and Targa wants BGR. The wipe pair is
   self-consistent and neither has to know about the other.
 
+### Never change GL state without glPushAttrib — the renderer caches it
+
+**This is the one that bit, and it did not look like the wipe's fault at all.**
+
+`SetBlend()` (`r_opengl.c`) keeps a shadow copy of the render state in `cur_polyflags` and computes
+`xf = cur_polyflags ^ polyflags`, issuing GL calls **only for the bits that changed**. So any GL
+state altered behind its back is never put right: the renderer goes on believing the old state
+holds and skips the very call that would correct it. The file documents its own escape hatch at
+`r_opengl.c:510` — `cur_polyflags = 0xffffffff; SetBlend(0);` forces a full re-issue.
+
+The first version of `DrawScreenRect` disabled five things and hand-restored three. Measured on the
+cabinet's GPU by comparing `glIsEnabled` before and after, it left exactly three wrong, **for the
+rest of the session**:
+
+| leaked | symptom reported |
+| --- | --- |
+| `GL_BLEND` left off | GL lights drawn solid, over the top of the world |
+| `GL_ALPHA_TEST` left off | a black box around every sprite |
+| depth write mask forced on, while the renderer had it off | walls running away to infinity |
+
+- **It reads as renderer corruption, not as a wipe bug.** The wipe is over in a fraction of a
+  second and looks fine while it runs; what you see is a broken-looking *game* afterwards. Nobody
+  would think to look at the transition. `GL_FOG` was *also* disabled and never restored, and was
+  the natural suspect for "walls to infinity" — but it was already off beforehand, so it leaked
+  nothing. **Measure which state actually changed rather than reasoning from the symptom.**
+- **The fix is `glPushAttrib`/`glPopAttrib`**, which restores the real values so `cur_polyflags`
+  stays truthful and the renderer needs to know nothing. The mask used is deliberately wider than
+  what the function touches, so a later edit cannot reopen the hole. Pixel storage modes
+  (`GL_PACK_ALIGNMENT`/`GL_UNPACK_ALIGNMENT`) are **client** state and are *not* covered —
+  they need `glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT)` separately. Matrices are not covered
+  either; `GL_TRANSFORM_BIT` saves only the matrix *mode*, so the explicit `glPushMatrix`/
+  `glPopMatrix` pair stays.
+
 ### Three things that will silently produce nothing if you get them wrong
 
 - **The start screen must come from the FRONT buffer.** `wipe_StartScreen()` runs at the top of
@@ -94,9 +127,23 @@ reused unchanged in substance. All the work is in getting whole screens in and o
 
 ## Verifying it
 
-- **The hardware path cannot be checked headlessly** — the SDL dummy driver gives no GL context.
-  That half needs a real play session.
-- **The software path can, and should be, because the refactor above touches it.** Force it with
+- **The hardware path CAN be checked headlessly, on the real GPU.** An earlier version of this
+  page said it could not; that was wrong, and it is why the state leak above shipped. The SDL
+  *dummy* driver gives no GL context, but **`SDL_VIDEODRIVER=offscreen` does** — it came up on
+  "AMD Radeon Vega 8 Graphics (radeonsi)", the cabinet's own GPU, with no window and without
+  touching the live X session. Full recipe in `CLAUDE.md`. This runs the actual hardware wipe:
+  134 `DrawScreenRect` calls over two melts in a 40 second run.
+- **Assert on GL state rather than eyeballing.** Temporary instrumentation reading `glIsEnabled`
+  for `GL_TEXTURE_2D`/`GL_BLEND`/`GL_ALPHA_TEST`/`GL_FOG`/`GL_DEPTH_TEST` plus
+  `GL_DEPTH_WRITEMASK` on entry and again after the pop, printing any that differ, catches this
+  whole class of bug in one run and needs no screen.
+  - **Validate the check by reinstating the bug.** "No leaks detected" proves nothing until the
+    detector has been shown to fire: putting the old hand-restore back made it report exactly the
+    three leaks above, and the fixed version reports none.
+- **The front buffer read does work here.** The captures come back with real content (18-38% of
+  bytes non-zero, sensible means) rather than black, on this GPU and driver, which discharges the
+  environmental risk noted above for the cabinet.
+- **The software path also needs checking, because the refactor above touches it.** Force it with
   `drawmode "Software 8bit"` in the scratch `config.cfg` — the value must be one of the exact
   strings in `drawmode_sel_t` (`v_video.c`); `"8 bit"` is not one and silently leaves OpenGL
   selected, which looks like the setting being ignored.
