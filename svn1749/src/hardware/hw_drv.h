@@ -141,6 +141,11 @@ EXPORT void HWRAPI( ClearBuffer ) ( boolean ColorMask,
                                     RGBA_float_t *ClearColor );
 EXPORT void HWRAPI( SetTexture ) ( FTextureInfo_t *TexInfo );
 EXPORT void HWRAPI( ReadRect ) (int x, int y, int width, int height, byte * buf, byte * bitpp ) ;
+// [Arcade] Whole screen in and out as 24 bit RGB, for the screen wipe.
+// A backend that does not implement these leaves the pointers NULL and the
+// wipe stays disabled for it; see HWR_Wipe_Supported().
+EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height, byte * buf, boolean from_front ) ;
+EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height, byte * buf ) ;
 EXPORT void HWRAPI( GClipRect ) (int minx, int miny, int maxx, int maxy, float nearclip) ;
 EXPORT void HWRAPI( ClearMipMapCache ) (void) ;
 
@@ -179,6 +184,8 @@ struct hwdriver_s {
     ClearBuffer         pfnClearBuffer;
     SetTexture          pfnSetTexture;
     ReadRect            pfnReadRect;
+    ReadScreenRect      pfnReadScreenRect;  // [Arcade] screen wipe, may be NULL
+    DrawScreenRect      pfnDrawScreenRect;  // [Arcade] screen wipe, may be NULL
     GClipRect           pfnGClipRect;
     ClearMipMapCache    pfnClearMipMapCache;
     SetSpecialState     pfnSetSpecialState;//Hurdler: added for backward compatibility

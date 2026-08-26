@@ -83,6 +83,14 @@ void *hwSym(const char *funcName)
     {
 	return &ReadRect;
     }
+    else if(0 == strcmp("ReadScreenRect", funcName))
+    {
+	return &ReadScreenRect;
+    }
+    else if(0 == strcmp("DrawScreenRect", funcName))
+    {
+	return &DrawScreenRect;
+    }
     else if(0 == strcmp("GClipRect", funcName))
     {
 	return &GClipRect;

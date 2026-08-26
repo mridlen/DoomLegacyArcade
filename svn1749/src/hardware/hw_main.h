@@ -103,6 +103,11 @@ void HWR_DrawViewBorder (int clearlines);
 //   scale : 0 .. 15
 void HWR_DrawVidFlatFill (int x, int y, int w, int h, int scale, lumpnum_t flatlumpnum);
 byte *  HWR_Get_Screenshot ( byte * bitpp );
+
+// [Arcade] Screen wipe support, see hw_draw.c.
+boolean HWR_Wipe_Supported( void );
+void    HWR_Wipe_ReadScreen( byte * buf, boolean from_front );
+void    HWR_Wipe_DrawScreen( byte * buf );
 void HWR_SetViewSize( int viewsize );
 void HWR_DrawPatch (MipPatch_t* gpatch, int x, int y, uint32_t option);
 void HWR_DrawMappedPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byte *colormap);
