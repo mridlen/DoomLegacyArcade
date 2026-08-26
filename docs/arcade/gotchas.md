@@ -210,3 +210,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Incidentally the wipe into the new level now starts from the last properly rendered frame
     instead of "text box over garbage", since `G_DoLoadLevel` sets `GS_FORCEWIPE` before
     `P_SetupLevel` and `D_Display` grabs the start screen afterwards.
+
+- **`GL_CLAMP` is not `GL_CLAMP_TO_EDGE`, and the difference was a thin black box around every
+  intermission animation.** OpenGL only; software mode never showed it. `SetTexture`
+  (`r_opengl.c`) set `GL_TEXTURE_WRAP_S/T` to **`GL_CLAMP`** for any texture without `TF_WRAPX`/
+  `TF_WRAPY` — that is every patch: sprites, HUD, menu graphics, the intermission animations.
+  `GL_CLAMP` is the OpenGL 1.0 behaviour that clamps to the texture **border**, and with linear
+  filtering an edge sample blends the edge texel with the border colour, which defaults to
+  **transparent black**. So every patch got a half-texel dark fringe all the way round.
+  `GL_CLAMP_TO_EDGE` (core since OpenGL 1.2) clamps to the edge texel and has no border to bleed.
+  - **Why the intermission showed it worst.** The animation patches are small and the intermission
+    is drawn from a 320x200 base, so at 1366x768 a half-texel fringe is magnified into an obvious
+    2-3 pixel outline, and it sits against a flat, evenly lit background where a straight dark line
+    is unmissable. The same fringe was on every sprite in the 3D view, but broken up by the scene.
+  - **The patch fills its block exactly here, which is why all four sides were affected.**
+    `HWR_MakePatch` puts the patch in the top-left of a power-of-two block and sets
+    `max_s = newwidth/blockwidth`; when that works out to 1.0 the quad samples right up to the
+    texture edge and the border bleeds in on every side. Where a patch *is* padded (`max_s < 1`)
+    the clamp mode is irrelevant, because sampling never leaves [0,1] — a fringe there would come
+    from the transparent padding instead and would need the edge texels replicated. Nothing
+    observed needed that, but do not confuse the two failures.
+  - **Do not "fix" this by forcing nearest filtering.** Note the cabinet's `gr_filtermode` is
+    already set to `"Nearest"` and the render is plainly bilinear anyway, so that setting is not
+    doing what it says — which is its own bug, and was not what produced the fringe.
+  - Verified by screenshot, headless, on the real GPU: capture the intermission with
+    `SDL_VIDEODRIVER=offscreen` and an autoexec of `wait`/`exitlevel`/`screenshot`, then compare
+    crops before and after. See `CLAUDE.md` for the offscreen recipe. **This is the class of bug
+    that only a picture settles** — it is invisible to logs and to every non-graphical check.
+
