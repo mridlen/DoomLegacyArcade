@@ -137,6 +137,23 @@ static int     hs_run_levels      = 0;    // scored level exits this run
 static boolean hs_run_endmap_max  = false;// was the max category still alive?
 static char    hs_run_gameid[HS_GAMEID_LEN] = "";
 
+// [Arcade] The *max* run ends where the max run ends, which is not where the
+// speed run ends.  The frozen state above follows the speed run all the way
+// to the last scored exit; the moment a level is exited short of 100% the max
+// run is over, but the speed run carries on and overwrites endmap/tics with
+// levels the max category never earned.  So the max category keeps its own
+// endpoint: the furthest level reached with the max still intact, and the
+// cumulative time at that point.
+//
+// Without this, finishing a level short of max *erased* the max progress
+// already banked -- and since a death leaves the frozen state untouched,
+// dying on level 2 recorded a max entry for level 1 while surviving level 2
+// recorded nothing at all.  Playing better scored worse, which is how this
+// was found.  Empty endmap means the run was never max (level 1 was already
+// short), and no max entry is committed.
+static char    hs_max_endmap[9]   = "";
+static tic_t   hs_max_tics        = 0;
+
 // Ruleset-and-cheating only -- a *death does not clear this*, which is the
 // whole point of the progress board.  hs_run_ranked still goes false on a
 // death (it gates the split records, where a free level reload would
@@ -1089,6 +1106,8 @@ static void  HS_Run_Reset( void )
     hs_run_tics        = 0;
     hs_run_levels      = 0;
     hs_run_endmap_max  = false;
+    hs_max_endmap[0]   = 0;
+    hs_max_tics        = 0;
     hs_run_gameid[0]   = 0;
     hs_initials_pending = false;
     hs_placed_n        = 0;
@@ -1301,17 +1320,24 @@ void  HS_Run_Finished( void )
 
     for( cat=0; cat<HS_NUMCAT; cat++ )
     {
-        // The max board only takes runs that were still 100% at the point
-        // they stopped; the speed board takes every scored run.
-        if( cat == HS_CAT_max && ! hs_run_endmap_max )  continue;
+        // [Arcade] Each category is committed at *its own* endpoint.  The
+        // speed run ends at the last scored exit; the max run ends at the
+        // last exit that was still 100%, which may be several levels earlier.
+        // Taking both from the speed endpoint is what used to throw away a
+        // max record the moment the run continued past it.
+        //
+        // An empty hs_max_endmap means the max was already gone at the first
+        // exit, so there is no max run to commit.
+        if( cat == HS_CAT_max && hs_max_endmap[0] == 0 )  continue;
 
         memset( &run, 0, sizeof(run) );
         dl_strncpy( run.game, hs_run_gameid, HS_GAMEID_LEN-1 );
         dl_strncpy( run.startmap, hs_run_startmap, 8 );
-        dl_strncpy( run.endmap, hs_run_endmap, 8 );
+        dl_strncpy( run.endmap,
+                    (cat == HS_CAT_max) ? hs_max_endmap : hs_run_endmap, 8 );
         run.skill = (byte) hs_run_skill;
         run.cat   = (byte) cat;
-        run.tics  = hs_run_tics;
+        run.tics  = (cat == HS_CAT_max) ? hs_max_tics : hs_run_tics;
 
         HS_Record_Placement( &run );
     }
@@ -1800,6 +1826,17 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     hs_run_skill      = skill;
     hs_run_endmap_max = hs_run_is_max;
     hs_run_levels++;
+
+    // [Arcade] Extend the max run only while it is still alive.  Once a level
+    // is exited short of 100% this stops moving, so it holds the furthest
+    // level the run reached with the max intact -- which is exactly the
+    // progress the max board should credit, and exactly what a death at this
+    // point would already have committed.
+    if( hs_run_endmap_max )
+    {
+        dl_strncpy( hs_max_endmap, mapname, 8 );
+        hs_max_tics = hs_cumulative_time;
+    }
 
     // [Arcade] **No per-map campaign record is kept any more.**  Survival
     // scores a run on how far it got in the episode, tie-broken by time, so

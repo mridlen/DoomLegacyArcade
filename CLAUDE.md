@@ -1611,6 +1611,34 @@ silently made the flag do nothing at all.
   latches false on the first level exited short; from then on only the speed record can be beaten
   for the rest of that run. Each category keeps its **own** record demo.
 
+  **The two categories end at different points, so each keeps its own frozen endpoint.** The speed
+  run ends at the last scored level exit (`hs_run_endmap`/`hs_run_tics`); the max run ends at the
+  last exit that was *still* 100%, which may be several levels earlier — `hs_max_endmap` /
+  `hs_max_tics`, extended in `HS_LevelExit` only while `hs_run_endmap_max` holds, and used by
+  `HS_Run_Finished` to commit the max entry.
+  - Both used to be committed from the speed endpoint, gated on `hs_run_endmap_max`. So finishing
+    a level short of max **erased the max progress already banked**: max MAP01, then finish MAP02
+    without max, and the max board got *nothing at all*.
+  - **The giveaway is that playing better scored worse.** A death leaves the frozen state
+    untouched, so *dying* on MAP02 committed a max entry for MAP01 — while *surviving* MAP02
+    committed none. The two paths differed only in whether the level exited, which is what made
+    it look intermittent from the outside.
+  - Two symptoms point here before the board does, and both are now consistent with it: the MAP01
+    exit latches `hs_new_record[max]` so the intermission blinks **NEW RECORD**, and
+    `HS_Snapshot_If_Leading` writes the `..._max.lmp` demo. Both promised a record that never
+    landed. A max demo on disk with no board entry behind it is this bug.
+  - An empty `hs_max_endmap` means the run was never max (the first level was already short), and
+    no max entry is committed — which is the only case that should record nothing.
+  - `HS_Run_Leads` needs no change and deliberately keeps its `hs_run_endmap_max` guard: it is
+    only consulted while the max run is still alive, and at that point the two endpoints are
+    identical. That guard is also what stops a *later* non-max exit re-snapshotting the max demo
+    with a buffer that has run past the record.
+  - Verified headlessly by calling the scoring entry points directly (a multi-level run cannot be
+    played headlessly — the intermission will not advance), one scenario per skill so they do not
+    compete on the same board: `1`→MAP01/MAP01, `10`→speed MAP02 **and max MAP01**, `110`→speed
+    MAP03 and max MAP02, `0`→speed only, `11`→both MAP02. The pre-fix control wrote **no max line
+    at all** for `10` and `110`, which is the reported bug and the proof the test can see it.
+
   **A death voids the rest of the run** (`HS_Player_Died`, called from `P_KillMobj` in `p_inter.c`
   right after `playerstate = PST_DEAD`). Levels already finished keep the records they earned —
   each was written to disk by its own `HS_LevelExit` before the fatal level was entered — but
