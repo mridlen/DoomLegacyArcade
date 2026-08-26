@@ -178,3 +178,35 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **`G_StopDemo`/`G_CheckDemoStatus` used to free `demobuffer` without clearing it**, leaving a
   dangling pointer for any later recording to re-free. They now NULL it.
 - The background recorder writes a stray `hs_background.lmp` into the current directory on exit.
+
+- **The level-load flicker was four separate forced page flips, not a slow load.** Every level
+  transition strobed the screen. Nothing was rendering a frame — the engine was flipping the
+  OpenGL buffer while the level did not exist yet, so each flip showed whatever stale content the
+  back buffer happened to hold. It looked like a "loading bar" because one of the four drew a text
+  box, but the flicker came from the flips, not the box. The cabinet loads a level every couple of
+  minutes, so this was also a real photosensitivity hazard, which is why it was removed rather
+  than slowed down.
+  - **The strobe** was `loading_status()` in `hardware/hw_bsp.c`, called from the subsector case of
+    `HWR_WalkBSPNode` once every `numsubsectors/50` subsectors — so ~50 times, as fast as the GPU
+    would take them. It drew `CON_Drawer()` plus a `M_DrawTextBox` "Loading... N%" and called
+    `I_FinishUpdate()`, i.e. `SDL_GL_SwapWindow`. **It never cleared the buffer**, so it painted a
+    small box over two alternating stale frames and swapped between them fifty times.
+  - **The three flashes** were `GenPrintf( ... | EMSG_now, ...)` on "Setup Level" (`p_setup.c`),
+    "Solving T-joins" and "Creating polygons" (both `hw_bsp.c`). `EMSG_now` is not a log-level
+    flag: in `CONS_Printf` (`console.c:1292`) it takes the same branch as `con_self_refresh` and
+    does `V_Clear_Display()` + `CON_Drawer()` + `I_FinishUpdate()`. That branch exists for the
+    **startup** screen, where the display loop is not running yet; `D_DoomLoop` clears
+    `con_self_refresh` (`d_main.c:1211`) before any level loads, so in-game the flag is the only
+    thing forcing the repaint. Dropping `EMSG_now` keeps every message in the console and the log
+    and leaves the startup screen untouched, because startup repaints from `con_self_refresh`.
+  - **`EMSG_now` on a message that can fire during play is nearly always wrong** for this reason.
+    The one left is `p_setup.c`'s map-load error, which only fires when the level fails anyway.
+  - **All of this is OpenGL-only.** `p_setup.c` gates `HWR_SetupLevel()` on
+    `rendermode != render_soft`, so the software renderer never drew a loading status at all —
+    which is the standing proof that nothing depends on it. Removing it is invisible to the
+    simulation: no game state, no cvars, no RNG, nothing in the demo header, so **demos are
+    unaffected**. Only `I_OsPolling()` was kept, so the window still pumps events while the BSP is
+    walked.
+  - Incidentally the wipe into the new level now starts from the last properly rendered frame
+    instead of "text box over garbage", since `G_DoLoadLevel` sets `GS_FORCEWIPE` before
+    `P_SetupLevel` and `D_Display` grabs the start screen afterwards.
