@@ -1283,15 +1283,23 @@ EXPORT void HWRAPI( SetTexture ) ( FTextureInfo_t *pTexInfo )
         }
 #endif
 
+        // [Arcade] GL_CLAMP_TO_EDGE, not GL_CLAMP.  They are not the same and
+        // the difference is visible: GL_CLAMP blends the edge texel with the
+        // texture BORDER colour, which defaults to transparent black, so every
+        // non-repeating patch picked up a thin dark outline once the filter was
+        // linear.  It showed up worst on the small intermission animations,
+        // where a half-texel fringe is magnified by the 320x200 upscale into an
+        // obvious black box.  GL_CLAMP_TO_EDGE clamps to the edge texel itself
+        // and has no border to bleed in.  Core since OpenGL 1.2.
         if( pTexInfo->tfflags & TF_WRAPX )
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         else
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
         if( pTexInfo->tfflags & TF_WRAPY )
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         else
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
