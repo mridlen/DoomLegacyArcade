@@ -712,20 +712,26 @@ EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height,
     image = (GLubyte *) malloc( rowbytes * (size_t)height );
     if( ! image )   return;
 
+    // Save and restore every piece of GL state touched here.  SetBlend() keeps
+    // a shadow copy of the render state in cur_polyflags and only issues the
+    // GL calls for the bits that changed, so anything altered behind its back
+    // is never put right again -- it stays wrong for the rest of the session.
+    // See the note in DrawScreenRect.
+    glPushAttrib( GL_PIXEL_MODE_BIT );
+    glPushClientAttrib( GL_CLIENT_PIXEL_STORE_BIT );  // pack/unpack are client state
+
     // The screen wipe captures its outgoing frame at the top of D_Display,
     // just after a buffer swap, where the back buffer holds nothing defined.
     if( from_front )
         glReadBuffer( GL_FRONT );
 
     // A row of 1366 pixels is 4098 bytes, which is not a multiple of 4, so
-    // the default 4 byte row alignment would pad every row and skew the
-    // image.  Set it for the transfer and put it back.
+    // the default 4 byte row alignment would pad every row and skew the image.
     glPixelStorei( GL_PACK_ALIGNMENT, 1 );
     glReadPixels( x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image );
-    glPixelStorei( GL_PACK_ALIGNMENT, 4 );
 
-    if( from_front )
-        glReadBuffer( GL_BACK );
+    glPopClientAttrib();
+    glPopAttrib();
 
     // GL rows run bottom to top; everything above the renderer wants top down.
     for( i = 0; i < height; i++ )
@@ -746,6 +752,33 @@ EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height,
 EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height,
                                       byte * buf )
 {
+    // [Arcade] Save and restore EVERY piece of GL state touched below, and do
+    // not hand-restore it.
+    //
+    // SetBlend() keeps a shadow copy of the render state in cur_polyflags and
+    // only issues the GL calls for the bits that differ from it.  So anything
+    // changed behind its back is never corrected: the renderer goes on
+    // believing the old state is still in effect and skips the call that would
+    // put it right.  An earlier version of this function disabled five things
+    // and hand-restored three, and the damage lasted the rest of the session.
+    // Measured on the cabinet's own GPU, comparing glIsEnabled before and
+    // after, it left exactly three things wrong:
+    //   GL_BLEND off       -- GL lights drawn solid, over the top of the world
+    //   GL_ALPHA_TEST off  -- a black box around every sprite
+    //   depth write mask forced on, while the renderer had it off
+    //                      -- walls running away to infinity
+    // It read as renderer corruption with nothing to do with the wipe, which
+    // was over in a fraction of a second and looked fine while it ran.
+    //
+    // glPushAttrib restores the real values, so cur_polyflags stays truthful
+    // and the renderer needs to know nothing about any of this.  The mask is
+    // deliberately wider than what is touched here: it also covers everything
+    // SetBlend itself owns, so a future edit cannot reopen the same hole.
+    glPushAttrib( GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT
+                  | GL_PIXEL_MODE_BIT | GL_TRANSFORM_BIT | GL_CURRENT_BIT
+                  | GL_TEXTURE_BIT | GL_POLYGON_BIT );
+    glPushClientAttrib( GL_CLIENT_PIXEL_STORE_BIT );  // not covered by glPushAttrib
+
     glDisable( GL_TEXTURE_2D );
     glDisable( GL_BLEND );
     glDisable( GL_ALPHA_TEST );
@@ -757,6 +790,7 @@ EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height,
     // set.  glRasterPos goes through the modelview and projection matrices,
     // and a raster position that lands outside the viewport is marked invalid
     // -- glDrawPixels then silently draws nothing at all.
+    // The matrices are not part of glPushAttrib, hence the explicit push/pop.
     glMatrixMode( GL_PROJECTION );
     glPushMatrix();
     glLoadIdentity();
@@ -773,17 +807,13 @@ EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height,
     glPixelZoom( 1.0f, -1.0f );
     glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );  // see ReadScreenRect
     glDrawPixels( width, height, GL_RGB, GL_UNSIGNED_BYTE, buf );
-    glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
-    glPixelZoom( 1.0f, 1.0f );
 
     glPopMatrix();  // modelview
     glMatrixMode( GL_PROJECTION );
     glPopMatrix();
-    glMatrixMode( GL_MODELVIEW );
 
-    glDepthMask( GL_TRUE );
-    glEnable( GL_DEPTH_TEST );
-    glEnable( GL_TEXTURE_2D );
+    glPopClientAttrib();
+    glPopAttrib();   // puts back the matrix mode too, via GL_TRANSFORM_BIT
 }
 
 
