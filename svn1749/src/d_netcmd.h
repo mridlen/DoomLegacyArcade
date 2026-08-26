@@ -67,6 +67,7 @@ extern consvar_t   cv_playercolor[MAXSPLITSCREENPLAYERS];
 extern consvar_t   cv_skin[MAXSPLITSCREENPLAYERS];
 extern consvar_t   cv_autoaim[MAXSPLITSCREENPLAYERS];
 extern consvar_t   cv_weaponpref[MAXSPLITSCREENPLAYERS];
+extern consvar_t   cv_originalweaponswitch[MAXSPLITSCREENPLAYERS];
 
 extern consvar_t   cv_controlperkey;
 

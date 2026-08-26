@@ -292,17 +292,17 @@ consvar_t cv_autoaim[MAXSPLITSCREENPLAYERS] = {
 };
 
 consvar_t cv_weaponpref[MAXSPLITSCREENPLAYERS] = {
-  { "weaponpref", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref1 },
-  { "weaponpref2", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref2 },
-  { "weaponpref3", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref3 },
-  { "weaponpref4", "014576328", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref4 },
+  { "weaponpref", "045628137", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref1 },
+  { "weaponpref2", "045628137", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref2 },
+  { "weaponpref3", "045628137", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref3 },
+  { "weaponpref4", "045628137", CV_SAVE | CV_STRING | CV_CALL | CV_NOINIT | CV_CFG1, NULL, Send_WeaponPref4 },
 };
 
 consvar_t cv_originalweaponswitch[MAXSPLITSCREENPLAYERS] = {
-  { "originalweaponswitch", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref1 },
-  { "originalweaponswitch2", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 },
-  { "originalweaponswitch3", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref3 },
-  { "originalweaponswitch4", "0", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref4 }
+  { "originalweaponswitch", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref1 },
+  { "originalweaponswitch2", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref2 },
+  { "originalweaponswitch3", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref3 },
+  { "originalweaponswitch4", "1", CV_SAVE | CV_CALL | CV_NOINIT | CV_CFG1, CV_OnOff, Send_WeaponPref4 }
 };
    
 
