@@ -79,6 +79,137 @@ Discord is likely to get you banned.
 
 ---
 
+## Fixes to the engine itself
+
+Most of the work above sits on top of DoomLegacy. Some of it went *into* it — the list below is
+bugs and shortcomings in stock DoomLegacy 1.48.18 that the cabinet ran into and fixed, rather than
+anything the arcade build introduced. None of them are arcade-specific, so they may be of interest
+to anyone else running this port. Each is written up in full in the commit that made it and in
+[`docs/arcade/`](docs/arcade/).
+
+**Crashes and lockups**
+
+- **The software renderer crashed on every sprite at 24 or 32 bits per pixel.** `R_DrawColumn_24`
+  and `R_DrawColumn_32` declared their height mask unsigned where the 8-bit drawer declares it
+  signed, turning a no-op mask into a read four gigabytes past the texture. On a modern desktop
+  colour depth that meant a segfault a second or two into any software-mode game.
+- **Selecting a software drawmode from the video menu killed the display.** Each drawmode's config
+  file carries its own colour depth, and nothing checked it against what that drawmode can actually
+  do — so a palette mode asked for a 32-bit screen, the mode change failed *after* the renderer had
+  already been torn down, and the engine carried on running with nothing on screen. It looks
+  exactly like a freeze.
+- **A menu on which nothing is selectable hung the game.** The cursor's up/down search is an
+  unbounded loop looking for a selectable row, so a page where every row is disabled spins inside
+  the event handler for ever — no tics, no redraw, no way out. Both loops are bounded now.
+
+**OpenGL**
+
+- **Every patch had a black outline** — sprites, the HUD, menu graphics, the intermission
+  animations. Textures were clamped with OpenGL 1.0's `GL_CLAMP`, which samples the *border*
+  colour, so filtering blended a transparent-black fringe into all four edges. Worst on the
+  intermission animations, where magnification turns that fringe into a visible 2–3 pixel line.
+- **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
+  `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
+  config is executed long before the renderer is set up, so the handler silently did nothing and
+  nothing re-applied it afterwards. A config asking for `Nearest` filtering rendered `Bilinear` for
+  the life of the build, while displaying `Nearest` in the menu.
+- **The screen strobed on every level load.** The BSP walk drew a "Loading... N%" box about fifty
+  times, each one forcing a page flip with no frame behind it, so it alternated between two stale
+  buffers as fast as the GPU allowed. Three startup-only status messages were forcing full repaints
+  on top of that.
+- **The screen melt and crossfade never ran under OpenGL.** Both were implemented, the setting
+  existed and the menu row was there, but the whole wipe was gated on the software renderer. It
+  works in both now. Two latent bugs fell out of that: a wipe that hit its two-second timeout left
+  freed state behind for the next one, and the screen capture ran even when the wipe was off.
+- **The spectre fuzz effect did not exist in OpenGL** — every partially invisible thing was drawn
+  as flat translucency. The original boiling-outline effect is now reproduced on the hardware path,
+  as far as a fixed-function backend can.
+- **A level's palette tint outlived the level.** Finishing a level in a radiation suit left
+  everything after it green, and taking a hit at the exit switch left it red, right through the
+  intermission and into whatever came next — the tint is only ever reset when the *next* level
+  starts.
+
+**Demos**
+
+- **Demos desynced whenever `tiredrun` was on, which is DoomLegacy's own default.** Playback
+  force-disables the Legacy gameplay extras, recording does not, and none of them were written into
+  the demo — so a demo recorded with tired-run replayed without it and drifted apart over a few
+  thousand tics.
+- **Rocket smoke trails desynced any demo with a rocket in it.** `A_SmokeTrailer` timed itself off
+  the raw tic counter, which is zeroed once per process and never per game, so its phase at the
+  start of a run was however long the machine had been sitting idle. Upstream had already fixed the
+  identical bug in the other copy of it (`A_Tracer`) and missed this one.
+- **The demo header described the *previous* game** — skill, episode, map, deathmatch, respawn and
+  fast monsters were all written before the new game's settings had been applied. Harmless to
+  playback, misleading to anything that reads a header.
+
+**Gameplay**
+
+- **Nightmare's fast monsters never sped up demons or spectres.** Fast fireballs worked; the other
+  half of the setting halves the sarge frame durations, and with MBF21 compiled in it only touches
+  frames carrying a flag that nothing ever set on the vanilla frames. The restore path was broken
+  as well — a bitwise `and` between `1` and `2` — so the timings would never have been put back.
+- **You could climb on top of monsters and get stuck.** Vanilla Doom things are infinitely tall;
+  Legacy applied Heretic's over-under passing to the Doom player unconditionally, with no setting
+  for it, which is how a player ends up wedged somewhere vanilla cannot reach — the lift by the
+  E1M2 exit being the cabinet's own example. There is now a **Monster Height** setting, defaulting
+  to vanilla, with Heretic exempt.
+- **Deathmatch rankings covered the whole screen when anybody died**, replacing both views in an
+  ordinary two-player game rather than just the dead player's. They are drawn per view now.
+- **Time Limit in Net Options did nothing.** The row edited the engine's own limit, which is
+  rewritten at every game start — forced to five minutes for deathmatch and to zero otherwise — so
+  a typed value was overwritten before anything could read it, and the row displayed whatever the
+  last game had left behind.
+
+**Input**
+
+- **Analog sticks produced no input at all.** The only axis handling was for triggers, gated on the
+  joystick's *name* matching one of two literal strings, and compiled out by default besides. A
+  stick worked on its d-pad setting and was completely dead in analog mode. Both sticks and the
+  triggers are read generically now, on any pad.
+- **The right stick was read nowhere**, on any controller.
+- **The LT/RT triggers** were behind that same name test, and posted a keypress on every event while
+  held rather than once on the transition.
+- **A reconnected gamepad landed on top of another player.** SDL2 event ids are per-device instance
+  numbers, not slots, and the code clamped them into the four-slot array — so a pad that slept and
+  woke came back as instance 4, 5, … and folded onto the last slot, silently sharing an identity
+  with whoever was already there. Joysticks were also enumerated only at startup, so anything
+  plugged in later was invisible for the life of the process, and all four pads shared one d-pad
+  state between them.
+- **The control-name table was one entry out of step with the control enum**, and had been for as
+  long as the feature that shifted it has been compiled in. It round-trips, so bindings worked —
+  but `config.cfg` recorded them under the wrong names, which matters the moment anyone reads or
+  hand-edits that file.
+
+**Configuration**
+
+- **`config.cfg` was being silently truncated at 8 KB.** `exec` pushes a whole file into the command
+  buffer in one go, and the buffer was capped at 8192 bytes; the cabinet's config is 8195. The only
+  sign was one line scrolling past in the console. Every setting past the cut kept its compiled
+  default and was then written back over the file — 28 of 188 settings lost at every load. That is
+  the whole mechanism behind "my config blew itself away".
+- **Settings that fail to apply are now reported at startup**, by line number, rather than leaving
+  the cvar at its default with no indication. `cfgcheck` repeats the check on demand, and every
+  save keeps a `config.cfg.bak`.
+
+**Smaller things**
+
+- **The Launcher screen** no longer appears on every launch, only after an actual startup error.
+- **Screenshots are on F12** rather than the stock SysRq (Alt+PrtSc), which a GNOME desktop
+  intercepts before the game ever sees it.
+- **Menu letter shortcuts** no longer jump the cursor onto hidden rows.
+- **Splitscreen is cleared on the way back to the title screen**, so what follows isn't drawn in a
+  split view.
+- **Episode-ending maps show the intermission.** Vanilla skips it on E1M8 and friends and goes
+  straight to the finale, which also skips everything hanging off the intermission — the cabinet's
+  per-level scoring among it. Doom II already did it the other way round for MAP30.
+- **Two latent draw-layer inconsistencies**: `V_DrawString` ignores horizontal centring in hardware
+  mode where fills and patches apply it, and text positions by a float scale factor where
+  everything around it uses the rounded integer. Neither showed at full screen size; both throw
+  anything drawn at half scale off its background.
+
+---
+
 ## Requirements
 
 A Linux machine with a C compiler and these development packages:
