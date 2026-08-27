@@ -44,7 +44,9 @@ Discord is likely to get you banned.
   whole runs, ranked by **how far you got first and how fast second**. That means a run ending in a
   death partway through — which is how most runs end — still has somewhere to land, while finishing
   the episode naturally tops the board. Ten places for the campaign, three per map for Single Level.
-  Finish a run that makes the board and you are asked for three initials.
+  Finish a run that makes the board and you are asked for three initials. The page opens on the
+  last player's initials, so a regular playing run after run confirms with one press; it goes back
+  to `AAA` once the cabinet has been left alone and the next person is a stranger.
 - **Record demos.** The run that set each record is saved and replayed in the attract cycle,
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that

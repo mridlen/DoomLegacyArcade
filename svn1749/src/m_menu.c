@@ -3160,6 +3160,16 @@ static int     initials_endtic = 0;
 // see M_Initials_Confirm.
 static boolean initials_opened_panel = false;
 
+// [Arcade] What the page opens on.  All zeroes is "AAA", the classic default;
+// M_Initials_Confirm replaces it with whatever was just entered, so the same
+// player coming straight back finds their own initials already up and confirms
+// with one press instead of walking the alphabet again.  Forgotten once the
+// cabinet has been left alone -- see M_Initials_Ticker -- because the next
+// person to sign the board is then a stranger, and a stranger presented with
+// someone else's initials will accept them.
+static byte    initials_seed[INITIALS_CELLS];
+static boolean initials_seed_valid = false;   // false means it reads "AAA"
+
 static void  M_Initials_Drawer(void);
 
 static menuitem_t  InitialsMenu[] =
@@ -3201,6 +3211,13 @@ static void  M_Initials_Confirm( void )
     initials_active = false;
     HS_Set_Initials( buf );
 
+    // [Arcade] Remember them for the next page, including when the countdown
+    // accepted on its own: an unattended accept of "AAA" seeds "AAA", which is
+    // what it would have opened on anyway.
+    for( i=0; i<INITIALS_CELLS; i++ )
+        initials_seed[i] = initials_idx[i];
+    initials_seed_valid = true;
+
     // Leave the way we came in.  On the Single Level route a page was already
     // open underneath (M_SingleLevel_Finished pushes it), so pop back to it --
     // that is where a player grinding one map wants to be, and it is the flow
@@ -3218,8 +3235,10 @@ static void  M_Initials_Open( void )
 {
     int  i;
 
+    // [Arcade] The previous player's initials, or "AAA" once the seed has
+    // been forgotten.  Cursor starts on the first cell either way.
     for( i=0; i<INITIALS_CELLS; i++ )
-        initials_idx[i] = 0;        // "AAA", the classic default
+        initials_idx[i] = initials_seed[i];
     initials_pos = 0;
 
     // Operator-set, and generous by default: a player who has just finished a
@@ -3245,6 +3264,35 @@ void  M_Initials_Ticker( void )
         if( cv_initialstimeout.EV > 0 && (int)gametic >= initials_endtic )
             M_Initials_Confirm();
         return;
+    }
+
+    // [Arcade] Forget the previous player's initials once the cabinet has been
+    // left alone, so the page opens on "AAA" for whoever turns up next.
+    //
+    // The test is idle *time*, not the return to the attract screen, because
+    // by the time this page opens the attract screen is already running behind
+    // it -- Command_ExitGame_f arms the prompt on the way back to the title
+    // and M_Initials_Open puts the page on top of what settled.  Clearing the
+    // seed at that transition would clear it every time, just before the one
+    // page that wants it.
+    //
+    // cv_idletimeout is the cabinet's own definition of "nobody is here", so
+    // the seed lasts exactly as long as an abandoned game would; the fallback
+    // covers an operator who has disabled the timeout.  Player input keeps
+    // last_input_tic fresh (d_main.c, D_PostEvent), so a session that runs for
+    // an hour never expires it, and a player starting another run within the
+    // window keeps their initials.
+    if( initials_seed_valid )
+    {
+        tic_t  hold = ((cv_idletimeout.value > 0) ? cv_idletimeout.value : 60) * TICRATE;
+
+        if( (gametic - last_input_tic) > hold )
+        {
+            int  j;
+            for( j=0; j<INITIALS_CELLS; j++ )
+                initials_seed[j] = 0;
+            initials_seed_valid = false;
+        }
     }
 
     if( ! HS_Initials_Pending() )  return;

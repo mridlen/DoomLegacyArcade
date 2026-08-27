@@ -295,6 +295,11 @@ written up in full in the doc named beside it.
   **end-to-start**, not start-to-start. Derive it in a script, not by hand. → `high-scores.md`
 - **`V_DrawString` colours read backwards: option `0` is red, `V_WHITEMAP` is grey.** There is no
   red flag. White text vanishes into the intermission's grey background. → `gotchas.md`
+- **A cvar's `.EV` is a byte; reading a cvar whose range exceeds 255 through it truncates
+  silently.** `cv_idletimeout` allows 0..3600, so `.EV` turns 3600 into 16 with no warning and no
+  clamp — the config, the menu and the cvar are all correct and only the arithmetic downstream is
+  wrong. Use `.value` for any cvar that can exceed 255, and note that different readers of the
+  same cvar can disagree. → `gotchas.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
 - **Drawers run once per frame, so they must be idempotent.** Anything a drawer mutates changes 35
