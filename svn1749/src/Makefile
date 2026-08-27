@@ -1445,7 +1445,9 @@ all:	 $(BIN)/$(EXENAME)  $(SUPPORT_EXE)  cabinet_home
 # shell just skips this rather than failing the build.
 CABINET_HOME := ../../cabinet/legacyhome
 
-.PHONY: cabinet_home cabinet_save
+SMOKE_SH := ../../tools/smoke.sh
+
+.PHONY: cabinet_home cabinet_save smoke
 
 # Stage the tracked config beside the binary, without ever clobbering a live
 # one.  cp -n leaves an existing config.cfg alone, so a running cabinet does
@@ -1456,6 +1458,16 @@ cabinet_home:
 	  cp -n "$(CABINET_HOME)/config.cfg" "$(BIN)/legacyhome/" 2>/dev/null; \
 	  echo "Portable legacyhome staged at $(BIN)/legacyhome"; \
 	fi
+
+# [Arcade] Headless smoke test.  There is no unit test suite; this is the
+# closest thing to one -- it runs the built binary under SDL's dummy and
+# offscreen drivers and checks startup, level setup, the OpenGL path, a level
+# exit and the high-score write.  See tools/smoke.sh and CLAUDE.md.
+#
+# Runs against a scratch copy, never the live cabinet.  Set DOOMWADDIR if the
+# IWADs are not in one of the usual places.
+smoke:
+	@$(SMOKE_SH) $(SMOKE_ARGS)
 
 # Copy the live config back over the tracked one, for committing.
 cabinet_save:

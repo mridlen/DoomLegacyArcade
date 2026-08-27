@@ -276,3 +276,17 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **A `-synclog` note:** a record-vs-playback diff always shows the final `tflags` column
     differing (1 while recording, 0 on playback) with every simulation column identical. That field
     is not carried in the ticcmd; it is not a desync. Compare the other columns.
+
+- **A cvar's `.EV` is a byte, so any cvar whose range exceeds 255 truncates when read through it.**
+  `consvar_t` carries both `int value` and `byte EV` (`command.h`), and most of the tree reads `.EV`
+  because most cvars are small enums where the two agree. They stop agreeing the moment the range
+  does not fit: `cv_idletimeout` allows 0..3600, so `idletimeout 3600` read through `.EV` comes back
+  as **16** — 3600 & 0xFF — and a computation built on it is quietly out by two orders of magnitude.
+  - There is no warning and no clamp. The value in the config is right, the menu displays it right,
+    and only the arithmetic downstream is wrong, which is why this reads as a logic bug in whatever
+    consumed it rather than as a truncation.
+  - `g_game.c` already uses `cv_idletimeout.value` for the idle timeout itself, so the two readers
+    of the same cvar disagreed — worth grepping for when a cvar looks like it is being ignored.
+  - Caught in the initials-seed work (`high-scores.md`) only because the instrumentation printed the
+    *computed* window rather than the cvar, which is the general lesson: print what the code
+    derived, not what you set.

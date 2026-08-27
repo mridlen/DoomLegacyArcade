@@ -805,16 +805,22 @@ void HU_Drawer(void)
     // when one starts (HS_NewGame runs only on the single player and Single
     // Level routes), so without this test a flag left false by an earlier
     // solo run would paint the marker across a deathmatch too.
-    if( !demoplayback && !devmode && HS_Scored_Game() && !HS_Run_Is_Ranked() )
+    // [Arcade] A death shows nothing.  Death ending the run is the cabinet's
+    // own rule and the arcade death sequence already says so plainly -- you
+    // watch the corpse, you sign the board, you are returned to the attract
+    // screen -- so labelling the player DIED for the rest of a run they can no
+    // longer score only tells them off for it.  The marker is for the cases a
+    // player might not otherwise notice and could put right: a gameplay
+    // setting off the standard ruleset, or a cheat.
+    if( !demoplayback && !devmode && HS_Scored_Game() && !HS_Run_Is_Ranked()
+        && !(HS_Run_Died() && !HS_Run_Cheated()) )
     {
-        // Name the reason when it was a death: "UNRANKED" alone reads as a
-        // settings problem, and the player needs to know the retry they are
-        // about to play is no longer being scored.  Measured against the
-        // real STCFN0xx widths: 158px of 320, so it centers without clipping.
-        // [Arcade] Cheating is named before dying: if both happened, the
-        // cheat is the thing the player chose to do.
+        // Name the reason when it was a cheat: "UNRANKED" alone reads as a
+        // settings problem.  Measured against the real STCFN0xx widths: 158px
+        // of 320, so it centers without clipping.
+        // [Arcade] A cheat is still named ahead of a death: if both happened,
+        // the cheat is the thing the player chose to do.
         const char * mark = HS_Run_Cheated() ? "PLAYER CHEATED - UNRANKED"
-                          : HS_Run_Died()    ? "PLAYER DIED - UNRANKED"
                           :                    "UNRANKED";
         V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
         V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,

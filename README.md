@@ -44,7 +44,9 @@ Discord is likely to get you banned.
   whole runs, ranked by **how far you got first and how fast second**. That means a run ending in a
   death partway through — which is how most runs end — still has somewhere to land, while finishing
   the episode naturally tops the board. Ten places for the campaign, three per map for Single Level.
-  Finish a run that makes the board and you are asked for three initials.
+  Finish a run that makes the board and you are asked for three initials. The page opens on the
+  last player's initials, so a regular playing run after run confirms with one press; it goes back
+  to `AAA` once the cabinet has been left alone and the next person is a stranger.
 - **Record demos.** The run that set each record is saved and replayed in the attract cycle,
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
@@ -66,6 +68,10 @@ Discord is likely to get you banned.
 - **A configurable initials timeout** (Options → Menu Options, 60 seconds by default), for how long
   the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
   already back on the attract screen behind the page — so it can afford to be patient.
+- **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
+  all day. **Options → Menu Options → Attract Volume** is a percentage of the normal volumes,
+  applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
+  the attract screen silent, `100` is the old behaviour. Defaults to 50.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
@@ -395,8 +401,9 @@ map, per skill and per category:
 
 A run is scored only under the standard ruleset. Change a gameplay setting and the HUD shows
 `UNRANKED` — you can play on, but nothing is recorded. **Dying also ends scoring** for the rest of
-the run: levels already finished keep their records, but nothing after counts, and the HUD shows
-`PLAYER DIED - UNRANKED`. Start a new game to try again.
+the run: levels already finished keep their records, but nothing after counts. That one is not
+called out on the HUD — death ending the run is how the cabinet works, and the death itself already
+says so. Start a new game to try again.
 
 Scores are per game *and* level pack — Doom II's `MAP01` and Plutonia's `MAP01` are different
 levels and keep separate records.
@@ -412,8 +419,8 @@ Packs are filtered by the game they suit — a `MAPxx` pack shows under Doom II,
 Ultimate Doom — so a mismatched pack can't be loaded by accident.
 
 **Switching IWAD restarts the program.** The engine can only pick its game data at startup, so
-choosing a different game from the menu relaunches the cabinet — expect a black screen and the
-startup sequence. This is normal and takes a second or two. Level packs are different: they load
+choosing a different game from the menu relaunches the cabinet. It shows `SWITCHING GAME...` and
+then goes black for the startup sequence, which takes a second or two. Level packs are different: they load
 into the running session with no restart, and only unloading one restarts, since the engine has no
 way to remove a wad it has already read.
 

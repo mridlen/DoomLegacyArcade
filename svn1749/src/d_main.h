@@ -101,6 +101,7 @@ extern byte demo_ctrl;
 // over a real game.  Used by D_Display for the black backdrop and by
 // G_Idle_Timeout_Check to decide whether the timeout has a game to tear down.
 boolean D_Menu_Over_Attract( void );
+boolean D_Attract_Running( void );   // [Arcade] attract cycle on screen
 
 // [Arcade] Replay an attract advance that was deferred while a menu was open.
 // Called every tic from G_Ticker.

@@ -63,7 +63,8 @@ Adding a new `.c` file requires manually adding its `.o` to the hand-maintained 
 `svn1749/src/Makefile` — there is no wildcard or auto-discovery, and omitting it fails at link time.
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
-`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`.
+`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`, and
+`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset).
 
 **`make -j` races in the dependency phase**, and the error points nowhere near the cause: every
 `../dep/*.dep` rule pipes through the *same* intermediate `../dep/sed.dep` and then `mv`s it, so two
@@ -82,6 +83,17 @@ interactively (or asking the user to). **A lot can still be checked without a sc
 see below.
 
 ### Headless verification
+
+**Most of this is packaged as `tools/smoke.sh`, run with `make smoke` from `svn1749/src`.** It sets
+up the scratch directory below, then runs five checks — `startup`, `warp`, `exitlevel` (which drives
+a real level exit and requires a record line in `highscores.dat`), `opengl` (on the real GPU) and
+`config` — reporting pass/fail per check and exiting non-zero if any failed. Run it after any change
+that touches startup, the config, level setup, scoring or the renderer; it takes about a minute.
+`tools/smoke.sh -l` lists the checks, a check name runs just that one, `-k` keeps the scratch
+directory, `DOOMWADDIR` points it at the IWADs, and `SMOKE_TIMEOUT=1` is a quick way to prove the
+checks can actually fail. Prefer extending it over rebuilding the harness by hand — but read the
+rest of this section anyway, because everything below is *why* it is shaped the way it is, and a
+one-off investigation still needs it.
 
 The game runs under SDL's dummy drivers, which is enough to exercise startup, config load, cvar
 state, the attract cycle and level setup. This has caught real bugs that would otherwise have
@@ -156,10 +168,17 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   cd "$RD" && DISPLAY= SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy \
       SDL_NO_SIGNAL_HANDLERS=1 timeout 40 ./doomlegacy -game doom2 -skill 3 -warp 1 > gl.txt 2>&1
   ```
-  Set `drawmode "OpenGL"` and `fullscreen "No"` in the scratch config. Blank `DISPLAY` so it cannot
-  fall back to the real screen. The drawmode string must be one of the exact values in
-  `drawmode_sel_t` (`v_video.c`) — `"8 bit"` is not one, silently leaves OpenGL selected, and
-  looks like the setting being ignored; the software value is `"Software 8bit"`.
+  Set `drawmode "OpenGL"` in the scratch config, and blank `DISPLAY` so it cannot fall back to the
+  real screen. The drawmode string must be one of the exact values in `drawmode_sel_t`
+  (`v_video.c`) — `"8 bit"` is not one, silently leaves OpenGL selected, and looks like the setting
+  being ignored; the software value is `"Software 8bit"`. It must go in **`config.cfg`**, not an
+  autoexec: the console `drawmode` command does not switch drawmode, and an autoexec runs long
+  after the renderer is up.
+  - **`fullscreen` must stay `"Yes"`, and this file used to say `"No"`.** The offscreen driver has
+    no window manager, so a windowed mode request comes back with no visual and the run dies with
+    `Error: SetMode: cannot draw 0 bits per pixel` — which reads as a colour-depth problem and
+    sends you to `scr_depth`, correctly `"32 bits"` the whole time. With `fullscreen "Yes"` the
+    same run brings up a real accelerated context and quits cleanly.
 - **Never restore OpenGL state by hand — the renderer caches it.** `SetBlend` (`r_opengl.c`) only
   issues the GL calls for bits that differ from its `cur_polyflags` shadow copy, so anything changed
   behind its back stays wrong for the rest of the session, and the damage shows up as general
@@ -167,6 +186,13 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `glPushAttrib`/`glPopAttrib` (plus `glPushClientAttrib` for pixel-store state, which `glPushAttrib`
   does not cover). Verify by reading `glIsEnabled` before and after and diffing — and prove the
   check works by reinstating the bug before trusting a clean result. → `screen-wipe.md`
+- **Screenshots come out entirely black under `SDL_VIDEODRIVER=dummy`, including of screens that
+  obviously have content.** A temporary `M_ScreenShot()` call is otherwise the best way to check
+  drawing headlessly — it writes a TGA that can be measured numerically instead of eyeballed, which
+  is how the restart splash's centring was verified. Use **`offscreen`**, where the capture works
+  and shows the real GL output. Always take a **control shot of a screen known to have content** in
+  the same run: an all-black capture of the thing under test is indistinguishable from the thing
+  not drawing, and the control is the only thing that tells them apart.
 - Temporary `GenPrintf(EMSG_warn, ...)` instrumentation plus a headless run is the fastest way to
   answer "what is this cvar actually set to at runtime" — it is how the Nightmare `cv_fastmonsters`
   bug and the high-score page timing were both pinned down. Remove it before committing.
@@ -243,6 +269,30 @@ are kept below, in this file.
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
+### Where the arcade code lives
+
+The table above maps subjects to *design notes*; this one maps them to *source*. Every local
+addition carries an `// [Arcade]` marker, so **`grep -rn "\[Arcade\]" svn1749/src` is the complete
+inventory** — over 500 of them, and the comment on each line usually says why. Use this table to
+pick a starting point, then grep from there. `hs_stuff.c`/`.h` is the only wholly new pair of files;
+everything else is arcade blocks inside an upstream file.
+
+| subject | start here |
+| --- | --- |
+| Scoring, boards, record demos | `hs_stuff.c` entire. Life cycle: `HS_NewGame` → `HS_LevelExit` → `HS_Run_Finished`, voided by `HS_Player_Died` / `HS_Player_Cheated`, ruleset in `HS_Apply_Ranked_Ruleset` / `HS_Ruleset_Is_Ranked`. Called from `g_game.c` (`G_DoCompleted`, `G_DoWorldDone`), `p_inter.c` (`P_KillMobj`), `m_cheat.c`, `wi_stuff.c` |
+| Attract cycle | `d_main.c`: `D_AdvanceDemo` / `D_DoAdvanceDemo` / `D_PageTicker` / `D_PageDrawer`, the `hs_attract_page` / `hs_page_after_demo` / `hs_subpage_tic` page state, `D_Menu_Over_Attract`, `D_Demo_Advance_Retry` |
+| Arcade death, idle timeout | `g_game.c`: `G_Arcade_Death_Check`, `G_Player_Death_Settled`, `G_Idle_Timeout_Check`, and the `death_ended_run` / `finale_after_intermission` flags they set for `G_DoWorldDone` |
+| Four players, panels, view grid | `d_clisrv.c`: `localplayer[]`, `D_NumViews`, `D_Panel_Of`, `D_View_Cell`, `D_Reset_View_Cells`. Viewport geometry in `d_main.c` `D_Display`; software draw window in `r_draw.c` (`R_View_Fills_Cell`, the cell tables) |
+| HUD | `st_stuff.c` `ST_overlayDrawer` (per-view, and the quarter-screen half-scale block). `hu_stuff.c` for the per-view rankings, the attract demo caption, `PRESS FIRE TO START`, the `UNRANKED` markers and `HU_Draw_Tip` |
+| Menus | `m_menu.c`, by region: operator cvars ~475–530, main/new-game lockdown ~1150–1270, Single Level ~1670–1860, cheats ~2780–2930, join screen ~2935, initials entry ~3134, game select and level packs ~3520–3790, program restart ~3791 |
+| Input | `g_input.c`: `gamecontrol_pl[]`, the per-panel presets, `cv_customcontrols` and the guided setup. `sdl/i_system.c` for joystick slots, hotplug, both sticks and the triggers |
+| Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
+| Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
+| Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+
+`devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of
+this is gated on.
+
 ## Hard-won rules
 
 These bite across the whole tree, usually while working on something else entirely. Each is
@@ -271,6 +321,11 @@ written up in full in the doc named beside it.
   **end-to-start**, not start-to-start. Derive it in a script, not by hand. → `high-scores.md`
 - **`V_DrawString` colours read backwards: option `0` is red, `V_WHITEMAP` is grey.** There is no
   red flag. White text vanishes into the intermission's grey background. → `gotchas.md`
+- **A cvar's `.EV` is a byte; reading a cvar whose range exceeds 255 through it truncates
+  silently.** `cv_idletimeout` allows 0..3600, so `.EV` turns 3600 into 16 with no warning and no
+  clamp — the config, the menu and the cvar are all correct and only the arithmetic downstream is
+  wrong. Use `.value` for any cvar that can exceed 255, and note that different readers of the
+  same cvar can disagree. → `gotchas.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
 - **Drawers run once per frame, so they must be idempotent.** Anything a drawer mutates changes 35

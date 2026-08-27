@@ -51,9 +51,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   right after `playerstate = PST_DEAD`). Levels already finished keep the records they earned —
   each was written to disk by its own `HS_LevelExit` before the fatal level was entered — but
   nothing after the death scores, and the background recording is closed with `G_CheckDemoStatus`
-  since it can no longer produce anything. The HUD marker becomes **`PLAYER DIED - UNRANKED`**
-  (`hu_stuff.c`); `UNRANKED` alone reads as a settings problem, and the player needs to know the
-  retry they are about to play is not being scored.
+  since it can no longer produce anything. **No HUD marker is shown for a death** (`hu_stuff.c`).
+  It used to read `PLAYER DIED - UNRANKED`, on the reasoning that `UNRANKED` alone looks like a
+  settings problem — but death ending the run is the cabinet's own rule and the arcade death
+  sequence already says so plainly (watch the corpse, sign the board, back to attract), so the
+  marker was only telling the player off for the rest of a run they could no longer score. The
+  marker is for the two cases a player might not notice and *could* put right: a gameplay setting
+  off the standard ruleset, and a cheat. A cheat is still named ahead of a death when both
+  happened, so the condition is `!(HS_Run_Died() && !HS_Run_Cheated())`, not a bare
+  `!HS_Run_Died()`.
   - Implemented by clearing `hs_run_ranked`, exactly as an altered ruleset does, so the "no further
     scores" half falls out of the existing early return in `HS_LevelExit`. The separate
     `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
@@ -572,7 +578,32 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     who just earned a place should not be racing a timer. `0` disables the timeout, which leaves
     the page up until somebody presses fire — supervised machines only.
   - **The place is saved before the prompt**, so every exit is an accept: ESC accepts rather than
-    abandons, and the timeout accepts the default `AAA`. Backing out would only throw the name away.
+    abandons, and the timeout accepts whatever the page opened on. Backing out would only throw the
+    name away.
+  - **The page opens on the previous player's initials** (`initials_seed[]`,
+    `initials_seed_valid`), so a regular coming straight back confirms with one press instead of
+    walking the alphabet again. `M_Initials_Confirm` seeds it; `M_Initials_Open` reads it; all
+    zeroes is `AAA`, the classic default and what a cold cabinet shows.
+    - **Forgotten once the cabinet has been left alone**, because the next person to sign the board
+      is then a stranger, and a stranger presented with someone else's initials will accept them.
+    - **The test is idle *time*, not the return to the attract screen**, and that is the whole
+      subtlety. By the time this page opens the attract screen is already running behind it —
+      `Command_ExitGame_f` arms the prompt on the way back to the title and `M_Initials_Open` puts
+      the page on top of what settled — so clearing the seed at that transition would clear it every
+      time, immediately before the one page that wants it.
+    - The window is **`cv_idletimeout`**, the cabinet's own definition of "nobody is here", so the
+      seed lasts exactly as long as an abandoned game would; 60s stands in when the operator has
+      disabled the timeout. Player input keeps `last_input_tic` fresh (`D_PostEvent`), so a session
+      that runs for an hour never expires it.
+    - **Read `cv_idletimeout.value`, not `.EV`.** `EV` is a *byte* (`command.h`) and this cvar's
+      range is 0..3600, so `.EV` silently truncates — `idletimeout 3600` came back as 16, giving a
+      16-second hold instead of an hour. `g_game.c` uses `.value` for the same cvar. Caught only
+      because the harness below printed the computed hold rather than trusting it.
+    - Verified headlessly with temporary console commands driving the page directly
+      (`tmpinit_open`/`set`/`confirm`/`seed`, removed after): at `idletimeout 3600` the second page
+      opened on `MJR` after 311 idle tics; at `idletimeout 5` (hold 175) the seed was still valid at
+      112 idle tics and cleared at 312, and the page then opened on `AAA`. The boundary either side
+      is the point — a test that only shows it clearing does not prove it ever held.
   - **The idle timeout is held off while the page is up** (`G_Idle_Timeout_Check` asks
     `M_Initials_Active()`), or a player part way through entering would be closed out from under
     them. The page's own countdown still clears an abandoned one, so the cabinet can never stick.
