@@ -174,13 +174,26 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     2→1→2→1 cleanly, which is the `&&` fix. **The control matters**: rebuilding with the preset
     disabled reproduces the reported symptom exactly — `set_fast=1`, `TROOPSHOT.speed=20`,
     `SARG_RUN1.tics=2`. Fast fireballs, slow pinkies.
-  - **Existing nightmare recordings desync.** `cv_fastmonsters` is already in the demo header, so
-    nothing needed adding there — but the *meaning* of the flag has changed, and `demoversion` is
-    the engine `VERSION`, with no sub-version to bump. Demos recorded on nightmare before this fix
-    played back with slow sargs and now play back with fast ones. Only skill 4 is affected; every
-    other skill records `fastmonsters 0` and is untouched. The nightmare entries on the run board
-    and high score table were also set against slow demons, so they are easier than the build now
-    allows and are worth clearing along with their `.lmp` files.
+  - **No existing recording is invalidated — measured, after two wrong guesses.** The first
+    instinct was "every nightmare demo now desyncs", and the second, after seeing stale values in
+    the demo headers, was "no, the header pins `fastmonsters` to 0 so none of them do". Both were
+    reasoning from the header without replaying anything, and both were wrong. What settles it is
+    that **the fix only touches `S_SARG_*` state tics, so a demo desyncs only if it reaches a map
+    that actually contains demons or spectres.**
+  - Verified by A/B replay: a build with the fix reverted versus the current one, the same demo,
+    `-synclog` on both (`g_game.c`, `G_Synclog_Tic`), diffing the two `synclog_play.txt`.
+    - `doom2_MAP01_sk4_speed.lmp` — **bit-identical**, all 507 tics. MAP01 has 0 sargs on UV/NM.
+    - `doomu-sl_E1M1_sk4_speed.lmp` — **bit-identical**, all 731 tics. E1M1 has 0.
+    - `doomu_ep1_sk4_speed.lmp` — the **scored portion is bit-identical**. Its three level segments
+      are 739 + 2770 + 968 tics, and 739 + 2770 = 3509, exactly the `doomu E1M1 E1M2 4 speed 3509`
+      row on the run board. Divergence begins 94 tics into the *third* segment, E1M3 — the first
+      episode-1 map with sargs (7 demons + 2 spectres). That tail is play past the recorded finish
+      and scores nothing.
+    - Counted straight out of the IWAD `THINGS` lumps with the skill-4/5 flag (`0x04`): E1M1 and
+      E1M2 have none, E1M3 has 9, and E1M4-E1M9 have 11/26/42/8/28/29.
+  - So the run board and high score table stand as they are, and nothing needs clearing. The
+    general rule worth keeping: **`cv_fastmonsters` in a demo header proves nothing about whether
+    this fix moved that demo — the map's sarg count does.**
 
 - **`cv_tall_monsters` ("tallmonsters") restores vanilla infinitely tall things, and is the new
   default.** Game Options row **"Monster Height"**, values `Infinite` (1, default) and
