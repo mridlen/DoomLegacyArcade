@@ -4015,7 +4015,7 @@ menuitem_t EffectsOption1Menu[]=
 {
     {IT_SUBMENU | IT_WHITESTRING, 0, "Light Options >>"  , &LightingDef  , 'l'},
     {IT_STRING | IT_CVAR,0, "Translucency"    , &cv_translucency  , 0},
-    {IT_STRING | IT_CVAR,0, "Fuzzy Shadow"    , &cv_fuzzymode     , 0},
+    {IT_STRING | IT_CVAR,0, "Spectre Fuzz"    , &cv_fuzzymode     , 0},  // [Arcade] renamed; operator-only, this page is hidden by the lockdown
     {IT_STRING | IT_CVAR,0, "Splats"          , &cv_splats        , 0},
     {IT_STRING | IT_CVAR,0, "Max splats"      , &cv_maxsplats     , 0},
     {IT_STRING | IT_CVAR,0, "BloodTime"       , &cv_bloodtime     , 0},
