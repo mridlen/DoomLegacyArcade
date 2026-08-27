@@ -239,31 +239,40 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     that only a picture settles** — it is invisible to logs and to every non-graphical check.
 
 
-- **The demo header records the *previous* game's settings, and this is harmless — do not "fix" it
-  without reading this first.** Read a `legacyhome/demos/*.lmp` header and the skill, episode, map,
-  `fastmonsters` and `respawnmonsters` fields will not describe that demo. Most read
-  `skill=2 episode=0 map=0`; some read plausible-but-wrong values, which are simply whatever the
-  *last* run left in those globals (a retry of the same level at the same skill makes them
-  coincidentally correct, which is why a few files look right).
-  - **Why.** `HS_NewGame` (`hs_stuff.c`) calls `G_BeginRecording` and **must** precede
+- **The demo header used to record the *previous* game's settings. Fixed — but the ordering that
+  caused it is deliberate, so do not "simplify" it back.** Demos recorded before this fix (every
+  `.lmp` currently in `legacyhome/demos`) still carry the wrong values; most read
+  `skill=2 episode=0 map=0`, and a few look right only because a retry of the same level at the
+  same skill left matching values behind.
+  - **Why it happened.** `HS_NewGame` (`hs_stuff.c`) calls `G_BeginRecording` and **must** precede
     `G_DeferedInitNew`, so the player-create and `map` netxcmds land in the demo stream — both call
-    sites in `m_menu.c` carry a comment saying so. But `G_DeferedInitNew` only *queues* its
-    commands with `COM_BufAddText`; `G_InitNew` — which sets `gameskill`/`gameepisode`/`gamemap`
-    and applies the `sk_nightmare` overrides — does not run until the command buffer drains, long
-    after the header is written. The `-record` path has the same shape: `G_BeginRecording` is
-    called at the top of `D_DoomLoop` (`d_main.c`).
-  - Demonstrated with a probe on each side: recording a nightmare MAP07 run writes
-    `skill=4 ep=0 map=0 fastmon=0 respawn=0` into the header while the game it is recording is
+    sites in `m_menu.c` say so. But `G_DeferedInitNew` only *queues* its commands with
+    `COM_BufAddText`; `G_InitNew` — which settles `gameskill`/`gameepisode`/`gamemap` and applies
+    the `sk_nightmare` overrides — does not run until the command buffer drains, long after the
+    header is written. The `-record` path has the same shape: `G_BeginRecording` is called at the
+    top of `D_DoomLoop` (`d_main.c`). Measured with a probe on each side: recording a nightmare
+    MAP07 run wrote `skill=4 ep=0 map=0 fastmon=0 respawn=0` while the game being recorded was
     `MAP07 fastmon=1 respawn=1`.
-  - **Why it does not matter.** For `demoversion >= 127` (every DoomLegacy demo this build makes)
-    `G_DoPlayDemo` does **not** use the header's skill/episode/map — it takes the `else` branch and
-    waits for the `map` command recorded in the demo stream. That command carries `-skill 5`, so
-    `G_InitNew` runs on playback and re-derives `cv_fastmonsters` and `cv_respawnmonsters`
-    correctly. Confirmed by replaying that same demo: `skill=4 fastmon=1 respawn=1 map MAP07`. The
-    stale fields are vestigial, used only on the pre-127 and Boom paths, which this code never
-    produces.
-  - So it is a **cosmetic wart that misleads anyone reading a header** — including anyone trying to
-    work out which demos a gameplay change affects. It cost two wrong conclusions about the
-    nightmare fast-monsters fix before an actual A/B replay settled it (see
-    `gameplay-defaults.md`). If it is ever tidied up, rewrite the fields at `G_InitNew` rather than
-    moving the `G_BeginRecording` call, which is where it is for a reason.
+  - **Why it was harmless, and why it was still worth fixing.** For `demoversion >= 127` — every
+    demo this build makes — `G_DoPlayDemo` ignores the header's skill/episode/map and waits for the
+    `map` command in the stream, which carries `-skill N`, so `G_InitNew` re-derives
+    `cv_fastmonsters` and `cv_respawnmonsters` on playback. The stale fields never desynced
+    anything. They did mislead *readers* of a header, including the attempt to work out which demos
+    the fast-monsters fix affected — which it got wrong twice before an A/B replay settled it (see
+    `gameplay-defaults.md`).
+  - **The fix.** `G_Update_Demo_Header()` (`g_game.c`) rewrites the seven affected bytes in place,
+    called from the end of `G_InitNew` once the globals are settled — *not* by moving
+    `G_BeginRecording`, which is where it is for the netxcmd reason above. It fires only on the
+    **first** level of a recording (`demo_header_pending`, armed by `G_BeginRecording`), because a
+    demo that runs a whole episode must keep describing where it started.
+  - The byte positions live in the `DEMOHDR_*` enum beside the function, and `G_BeginRecording`
+    checks `(demo_p - demobuffer) == DEMOHDR_playeringame` after writing the fixed part, so the
+    writer and the patcher cannot drift apart silently. Nothing else about the format changed —
+    same length, same `0x55` sync mark, same option area.
+  - Verified: a nightmare MAP07 recording now writes `skill=4 ep=1 map=7 fastmon=1`; that demo
+    replays with a bit-identical simulation (`-synclog` on both sides); and the four existing
+    stale-header demos replay **bit-identically to the pre-fix build**, since the change only
+    affects what is written, never what is read.
+  - **A `-synclog` note:** a record-vs-playback diff always shows the final `tflags` column
+    differing (1 while recording, 0 on playback) with every simulation column identical. That field
+    is not carried in the ticcmd; it is not a desync. Compare the other columns.
