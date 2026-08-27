@@ -353,7 +353,14 @@ void FastMonster_OnChange(void)
                         P_set_frame_flags( st, FRF_SKILL5_TICS_LSB, (tics_lsb | FRF_SKILL5_MOD_APPLIED) ); // set
                     }
                 }
-                else if( fast_active & (frf & FRF_SKILL5_MOD_APPLIED) )  // if restore old tics
+                // [Arcade] Was a bitwise & : fast_active is 0/1 and
+                // FRF_SKILL5_MOD_APPLIED is 0x0002, so (1 & 0x0002) == 0 and
+                // the restore never ran.  Turning fast monsters back off left
+                // the tics halved and the applied flag set, so demons stayed
+                // fast for the rest of the session and could never be
+                // re-halved.  Masked until now because nothing set
+                // FRF_SKILL5_FAST, so the halving never happened either.
+                else if( fast_active && (frf & FRF_SKILL5_MOD_APPLIED) )  // if restore old tics
                 {
                     // Restore the tics field.
                     st->tics <<= 1;

@@ -1253,6 +1253,23 @@ void P_PatchInfoTables( void )
     set_alt_speed( MT_BRUISERSHOT, FIXINT(15), FIXINT(20) );
     set_alt_speed( MT_HEADSHOT, FIXINT(10), FIXINT(20) );
     set_alt_speed( MT_TROOPSHOT, FIXINT(10), FIXINT(20) );
+
+    // [Arcade] Preset SKILL5FAST on the demon/spectre run and pain states.
+    // Fast monsters has two halves: the monster missile speeds (handled in
+    // FastMonster_OnChange), and halving the tics of S_SARG_RUN1..S_SARG_PAIN2,
+    // which is what actually makes demons and spectres move and bite at double
+    // rate.  With MBF21 the second half only touches states flagged
+    // FRF_SKILL5_FAST, and that flag was only ever set from a DEH SKILL5FAST
+    // patch -- so with a plain IWAD no state carried it and the tic halving was
+    // dead code.  Nightmare therefore gave fast fireballs but ordinary-speed
+    // pinkies.  FastMonster_OnChange states this preset as its requirement
+    // (p_enemy.c); it was simply never written.  This runs before dehacked, so
+    // a DEH that specifies its own frame flags still overrides it.
+    {
+        int st;
+        for( st = S_SARG_RUN1; st <= S_SARG_PAIN2; st++ )
+            P_set_frame_flags( &states[st], 0, FRF_SKILL5_FAST );
+    }
 #endif
 
 #ifdef ENABLE_DEHEXTRA
