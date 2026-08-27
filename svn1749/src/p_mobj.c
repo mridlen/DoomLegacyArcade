@@ -1960,7 +1960,13 @@ void P_MobjThinker(mobj_t * mobj)
 
             P_ZMovement(mobj);
         }
-        else if (mobj->flags2 & MF2_PASSMOBJ)
+        // [Arcade] Was gated on MF2_PASSMOBJ alone, which is what let the
+        // player come to rest on top of a monster -- a lift carrying one up
+        // underneath, or simply falling onto one -- even with infinitely tall
+        // monsters blocking horizontal movement.  Falling through to the plain
+        // P_ZMovement below is the vanilla behavior: things never rest on
+        // things.  See P_Mobj_Pass_Over_Under (p_map.c).
+        else if( P_Mobj_Pass_Over_Under( mobj ) )
         {
             mobj_t * onmo;
             onmo = P_CheckOnmobj(mobj);
@@ -2040,6 +2046,11 @@ void P_MobjThinker(mobj_t * mobj)
         }
         else
         {
+            // [Arcade] Vanilla path: nothing rests on a thing here, so a
+            // MF2_ONMOBJ left over from an over-under session (the setting can
+            // be changed mid-game) must not persist -- p_user.c and the
+            // friction and gravity checks in this file all read it.
+            mobj->flags2 &= ~MF2_ONMOBJ;
             P_ZMovement(mobj);
         }
 
