@@ -104,6 +104,9 @@ void HWR_DrawViewBorder (int clearlines);
 void HWR_DrawVidFlatFill (int x, int y, int w, int h, int scale, lumpnum_t flatlumpnum);
 byte *  HWR_Get_Screenshot ( byte * bitpp );
 
+// [Arcade] Hand the config's GL settings to the driver once it exists.
+void    HWR_Apply_Config_Settings( void );
+
 // [Arcade] Screen wipe support, see hw_draw.c.
 boolean HWR_Wipe_Supported( void );
 void    HWR_Wipe_ReadScreen( byte * buf, boolean from_front );

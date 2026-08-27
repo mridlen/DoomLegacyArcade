@@ -115,3 +115,32 @@ board entries beside an empty split table. Prefer them over deleting the files b
 are cached in memory while the game runs, so a later record writes the old entries straight back
 out. Note that deleting **only** `runs.dat` is a supported way to re-run the one-time seed from the
 single level splits.
+
+- **A cvar loaded from `config.cfg` can be silently dropped if its `OnChange` needs a subsystem
+  that does not exist yet.** The config is executed by `M_LoadConfig` at `d_main.c:3534`; the
+  OpenGL driver's function table is not filled in until `SCR_SetMode(0)` at `d_main.c:3706` calls
+  `I_Rendermode_setup`. Three GL cvars have `OnChange` handlers guarded by
+  `if( HWD.pfnSetSpecialState )` — `gr_filtermode`, `gr_fogdensity` and `gr_polygonsmooth` —
+  so at config time the pointer is NULL, the handler quietly does nothing, and **nothing ever
+  re-applies the value**.
+  - **It cost the cabinet its texture filtering for the life of the build.** `config.cfg` said
+    `gr_filtermode "Nearest"` and the game rendered `Bilinear`, the compiled default, throughout.
+    The setting saved correctly, reloaded correctly, and read correctly in the menu — it simply
+    never reached the driver. Nothing logs a warning, and `M_Verify_Config`'s "did not apply"
+    check does not catch it either, because the cvar *did* take the value.
+  - **`HWR_Apply_Config_Settings()`** (`hw_main.c`) now pushes all three into the driver, called
+    from `HWR_Startup_Render`, which runs after `I_Rendermode_setup`. Changing them from the menu
+    later still goes through the `OnChange` handlers as before.
+  - **The tell is that setting it from the console works and the config does not.** Force the
+    OnChange late from a scratch `autoexec.cfg` and compare:
+    ```
+    gr_filtermode Bilinear
+    gr_filtermode Nearest      # two lines: re-setting a cvar to the value it
+    wait 60                    # already holds returns early and never fires
+    screenshot
+    ```
+    If the late path looks right and the config path does not, it is this.
+  - **Suspect the same shape for any `OnChange` that touches video, sound or the renderer.**
+    The guard that makes the handler "safe" is exactly what makes the loss silent. This is the
+    same family as the `M_Init`/`M_Configure` ordering rule in `menus.md`.
+

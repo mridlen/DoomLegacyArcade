@@ -453,6 +453,29 @@ void CV_filtermode_ONChange(void)
         HWD.pfnSetSpecialState(HWD_SET_TEXTUREFILTERMODE, cv_grfiltermode.value);
 }
 
+// [Arcade] Push the GL settings loaded from config.cfg into the driver.
+//
+// Every OnChange above guards on HWD.pfnSetSpecialState, and the config is
+// executed (d_main.c, M_LoadConfig) long before SCR_SetMode wires the driver
+// up -- so at config load time that pointer is still NULL, the handler
+// silently does nothing, and nothing ever applied the value afterwards.  The
+// setting was saved, shown in the menu and completely inert: the cabinet
+// asked for "Nearest" texture filtering and rendered Bilinear, the compiled
+// default, for its whole life.
+//
+// Called from HWR_Startup_Render, which runs after I_Rendermode_setup has
+// filled in the driver.  Changing any of these from the menu later still
+// works through the OnChange handlers as before; this is only about the
+// values that arrived before there was a driver to give them to.
+void HWR_Apply_Config_Settings(void)
+{
+    if( ! HWD.pfnSetSpecialState )   return;
+
+    HWD.pfnSetSpecialState(HWD_SET_TEXTUREFILTERMODE, cv_grfiltermode.value);
+    HWD.pfnSetSpecialState(HWD_SET_FOG_DENSITY, cv_grfogdensity.value);
+    HWD.pfnSetSpecialState(HWD_SET_POLYGON_SMOOTH, cv_grpolygonsmooth.value);
+}
+
 // ==========================================================================
 //                                                               VIEW GLOBALS
 // ==========================================================================
@@ -4756,6 +4779,10 @@ void HWR_Startup_Render(void)
 
     // The hardware draw modes that can use the flash palette call.
     EN_HWR_flashpalette = (rendermode == render_opengl) || (rendermode == render_d3d);
+
+    // [Arcade] The driver exists by now, so the config's GL settings can
+    // finally be handed to it.  See HWR_Apply_Config_Settings.
+    HWR_Apply_Config_Settings();
 
     startupdone = 1;
 }
