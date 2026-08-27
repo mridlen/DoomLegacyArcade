@@ -243,6 +243,30 @@ are kept below, in this file.
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
+### Where the arcade code lives
+
+The table above maps subjects to *design notes*; this one maps them to *source*. Every local
+addition carries an `// [Arcade]` marker, so **`grep -rn "\[Arcade\]" svn1749/src` is the complete
+inventory** — over 500 of them, and the comment on each line usually says why. Use this table to
+pick a starting point, then grep from there. `hs_stuff.c`/`.h` is the only wholly new pair of files;
+everything else is arcade blocks inside an upstream file.
+
+| subject | start here |
+| --- | --- |
+| Scoring, boards, record demos | `hs_stuff.c` entire. Life cycle: `HS_NewGame` → `HS_LevelExit` → `HS_Run_Finished`, voided by `HS_Player_Died` / `HS_Player_Cheated`, ruleset in `HS_Apply_Ranked_Ruleset` / `HS_Ruleset_Is_Ranked`. Called from `g_game.c` (`G_DoCompleted`, `G_DoWorldDone`), `p_inter.c` (`P_KillMobj`), `m_cheat.c`, `wi_stuff.c` |
+| Attract cycle | `d_main.c`: `D_AdvanceDemo` / `D_DoAdvanceDemo` / `D_PageTicker` / `D_PageDrawer`, the `hs_attract_page` / `hs_page_after_demo` / `hs_subpage_tic` page state, `D_Menu_Over_Attract`, `D_Demo_Advance_Retry` |
+| Arcade death, idle timeout | `g_game.c`: `G_Arcade_Death_Check`, `G_Player_Death_Settled`, `G_Idle_Timeout_Check`, and the `death_ended_run` / `finale_after_intermission` flags they set for `G_DoWorldDone` |
+| Four players, panels, view grid | `d_clisrv.c`: `localplayer[]`, `D_NumViews`, `D_Panel_Of`, `D_View_Cell`, `D_Reset_View_Cells`. Viewport geometry in `d_main.c` `D_Display`; software draw window in `r_draw.c` (`R_View_Fills_Cell`, the cell tables) |
+| HUD | `st_stuff.c` `ST_overlayDrawer` (per-view, and the quarter-screen half-scale block). `hu_stuff.c` for the per-view rankings, the attract demo caption, `PRESS FIRE TO START`, the `UNRANKED` markers and `HU_Draw_Tip` |
+| Menus | `m_menu.c`, by region: operator cvars ~475–530, main/new-game lockdown ~1150–1270, Single Level ~1670–1860, cheats ~2780–2930, join screen ~2935, initials entry ~3134, game select and level packs ~3520–3790, program restart ~3791 |
+| Input | `g_input.c`: `gamecontrol_pl[]`, the per-panel presets, `cv_customcontrols` and the guided setup. `sdl/i_system.c` for joystick slots, hotplug, both sticks and the triggers |
+| Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
+| Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
+| Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+
+`devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of
+this is gated on.
+
 ## Hard-won rules
 
 These bite across the whole tree, usually while working on something else entirely. Each is
