@@ -63,7 +63,8 @@ Adding a new `.c` file requires manually adding its `.o` to the hand-maintained 
 `svn1749/src/Makefile` — there is no wildcard or auto-discovery, and omitting it fails at link time.
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
-`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`.
+`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`, and
+`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset).
 
 **`make -j` races in the dependency phase**, and the error points nowhere near the cause: every
 `../dep/*.dep` rule pipes through the *same* intermediate `../dep/sed.dep` and then `mv`s it, so two
@@ -82,6 +83,17 @@ interactively (or asking the user to). **A lot can still be checked without a sc
 see below.
 
 ### Headless verification
+
+**Most of this is packaged as `tools/smoke.sh`, run with `make smoke` from `svn1749/src`.** It sets
+up the scratch directory below, then runs five checks — `startup`, `warp`, `exitlevel` (which drives
+a real level exit and requires a record line in `highscores.dat`), `opengl` (on the real GPU) and
+`config` — reporting pass/fail per check and exiting non-zero if any failed. Run it after any change
+that touches startup, the config, level setup, scoring or the renderer; it takes about a minute.
+`tools/smoke.sh -l` lists the checks, a check name runs just that one, `-k` keeps the scratch
+directory, `DOOMWADDIR` points it at the IWADs, and `SMOKE_TIMEOUT=1` is a quick way to prove the
+checks can actually fail. Prefer extending it over rebuilding the harness by hand — but read the
+rest of this section anyway, because everything below is *why* it is shaped the way it is, and a
+one-off investigation still needs it.
 
 The game runs under SDL's dummy drivers, which is enough to exercise startup, config load, cvar
 state, the attract cycle and level setup. This has caught real bugs that would otherwise have
@@ -156,10 +168,17 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   cd "$RD" && DISPLAY= SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy \
       SDL_NO_SIGNAL_HANDLERS=1 timeout 40 ./doomlegacy -game doom2 -skill 3 -warp 1 > gl.txt 2>&1
   ```
-  Set `drawmode "OpenGL"` and `fullscreen "No"` in the scratch config. Blank `DISPLAY` so it cannot
-  fall back to the real screen. The drawmode string must be one of the exact values in
-  `drawmode_sel_t` (`v_video.c`) — `"8 bit"` is not one, silently leaves OpenGL selected, and
-  looks like the setting being ignored; the software value is `"Software 8bit"`.
+  Set `drawmode "OpenGL"` in the scratch config, and blank `DISPLAY` so it cannot fall back to the
+  real screen. The drawmode string must be one of the exact values in `drawmode_sel_t`
+  (`v_video.c`) — `"8 bit"` is not one, silently leaves OpenGL selected, and looks like the setting
+  being ignored; the software value is `"Software 8bit"`. It must go in **`config.cfg`**, not an
+  autoexec: the console `drawmode` command does not switch drawmode, and an autoexec runs long
+  after the renderer is up.
+  - **`fullscreen` must stay `"Yes"`, and this file used to say `"No"`.** The offscreen driver has
+    no window manager, so a windowed mode request comes back with no visual and the run dies with
+    `Error: SetMode: cannot draw 0 bits per pixel` — which reads as a colour-depth problem and
+    sends you to `scr_depth`, correctly `"32 bits"` the whole time. With `fullscreen "Yes"` the
+    same run brings up a real accelerated context and quits cleanly.
 - **Never restore OpenGL state by hand — the renderer caches it.** `SetBlend` (`r_opengl.c`) only
   issues the GL calls for bits that differ from its `cur_polyflags` shadow copy, so anything changed
   behind its back stays wrong for the rest of the session, and the damage shows up as general
