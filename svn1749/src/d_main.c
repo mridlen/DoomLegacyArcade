@@ -224,6 +224,7 @@
 
 #include "g_game.h"
 #include "hs_stuff.h"
+#include "au_stuff.h"
 #include "g_input.h"
 
 #include "hu_stuff.h"
@@ -3259,6 +3260,7 @@ restart_command:
     }
 
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
+    AU_Init();   // [Arcade] load the operator audit counters, count this boot
 
     // [Arcade] Must be after legacyhome/configfile_main are resolved and
     // before IdentifyVersion below, which is what acts on it.
@@ -3268,6 +3270,11 @@ restart_command:
     // for a cabinet reset without needing the console.
     if( M_CheckParm("-clearhighscores") )
         Command_ClearHighScores_f();
+
+    // [Arcade] -clearaudit : reset the operator bookkeeping counters, the
+    // same way, and for the same reason -- no console needed.
+    if( M_CheckParm("-clearaudit") )
+        AU_Clear();
 
 #if 0
     Print_search_directories( EMSG_debug, 0x0F );
@@ -4108,6 +4115,11 @@ void D_Quit_Save ( quit_severity_e severity )
         //   but sometimes we forget and use 'F10'.. so save here too.
         if (demorecording)
            G_CheckDemoStatus();
+        // [Arcade] Last chance to bank the uptime and play time this session
+        // accumulated.  The event counters are already on disk (each game end
+        // saves), but the two clocks only ever tick, so without this an
+        // otherwise clean quit would lose the whole session's worth.
+        AU_Save();
     }
     if( quitseq < 2 )
     {
@@ -4334,6 +4346,7 @@ static void Help( void )
         "-devparm        Develop mode\n"
         "-devmode        Unlock full menu (e.g. Multiplayer)\n"
         "-clearhighscores  Erase recorded times and record demos\n"
+        "-clearaudit  Reset the operator audit counters\n"
         "-synclog        Log per-tic state while recording/playing a demo\n"
 #ifdef DEVPARM_LOADING
         "-devgame gamename  Develop mode, and specify game\n"

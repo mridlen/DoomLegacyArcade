@@ -72,6 +72,10 @@ Discord is likely to get you banned.
   all day. **Options → Menu Options → Attract Volume** is a percentage of the normal volumes,
   applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
   the attract screen silent, `100` is the old behaviour. Defaults to 50.
+- **An audit page**, the way an arcade board has one: games played and how many people were
+  playing, levels finished, deaths, how much of the cabinet's running time is actually being
+  played, which maps get played most, and how often a run stopped being scored and why. Under
+  **Options → Menu Options → Audit**, or type `audit` at the console.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
@@ -628,6 +632,7 @@ like any other, so they only stick from a `-devmode` session.
 | --- | --- |
 | `-devmode` | Unlock menus, save settings, disable the ruleset |
 | `-clearhighscores` | Wipe scores and record demos at startup |
+| `-clearaudit` | Reset the operator audit counters at startup |
 | `-game <name>` | Start a specific game (`doomu`, `doom2`, `plutonia`, `tnt`) |
 | `-warp <map>` | Jump straight to a map |
 | `-file <wad>` | Load a wad at startup — a level pack, a soundtrack, a DEH/BEX patch |
@@ -646,6 +651,7 @@ Everything is in `legacyhome/` beside the binary:
 | `highscores.dat` | The score table. Plain text, one record per line. |
 | `demos/` | Saved record demos, one per map/skill/category. |
 | `levels/` | Level packs you've added. |
+| `audit.dat` | Operator bookkeeping counters. Plain text. |
 
 **Back up `highscores.dat` and `demos/`.** They are the only things here that can't be recreated —
 your players' scores and the runs that set them. Everything else can be rebuilt from this
