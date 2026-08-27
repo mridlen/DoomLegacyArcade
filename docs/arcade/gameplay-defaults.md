@@ -239,6 +239,10 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     only have tested recovery rather than prevention. Replaying the *same* demo with only the
     header's monster-height byte flipped: **Over-Under enters the branch 29 times, Infinite enters
     it 0 times.**
+  - **Confirmed on the cabinet**, on the E1M2 lift that produced the original report, after the
+    second gate was closed. The first fix passed every headless check it was given and still failed
+    on hardware, because those checks only ever exercised the gate it had closed — worth
+    remembering before calling a collision change verified.
   - **In `hs_ranked_rules[]` pinned to 1**, beside the other vanilla difficulty knobs. It changes
     the simulation, so a run played with over-under is not comparable to one played without.
     Game Options is reachable by players on the locked-down cabinet (only its Network Options link
