@@ -284,6 +284,10 @@ void P_Init_BrainTarget();
 // P_MAP
 //
 
+// [Arcade] Monster height model.  1 = vanilla infinitely tall things,
+// 0 = Legacy/Heretic over-under passing.  See PIT_CheckThing.
+extern  consvar_t cv_tall_monsters;
+
 // TryMove, thing map global vars
 extern fixed_t  tm_bbox[4];	// box around the thing
 extern mobj_t*  tm_thing;	// the thing itself

@@ -181,3 +181,48 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     other skill records `fastmonsters 0` and is untouched. The nightmare entries on the run board
     and high score table were also set against slow demons, so they are easier than the build now
     allows and are worth clearing along with their `.lmp` files.
+
+- **`cv_tall_monsters` ("tallmonsters") restores vanilla infinitely tall things, and is the new
+  default.** Game Options row **"Monster Height"**, values `Infinite` (1, default) and
+  `Over-Under` (0).
+  - **What it fixes.** Vanilla Doom things are infinitely tall: a thing blocks another thing
+    whatever their relative heights, so you can never stand on a monster. Legacy adopted Heretic's
+    over-under passing for the Doom player **unconditionally** — `MT_PLAYER` carries
+    `MF2_PASSMOBJ` in its `info.c` entry and the check in `PIT_CheckThing` (`p_map.c`) was gated on
+    nothing else. So the player could climb on top of monsters and end up somewhere vanilla cannot
+    reach; the lift by the E1M2 exit is the reported case. There was no setting either way, in the
+    menus or on the console — checked against all 235 `consvar_t` definitions in the build.
+  - **Only the player was affected.** Of the 306 thing definitions in `info.c`, exactly two in the
+    Doom table carry `MF2_PASSMOBJ` — `MT_PLAYER` and `MT_POD`. Everything else holding it is in
+    the Heretic table. Doom monsters therefore never climbed each other; only you climbed them.
+  - **Heretic is deliberately exempt.** The gate is
+    `(tm_thing->flags2 & MF2_PASSMOBJ) && (EN_heretic_hexen || ! cv_tall_monsters.EV)`. Over-under
+    is core Heretic behavior — its imps and wizards fly, and the block below the gate holds the
+    "don't let imps/wizards fly over other imps/wizards" special cases — so this governs Doom only.
+  - **In `hs_ranked_rules[]` pinned to 1**, beside the other vanilla difficulty knobs. It changes
+    the simulation, so a run played with over-under is not comparable to one played without.
+    Game Options is reachable by players on the locked-down cabinet (only its Network Options link
+    is hidden), so a player *can* flip it — and doing so drops the run to UNRANKED and raises
+    `M_Draw_Unranked_Warning`, which is the intended outcome. `HS_Apply_Ranked_Ruleset` forces it
+    back to Infinite at boot for a non-`-devmode` session.
+  - **Demo safe, and no version bump needed.** Recorded into the 64-byte option area of the
+    demo144 header at **byte 44** (the first free slot after `cv_viewheight`), which was previously
+    zero-filled. 0 reads as `Over-Under`, which is exactly how every demo recorded before the
+    setting existed was played, so old demos need no version test — and `G_demo_defaults()` sets
+    `cv_tall_monsters.EV = 0` for demos too old to reach the field at all. Verified across all 74
+    demos in `legacyhome/demos`: every one reads byte 44 = 0, and the `0x55` sync mark still lands
+    at option-area byte 64, proving the header length is unchanged.
+  - **Menu geometry measured, not guessed.** `GameOptionDef` is x=60, y=40, `STRINGHEIGHT` 10, and
+    `IT_CVAR` values are right-justified ending at `BASEVIDWIDTH - x` = 260. `"Monster Height"` is
+    **104px** against the real `STCFN` lumps, ending at 164; the wider value `"Infinite"` is 52px
+    so it starts at 208 — **44px clear**. The row goes after "Solid corpse", putting the last
+    `IT_STRING` row (Drown) at y=140, still clear of the `IT_YOFFSET` "Adv Options >>" at 160.
+    The lockdown indexes this array **from the end**
+    (`GameOptionsMenu[ GameOptionDef.numitems - 1 ]`), so inserting a row in the middle is safe —
+    and nothing else indexes it by number.
+  - **Verified headlessly** with a temporary one-shot in `P_Ticker` that spawned a demon at the
+    player's feet, put the player on its head, and called `P_CheckPosition` under both values:
+    `Infinite=0 Over-Under=1` — the engine rejects the position under the new default and allows it
+    under the old one. Header round-trip proven both directions: `G_BeginRecording` writes the live
+    value into byte 44, and playing back demos hand-patched to 0 and to 1 read back
+    `cvar=0` / `cvar=1`.

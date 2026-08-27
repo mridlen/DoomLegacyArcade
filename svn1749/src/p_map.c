@@ -604,6 +604,32 @@ static void  hexen_set_indirect_lightening_target( mobj_t * mt )
 
 
 //
+// [Arcade] Monster height model.
+//
+// Vanilla Doom things are infinitely tall: a thing blocks another thing
+// whatever their relative heights, so a monster in a doorway or on a ledge
+// blocks it completely and you can never stand on one.  Legacy adopted
+// Heretic's over-under passing for the Doom player unconditionally --
+// MT_PLAYER carries MF2_PASSMOBJ in its info entry (info.c) and PIT_CheckThing
+// below is gated on nothing else -- so the player could climb on top of
+// monsters and get stuck in places vanilla cannot reach, notably the lift by
+// the E1M2 exit.  There was no setting for it either way.
+//
+// "Infinite" is the default because it is what Doom maps were built and
+// played against.  Heretic is unaffected: over-under is core to its own
+// monsters (imps and wizards fly, and their info entries carry MF2_PASSMOBJ),
+// so this only governs Doom.
+//
+CV_PossibleValue_t monsterheight_cons_t[] = {
+   {0, "Over-Under"},
+   {1, "Infinite"},
+   {0, NULL}
+};
+
+consvar_t cv_tall_monsters =
+  {"tallmonsters", "1", CV_NETVAR | CV_SAVE, monsterheight_cons_t};
+
+//
 // PIT_CheckThing
 //
 // Check moving tm_thing against iterator thing
@@ -662,7 +688,10 @@ static boolean PIT_CheckThing (mobj_t* thing)
 #endif
 
     // heretic stuffs
-    if(tm_thing->flags2 & MF2_PASSMOBJ)
+    // [Arcade] cv_tall_monsters restores vanilla infinitely tall things for
+    // Doom.  EN_heretic_hexen keeps over-under where it is core behavior.
+    if( (tm_thing->flags2 & MF2_PASSMOBJ)
+        && (EN_heretic_hexen || ! cv_tall_monsters.EV) )
     { // check if a mobj passed over/under another object
         if((tm_thing->type == MT_IMP || tm_thing->type == MT_WIZARD)
             && (thing->type == MT_IMP || thing->type == MT_WIZARD))

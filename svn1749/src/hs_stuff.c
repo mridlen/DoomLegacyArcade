@@ -221,6 +221,7 @@ static hs_rule_t  hs_ranked_rules[] =
     { &cv_monbehavior,           0 },   // Vanilla
     { &cv_predictingmonsters,    0 },
     { &cv_solidcorpse,           0 },
+    { &cv_tall_monsters,         1 },   // vanilla infinitely tall things
     { &cv_monstergravity,        0 },   // Vanilla (see G_demo_defaults)
     { &cv_monsterfriction,       0 },   // Vanilla
     { &cv_voodoo_mode,           0 },   // VM_vanilla
