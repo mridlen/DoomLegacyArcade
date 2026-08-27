@@ -306,6 +306,30 @@ else
 fi
 mkdir -p "$rundir/legacyhome"
 
+# Normalise the scratch config's video settings.  Everything except the opengl
+# check runs under the dummy driver, which has no GL context -- and a config
+# selecting OpenGL there does not merely fall back to software, it *crashes*:
+# the mode change fails ("Change Graphics failed"), the engine carries on, and
+# the first console line drawn goes through HWR_DrawPic into gluBuild2DMipmaps
+# with no context and segfaults during D_DoomMain.  That is pre-existing engine
+# behaviour, not something a change under test caused -- it reproduces on any
+# build with a GL-configured legacyhome -- but it makes every dummy-driver check
+# fail for a reason that has nothing to do with what is being tested.
+#
+# So: force software here and let check_opengl select OpenGL for itself under
+# the offscreen driver, which is the only place a real context exists.  The
+# per-drawmode configs are removed as well, since legacyhome keeps one per
+# drawmode and whichever matches is executed *after* config.cfg, carrying its
+# own scr_depth and undoing this.
+smoke_cfg="$rundir/legacyhome/config.cfg"
+rm -f "$rundir/legacyhome"/config8p.cfg* \
+      "$rundir/legacyhome"/configgl.cfg* \
+      "$rundir/legacyhome"/confign.cfg*
+if [ -f "$smoke_cfg" ]; then
+    sed -i 's/^drawmode .*/drawmode "Software 8bit"/' "$smoke_cfg"
+    grep -q '^drawmode ' "$smoke_cfg" || echo 'drawmode "Software 8bit"' >> "$smoke_cfg"
+fi
+
 # Link the wads in rather than copying: they are large and read-only here.
 found_wads=0
 for d in "${wad_dirs[@]}"; do

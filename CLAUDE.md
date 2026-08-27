@@ -186,6 +186,16 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `glPushAttrib`/`glPopAttrib` (plus `glPushClientAttrib` for pixel-store state, which `glPushAttrib`
   does not cover). Verify by reading `glIsEnabled` before and after and diffing — and prove the
   check works by reinstating the bug before trusting a clean result. → `screen-wipe.md`
+- **A GL-configured `legacyhome` run under `dummy` does not fall back to software — it segfaults.**
+  The mode change fails (`Change Graphics failed: err=-100`), the engine carries on, and the first
+  console line drawn goes through `HWR_DrawPic` into `gluBuild2DMipmaps` with no context and dies
+  inside `D_DoomMain`. The cabinet's live config selects OpenGL, so copying `legacyhome` wholesale
+  and running under `dummy` reproduces it every time. **This is pre-existing engine behaviour, not
+  a regression** — verified by building the previous commit and reproducing it identically, which
+  is worth doing before believing a crash like this belongs to the change under test. Set
+  `drawmode "Software 8bit"` in the scratch config for dummy-driver runs (and delete the
+  per-drawmode `config8p.cfg`/`configgl.cfg`/`confign.cfg`, which are executed *after* `config.cfg`
+  and would put it back). `tools/smoke.sh` does both.
 - **Screenshots come out entirely black under `SDL_VIDEODRIVER=dummy`, including of screens that
   obviously have content.** A temporary `M_ScreenShot()` call is otherwise the best way to check
   drawing headlessly — it writes a TGA that can be measured numerically instead of eyeballed, which
