@@ -239,6 +239,7 @@ are kept below, in this file.
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
+| `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
@@ -286,6 +287,7 @@ written up in full in the doc named beside it.
 - **When widening a per-player cvar, grep for its `[1]` registration.** The declaration being
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`
+- **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
