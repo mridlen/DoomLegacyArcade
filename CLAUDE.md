@@ -255,6 +255,11 @@ written up in full in the doc named beside it.
   default in source does nothing on a machine that already has a config. This has bitten three
   times (overlay element letters, the level clock, weapon switching) and each time read as the
   feature being broken rather than unconfigured. → `install-config.md`, `hud.md`
+- **A cvar's `OnChange` can fire before the subsystem it talks to exists, and the loss is silent.**
+  `config.cfg` is executed well before the renderer is set up, so the GL cvars' handlers — all
+  guarded with `if( HWD.pfnSetSpecialState )` — did nothing at all, and nothing re-applied them.
+  The cabinet asked for `Nearest` texture filtering and rendered `Bilinear` for the life of the
+  build. Re-apply such settings once the subsystem is up. → `install-config.md`
 - **Menu code that depends on the gamemode, on cvars, or on where wads are goes in `M_Configure`,
   not `M_Init`.** `config.cfg` is not loaded and `IdentifyVersion()` has not run when `M_Init`
   executes, so the values there are always the compiled defaults. → `menus.md`
