@@ -450,6 +450,31 @@ byte  V_switch_drawmode( byte drawmode, byte change_config )
             M_Set_configfile_drawmode( drawmode );
             // WARNING : this do a "COM_BufExecute()"
             M_LoadConfig( CFG_drawmode, configfile_drawmode );
+
+            // [Arcade] Reconcile the screen depth with the drawmode.
+            //
+            // Each drawmode has its own config file carrying its own
+            // scr_depth, and nothing checked it against the drawmode itself.
+            // The modelist query above correctly used this drawmode's bit
+            // depth, but the config just loaded overwrites cv_scr_depth, and
+            // SCR_apply_video_settings takes req_bitpp straight from it -- so
+            // a palette drawmode whose config says "32 bits" goes on to ask
+            // for a video mode that cannot exist.
+            //
+            // The failure is silent and looks like a cabinet lockup: the
+            // teardown for the new rendermode has already run, the graphics
+            // change then fails ("No 32 bpp modes"), and the engine carries
+            // on running against a dead display.  The game is still alive --
+            // measured at over 900000 main-loop iterations afterwards -- but
+            // the screen never comes back, so it reads as a freeze.
+            //
+            // The drawmode's own depth is not negotiable, so assert it here.
+            // This also makes an already-wrong config file harmless, which
+            // matters because create_initial_drawmode_config() writes
+            // whatever depth was current when the file was created.
+            if( drawmode <= DRM_32 )
+                CV_SetValue( &cv_scr_depth, drawmode_to_bpp[drawmode] );
+
             SCR_apply_video_settings( 1 );  // setmodeneeded
         }
     }
