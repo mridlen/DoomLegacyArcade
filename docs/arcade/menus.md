@@ -252,9 +252,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     exactly on `HS_Player_Died`: it latches `hs_run_cheated`, clears `hs_run_ranked` so the existing
     early return in `HS_LevelExit` stops all further scoring, and closes the background recorder
     with `G_CheckDemoStatus`. Guarded on `netgame || multiplayer || deathmatch`, which are not
-    scored anyway. The HUD marker becomes **`PLAYER CHEATED - UNRANKED`** (`hu_stuff.c`), which
-    takes priority over `PLAYER DIED - UNRANKED` when both happened — the cheat is the thing the
-    player chose to do.
+    scored anyway. The HUD marker becomes **`PLAYER CHEATED - UNRANKED`** (`hu_stuff.c`). A death
+    shows no marker at all (see `high-scores.md`), so when both happened the cheat is what is
+    named — it is the thing the player chose to do, and it is the reason the marker still appears.
   - **The hook is in the cheat commands, not the menu**, so the console (`god`, `noclip`, `gimme`)
     and the **typed cheat codes** are covered too. For the typed codes the single hook point is
     `cht_Responder`'s closing `if (msg)` block — every cheat that changes the simulation reports

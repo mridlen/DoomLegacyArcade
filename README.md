@@ -401,8 +401,9 @@ map, per skill and per category:
 
 A run is scored only under the standard ruleset. Change a gameplay setting and the HUD shows
 `UNRANKED` — you can play on, but nothing is recorded. **Dying also ends scoring** for the rest of
-the run: levels already finished keep their records, but nothing after counts, and the HUD shows
-`PLAYER DIED - UNRANKED`. Start a new game to try again.
+the run: levels already finished keep their records, but nothing after counts. That one is not
+called out on the HUD — death ending the run is how the cabinet works, and the death itself already
+says so. Start a new game to try again.
 
 Scores are per game *and* level pack — Doom II's `MAP01` and Plutonia's `MAP01` are different
 levels and keep separate records.

@@ -51,9 +51,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   right after `playerstate = PST_DEAD`). Levels already finished keep the records they earned —
   each was written to disk by its own `HS_LevelExit` before the fatal level was entered — but
   nothing after the death scores, and the background recording is closed with `G_CheckDemoStatus`
-  since it can no longer produce anything. The HUD marker becomes **`PLAYER DIED - UNRANKED`**
-  (`hu_stuff.c`); `UNRANKED` alone reads as a settings problem, and the player needs to know the
-  retry they are about to play is not being scored.
+  since it can no longer produce anything. **No HUD marker is shown for a death** (`hu_stuff.c`).
+  It used to read `PLAYER DIED - UNRANKED`, on the reasoning that `UNRANKED` alone looks like a
+  settings problem — but death ending the run is the cabinet's own rule and the arcade death
+  sequence already says so plainly (watch the corpse, sign the board, back to attract), so the
+  marker was only telling the player off for the rest of a run they could no longer score. The
+  marker is for the two cases a player might not notice and *could* put right: a gameplay setting
+  off the standard ruleset, and a cheat. A cheat is still named ahead of a death when both
+  happened, so the condition is `!(HS_Run_Died() && !HS_Run_Cheated())`, not a bare
+  `!HS_Run_Died()`.
   - Implemented by clearing `hs_run_ranked`, exactly as an altered ruleset does, so the "no further
     scores" half falls out of the existing early return in `HS_LevelExit`. The separate
     `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
