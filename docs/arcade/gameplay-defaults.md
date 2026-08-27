@@ -140,3 +140,44 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     Playback pins it off; live play uses the new default.
   - Not in `hs_ranked_rules[]`, so it does not affect whether a run scores. It is a deathmatch
     setting and the ruleset governs single player scoring.
+
+- **Nightmare's fast monsters only did half its job: fast fireballs, ordinary-speed demons.**
+  `FastMonster_OnChange` (`p_enemy.c`) has two halves, and only one of them was running.
+  - The first half walks `MonsterMissileInfo[]` and rewrites `mobjinfo[].speed` for every monster
+    projectile — imp/caco fireballs, revenant tracers, baron shots. It is unconditional and always
+    worked. This is why the bug was easy to miss from the cabinet: nightmare *felt* faster, because
+    everything being thrown at you was.
+  - The second half is the classic Doom trick of **halving the state tics of `S_SARG_RUN1` ..
+    `S_SARG_PAIN2`**, which is the only thing that makes demons and spectres move and bite at
+    double rate. Sargs have no ranged attack, so this is their entire share of "fast monsters".
+  - With `MBF21` defined (`doomdef.h`) that half is compiled as the MBF21 variant, which only
+    touches states carrying **`FRF_SKILL5_FAST`** — and that flag was *only* ever set from a DEH
+    `SKILL5FAST` patch (`dehacked.c`). Nothing preset it on the vanilla SARG states, so with a
+    plain IWAD no state carried it and the loop ran over zero states. The function's own comment
+    names the preset as its requirement; it had simply never been written.
+  - Fixed by presetting the flag over that state range in **`P_PatchInfoTables`** (`infoext.c`),
+    inside the existing `#ifdef MBF21` block. That is the right home for it: it runs after
+    `P_clear_all_state_ext` has zeroed every `state_ext_id`, and **before dehacked is applied** —
+    the file says so in as many words — so a WAD's own DEH frame flags still override it, which is
+    what MBF21 requires (`dehacked.c` clears `FRF_SKILL5_FAST` before setting from the patch).
+  - **A second bug sat behind the first.** The restore branch read
+    `fast_active & (frf & FRF_SKILL5_MOD_APPLIED)` — a **bitwise** `&` between `fast_active`, which
+    is 0 or 1, and `FRF_SKILL5_MOD_APPLIED`, which is `0x0002`. `1 & 2` is 0, so the restore never
+    ran. Turning fast monsters back off would have left the tics halved and the applied flag set,
+    so demons stayed fast for the rest of the session and could never be re-halved. It was
+    invisible only because nothing ever set `FRF_SKILL5_FAST`, so the halving never happened
+    either — fixing the preset alone would have shipped a permanent-fast-demons bug. Now `&&`.
+  - Verified headless with a temporary `GenPrintf` in `FastMonster_OnChange` printing `set_fast`,
+    `states[S_SARG_RUN1].tics`, `states[S_SARG_ATK1].tics` and the frame flags. On `-skill 5`:
+    `set_fast=1 SARG_RUN1.tics=1 SARG_ATK1.tics=4 frf=0006 TROOPSHOT.speed=20` (was 2 / 8 / 0000 /
+    10). An `autoexec.cfg` of `wait 70 / fastmonsters 0 / wait 35 / fastmonsters 1` round-trips
+    2→1→2→1 cleanly, which is the `&&` fix. **The control matters**: rebuilding with the preset
+    disabled reproduces the reported symptom exactly — `set_fast=1`, `TROOPSHOT.speed=20`,
+    `SARG_RUN1.tics=2`. Fast fireballs, slow pinkies.
+  - **Existing nightmare recordings desync.** `cv_fastmonsters` is already in the demo header, so
+    nothing needed adding there — but the *meaning* of the flag has changed, and `demoversion` is
+    the engine `VERSION`, with no sub-version to bump. Demos recorded on nightmare before this fix
+    played back with slow sargs and now play back with fast ones. Only skill 4 is affected; every
+    other skill records `fastmonsters 0` and is untouched. The nightmare entries on the run board
+    and high score table were also set against slow demons, so they are easier than the build now
+    allows and are worth clearing along with their `.lmp` files.
