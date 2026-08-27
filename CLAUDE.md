@@ -167,6 +167,13 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `glPushAttrib`/`glPopAttrib` (plus `glPushClientAttrib` for pixel-store state, which `glPushAttrib`
   does not cover). Verify by reading `glIsEnabled` before and after and diffing — and prove the
   check works by reinstating the bug before trusting a clean result. → `screen-wipe.md`
+- **Screenshots come out entirely black under `SDL_VIDEODRIVER=dummy`, including of screens that
+  obviously have content.** A temporary `M_ScreenShot()` call is otherwise the best way to check
+  drawing headlessly — it writes a TGA that can be measured numerically instead of eyeballed, which
+  is how the restart splash's centring was verified. Use **`offscreen`**, where the capture works
+  and shows the real GL output. Always take a **control shot of a screen known to have content** in
+  the same run: an all-black capture of the thing under test is indistinguishable from the thing
+  not drawing, and the control is the only thing that tells them apart.
 - Temporary `GenPrintf(EMSG_warn, ...)` instrumentation plus a headless run is the fastest way to
   answer "what is this cvar actually set to at runtime" — it is how the Nightmare `cv_fastmonsters`
   bug and the high-score page timing were both pinned down. Remove it before committing.

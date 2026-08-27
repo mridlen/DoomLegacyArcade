@@ -3836,6 +3836,46 @@ void M_Scan_LevelPacks( void )
 }
 
 
+// [Arcade] Say what is happening before the screen goes black.
+//
+// Switching IWAD re-execs the program, so the cabinet drops to black for a
+// second or two while the old process shuts its devices down and the new one
+// starts up.  Unexplained, that reads as a crash -- the player picked a game
+// and the machine appeared to die -- and it is the one transition the README
+// has to describe as "this is normal".  A line of text turns it into something
+// the machine said it would do.
+//
+// Painted twice.  The display may be double buffered, so a single paint and
+// flip leaves the message on one buffer and whatever was there before on the
+// other, which is the same stale-buffer alternation the loading box used to
+// produce.  Then held briefly: everything after this is teardown, and without
+// the hold the message can be gone before a person registers it.
+//
+// Drawn the way hu_stuff.c draws PRESS FIRE TO START -- centred by measuring
+// the string rather than with V_CENTERHORZ, which V_DrawString ignores in
+// hardware mode where fills and patches honour it.
+static void M_Draw_Restart_Splash( const char * msg )
+{
+    int  i;
+
+    for( i = 0; i < 2; i++ )
+    {
+        V_SetupDraw( 0 | V_NOSCALE );   // screen 0, vid coords
+        V_DrawVidFill( 0, 0, vid.width, vid.height, 0 );   // 0 = palette black
+
+        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth((char*)msg)) / 2,
+                      (BASEVIDHEIGHT - 7) / 2,   // hu_font glyphs are 7 tall
+                      V_WHITEMAP, (char*) msg );
+
+        I_UpdateNoBlit();
+        I_FinishUpdate();       // page flip or blit buffer
+    }
+
+    I_Sleep( 700 );
+}
+
+
 // [Arcade] Restart the program, optionally switching game.
 // Shuts down cleanly and re-execs; does not return.
 //   game_idstr : the -game short name, or NULL to keep the current game
@@ -3897,6 +3937,11 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs )
         }
     }
     newargv[n] = NULL;
+
+    // [Arcade] Tell the player what the black screen is, while the video
+    // device is still up.  A game switch and a pack unload both land here and
+    // are not the same thing to the person watching.
+    M_Draw_Restart_Splash( game_idstr ? "SWITCHING GAME..." : "RESTARTING..." );
 
     // Flush config (devmode only), high scores, demos, and shut down the
     // video/sound devices, but do not exit -- exec replaces us instead.

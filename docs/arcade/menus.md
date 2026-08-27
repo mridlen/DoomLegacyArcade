@@ -133,6 +133,29 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     strips any earlier `-game`/`-iwad`.
   - `QUIT_normal` is required for the shutdown — the other severities force a 3 second sleep in
     `D_Quit_Save` — and `cv_textout.EV` is zeroed first to skip the ENDOOM screen.
+  - **A splash says what the black screen is** (`M_Draw_Restart_Splash`), drawn immediately before
+    `D_Quit_Save` while the video device is still up: `SWITCHING GAME...` when a `game_idstr` was
+    given, `RESTARTING...` for the pack-unload and idle-timeout paths, which are not the same thing
+    to the person watching. Unexplained, the second or two of black reads as a crash — the player
+    picked a game and the machine appeared to die — and it is the one transition the README has to
+    describe as "this is normal".
+    - **Painted twice, then held 700ms.** The display may be double buffered, so a single paint and
+      flip leaves the message on one buffer and the previous frame on the other — the same stale
+      buffer alternation the loading box used to produce. The hold matters because everything after
+      this call is teardown; without it the message can be gone before a person registers it.
+    - **Centred by measuring the string**, the way `hu_stuff.c` draws `PRESS FIRE TO START`, not
+      with `V_CENTERHORZ` — `V_DrawString` ignores horizontal centring in hardware mode where fills
+      and patches honour it.
+    - Verified on the real GL path (`SDL_VIDEODRIVER=offscreen`) by capturing the two paints with a
+      temporary `M_ScreenShot()` call and measuring the TGAs: both frames identical at 8108
+      non-black pixels, bounding box x 329–690 of a 1024-wide render (centre 509.5 against 512, the
+      half-pixel of an integer division) and y 368–394, which is base y 96 and a 7-pixel glyph at
+      the 3.84 vertical scale. Drawing there is also the risk — it happens part way into a shutdown
+      — and the exec completed cleanly through six consecutive restarts.
+    - **A screenshot taken under `SDL_VIDEODRIVER=dummy` is entirely black**, so this cannot be
+      checked with the usual dummy harness; see `CLAUDE.md`. The control shot is what caught it —
+      a title screen captured the same way was equally black, which is the only reason the first
+      all-black splash capture was not read as the text failing to draw.
   - Entries whose IWAD is missing are hidden, via `D_Game_Available()` (`d_main.c`), which tries
     each candidate filename from `game_desc_table` through the engine's own `Search_doomwaddir` —
     so the normal search paths and alternate names (`doomu.wad`/`doom_se.wad`/`doom.wad`) all

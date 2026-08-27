@@ -414,8 +414,8 @@ Packs are filtered by the game they suit — a `MAPxx` pack shows under Doom II,
 Ultimate Doom — so a mismatched pack can't be loaded by accident.
 
 **Switching IWAD restarts the program.** The engine can only pick its game data at startup, so
-choosing a different game from the menu relaunches the cabinet — expect a black screen and the
-startup sequence. This is normal and takes a second or two. Level packs are different: they load
+choosing a different game from the menu relaunches the cabinet. It shows `SWITCHING GAME...` and
+then goes black for the startup sequence, which takes a second or two. Level packs are different: they load
 into the running session with no restart, and only unloading one restarts, since the engine has no
 way to remove a wad it has already read.
 
