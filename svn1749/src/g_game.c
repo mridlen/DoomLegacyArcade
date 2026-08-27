@@ -3764,6 +3764,11 @@ void G_demo_defaults( void )
     // were recorded without weapon dropping, so replaying them with it on
     // spawns a weapon that is not in the recording and desyncs from there.
     cv_fragsweaponfalling.EV = 0;
+    // [Arcade] Over-under passing for playback, whatever the live default is.
+    // Every demo recorded before the setting existed was recorded with the
+    // player able to climb on things, so that is what playback has to do.
+    // Demos that do carry the field overwrite this from the header below.
+    cv_tall_monsters.EV = 0;
     cv_instadeath.EV = 0;  // Die
     cv_monstergravity.EV = 0;
     cv_monbehavior.EV = 0;  // Vanilla
@@ -4421,7 +4426,12 @@ void G_BeginRecording (void)
     *demo_p++ = 0;
 #endif
     *demo_p++ = cv_viewheight.EV;   // 0 means "not recorded", see read side
-    // 44
+    // [Arcade] Monster height model.  0 reads as over-under, which is both the
+    // G_demo_defaults() value and what every demo recorded before this setting
+    // existed was played with -- so older demos in the zero-filled area keep
+    // their behavior and need no version test.
+    *demo_p++ = cv_tall_monsters.EV;
+    // 45
 
     // empty space
     while( demo_p < demo_p_next )  *demo_p++ = 0;
@@ -5059,7 +5069,11 @@ void G_DoPlayDemo (const char *defdemoname)
                 byte vh = *demo_p++;
                 if( vh )  cv_viewheight.EV = vh;  // 0 = not recorded
             }
-            // 44
+            // [Arcade] Monster height model, see G_BeginRecording.  Demos
+            // recorded before it was added have 0 here, which is over-under
+            // and matches the G_demo_defaults() value already applied.
+            cv_tall_monsters.EV = *demo_p++;
+            // 45
         }
 
         demo_p = demo_p_next;  // skip rest of settings

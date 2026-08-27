@@ -4223,6 +4223,7 @@ menuitem_t GameOptionsMenu[]=
     {IT_STRING | IT_CVAR,0,"Fast Monsters"       ,&cv_fastmonsters_menu  ,0},
     {IT_STRING | IT_CVAR,0,"Predicting Monsters" ,&cv_predictingmonsters ,0},	//added by AC for predmonsters
     {IT_STRING | IT_CVAR,0,"Solid corpse"        ,&cv_solidcorpse        ,0},
+    {IT_STRING | IT_CVAR,0,"Monster Height"      ,&cv_tall_monsters      ,0},  // [Arcade]
 #ifdef ENABLE_TIRED_RUN
     {IT_STRING | IT_CVAR,0,"Tired Run"           ,&cv_tired_run          ,0},
     {IT_STRING | IT_CVAR,0,"Drown"               ,&cv_drown              ,0},
@@ -9693,6 +9694,9 @@ consvar_t * menu_command_cvar_list[] =
 
     // p_inter
   &cv_fragsweaponfalling,
+
+    // p_map
+  &cv_tall_monsters,     // [Arcade]
 
     // g_game
   &cv_allowjump,
