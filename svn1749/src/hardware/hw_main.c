@@ -3388,6 +3388,100 @@ gr_vissprite_t * HWR_NewVisSprite(void)
     return gr_vissprite_p - 1;
 }
 
+// [Arcade] ---------------------------------------------------------------
+//  The original Doom 'fuzz' effect (spectres, and the partial invisibility
+//  powerup), for the hardware renderer.
+//
+//  The software drawer, R_DrawFuzzColumn_* in r_draw8.c and friends, never
+//  reads the sprite at all: for each pixel of the silhouette it takes the
+//  framebuffer pixel one row up or down and puts it back through COLORMAP
+//  light level 6.  The hardware renderer cannot read the framebuffer per
+//  pixel, so this reproduces the two things that make the effect legible:
+//  the sprite is replaced by a flat dark silhouette that darkens whatever is
+//  behind it by the same amount, and the silhouette is drawn as horizontal
+//  bands whose texture is displaced one texel up or down, so the outline
+//  boils instead of standing still.
+//
+//  HWR_FUZZ_ALPHA is derived, not chosen: COLORMAP light level 6 maps the
+//  DOOM palette to a mean 81.2% of its luma, and a black overlay reproduces
+//  that at alpha 1 - 0.812 = 0.188, which is 48/255 = 0x30.
+#define HWR_FUZZ_ALPHA     0x30
+#define HWR_FUZZ_BANDH     4      // band height in patch texels
+#define HWR_FUZZ_MAXBANDS  24     // polygon budget per spectre
+#define HWR_FUZZTABLE      50
+
+// The +1/-1 walk from r_draw.c's fuzzoffset table, so the displacement has
+// the same character as the software effect.  That table is static there and
+// gets scaled to a framebuffer row offset, which is no use here.
+static const signed char hwr_fuzzoffset[HWR_FUZZTABLE] =
+{
+     1,-1, 1,-1, 1, 1,-1,
+     1, 1,-1, 1, 1, 1,-1,
+     1, 1, 1,-1,-1,-1,-1,
+     1,-1,-1, 1, 1, 1, 1,-1,
+     1,-1, 1, 1,-1,-1, 1,
+     1,-1,-1,-1,-1, 1, 1,
+     1, 1,-1, 1, 1,-1, 1
+};
+
+// Advanced once per rendered frame, by HWR_RenderPlayerView, so the boil
+// runs at the frame rate the way the software effect does.
+static unsigned int  hwr_fuzzpos = 0;
+
+// -----------------+
+// HWR_DrawFuzzSprite : Draw the sprite billboard as a boiling dark silhouette
+//                    : vxtx is the quad built by HWR_DrawSprite, where
+//                    : vertices 2,3 carry tow 0 and vertices 0,1 carry max_t
+//                    : salt separates one spectre's pattern from another's
+// -----------------+
+static void HWR_DrawFuzzSprite( FSurfaceInfo_t * pSurf, vxtx3d_t * vxtx,
+                                MipPatch_t * gpatch, unsigned int salt )
+{
+    vxtx3d_t  bd[4];
+    float  t_span = vxtx[0].tow;        // == gpatch->max_t
+    float  texel;                       // one patch texel in texture coords
+    int    numbands, bi;
+
+    if( gpatch->height < 1 )
+        return;
+
+    texel = t_span / (float) gpatch->height;
+    numbands = gpatch->height / HWR_FUZZ_BANDH;
+    if( numbands < 2 )
+        numbands = 2;
+    else if( numbands > HWR_FUZZ_MAXBANDS )
+        numbands = HWR_FUZZ_MAXBANDS;
+
+    for( bi = 0; bi < numbands; bi++ )
+    {
+        // f0 at the tow=0 edge of the band, f1 at its tow=max_t edge.
+        float f0 = (float) bi / (float) numbands;
+        float f1 = (float)(bi + 1) / (float) numbands;
+        float t0 = f0 * t_span;
+        float t1 = f1 * t_span;
+        float dt = texel * hwr_fuzzoffset[ (hwr_fuzzpos + salt + bi) % HWR_FUZZTABLE ];
+
+        // Do not let the end bands pull the texture's padding into view.
+        if( t0 + dt < 0.0f || t1 + dt > t_span )
+            dt = 0.0f;
+
+        bd[3].x = bd[0].x = vxtx[0].x;
+        bd[2].x = bd[1].x = vxtx[1].x;
+        bd[3].sow = bd[0].sow = vxtx[0].sow;
+        bd[2].sow = bd[1].sow = vxtx[1].sow;
+
+        bd[3].y = bd[2].y = vxtx[2].y + (vxtx[0].y - vxtx[2].y) * f0;
+        bd[0].y = bd[1].y = vxtx[2].y + (vxtx[0].y - vxtx[2].y) * f1;
+        bd[3].z = bd[2].z = vxtx[2].z + (vxtx[0].z - vxtx[2].z) * f0;
+        bd[0].z = bd[1].z = vxtx[2].z + (vxtx[0].z - vxtx[2].z) * f1;
+
+        bd[3].tow = bd[2].tow = t0 + dt;
+        bd[0].tow = bd[1].tow = t1 + dt;
+
+        HWD.pfnDrawPolygon( pSurf, bd, 4, PF_Translucent | PF_Modulated | PF_Clip );
+    }
+}
+
 // -----------------+
 // HWR_DrawSprite   : Draw flat sprites
 //                  : (monsters, bonuses, weapons, lights, ...)
@@ -3492,6 +3586,18 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
         }
         else if (spr->mobj->flags & MF_SHADOW)
         {
+            if( cv_fuzzymode.EV )
+            {
+                // [Arcade] Original Doom spectre effect.  A black flat colour
+                // with GL_MODULATE makes the sprite itself disappear whatever
+                // the texture holds, leaving only its silhouette, which is the
+                // point: a spectre shows the background darkened, not itself.
+                Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = 0;
+                Surf.FlatColor.s.alpha = HWR_FUZZ_ALPHA;
+                HWR_DrawFuzzSprite( &Surf, vxtx, gpatch,
+                                    (unsigned int)(((size_t) spr->mobj) >> 4) );
+                goto sprite_drawn;
+            }
             Surf.FlatColor.s.alpha = 0x40;
             blend = PF_Translucent;
         }
@@ -3507,6 +3613,8 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
 
         HWD.pfnDrawPolygon(&Surf, vxtx, 4, blend | PF_Modulated | PF_Clip);
     }
+sprite_drawn:
+    ;   // a label must be followed by a statement
 
     // draw a corona if this sprite contain light(s)
 #ifdef SPDR_CORONAS
@@ -4421,6 +4529,9 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
         HWR_Set_Lights(pind);
     }
      
+    // [Arcade] Advance the spectre fuzz pattern once per rendered frame.
+    hwr_fuzzpos++;
+
     // note: sets viewangle, viewx, viewy, viewz
     R_SetupFrame(pind, player);
 

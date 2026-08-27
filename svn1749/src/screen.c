@@ -495,8 +495,9 @@ void SCR_SetMode( byte change_flag )
 // change drawer function when fuzzymode is changed
 void CV_Fuzzymode_OnChange(void)
 {
-  if( (rendermode != render_soft) && cv_fuzzymode.EV )
-      GenPrintf(EMSG_hud, "OpenGL has only translucent shadow.\n" );
+  // [Arcade] The hardware renderer used to have no fuzz at all and said so
+  // here.  It now draws its own approximation (HWR_DrawFuzzSprite), so the
+  // setting means something in both renderers and the warning is gone.
   switch(vid.drawmode)
   {
    default:
