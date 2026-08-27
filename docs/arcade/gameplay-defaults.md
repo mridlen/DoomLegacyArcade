@@ -208,10 +208,37 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **Only the player was affected.** Of the 306 thing definitions in `info.c`, exactly two in the
     Doom table carry `MF2_PASSMOBJ` — `MT_PLAYER` and `MT_POD`. Everything else holding it is in
     the Heretic table. Doom monsters therefore never climbed each other; only you climbed them.
-  - **Heretic is deliberately exempt.** The gate is
-    `(tm_thing->flags2 & MF2_PASSMOBJ) && (EN_heretic_hexen || ! cv_tall_monsters.EV)`. Over-under
-    is core Heretic behavior — its imps and wizards fly, and the block below the gate holds the
-    "don't let imps/wizards fly over other imps/wizards" special cases — so this governs Doom only.
+  - **There are TWO `MF2_PASSMOBJ` gates and both must be closed. Gating only one is the mistake
+    that shipped first**, and the cabinet still got stuck on a monster on the E1M2 lift with
+    `tallmonsters "Infinite"` correctly set in `config.cfg`:
+    - `PIT_CheckThing` (`p_map.c`) decides whether a thing may **move into** another's space.
+    - the `MF2_PASSMOBJ` branch of `P_MobjThinker` (`p_mobj.c`) decides whether a thing may **come
+      to rest on top of** one. This is the branch that actually parks you there:
+      `mobj->z = onmo->z + onmo->height; mobj->flags2 |= MF2_ONMOBJ;`
+    Both now call **`P_Mobj_Pass_Over_Under()`** (`p_map.c`), the single answer, so they cannot
+    drift apart again. Heretic is exempt inside that one function (`EN_heretic_hexen`), since
+    over-under is core there — its imps and wizards fly, and the block below the first gate holds
+    the "don't let imps/wizards fly over other imps/wizards" special cases.
+  - **How the player got up there with horizontal blocking working, which is the part worth
+    remembering.** A moving sector does **no thing-vs-thing collision at all**:
+    `P_ThingHeightClip` (`p_map.c`) calls `P_CheckPosition` only to recompute floor and ceiling
+    heights, **discards its return value**, and then assigns `thing->z = thing->floorz`. So a lift
+    raises the player straight through a monster's z-range without any move ever being blocked.
+    Once the two overlap, the `P_MobjThinker` branch sees a gap of ≤ 24 units and lifts the player
+    onto the monster's head — it does not require the player to have arrived from above.
+    - Vanilla behaves the same way up to that point: a moving sector *can* push things into
+      overlap. What vanilla will not do is let you stand on one. Closing the second gate is
+      therefore the complete vanilla behavior, not a patch over a symptom — the player ends up at
+      the lift's floor height, overlapping the monster, and simply walks out.
+  - **Why this is now unreachable rather than merely unlikely.** `p_mobj.c` line ~1993 is the
+    **only** assignment in the entire tree that sets a thing's z from another thing's top (grep
+    `onmo->z + onmo->height`), and it is inside the gated branch. The other "standing on a thing"
+    mechanism, `tmr_floorthing`, is dead code for `demoversion >= 145` — `PIT_CheckThing` returns
+    before reaching it. With Infinite there is no path left that can hold a player up on a monster.
+  - Verified with a passive counter on the branch — no forcing the player anywhere, which would
+    only have tested recovery rather than prevention. Replaying the *same* demo with only the
+    header's monster-height byte flipped: **Over-Under enters the branch 29 times, Infinite enters
+    it 0 times.**
   - **In `hs_ranked_rules[]` pinned to 1**, beside the other vanilla difficulty knobs. It changes
     the simulation, so a run played with over-under is not comparable to one played without.
     Game Options is reachable by players on the locked-down cabinet (only its Network Options link

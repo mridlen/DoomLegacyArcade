@@ -288,6 +288,10 @@ void P_Init_BrainTarget();
 // 0 = Legacy/Heretic over-under passing.  See PIT_CheckThing.
 extern  consvar_t cv_tall_monsters;
 
+// [Arcade] The single answer both MF2_PASSMOBJ gates must use:
+// PIT_CheckThing (moving into a thing) and P_MobjThinker (resting on one).
+boolean  P_Mobj_Pass_Over_Under( mobj_t * mo );
+
 // TryMove, thing map global vars
 extern fixed_t  tm_bbox[4];	// box around the thing
 extern mobj_t*  tm_thing;	// the thing itself

@@ -630,6 +630,26 @@ consvar_t cv_tall_monsters =
   {"tallmonsters", "1", CV_NETVAR | CV_SAVE, monsterheight_cons_t};
 
 //
+// [Arcade] Does over-under passing apply to this thing?
+//
+// There are exactly two live MF2_PASSMOBJ gates, and they must agree:
+// PIT_CheckThing below decides whether a thing may move *into* the space of
+// another, and the MF2_PASSMOBJ branch of P_MobjThinker (p_mobj.c) decides
+// whether it may come to rest *on top of* one.  Gating only the first is not
+// enough -- it stops you walking into a monster but still lets a lift carry
+// one up under you, or a fall drop you onto one, which is how the player was
+// still ending up stuck on a monster on the E1M2 lift after the first attempt
+// at this.  Both call here so they cannot drift apart again.
+//
+boolean  P_Mobj_Pass_Over_Under( mobj_t * mo )
+{
+    if( ! (mo->flags2 & MF2_PASSMOBJ) )  return false;
+    // Over-under is core Heretic behavior, not an option there.
+    if( EN_heretic_hexen )  return true;
+    return ! cv_tall_monsters.EV;
+}
+
+//
 // PIT_CheckThing
 //
 // Check moving tm_thing against iterator thing
@@ -689,9 +709,8 @@ static boolean PIT_CheckThing (mobj_t* thing)
 
     // heretic stuffs
     // [Arcade] cv_tall_monsters restores vanilla infinitely tall things for
-    // Doom.  EN_heretic_hexen keeps over-under where it is core behavior.
-    if( (tm_thing->flags2 & MF2_PASSMOBJ)
-        && (EN_heretic_hexen || ! cv_tall_monsters.EV) )
+    // Doom.  See P_Mobj_Pass_Over_Under; P_MobjThinker has the other gate.
+    if( P_Mobj_Pass_Over_Under( tm_thing ) )
     { // check if a mobj passed over/under another object
         if((tm_thing->type == MT_IMP || tm_thing->type == MT_WIZARD)
             && (thing->type == MT_IMP || thing->type == MT_WIZARD))
