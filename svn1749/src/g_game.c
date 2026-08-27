@@ -3567,6 +3567,67 @@ void G_DeferedInitNew (skill_e skill, const char* mapname, boolean StartSplitScr
 // This is the map command interpretation something like Command_Map_f
 //
 // called at : map cmd execution, doloadgame, doplaydemo
+// [Arcade] Byte offsets of the demo144 header fields that G_InitNew settles.
+// G_BeginRecording writes the header sequentially; these name the same bytes so
+// G_Update_Demo_Header can rewrite them.  G_BeginRecording checks its own
+// layout against DEMOHDR_playeringame, so the two cannot drift apart silently.
+enum {
+    DEMOHDR_skill        =  7,
+    DEMOHDR_episode      =  8,
+    DEMOHDR_map          =  9,
+    DEMOHDR_deathmatch   = 10,
+    DEMOHDR_respawn      = 11,
+    DEMOHDR_fastmonsters = 12,
+    DEMOHDR_nomonsters   = 13,
+    DEMOHDR_playeringame = 17,   // first playeringame[] byte, ends the fixed part
+};
+
+// Set by G_BeginRecording, cleared by the first G_Update_Demo_Header.
+static byte  demo_header_pending = 0;
+
+//
+// [Arcade] Correct the demo header once the game it is recording exists.
+//
+// G_BeginRecording has to run *before* G_DeferedInitNew, so that the
+// player-create and map netxcmds land in the demo stream -- both HS_NewGame
+// call sites in m_menu.c say so.  But G_DeferedInitNew only queues its
+// commands with COM_BufAddText, so G_InitNew, which settles gameskill,
+// gameepisode, gamemap and the sk_nightmare cvar overrides, does not run until
+// the command buffer drains -- long after the header was written.  The header
+// therefore recorded whatever the *previous* game left in those globals: a
+// nightmare run on MAP07 wrote "skill=4 ep=0 map=0 fastmon=0 respawn=0".
+//
+// It was harmless.  Playback of a DoomLegacy demo (demoversion >= 127) ignores
+// the header's skill/episode/map and waits for the recorded map command, which
+// re-derives the cvars through G_InitNew.  But a header that describes the
+// previous game misleads anything that reads one -- including working out
+// which demos a gameplay change affects, which it got wrong twice.
+//
+// Rewriting here rather than moving G_BeginRecording keeps the netxcmds in the
+// stream.  Only the first level of a recording updates the header: a demo that
+// runs an episode must keep describing where it started.
+//
+static
+void  G_Update_Demo_Header( void )
+{
+    if( ! demo_header_pending )  return;
+    if( demoplayback || ! demorecording )  return;
+    if( demobuffer == NULL )  return;
+    // Only a demo144 header has these fields where they are expected.
+    if( demobuffer[0] != 144 || demobuffer[1] != 'D' || demobuffer[2] != 'L' )  return;
+
+    demo_header_pending = 0;
+
+    demobuffer[DEMOHDR_skill]        = gameskill;
+    demobuffer[DEMOHDR_episode]      = gameepisode;
+    demobuffer[DEMOHDR_map]          = gamemap;
+    demobuffer[DEMOHDR_deathmatch]   = cv_deathmatch.EV;
+    demobuffer[DEMOHDR_respawn]      = cv_respawnmonsters.EV;
+    demobuffer[DEMOHDR_fastmonsters] = cv_fastmonsters.EV;
+    demobuffer[DEMOHDR_nomonsters]   = nomonsters;
+}
+
+
 void G_InitNew (skill_e skill, const char* mapname, boolean resetplayer)
 {
     //added:27-02-98: disable selected features for compatibility with
@@ -3650,6 +3711,9 @@ void G_InitNew (skill_e skill, const char* mapname, boolean resetplayer)
     gameskill      = skill;
     playerdeadview = false;
     automapactive  = false;
+
+    // [Arcade] The header was written before any of the above existed.
+    G_Update_Demo_Header();
 
     G_DoLoadLevel (resetplayer);
 }
@@ -4325,6 +4389,13 @@ void G_BeginRecording (void)
     *demo_p++ = consoleplayer;
     *demo_p++ = cv_timelimit.value;      // just to be compatible with old demo (no more used)
     *demo_p++ = multiplayer;             // 1..31
+
+    // [Arcade] The fixed part above must end exactly where the DEMOHDR_
+    // offsets say it does, or G_Update_Demo_Header would rewrite the wrong
+    // bytes.  Cheap guard against the two drifting apart.
+    if( (demo_p - demobuffer) != DEMOHDR_playeringame )
+        I_SoftError("Demo header layout changed, DEMOHDR_ offsets are stale\n");
+    demo_header_pending = 1;
 
     for (i=0 ; i<MAXPLAYERS ; i++)
     {
