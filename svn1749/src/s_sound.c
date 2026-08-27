@@ -279,6 +279,15 @@ consvar_t cv_soundvolume = { "soundvolume", "15", CV_SAVE, soundvolume_cons_t };
 consvar_t cv_musicvolume = { "musicvolume", "15", CV_SAVE, soundvolume_cons_t };
 consvar_t cv_rndsoundpitch = { "rndsoundpitch", "Off", CV_SAVE, CV_OnOff };
 
+// [Arcade] Attract volume, as a percentage of the ordinary volumes above.
+// An arcade cabinet advertises itself with sound, but a machine that lives in
+// a house cannot do it at the same volume as the game all day.  0 is a silent
+// attract screen; 100 is the stock behaviour.  Applied to sound and music
+// together, so one setting covers "how loud is the cabinet when nobody is
+// playing" -- which is the question being asked.
+CV_PossibleValue_t attractvolume_cons_t[] = { {0, "MIN"}, {100, "MAX"}, {0, NULL} };
+consvar_t cv_attractvolume = { "attractvolume", "50", CV_SAVE, attractvolume_cons_t };
+
 // number of channels available
 static void SetChannelsNum(void);
 consvar_t cv_numChannels = { "snd_channels", "16", CV_SAVE | CV_CALL, CV_byte, SetChannelsNum };
@@ -1350,6 +1359,15 @@ void S_ResumeSound(void)
 int mix_sfxvolume = 0;
 int mix_musicvolume = 0;
 
+// [Arcade] vol scaled by cv_attractvolume when the attract cycle is on screen,
+// unchanged when a game is being played.
+static int S_Attract_Scaled( int vol )
+{
+    if( ! D_Attract_Running() )  return vol;
+    return (vol * cv_attractvolume.value) / 100;
+}
+
+
 // Called by D_DoomLoop upon tics.
 // Not called when dedicated.
 void S_UpdateSounds(void)
@@ -1361,11 +1379,28 @@ void S_UpdateSounds(void)
 
     mobj_t *listener = displayplayer_ptr->mo;
 
-    // Update sound/music volumes, if changed manually at console
-    if (mix_sfxvolume != cv_soundvolume.value)
-        S_SetSfxVolume(cv_soundvolume.value);
-    if (mix_musicvolume != cv_musicvolume.value)
-        S_SetMusicVolume(cv_musicvolume.value);
+    // Update sound/music volumes, if changed manually at console.
+    //
+    // [Arcade] ... and scale them down while the attract cycle is what is on
+    // screen.  This is the only place the mixer volume is reconciled with the
+    // cvars, and it runs every frame from D_DoomLoop whatever the gamestate,
+    // so the attract scaling has to happen *here*: setting the mixer directly
+    // from somewhere else would be undone by this comparison on the next
+    // frame.  Coming out of attract into a game is likewise automatic -- the
+    // target changes and this restores full volume within a frame.
+    //
+    // Not skipped in devmode, unlike most cabinet behaviour: an operator
+    // changing this setting needs to hear what it does, and there is no
+    // lockdown reason to suppress it.
+    {
+        int  want_sfx = S_Attract_Scaled( cv_soundvolume.value );
+        int  want_mus = S_Attract_Scaled( cv_musicvolume.value );
+
+        if (mix_sfxvolume != want_sfx)
+            S_SetSfxVolume(want_sfx);
+        if (mix_musicvolume != want_mus)
+            S_SetMusicVolume(want_mus);
+    }
 
 #ifdef HW3SOUND
     if (hws_mode != HWS_DEFAULT_MODE)

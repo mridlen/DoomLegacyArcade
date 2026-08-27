@@ -161,3 +161,32 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   `HU_Drawer` for `GS_LEVEL` **only**, so the countdown would not have been visible in the other
   two states — `HU_Draw_Tip` was un-`static`ed (declared in `hu_stuff.h`) and is called directly
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
+
+- **The attract cycle plays at a reduced volume** (`cv_attractvolume`, "attractvolume", default
+  **50** percent, `CV_SAVE`), under **Options → Menu Options**. An arcade cabinet advertises itself
+  with sound, but a machine living in a house cannot do that at playing volume all day. `0` is a
+  silent attract screen, `100` is the stock behaviour. Sound and music are scaled together: the
+  question being asked is "how loud is the cabinet when nobody is playing", and that is one
+  question.
+  - **It has to be applied in `S_UpdateSounds` (`s_sound.c`), and nowhere else.** That function is
+    the single place the mixer volume is reconciled with the cvars, it runs every frame from
+    `D_DoomLoop` whatever the gamestate, and it re-asserts `cv_soundvolume`/`cv_musicvolume` on any
+    mismatch. So setting the mixer directly from anywhere else — at the start of a demo, say — is
+    silently undone on the next frame. `S_Attract_Scaled()` changes the *target* that comparison
+    comes from, which is why coming out of attract into a game restores full volume by itself,
+    within a frame, with no second hook.
+  - **`D_Attract_Running()`** (`d_main.c`) is the predicate: `!(demo_ctrl & DEMO_seq_disabled)`,
+    the engine's own "a real game is running" marker. `D_Menu_Over_Attract` was rewritten in terms
+    of it, so both readers share one definition. `(demoplayback || gamestate == GS_DEMOSCREEN)`
+    would have been wrong here for the same reason it is wrong for the menu backdrop above.
+  - **Not skipped in devmode**, unlike most cabinet behaviour: an operator changing this setting
+    needs to hear what it does, and there is no lockdown reason to suppress it.
+  - Appended to the end of `MenuOptionsMenu`, like every other operator row, because the lockdown
+    addresses menu items by hardcoded index.
+  - Verified headlessly with temporary instrumentation on the mixer-volume change, across the full
+    cycle in one process: at `attractvolume 25` with both volumes 20, the attract screen ran at
+    **5**, `map map01` restored **20**, and `exitgame` returned it to **5**. Separately,
+    `attractvolume 0` gave a genuinely silent attract (**0**) that still restored to 20 in game, and
+    `50` gave 10 as expected. `s_sound.c` is one of the **ISO-8859 files grep skips silently** — the
+    first search for `S_SetSfxVolume` returned nothing at all, which reads as the function not
+    existing. Use `grep -a`.

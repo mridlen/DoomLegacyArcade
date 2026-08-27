@@ -4086,6 +4086,7 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
+    {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -9870,6 +9871,7 @@ consvar_t * menu_command_cvar_list[] =
     // s_sound.c
   &cv_soundvolume,
   &cv_musicvolume,
+  &cv_attractvolume,   // [Arcade]
   &cv_numChannels,
   &cv_rndsoundpitch,
 

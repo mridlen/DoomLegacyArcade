@@ -68,6 +68,10 @@ Discord is likely to get you banned.
 - **A configurable initials timeout** (Options → Menu Options, 60 seconds by default), for how long
   the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
   already back on the attract screen behind the page — so it can afford to be patient.
+- **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
+  all day. **Options → Menu Options → Attract Volume** is a percentage of the normal volumes,
+  applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
+  the attract screen silent, `100` is the old behaviour. Defaults to 50.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped

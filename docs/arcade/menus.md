@@ -60,6 +60,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
     `TwoPlayerMenu[4]`) still point at the right rows.
 
+- **Attract Volume** — `cv_attractvolume`, appended to the end of `MenuOptionsMenu` like every other
+  operator row. Written up in `attract.md`; noted here only because it is a row on this page.
+
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
   **Options → Menu Options** as "Boot Game" beside `cv_twoplayer`, so it is operator-only. Picks
   which game the cabinet starts in instead of whichever IWAD the search finds first.

@@ -729,7 +729,20 @@ consvar_t cv_screenslink = { "screenlink", "2", CV_SAVE, screenslink_cons_t };
 // frame sit frozen behind the menu.
 boolean D_Menu_Over_Attract( void )
 {
-    return menuactive && !(demo_ctrl & DEMO_seq_disabled);
+    return menuactive && D_Attract_Running();
+}
+
+
+// [Arcade] Is the attract cycle what is on screen -- a title or splash page,
+// the score pages, or a record demo -- rather than a game somebody is playing?
+//
+// DEMO_seq_disabled is the engine's own "a real game is running" marker:
+// D_DisableDemo sets it from G_DeferedInitNew and load-game, D_StartTitle
+// clears it.  Preferred over (demoplayback || gamestate == GS_DEMOSCREEN),
+// which misses the in-between states -- see the menu backdrop in D_Display.
+boolean D_Attract_Running( void )
+{
+    return !(demo_ctrl & DEMO_seq_disabled);
 }
 
 
