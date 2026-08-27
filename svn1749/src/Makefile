@@ -1394,6 +1394,7 @@ g_input.o g_game.o \
 f_finale.o f_wipe.o \
 wi_stuff.o \
 hs_stuff.o \
+au_stuff.o \
 am_map.o \
 md5.o \
 m_menu.o m_misc.o m_argv.o m_bbox.o m_fixed.o m_swap.o m_cheat.o m_random.o \

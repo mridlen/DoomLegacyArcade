@@ -123,6 +123,7 @@
 #include "g_game.h"
   // G_ functions
 #include "hs_stuff.h"
+#include "au_stuff.h"   // [Arcade] audit counters
 #include "byteptr.h"
   // WRITEBYTE, READBYTE
 
@@ -1138,6 +1139,13 @@ void Command_ExitGame_f(void)
     HS_Death_Demo_Finish();
 
     HS_Run_Finished();
+
+    // [Arcade] Flush the audit counters here for the same reason the run is
+    // committed here: this is the one place that reliably means the player is
+    // done, and a cabinet is far likelier to be switched off at the wall than
+    // quit cleanly.  Saving per game keeps the loss from a power cut to the
+    // game in progress rather than everything since the last clean exit.
+    AU_Save();
 
     // [Arcade] Splitscreen otherwise persists into the attract screen, and
     // the demos play back in a split view.  Setting the cvar also runs

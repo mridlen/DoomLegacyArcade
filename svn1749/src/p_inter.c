@@ -100,6 +100,7 @@
 #include "st_stuff.h"
 #include "infoext.h"
 #include "hs_stuff.h"   // [Arcade] HS_Player_Died
+#include "au_stuff.h"   // [Arcade] AU_Player_Death
 
 #define BONUSADD        6
 #define PICKUP_FLASH_TICS     10
@@ -2316,6 +2317,11 @@ void P_KillMobj ( mobj_t*  target,
         // [Arcade] A death ends scoring for the rest of the run.  Guarded
         // for single player and live play inside HS_Player_Died.
         HS_Player_Died();
+
+        // [Arcade] Audit counts *every* player death, not just the scored
+        // single player ones HS_Player_Died cares about: a deathmatch death
+        // is still the cabinet being played.
+        AU_Player_Death();
 
         if( target_player == consoleplayer_ptr )
         {

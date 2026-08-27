@@ -24,6 +24,7 @@
 #include "s_sound.h"    // cv_rndsoundpitch
 #include "z_zone.h"     // PU_CACHE, for the attract page skill graphic
 #include "hs_stuff.h"
+#include "au_stuff.h"   // [Arcade] audit counters
 
 #define HS_MAX_MAPS      64
 
@@ -395,9 +396,12 @@ static void  HS_Void_If_Ruleset_Changed( void )
     // bug presented (played fine, then UNRANKED with no score for the level
     // just finished).  Once per run, on the transition.
     if( hs_run_ranked )
+    {
         GenPrintf( EMSG_info,
             "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
             HS_Unranked_Reason() );
+        AU_Unranked( AU_UR_ruleset );   // [Arcade] audit: on the transition
+    }
 
     hs_run_ranked   = false;
     hs_run_board_ok = false;   // [Arcade] off the board as well
@@ -466,6 +470,7 @@ void  HS_Player_Cheated( void )
     if( hs_run_ranked )
     {
         GenPrintf( EMSG_info, "Run is unranked: a cheat was used.\n" );
+        AU_Unranked( AU_UR_cheat );   // [Arcade] audit
         hs_run_ranked = false;
     }
 
@@ -1359,6 +1364,7 @@ void  HS_Run_Finished( void )
         // first level exit -- and raising the prompt then would put it over
         // the intermission of a game still in progress.
         hs_initials_pending = true;
+        AU_Board_Placement();   // [Arcade] audit
         GenPrintf( EMSG_info, "Run placed %d on the board (%s %s-%s).\n",
                    hs_run_best_place, hs_run_gameid,
                    hs_run_startmap, hs_run_endmap );
@@ -1642,6 +1648,7 @@ void HS_Player_Died( void )
     {
         GenPrintf( EMSG_info,
                    "Run is unranked: the player died.\n" );
+        AU_Unranked( AU_UR_death );   // [Arcade] audit
         hs_run_ranked = false;
     }
 

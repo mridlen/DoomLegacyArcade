@@ -176,6 +176,7 @@
 #include "g_game.h"
 #include "g_input.h"
 #include "hs_stuff.h"
+#include "au_stuff.h"   // [Arcade] audit counters
 
 //added:16-01-98:quick hack test of rocket trails
 #include "p_fab.h"
@@ -1546,6 +1547,7 @@ void G_DoLoadLevel (boolean resetplayer)
     // never accumulate the 60s the timeout wants, and appeared to be broken.
     if( ! demoplayback )
         last_input_tic = gametic;
+    AU_Level_Started();   // [Arcade] audit: per-map play count
     // [WDJ] Derived from PrBoom, gametic demosync.
     if( EN_boom && !EN_mbf )
         game_comp_tic = 0;  // Boom demos start at tic 0
@@ -1983,6 +1985,8 @@ void G_Ticker (void)
     int         i;
     int         buf;
     ticcmd_t*   cmd;
+
+    AU_Ticker();   // [Arcade] audit: uptime and play time, once per tic
 
     // do player reborns if needed
     if( gamestate == GS_LEVEL )
@@ -2898,6 +2902,8 @@ void G_DoCompleted (void)
 
     gameaction = ga_nothing;
 
+    AU_Level_Completed();   // [Arcade] audit: levels finished
+
     for (i=0 ; i<MAXPLAYERS ; i++)
     {
         if (playeringame[i])
@@ -3714,6 +3720,14 @@ void G_InitNew (skill_e skill, const char* mapname, boolean resetplayer)
 
     // [Arcade] The header was written before any of the above existed.
     G_Update_Demo_Header();
+
+    // [Arcade] Count the game for the operator's audit page.  Here rather
+    // than in the menus: every route that starts a game passes through
+    // G_InitNew, including Single Level and the console "map" command, and
+    // counting at each menu would miss whichever route was added next.
+    // Guarded on demoplayback inside AU_Game_Started -- an attract demo comes
+    // through here too and is not somebody playing.
+    AU_Game_Started();
 
     G_DoLoadLevel (resetplayer);
 }

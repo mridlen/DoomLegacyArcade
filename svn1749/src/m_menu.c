@@ -183,6 +183,7 @@
 #include "hu_stuff.h"
 #include "g_game.h"
 #include "hs_stuff.h"
+#include "au_stuff.h"   // [Arcade] operator audit page
 #include "g_input.h"
 #ifdef JOYSTICK_SUPPORT
 #include "i_joy.h"   // [Arcade] I_Joystick_Count/Connected for the pad page
@@ -645,6 +646,7 @@ static void M_PlayerDirector(int choice);
 
 menu_t GameSelectDef;   // [Arcade] IWAD switcher
 menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
+menu_t AuditDef;        // [Arcade] operator audit, informational
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
   PlayerDirectorDef, PlayerOptionsDef,
@@ -4087,6 +4089,7 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
+    {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -5194,6 +5197,46 @@ menuitem_t RecLayoutMenu[] =
     // Invisible item: any select backs out to the controls menu, as the
     // Read This screens do.
     {IT_SUBMENU | IT_NOTHING, 0, "", &MControlDef, 0}
+};
+
+
+//===========================================================================
+//                        OPERATOR AUDIT  [Arcade]
+//===========================================================================
+// Read only bookkeeping, the way an arcade board has an audit page.  The
+// numbers and the whole layout belong to au_stuff.c; this is just the frame.
+// Reached from Menu Options, which the lockdown hides, so it is operator only
+// without needing a guard of its own.
+
+static void M_Draw_Audit( void )
+{
+    // Same draw setup as the layout page above, deliberately: V_DrawString
+    // ignores V_CENTERHORZ in hardware mode where fills and patches apply it,
+    // so a page mixing the two has to match a page already known to be right
+    // on the cabinet rather than invent its own.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+
+    M_Centre_At( BASEVIDWIDTH/2, 12, V_WHITEMAP, "OPERATOR AUDIT" );
+    AU_Drawer();
+    M_Centre_At( BASEVIDWIDTH/2, 180, 0, "CLEARAUDIT AT THE CONSOLE RESETS" );
+}
+
+menuitem_t AuditMenu[] =
+{
+    // Invisible item: any select backs out, as RecLayout does.
+    {IT_SUBMENU | IT_NOTHING, 0, "", &MenuOptionsDef, 0}
+};
+
+menu_t  AuditDef =
+{
+    NULL,
+    NULL,
+    AuditMenu,
+    M_Draw_Audit,
+    NULL,
+    sizeof(AuditMenu)/sizeof(menuitem_t),
+    160, 190,
+    0
 };
 
 menu_t  RecLayoutDef =

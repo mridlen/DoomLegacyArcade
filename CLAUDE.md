@@ -277,6 +277,7 @@ are kept below, in this file.
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
 | `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
+| `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -289,6 +290,7 @@ everything else is arcade blocks inside an upstream file.
 
 | subject | start here |
 | --- | --- |
+| Operator audit counters | `au_stuff.c` entire. Hooks: `AU_Init` (`d_main.c`), `AU_Ticker` (`G_Ticker`), `AU_Game_Started` (`G_InitNew`), `AU_Level_Started`/`AU_Level_Completed` (`g_game.c`), `AU_Player_Death` (`p_inter.c`), `AU_Unranked`/`AU_Board_Placement` (`hs_stuff.c`), `AU_Save` (`d_netcmd.c`, `d_main.c`) |
 | Scoring, boards, record demos | `hs_stuff.c` entire. Life cycle: `HS_NewGame` → `HS_LevelExit` → `HS_Run_Finished`, voided by `HS_Player_Died` / `HS_Player_Cheated`, ruleset in `HS_Apply_Ranked_Ruleset` / `HS_Ruleset_Is_Ranked`. Called from `g_game.c` (`G_DoCompleted`, `G_DoWorldDone`), `p_inter.c` (`P_KillMobj`), `m_cheat.c`, `wi_stuff.c` |
 | Attract cycle | `d_main.c`: `D_AdvanceDemo` / `D_DoAdvanceDemo` / `D_PageTicker` / `D_PageDrawer`, the `hs_attract_page` / `hs_page_after_demo` / `hs_subpage_tic` page state, `D_Menu_Over_Attract`, `D_Demo_Advance_Retry` |
 | Arcade death, idle timeout | `g_game.c`: `G_Arcade_Death_Check`, `G_Player_Death_Settled`, `G_Idle_Timeout_Check`, and the `death_ended_run` / `finale_after_intermission` flags they set for `G_DoWorldDone` |
