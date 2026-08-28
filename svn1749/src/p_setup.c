@@ -484,6 +484,110 @@ void P_LoadSegs ( lumpnum_t lumpnum )
 }
 
 
+// [Arcade] Snap node-builder vertices back onto their linedef.
+//
+// A node builder splits a linedef where a partition line crosses it and
+// writes that intersection to VERTEXES as *integers*.  On a diagonal linedef
+// the true crossing is almost never at an integer, so the split vertex lands
+// up to about 0.7 map units off the line it is supposed to lie on.  Every
+// renderer draws walls from the seg endpoints, so the wall picks up a slight
+// dogleg at the split -- while anything drawn from the linedef itself keeps
+// the straight line.  In the hardware renderer that is the floor and ceiling
+// polygons, which hw_bsp.c clips with the original LINEDEF points (see
+// CutOutSubsecPoly).  The two edges then disagree by that fraction of a unit,
+// and the wedge between them is a gap, widest at the split and tapering to
+// nothing at each end of the linedef, through which the sky backdrop shows.
+// Reported on E1M6 linedef 1044, whose split vertex is 0.43 units off.
+//
+// This is the long-known "slime trails" defect, and this is the long-known
+// fix for it: project each such vertex onto the exact line of its linedef.
+//
+// Only vertices the node builder invented are moved.  A linedef's own two
+// endpoints are map data and are left exactly where the author put them, and
+// only diagonal linedefs are considered -- an axis-aligned line is split at
+// an exact integer, so there is nothing to correct and nothing to risk.
+//
+// Nothing in the simulation reads these coordinates: collision, sight checks
+// and the blockmap all work from linedefs, and only the renderers walk seg
+// vertices.  So this cannot move a player, a shot or a monster.
+static void P_Remove_Slime_Trails( void )
+{
+    byte *    moved;
+    uint32_t  i;
+    uint32_t  fixed_count = 0;
+
+    if( numsegs < 1 || numvertexes < 1 )  return;
+
+    moved = Z_Malloc( numvertexes, PU_STATIC, NULL );  // one flag per vertex
+    memset( moved, 0, numvertexes );
+
+    for( i = 0; i < numsegs; i++ )
+    {
+        const line_t * ld = segs[i].linedef;
+        int  e;
+
+        if( ld == NULL )  continue;
+        // Axis aligned: the split is exact, leave it alone.
+        if( ld->dx == 0 || ld->dy == 0 )  continue;
+
+        for( e = 0; e < 2; e++ )
+        {
+            vertex_t * v = e ? segs[i].v2 : segs[i].v1;
+            uint32_t   vi;
+            int64_t    dx, dy, dx2, dy2, dxy, ss;
+            int64_t    x0, y0, x1, y1;
+            fixed_t    nx, ny;
+
+            if( v == NULL )  continue;
+            vi = (uint32_t)(v - vertexes);
+            if( vi >= numvertexes )  continue;   // not ours, or a bad seg
+            if( moved[vi] )  continue;           // each vertex once
+            moved[vi] = 1;
+
+            // The linedef's own endpoints are map data.
+            if( v == ld->v1 || v == ld->v2 )  continue;
+
+            // Project v onto the infinite line through the linedef.
+            // dx,dy in whole units keeps the products well inside 64 bits.
+            dx  = ld->dx >> FRACBITS;
+            dy  = ld->dy >> FRACBITS;
+            dx2 = dx * dx;
+            dy2 = dy * dy;
+            dxy = dx * dy;
+            ss  = dx2 + dy2;
+            if( ss == 0 )  continue;
+
+            x0 = v->x;       y0 = v->y;
+            x1 = ld->v1->x;  y1 = ld->v1->y;
+
+            nx = (fixed_t)(( dx2 * x0 + dy2 * x1 + dxy * (y0 - y1) ) / ss);
+            ny = (fixed_t)(( dy2 * y0 + dx2 * y1 + dxy * (x0 - x1) ) / ss);
+
+            // Most split vertices are already exactly on the line; count
+            // only the ones this actually moves, so the number means
+            // something when reading a log.
+            if( nx != v->x || ny != v->y )  fixed_count++;
+            v->x = nx;
+            v->y = ny;
+        }
+    }
+
+    Z_Free( moved );
+
+    if( fixed_count )
+    {
+        GenPrintf( EMSG_ver,
+                   "Slime trails: %u node vertices snapped to their linedef.\n",
+                   fixed_count );
+#ifdef HWRENDER
+        // These were computed from the pre-snap positions.
+        for( i = 0; i < numsegs; i++ )
+            segs[i].length = P_SegLength( &segs[i] );
+#endif
+    }
+}
+
+
 //
 // P_LoadSubsectors
 //
@@ -2417,6 +2521,11 @@ boolean P_SetupLevel (int      to_episode,
         P_LoadNodes (level_lumpnum+ML_NODES);
         P_LoadSegs (level_lumpnum+ML_SEGS);
     }
+
+    // [Arcade] After every node format's loader, before anything derives
+    // geometry from the segs (P_GroupLines, and HWR_SetupLevel below, which
+    // builds the floor and ceiling polygons these have to agree with).
+    P_Remove_Slime_Trails();
 
     // [WDJ] Limits numsectors to 0xFFFE, or else reject calc will overflow.
     // For many wads this will be empty (NULL).
