@@ -20,7 +20,7 @@ and the `srcdir` symlink are leftover build-output scaffolding from the original
 usable as-is. Always work under `svn1749/`. The top-level `common/` holds the runtime asset package
 (`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified**: the `M_STSERV` menu
 graphic now reads "Start Game" instead of "Start Server", and the cabinet's own art has been added
-(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`, `SBOARMBL`). The user edits their live
+(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`, `SBOARMBL`, `M_GAMOVR`). The user edits their live
 `~/games/doom/legacy.wad` and it is copied over `common/legacy.wad` to track it; verify only the
 expected lumps differ before committing.
 

@@ -159,6 +159,8 @@ extern  tic_t     last_input_tic;
 // [Arcade] Has the player's death finished playing out (have they hit the
 // ground)?  The initials page and the run teardown both wait for this.
 boolean G_Player_Death_Settled( void );
+// [Arcade] Is the arcade death card up?  See G_Arcade_Death_Showing.
+boolean G_Arcade_Death_Showing( void );
 
 // [Arcade] Set by G_Start_Intermission when the map that just ended owes a
 // finale once its intermission is over (Doom 1 / Heretic E?M8, Chex E1M5).

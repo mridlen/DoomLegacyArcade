@@ -1833,16 +1833,42 @@ void G_Synclog_Tic( void )
 // Skipped in devmode, like the idle timeout: -devmode is the development
 // mode and keeps stock behaviour, and an operator testing a level does not
 // want to be thrown to the title on every death.
-#define DEATH_LINGER_TICS  (2*TICRATE)   // a beat on the ground before leaving
+// [Arcade] How long the corpse and the GAME OVER card sit before the cabinet
+// tears the game down.  This is the whole dwell the player sees, so it is
+// also how long GAME OVER stays readable -- change it here and both follow.
+#define DEATH_LINGER_TICS  (3*TICRATE)
+
+// [Arcade] The tic the fatal fall settled on; 0 when no death is in progress.
+// File scope rather than a static local, so the HUD can ask whether the death
+// card should be up.  See G_Arcade_Death_Showing.
+static tic_t  death_settled_tic = 0;
+
+
+// [Arcade] Should the HUD be showing GAME OVER right now?
+//
+// True from the moment the body lands until the game is torn down -- but not
+// while the initials page has the screen, which is its own moment and would
+// otherwise get GAME OVER painted across it.
+//
+// Single Level is excluded for free: G_Arcade_Death_Check returns early on
+// single_level_mode without ever setting death_settled_tic, so a Single Level
+// death never raises the card.  The same goes for devmode, demo playback and
+// any multiplayer game.
+boolean  G_Arcade_Death_Showing( void )
+{
+    if( death_settled_tic == 0 )  return false;
+    if( death_ended_run )  return false;
+    if( HS_Initials_Pending() || M_Initials_Active() )  return false;
+    return true;
+}
+
 
 static void G_Arcade_Death_Check( void )
 {
-    static tic_t settled_tic = 0;
-
     if( devmode || demoplayback || single_level_mode
         || ! HS_Scored_Game() )
     {
-        settled_tic = 0;
+        death_settled_tic = 0;
         return;
     }
 
@@ -1853,13 +1879,13 @@ static void G_Arcade_Death_Check( void )
         // Either alive, or still falling.  Reset so the linger below is
         // measured from the moment they actually land.
         if( players[consoleplayer].playerstate != PST_DEAD )
-            settled_tic = 0;
+            death_settled_tic = 0;
         return;
     }
 
-    if( settled_tic == 0 )
+    if( death_settled_tic == 0 )
     {
-        settled_tic = gametic;
+        death_settled_tic = gametic;
 
         // [Arcade] The body has reached the ground, so the recording now
         // holds the whole run including the death.  Write it and release the
@@ -1873,7 +1899,7 @@ static void G_Arcade_Death_Check( void )
     // the middle of signing.
     if( HS_Initials_Pending() || M_Initials_Active() )  return;
 
-    if( gametic - settled_tic < DEATH_LINGER_TICS )  return;
+    if( gametic - death_settled_tic < DEATH_LINGER_TICS )  return;
 
     death_ended_run = true;
     gameaction = ga_worlddone;   // deferred; see G_DoWorldDone

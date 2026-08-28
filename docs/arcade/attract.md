@@ -190,3 +190,36 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `50` gave 10 as expected. `s_sound.c` is one of the **ISO-8859 files grep skips silently** — the
     first search for `S_SetSfxVolume` returned nothing at all, which reads as the function not
     existing. Use `grep -a`.
+
+## GAME OVER
+
+- **The cabinet names the end of a run.** A death is how nearly every cabinet session finishes, and
+  the player was being returned to the attract screen with nothing said — the corpse simply stopped
+  being theirs. `HU_Draw_GameOver` (`hu_stuff.c`) puts a **GAME OVER** card over the death view for
+  the length of the dwell.
+- **Drawn from the `M_GAMOVR` patch in `legacy.wad`** (125x17, added for this), centred on the
+  patch's own width and placed by its own height — `(BASEVIDWIDTH - p->width)/2`,
+  `(BASEVIDHEIGHT - ST_HEIGHT - p->height)/2` — so replacing the artwork with a different size
+  needs no code change.
+  - **It falls back to `V_DrawString("GAME OVER")` when the lump is missing**, so the build still
+    works against a stock `legacy.wad`, and picked the artwork up with no code change when it
+    arrived. Worth keeping: it is what let the timing be built and tested before the art existed.
+  - The lump is looked up **once per level**, not per frame — `W_CheckNumForName` walks the whole
+    directory and this is a drawer.
+- **Timing is `G_Arcade_Death_Showing()` (`g_game.c`)**, not a timer of the drawer's own. True from
+  the moment the body settles until the game is torn down, so the card and the corpse share one
+  dwell: **`DEATH_LINGER_TICS`, raised from 2 to 3 seconds** so the card reads as deliberate rather
+  than a flicker on the way out. One constant moves both.
+  - **It is suppressed while the initials page is up or pending.** That page is its own moment and
+    would otherwise have GAME OVER painted across it. The linger clock is already paused for the
+    same reason, so the card simply reappears for its full dwell once the player has signed.
+- **Single Level never shows it, and that is structural rather than a test result.**
+  `death_settled_tic` is the flag the card keys off, and the only assignment that makes it non-zero
+  sits *downstream* of `G_Arcade_Death_Check`'s early return on `single_level_mode` — so in Single
+  Level the flag cannot be non-zero and the card cannot appear. The same guard covers `devmode`,
+  demo playback and every multiplayer game. Nothing extra was added for any of them.
+  - This is the same guard that already keeps a Single Level death from ending the run, so the two
+    behaviours cannot drift apart.
+- Verified headlessly under `SDL_VIDEODRIVER=offscreen`: `kill` in a `-warp 1` game, screenshot
+  during the dwell. The patch draws centred (measured: spans 310..710 of 1024, centre 510 against a
+  screen centre of 512).
