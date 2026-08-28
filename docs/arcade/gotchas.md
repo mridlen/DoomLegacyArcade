@@ -335,3 +335,37 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     gap is sub-pixel there; it opens up at **grazing angles**, which is why the report came with a
     screenshot taken looking along the wall. Reproduce at a grazing angle or you will conclude
     there is nothing wrong.
+  - **Snapping the vertex is only half the fix, and on its own it trades a horizontal seam for a
+    worse vertical one.** Shipping just `P_Remove_Slime_Trails` closed the top and bottom gaps and
+    immediately opened a dark line running the *full height* of the wall at the split — reported
+    straight back, and measured at **39.0** column-luminance delta where the background noise is
+    about 8.
+    - **Why.** `AdjustSegs` (`hw_bsp.c`) does not draw a wall from the seg's own vertices: it
+      snaps each endpoint to the nearest vertex of *that seg's subsector polygon* when one is
+      within `VERTEX_NEAR_DIST` (0.75), which is what glues walls to flats. The two segs meeting at
+      a split live in **different subsectors**, so they consult **different polygons**.
+      Instrumenting the chosen `pv` for linedef 1044 showed it exactly:
+
+      | build | seg A `pv2` | seg B `pv1` |
+      | --- | --- | --- |
+      | original | (1373.000, -162.000) | (1373.000, -162.000) |
+      | slime fix only | (1373.000, **-163.000**) | (**1373.714**, -162.286) |
+      | slime + AdjustSegs | (1373.094, -162.424) | (1373.094, -162.424) |
+
+      Originally *neither* endpoint was near enough to snap (0.77 and 1.00 away), so both fell back
+      to the raw seg vertex — agreeing with each other, disagreeing with the flats: one horizontal
+      seam, no vertical one. Moving the vertex onto the line brought both **inside** the snap
+      radius, so both snapped — to two different polygon vertices **0.73 units apart**. The wall
+      tore open wider than the gap that was closed.
+    - **The second half.** A linedef's *interior* split point must not snap: only its two real
+      endpoints may. `store_polyvertex` dedupes within `SEG_SAME_VERT`, so both segs then share one
+      polyvertex and the wall is continuous. This is safe **only because** the first half
+      guarantees that vertex already lies exactly on the linedef's line, which is the same line
+      `CutOutSubsecPoly` cuts the flats with — so the wall is flush with both flats without needing
+      to snap. **The two changes must ship together**; either alone leaves a visible seam.
+    - Measured over four viewpoints, horizontal sliver pixels in the wall region (HUD excluded, or
+      its text swamps the count): original **64**, slime fix only **0** but with the vertical tear,
+      both fixes **1** and no tear.
+  - **Do not measure this with the whole frame in the detector.** The red HUD numerals are bright
+    pixels between darker rows and score as slivers, which made the combined fix look *worse* than
+    the broken one (529 vs 411) until the region was restricted to the wall.

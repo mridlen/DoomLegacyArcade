@@ -2799,8 +2799,29 @@ void AdjustSegs(void)
                 }
             }
 
+            // [Arcade] An interior split point of a linedef must not snap.
+            //
+            // This snapping glues a wall to its subsector's floor/ceiling
+            // polygon, and for a linedef's own two endpoints that is what is
+            // wanted.  But the point where a node builder split a linedef is
+            // shared by two segs in two *different* subsectors, and each one
+            // snaps to the nearest vertex of its own polygon -- which need
+            // not be the same point.  On E1M6 linedef 1044 they land 0.73
+            // units apart and the wall tears open vertically at the split.
+            //
+            // P_Remove_Slime_Trails has already put that vertex exactly on
+            // the linedef's line, and CutOutSubsecPoly cuts the polygons with
+            // the same line, so leaving it alone keeps the wall straight,
+            // continuous, and flush with both flats.  store_polyvertex()
+            // dedupes within SEG_SAME_VERT, so both segs get the one shared
+            // polyvertex.
+            boolean v1_ld_end = ( lseg->v1 == lseg->linedef->v1
+                               || lseg->v1 == lseg->linedef->v2 );
+            boolean v2_ld_end = ( lseg->v2 == lseg->linedef->v1
+                               || lseg->v2 == lseg->linedef->v2 );
+
             // close enough to be considered the same ?
-            if( nearv1<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
+            if( v1_ld_end && nearv1<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
             {
                 // share vertex with segs
                 lseg->pv1 = wp->ppts[v1found];
@@ -2813,7 +2834,7 @@ void AdjustSegs(void)
 
                 lseg->pv1 = store_polyvertex( &sv1, SEG_SAME_VERT );
             }
-            if( nearv2<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
+            if( v2_ld_end && nearv2<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
             {
                 lseg->pv2 = wp->ppts[v2found];
             }
@@ -2822,7 +2843,7 @@ void AdjustSegs(void)
                 lseg->pv2 = store_polyvertex( &sv2, SEG_SAME_VERT );
             }
 
-            // recompute length 
+            // recompute length
             {
                 // [WDJ] FIXED_TO_FLOAT_MULT used to add 1/2 of lsb of fixed_t fraction.
                 float x=lseg->pv2->x - lseg->pv1->x + (0.5*FIXED_TO_FLOAT_MULT);
