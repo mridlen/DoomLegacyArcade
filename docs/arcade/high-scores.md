@@ -685,8 +685,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       command". The menu sets it through the pointer, and so do `HS_Apply_Ranked_Ruleset` and
       `HS_Unranked_Reason`, which never go through `CV_FindVar`. Worth knowing before writing a
       test for it: the obvious console route looks like the rule failing.
-    - Verified headless: setting `cv_bots` to 2 mid-run through a temporary command took
-      `HS_Run_Is_Ranked()` from 1 to 0 within a second and put `UNRANKED - BOTS IN GAME` on the HUD.
+    - **The cvar rule alone was not enough, and the first cut of it shipped looking broken.**
+      Loading bots produced no `UNRANKED` marker at all, because bots set the engine's
+      `multiplayer` flag and that switched off `HS_Scored_Game()`, which gates the marker — see
+      the `HS_Scored_Game()` entry below for the full story. The run *was* voided correctly the
+      whole time; nothing said so. **Verifying the rule mid-run, as the first pass did, does not
+      exercise the path a player takes**: setting `cv_bots` from a console command proves the
+      table entry works, but no bot ever joins, so the `multiplayer` flag never moves and the
+      failure is invisible. Drive it the way it actually happens — set the count, then *start a
+      game* — or the test agrees with a build the cabinet disagrees with.
+    - **Bots are also checked by what is in the game, not only by the cvar.** `HS_Bots_In_Game()`
+      walks `playeringame[]` for `players[pn].bot` and voids the run from
+      `HS_Void_If_Ruleset_Changed`. `cv_bots` covers the menu route; **`addbot` at the console adds
+      a bot without touching it**, and once `HS_Scored_Game()` stopped excluding bot games outright
+      that would have been a way to put a run with bots in it on the board. Measured: `addbot` with
+      `cv_bots` still 0 takes the run from ranked to unranked with the bots wording.
+    - Verified headless, driving the real sequence — set the count, start a game, let the bots
+      join: `humans=1 bots=31 multiplayer=1`, `scored=1`, `ranked=0`,
+      `mark="UNRANKED - BOTS IN GAME"`. The pre-fix build reported `scored=0` at the same point,
+      which is the marker not drawing. A local two player game in the same harness still reports
+      `scored=0` and no marker.
+    - **A side effect worth knowing**: with a bot game classed as a solo run again, the arcade
+      death rule applies to it too. Dying with bots in the game now ends the run and returns to
+      the attract screen, where before the player respawned and the session never ended — an
+      unattended cabinet had no way to reclaim itself from a bot game. Confirmed headlessly: a
+      `kill` in a 31 bot game tore the game down and returned to the title.
 
   Rather than hide the menus, an altered ruleset **plays on but records nothing**:
   `HS_Ruleset_Is_Ranked()` is checked in `HS_NewGame` (which then skips starting the background
@@ -736,11 +759,27 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       run unranked within a frame of the game starting and painted **UNRANKED across a two or four
       player game that was never being scored at all.** Nothing had noticed before, because every
       *writing* path already returned early on the same test and only the display reached it.
-    - That test is now **`HS_Scored_Game()`** (`hs_stuff.c`, declared in the header):
-      `!(netgame || multiplayer || deathmatch)`, which `HS_LevelExit` and `HS_Player_Died` had
-      always opened with by hand. It is a function because the *display* has to ask it too, and the
-      same question written out in four places is how they drift apart. **Local splitscreen sets
-      `netgame`**, so a two or four player game on one cabinet is excluded by either half.
+    - That test is now **`HS_Scored_Game()`** (`hs_stuff.c`, declared in the header), which
+      `HS_LevelExit` and `HS_Player_Died` had always opened with by hand. It is a function because
+      the *display* has to ask it too, and the same question written out in four places is how they
+      drift apart.
+    - **It started as `!(netgame || multiplayer || deathmatch)`, and the `multiplayer` half was
+      wrong.** `Got_NetXCmd_AddBot` (`d_clisrv.c`) does a bare **`multiplayer=1`** for every bot
+      that joins, so a lone player who added bots was classed as a multiplayer game. Everything
+      gated on this then switched itself off *at the moment it had most to say*: no `UNRANKED`
+      marker, no arcade death, no level-exit scoring path. It read as the bots rule not working —
+      it was working the whole time, the run was correctly voided, and only the display was
+      suppressed. **A flag named for a game mode was being used to ask a question about how many
+      people are playing.**
+      - Now: `netgame || deathmatch` still excludes outright, and the `multiplayer` half is
+        qualified by an actual head count — `multiplayer && HS_Human_Players() > 1`, where
+        `HS_Human_Players()` walks `playeringame[]` skipping `players[pn].bot`. A solo run with
+        bots stays a solo run; anything with more than one *person* in it is excluded as before.
+      - **Do not simplify this back to `netgame` alone.** A two player game driven headlessly
+        (`splitscreen 1` then `map`) reports `netgame=0 multiplayer=1 humans=2`, and the head
+        count is the only thing excluding it. Whether the menu's own `M_StartServer_Go` route
+        also raises `netgame` was not measured — it cannot be exercised headlessly (see below) —
+        so do not rely on it either way.
     - The HUD marker asks it as well, not just the live check: `hs_run_ranked` is **not** reset when
       a multiplayer game starts (`HS_NewGame` runs only on the Single Player and Single Level
       routes), so a flag left false by an earlier solo run would otherwise paint the marker over a

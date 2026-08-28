@@ -379,18 +379,47 @@ static boolean hs_run_cheated = false;
 // generic wording.
 static const char * hs_unranked_mark = NULL;
 
+// [Arcade] How many *people* are in the game.  Bots occupy player slots and
+// set playeringame[] exactly as a person does, so anything asking "is one
+// player playing alone" has to exclude them explicitly.
+static int  HS_Human_Players( void )
+{
+    int pn, n = 0;
+    for( pn = 0; pn < MAXPLAYERS; pn++ )
+    {
+        if( playeringame[pn] && ! players[pn].bot )  n++;
+    }
+    return n;
+}
+
+
+// [Arcade] Is any bot in the game right now, however it got there?
+//
+// cv_bots in the ranked ruleset covers the route a player has: set Bots
+// under Bot Options, start a game, G_InitNew hands the count to
+// B_Regulate_Bots.  It does not cover "addbot" at the console, which adds
+// one without touching the cvar -- and since HS_Scored_Game no longer
+// excludes bot games outright (see there), that would otherwise be a way to
+// put a run with bots in it on the board.  Ask what is actually in the game.
+static boolean  HS_Bots_In_Game( void )
+{
+    int pn;
+    for( pn = 0; pn < MAXPLAYERS; pn++ )
+    {
+        if( playeringame[pn] && players[pn].bot )  return true;
+    }
+    return false;
+}
+
+
 // [Arcade] Record, for the HUD, which side of the ruleset the run fell off.
 // Bots get their own wording: "settings changed" would leave a player who
 // added them with no idea what to undo, and they are the one entry in the
 // table a player is at all likely to reach by accident.
-static void  HS_Latch_Unranked_Mark( void )
+static void  HS_Latch_Unranked_Mark( boolean bots )
 {
-    const char * why = HS_Unranked_Reason();
-
-    hs_unranked_mark =
-        ( why && strcmp( why, cv_bots.name ) == 0 )
-          ? "UNRANKED - BOTS IN GAME"
-          : "UNRANKED - SETTINGS CHANGED";
+    hs_unranked_mark = bots ? "UNRANKED - BOTS IN GAME"
+                            : "UNRANKED - SETTINGS CHANGED";
 }
 
 
@@ -421,23 +450,29 @@ static void  HS_Void_If_Ruleset_Changed( void )
     // gated on hs_run_ranked), so skip the table walk.
     if( ! hs_run_ranked && ! hs_run_board_ok )  return;
 
-    if( HS_Ruleset_Is_Ranked() )  return;
+    // [Arcade] Bots are asked about separately from the table, by what is in
+    // the game rather than by cv_bots -- see HS_Bots_In_Game.
+    boolean      bots = HS_Bots_In_Game();
+    const char * why  = HS_Unranked_Reason();
 
-    // Name the cvar.  A run silently scoring nothing is very hard to diagnose
-    // from the outside -- this is exactly how the Nightmare cv_fastmonsters
-    // bug presented (played fine, then UNRANKED with no score for the level
-    // just finished).  Once per run, on the transition.
+    if( ! bots && ! why )  return;
+
+    // Name the reason.  A run silently scoring nothing is very hard to
+    // diagnose from the outside -- this is exactly how the Nightmare
+    // cv_fastmonsters bug presented (played fine, then UNRANKED with no score
+    // for the level just finished).  Once per run, on the transition.
     if( hs_run_ranked )
     {
-        const char * why = HS_Unranked_Reason();
-
-        GenPrintf( EMSG_info,
-            "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
-            why );
+        if( bots )
+            GenPrintf( EMSG_info, "Run is unranked: bots are in the game.\n" );
+        else
+            GenPrintf( EMSG_info,
+                "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
+                why );
         AU_Unranked( AU_UR_ruleset );   // [Arcade] audit: on the transition
 
         // [Arcade] Say it on screen too, not only in the log.
-        HS_Latch_Unranked_Mark();
+        HS_Latch_Unranked_Mark( bots || (why && strcmp(why, cv_bots.name) == 0) );
     }
 
     hs_run_ranked   = false;
@@ -454,10 +489,26 @@ static void  HS_Void_If_Ruleset_Changed( void )
 // the same question written out in four places is how they drift apart.
 //
 // Local splitscreen sets netgame as well as multiplayer, so a two or four
-// player game on one cabinet is correctly excluded by either half.
+// player game on one cabinet is correctly excluded by the netgame half.
+//
+// [Arcade] The multiplayer half can no longer be trusted on its own.
+// Got_NetXCmd_AddBot (d_clisrv.c) does a bare "multiplayer=1" for every bot
+// that joins, so a lone player who added bots was classed as a multiplayer
+// game -- and the UNRANKED marker, which is gated on this, switched itself
+// off at exactly the moment it had something to say.  It looked as though the
+// bots rule was not working; the run was correctly voided the whole time and
+// only the display was suppressed.
+//
+// Bots do not set netgame, so the netgame test is kept as-is.  It is not on
+// its own enough, though: a two player game driven headlessly reports
+// netgame=0 with multiplayer=1, so the multiplayer half is qualified by an
+// actual head count rather than dropped.  That keeps out anything with more
+// than one *person* in it while a solo run with bots stays a solo run.
 boolean  HS_Scored_Game( void )
 {
-    return ! ( netgame || multiplayer || deathmatch );
+    if( netgame || deathmatch )  return false;
+    if( multiplayer && HS_Human_Players() > 1 )  return false;
+    return true;
 }
 
 
@@ -1652,13 +1703,19 @@ void HS_NewGame( void )
 
     // An altered ruleset makes the run unscoreable, so do not spend the
     // demo buffer on it either -- nothing would ever be saved from it.
-    hs_run_ranked = HS_Ruleset_Is_Ranked();
-    // Already off before a shot was fired -- bots left set from a previous
-    // game, say.  HS_Void_If_Ruleset_Changed never sees the transition in
-    // that case, so latch the wording here or the marker reads a bare
-    // "UNRANKED" for the whole run.
-    if( ! hs_run_ranked )
-        HS_Latch_Unranked_Mark();
+    // Already off before a shot was fired -- Bots set from the menu, say,
+    // which is the usual way it happens: cv_bots is read by G_InitNew *after*
+    // this runs, so no bot has joined yet and the cvar is all there is to go
+    // on.  HS_Void_If_Ruleset_Changed never sees a transition in that case,
+    // so latch the wording here or the marker reads a bare "UNRANKED" for the
+    // whole run.
+    {
+        const char * why = HS_Unranked_Reason();
+
+        hs_run_ranked = ( why == NULL );
+        if( ! hs_run_ranked )
+            HS_Latch_Unranked_Mark( strcmp( why, cv_bots.name ) == 0 );
+    }
     // The board takes runs that ended in a death -- that is how nearly every
     // cabinet run ends, and ranking on progress first is what gives those a
     // place.  So this tracks the ruleset and cheating *only*, and is
