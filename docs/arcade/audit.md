@@ -12,7 +12,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   player mode, does anybody get past MAP03, is the scoring working out there, how much of the
   cabinet's running time is actually being played — and **none of it can be recovered after the
   fact**, which is the whole argument for counting it as it happens.
-  - **Reached at Options → Menu Options → Audit**, and from the console with **`audit`**. Menu
+  - **Reached at Options → Arcade Options → Audit**, and from the console with **`audit`**. Menu
     Options is hidden by the lockdown, so the page is operator-only without needing a guard of its
     own.
   - Reset with **`clearaudit`** at the console or **`-clearaudit`** on the command line, mirroring

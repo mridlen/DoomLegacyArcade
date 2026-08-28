@@ -15,7 +15,7 @@ Nothing about the wipe needed inventing — this is worth knowing before anyone 
   `wipe_ColorXForm`, a crossfade.
 - The cvar has always existed: **`screenlink`** (`cv_screenslink`, `d_main.c`), values
   **None / Crossfade / Melt**, compiled default `"2"` = Melt.
-- It has always had a menu row: **"Screens Link"**, first row group of Menu Options (`m_menu.c`).
+- It has always had a menu row: **"Screens Link"**, first row group of Arcade Options (`m_menu.c`).
 - The cabinet's tracked `config.cfg` has always said `screenlink "Melt"`.
 
 - **It was nevertheless dead on this machine, because the wipe was gated to the software

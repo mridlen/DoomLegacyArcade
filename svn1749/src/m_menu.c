@@ -473,15 +473,17 @@ CV_PossibleValue_t menusound_cons_t[] =
 static void CV_menusound_OnChange(void);
 consvar_t cv_menusound = {"menusound", "1", CV_SAVE | CV_CALL, menusound_cons_t, CV_menusound_OnChange };
 
-// [Arcade] Whether the cabinet has a second set of controls at all.  An
-// operator setting, so it is only saved from a -devmode session; applied in
-// M_Configure because the config that carries it is not loaded until well
-// after M_Init.  Off hides Two Player Game and the player 2 config screens.
-consvar_t cv_twoplayer = {"twoplayer", "1", CV_SAVE, CV_OnOff };
-
 // [Arcade] How many sets of controls the cabinet physically has, 1..4.  A
 // multicade panel may have three or four.  Operator setting, saved only from
-// a -devmode session, like cv_twoplayer above.
+// a -devmode session; applied in M_Configure because the config that carries
+// it is not loaded until well after M_Init.
+//
+// This subsumes the old separate "Two Player Mode" on/off (cv_twoplayer),
+// which said the same thing twice: a cabinet with one set of controls is
+// exactly a cabinet with two player mode off, and the two settings could
+// contradict each other -- twoplayer Off with localplayers 4 hid the
+// Multiplayer entry on a cabinet with four working panels.  Panels < 2 now
+// hides multiplayer, which is what twoplayer Off did.
 //
 // This is the count of players that *join* on this machine, which is a
 // separate thing from cv_splitscreen, the two-view render toggle.  Each of
@@ -532,8 +534,17 @@ consvar_t cv_defaultgame = {"defaultgame", "None", CV_SAVE, defaultgame_cons_t }
 // player cannot switch it on for themselves; off by default because a scored
 // cabinet does not want it, and cheating still voids the run either way.
 // Applied in M_Configure, not M_Init's lockdown -- config.cfg is not loaded
-// that early, the same rule as cv_twoplayer above.
+// that early, the same rule as cv_localplayers above.
 consvar_t cv_cheatsmenu = {"cheatsmenu", "0", CV_SAVE, CV_OnOff };
+
+// [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has
+// no Quit button -- quitting drops the player out to a desktop they should
+// never see, and on an unattended machine nothing brings the game back -- so
+// this is off by default and the entry is hidden.  Operator setting like the
+// rest of this group, applied in M_Configure for the same config-load reason;
+// a -devmode session always keeps Quit, whatever this says, so the operator
+// is never locked in.
+consvar_t cv_quitmenu = {"quitmenu", "0", CV_SAVE, CV_OnOff };
 
 static
 void CV_menusound_OnChange(void)
@@ -3564,7 +3575,7 @@ menuitem_t OptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING,0,"Connect Options >>",&ConnectOptionDef ,0},
     {IT_CALL    | IT_WHITESTRING,0,"Network Options >>",M_NetOption     ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Server Options >>",&ServerOptionsDef  ,0},
-    {IT_SUBMENU | IT_WHITESTRING,0,"Menu Options >>"  ,&MenuOptionsDef    ,0},
+    {IT_SUBMENU | IT_WHITESTRING,0,"Arcade Options >>",&MenuOptionsDef    ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Sound Volume >>"  ,&SoundDef          ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Video Options >>" ,&VideoOptionsDef   ,0},
     {IT_SUBMENU | IT_WHITESTRING,0,"Setup Controls >>",&MControlDef       ,0},
@@ -4072,21 +4083,21 @@ void M_DrawSlider (int x, int y, int range)
 }
 
 //===========================================================================
-//                        Menu OPTIONS MENU
+//                        ARCADE OPTIONS MENU  [Arcade]
 //===========================================================================
 
 menuitem_t MenuOptionsMenu[]=
 {
     {IT_STRING | IT_CVAR,0, "Menu Sounds"     , &cv_menusound     , 0},
     {IT_STRING | IT_CVAR,0, "Screens Link"    , &cv_screenslink   , 0},
-    // [Arcade] Operator setting; this whole menu is hidden from players, so
-    // it is only reachable under -devmode.  Appended rather than inserted --
-    // the lockdown addresses menu items by hardcoded index.
-    {IT_STRING | IT_CVAR,0, "Two Player Mode" , &cv_twoplayer     , 0},
+    // [Arcade] Operator settings; this whole menu is hidden from players, so
+    // they are only reachable under -devmode.  Appended rather than inserted
+    // -- the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
+    {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
@@ -4095,7 +4106,7 @@ menuitem_t MenuOptionsMenu[]=
 menu_t  MenuOptionsDef =
 {
     "M_OPTTTL",
-    "Effects",
+    "Arcade Options",   // [Arcade] was a copy-pasted "Effects"
     MenuOptionsMenu,
     M_DrawGenericMenu,
     NULL,
@@ -5205,7 +5216,7 @@ menuitem_t RecLayoutMenu[] =
 //===========================================================================
 // Read only bookkeeping, the way an arcade board has an audit page.  The
 // numbers and the whole layout belong to au_stuff.c; this is just the frame.
-// Reached from Menu Options, which the lockdown hides, so it is operator only
+// Reached from Arcade Options, which the lockdown hides, so it is operator only
 // without needing a guard of its own.
 
 static void M_Draw_Audit( void )
@@ -7338,7 +7349,14 @@ static
 void M_EndGame(int choice)
 {
     choice = 0;
-    if (demoplayback || demorecording)
+    // [Arcade] The background record demo is not a recording the player asked
+    // for: HS_NewGame starts one for every ranked run, so single player and
+    // Single Level games are recording the entire time they are played.
+    // Refusing to end the game on account of it meant End Game did nothing at
+    // all in exactly those two modes -- just the "oof" -- while multiplayer,
+    // which is never scored and so never records, worked.  Only a deliberate
+    // -record session is protected now; demo_scratch marks the other kind.
+    if (demoplayback || (demorecording && ! demo_scratch))
     {
         S_StartSound(sfx_oof);
         return;
@@ -9020,7 +9038,7 @@ void M_Init (void)
         OptionsMenu[6].status  = IT_HIDDEN;  // Connect Options >>
         OptionsMenu[7].status  = IT_HIDDEN;  // Network Options >>
         OptionsMenu[8].status  = IT_HIDDEN;  // Server Options >>
-        OptionsMenu[9].status  = IT_HIDDEN;  // Menu Options >>
+        OptionsMenu[9].status  = IT_HIDDEN;  // Arcade Options >>
         OptionsMenu[10].status = IT_HIDDEN;  // Sound Volume >>
         OptionsMenu[11].status = IT_HIDDEN;  // Video Options >>
         OptionsMenu[12].status = IT_HIDDEN;  // Setup Controls >>
@@ -9235,11 +9253,11 @@ void M_Configure (void)
         exmy_cons_t[36].strvalue = NULL;
     }
 
-        // [Arcade] Cabinets without a second set of controls hide two player
-    // play entirely.  Must be here, not in M_Init's lockdown: cv_twoplayer
+    // [Arcade] Cabinets with only one set of controls hide two player play
+    // entirely.  Must be here, not in M_Init's lockdown: cv_localplayers
     // comes from config.cfg, which D_DoomMain does not load until long after
     // M_Init runs, so the value would still be the default there.
-    if( ! devmode && ! cv_twoplayer.EV )
+    if( ! devmode && cv_localplayers.EV < 2 )
     {
         SingleMulti_Menu[singlemulti_multi].status = IT_HIDDEN;
         if( SingleMultiDef.lastOn == singlemulti_multi )
@@ -9273,7 +9291,7 @@ void M_Configure (void)
     // Hidden rather than removed, like the rest of the lockdown, because
     // several menus are indexed by position.  Applied here in M_Configure,
     // not in M_Init: cv_localplayers comes from config.cfg, which is not
-    // loaded until long after M_Init runs -- the same rule as cv_twoplayer
+    // loaded until long after M_Init runs -- the same rule as the block above
     // and the game selector.
     {
         byte panels = cv_localplayers.EV;
@@ -9451,6 +9469,22 @@ void M_Configure (void)
     }
 # endif   
 #endif
+
+    // [Arcade] The Quit Game entry, unless the operator has asked to keep it.
+    // Must be after the gamemode switch above, not with the rest of the
+    // lockdown: on Doom 2 that switch *copies* Quit over the Read This slot
+    // (status and all) and drops the last item, so before it runs the row to
+    // hide is index MM_quitdoom and after it is index MM_readthis.  Hiding
+    // the wrong one leaves Quit sitting on the menu with nothing to show for
+    // the setting.
+    if( ! devmode && ! cv_quitmenu.EV )
+    {
+        byte quitrow = (gamemode == doom2_commercial) ? MM_readthis
+                                                      : MM_quitdoom;
+        MainMenu[quitrow].status = IT_HIDDEN;
+        if( MainDef.lastOn == quitrow )
+            MainDef.lastOn = 0;
+    }
 
     CV_menusound_OnChange();
 }
@@ -9771,8 +9805,8 @@ consvar_t * menu_command_cvar_list[] =
 // &cv_controlperkey2,
 
   &cv_screenslink,
-  &cv_twoplayer,        // [Arcade]
   &cv_localplayers,     // [Arcade]
+  &cv_quitmenu,         // [Arcade]
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
   &cv_cheatsmenu,       // [Arcade]

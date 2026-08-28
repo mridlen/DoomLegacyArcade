@@ -58,8 +58,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   marker was only telling the player off for the rest of a run they could no longer score. The
   marker is for the two cases a player might not notice and *could* put right: a gameplay setting
   off the standard ruleset, and a cheat. A cheat is still named ahead of a death when both
-  happened, so the condition is `!(HS_Run_Died() && !HS_Run_Cheated())`, not a bare
-  `!HS_Run_Died()`.
+  happened.
+  - **All of that now lives in one place, `HS_Run_Unranked_Mark()`** (`hs_stuff.c`), which returns
+    the exact string to draw or `NULL` for nothing. `hu_stuff.c` just draws what it is handed. The
+    decision is entirely about run state, and the cases only make sense read together — spreading
+    them across the drawer and the scoring file is how the two drift apart.
   - Implemented by clearing `hs_run_ranked`, exactly as an altered ruleset does, so the "no further
     scores" half falls out of the existing early return in `HS_LevelExit`. The separate
     `hs_run_died` flag only selects the *reason* shown and logged — it is not a second gate.
@@ -573,7 +576,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     so prompting per record would ask eight times for one run. Both categories can place at once —
     same run, same player — and `hs_run_placed[]` records which, so one entry covers them.
   - **`cv_initialstimeout`** ("initialstimeout", default **60s**, `CV_SAVE`), under
-    **Options → Menu Options** with the other operator settings. Generous on purpose: nothing is
+    **Options → Arcade Options** with the other operator settings. Generous on purpose: nothing is
     waiting on it (the cabinet is already back on the attract screen behind the page), and a player
     who just earned a place should not be racing a timer. `0` disables the timeout, which leaves
     the page up until somebody presses fire — supervised machines only.
@@ -671,6 +674,20 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   in `Command_ExitGame_f`, so **one player's tinkering cannot leave the next player unable to
   score**; settings are not saved outside devmode, so this only ever undoes a within-session change.
 
+  - **Bots are in the table, pinned at 0.** `cv_bots` is reachable by a player at
+    Options → Game Options → Bot Options, and **`G_InitNew` hands it to `B_Regulate_Bots` for a
+    single player game exactly as readily as for a deathmatch** (`g_game.c`, inside `if( server )`)
+    — nothing about that path is multiplayer-only. So a player could fill a scored run with allies
+    clearing the level for them and still take the board. Pinned at none, like the helper dogs and
+    for the same reason: a player who wants them still gets to play, they just do not score.
+    - `cv_bots` is **`CV_HIDEN`**, so `CV_RegisterVar` never links it into `consvar_vars` and the
+      console cannot reach it — `bots 2` at the console silently does nothing, with no "unknown
+      command". The menu sets it through the pointer, and so do `HS_Apply_Ranked_Ruleset` and
+      `HS_Unranked_Reason`, which never go through `CV_FindVar`. Worth knowing before writing a
+      test for it: the obvious console route looks like the rule failing.
+    - Verified headless: setting `cv_bots` to 2 mid-run through a temporary command took
+      `HS_Run_Is_Ranked()` from 1 to 0 within a second and put `UNRANKED - BOTS IN GAME` on the HUD.
+
   Rather than hide the menus, an altered ruleset **plays on but records nothing**:
   `HS_Ruleset_Is_Ranked()` is checked in `HS_NewGame` (which then skips starting the background
   recording at all), again at every `HS_LevelExit`, and — since the marker was reported as not
@@ -679,6 +696,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   under the item list on the Game Options and Adv Options screens (`M_Draw_Unranked_Warning`,
   called from `M_Drawer` so all three screens are covered in one place), and an `UNRANKED` marker
   at the top of the HUD during play.
+  - **The marker always names its reason.** A bare `UNRANKED` tells a player the run is off the
+    board without telling them what to undo, which is the one thing they can act on. The wordings:
+
+    | reason | marker | width |
+    | --- | --- | --- |
+    | a cheat | `PLAYER CHEATED - UNRANKED` | 186 px |
+    | bots added | `UNRANKED - BOTS IN GAME` | 162 px |
+    | any other ruleset cvar | `UNRANKED - SETTINGS CHANGED` | 196 px |
+    | a plain death | *(nothing drawn)* | — |
+
+    Measured against the real `STCFN` lumps (`hu_font` is proportional), all well inside the 320 px
+    `V_DrawString` centres them in. Bots get their own wording because "settings changed" would
+    leave a player who added them with no idea what to undo, and they are the one entry in the
+    table a player is at all likely to reach by accident.
+  - **The reason has to be latched, not recomputed at draw time.** `hs_unranked_mark` is set at the
+    moment the run is voided (in `HS_Void_If_Ruleset_Changed`, and again in `HS_NewGame` for a run
+    that starts with the ruleset already off — bots left set from a previous game, say, where there
+    is no transition for the former to see). Asking `HS_Unranked_Reason()` from the drawer instead
+    would lose the explanation the moment a player put the setting back: `hs_run_ranked` stays
+    false, but the live cvars match the baseline again and the reason comes back `NULL`. Cleared in
+    `HS_NewGame` beside `hs_run_died` and `hs_run_cheated`.
+  - Verified headless with a temporary console command printing `HS_Run_Unranked_Mark()`: a
+    `-warp 1` run reported `ranked=1 mark="(none)"`, then `ranked=0
+    mark="UNRANKED - BOTS IN GAME"` one second after bots were set, and
+    `mark="UNRANKED - SETTINGS CHANGED"` in the same shape of run after `allowjump 1`.
   - **The HUD marker reads a latched flag, so whatever sets that flag decides when the player is
     told.** `HS_Run_Is_Ranked()` (its only caller is `HU_Drawer`) returned `hs_run_ranked`, which
     was recomputed *only* at `HS_NewGame` and `HS_LevelExit` — so changing any Game Option in the

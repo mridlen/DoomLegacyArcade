@@ -11,7 +11,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   `MAXSPLITSCREENPLAYERS 2`, but **nothing referenced it** — every limit was its own literal. That
   constant now lives in `doomdef.h` beside `MAXPLAYERS`, is **4**, and is the real knob.
   - **`cv_localplayers`** ("localplayers", 1..4, default 1, `CV_SAVE`) is how many players join on
-    this machine — an operator setting like `cv_twoplayer`. It is **not** `cv_splitscreen`, which
+    this machine — an operator setting, and since it also decides whether two player play is
+    offered at all it is the only one. It is **not** `cv_splitscreen`, which
     is only the two-view render toggle. `D_NumLocalPlayers()` clamps it.
   - **Players 3 and 4 played but were not drawn** *at this phase* — the renderer split into at
     most two stacked halves (`r_main.c` `rdraw_viewheight >>= 1`, and `r_draw.c` had exactly
@@ -321,15 +322,14 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     PLAYER2 — exactly the confusion this screen must not create while an operator is assigning
     buttons. It prints the number now.
   - Entries for panels that do not exist are hidden in **`M_Configure`**, keyed on
-    `cv_localplayers`, for the same reason as `cv_twoplayer`: config.cfg is not loaded when
-    `M_Init` runs.
+    `cv_localplayers`, for the usual reason: config.cfg is not loaded when `M_Init` runs.
 
 - **Join screen** (`m_menu.c`, `M_Join_*`, `JoinDef`). After the skill is chosen and before the
   game starts, each control panel presses fire to be counted in. Laid out as the view grid it is
   about to become, so a player presses and watches **their own cell** claim itself.
   - **`cv_jointime`** ("jointime", default 20s, `CV_SAVE`) is the countdown, and
-    **`cv_localplayers`** the panel count — both operator settings under **Options → Menu Options**
-    beside `cv_twoplayer`, so only a `-devmode` session writes them. `jointime 0` or a single panel
+    **`cv_localplayers`** the panel count — both operator settings under **Options → Arcade
+    Options**, so only a `-devmode` session writes them. `jointime 0` or a single panel
     skips the page entirely and the game starts exactly as it always did.
   - **A player's identity follows their panel too.** `cv_playername[N]`, `cv_playercolor[N]` and
     `cv_skin[N]` (`name`/`name2`..`name4`, `color`..`color4`, `skin`..`skin4`) are **panel N's**
@@ -376,7 +376,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     that is already in starts immediately, so a ready group need not sit out the countdown.
   - **The page does not appear until `cv_localplayers` is raised**, which is correct but reads as
     the feature being broken: it ships at 1, and one panel has nothing to ask. Set *Control Panels*
-    under Options → Menu Options in a `-devmode` session, which is the only session that saves.
+    under Options → Arcade Options in a `-devmode` session, which is the only session that saves.
   - **Keys are read before `M_Cabinet_Menu_Key`**, in `M_Responder`'s `ev_keydown`. That
     translation turns every panel's buttons into the same cursor keys, which is exactly the
     identity this page needs; taken afterwards, every panel would look alike.
@@ -393,15 +393,24 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     at cells 0,1,3 with the bottom-left empty; all four give cells 0..3. Nobody pressing yields one
     player; `localplayers 1` and `jointime 0` both skip the page.
 
-- **Two player mode is an operator setting** — `cv_twoplayer` ("twoplayer", default On, `CV_SAVE`),
-  for cabinets built without a second set of controls. Toggled under **Options → Menu Options** in
-  devmode (that whole submenu is hidden from players, so the entry needs no extra guard), and
-  saved like any other setting: only a `-devmode` session writes it. When off, a player sees
-  neither *Two Player Game* on the New Game menu nor *Player2 config* under Options → Player.
-  - Applied in **`M_Configure`, not `M_Init`** — `config.cfg` is not loaded until `d_main.c:3181`,
-    long after `M_Init` runs at 2598, so the value there would always still be the compiled
-    default. Same rule as the game selector and the "Read This!" hiding.
-  - The menu entry is **appended** to `MenuOptionsMenu` rather than inserted, since the lockdown
-    addresses menu items by hardcoded index.
-  - Hiding *Two Player Game* removes the only player-reachable route to `TwoPlayerDef`; the other
-    entry point, `MultiPlayerMenu[0]`, is already behind the hidden Multiplayer item.
+- **Two player mode is folded into the panel count.** There used to be a separate on/off operator
+  setting, `cv_twoplayer` ("twoplayer", default On), beside `cv_localplayers` — and the two said the
+  same thing twice. **A cabinet with one set of controls is exactly a cabinet with two player mode
+  off**, and because they were independent they could contradict each other: `twoplayer "Off"` with
+  `localplayers "4"` hid the Multiplayer entry on a cabinet with four working panels, and nothing
+  reconciled them. `cv_twoplayer` is **removed**; the test is now `cv_localplayers.EV < 2`, and
+  "Control Panels" is the single row that decides it.
+  - When it reads 1, a player sees neither *Multiplayer* on the New Game menu nor *Player2 config*
+    under Options → Player — exactly what `twoplayer "Off"` did.
+  - Applied in **`M_Configure`, not `M_Init`** — `config.cfg` is not loaded until well after
+    `M_Init` runs, so the value there would always still be the compiled default. Same rule as the
+    game selector and the "Read This!" hiding.
+  - Hiding *Multiplayer* removes the only player-reachable route to `TwoPlayerDef`; the other entry
+    point, `MultiPlayerMenu[0]`, is already behind the hidden Networked Multiplayer item.
+  - **Old configs carry a stale `twoplayer "On"` line.** With the cvar gone `M_Verify_Config` names
+    it as an unknown setting at startup and moves on — harmless, and it disappears the next time a
+    `-devmode` session saves the config. The tracked `cabinet/legacyhome/config.cfg` has had the
+    line removed already.
+  - Verified headless by reading `SingleMulti_Menu[singlemulti_multi].status` back through a
+    temporary console command: `18` (`IT_PATCH | IT_CALL`, shown) with `localplayers "4"`, `144`
+    (`IT_HIDDEN`) with `localplayers "1"`.

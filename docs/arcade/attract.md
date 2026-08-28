@@ -163,7 +163,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   after `WI_Drawer`/`F_Drawer`. **Anything drawn by `HU_Drawer` has this same limitation.**
 
 - **The attract cycle plays at a reduced volume** (`cv_attractvolume`, "attractvolume", default
-  **50** percent, `CV_SAVE`), under **Options → Menu Options**. An arcade cabinet advertises itself
+  **50** percent, `CV_SAVE`), under **Options → Arcade Options**. An arcade cabinet advertises itself
   with sound, but a machine living in a house cannot do that at playing volume all day. `0` is a
   silent attract screen, `100` is the stock behaviour. Sound and music are scaled together: the
   question being asked is "how loud is the cabinet when nobody is playing", and that is one
