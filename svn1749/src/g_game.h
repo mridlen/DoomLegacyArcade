@@ -161,6 +161,8 @@ extern  tic_t     last_input_tic;
 boolean G_Player_Death_Settled( void );
 // [Arcade] Is the arcade death card up?  See G_Arcade_Death_Showing.
 boolean G_Arcade_Death_Showing( void );
+// [Arcade] Forget any death in progress; called from Command_ExitGame_f.
+void    G_Reset_Arcade_Death( void );
 
 // [Arcade] Set by G_Start_Intermission when the map that just ended owes a
 // finale once its intermission is over (Doom 1 / Heretic E?M8, Chex E1M5).

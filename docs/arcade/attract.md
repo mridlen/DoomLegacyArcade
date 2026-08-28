@@ -220,6 +220,22 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   demo playback and every multiplayer game. Nothing extra was added for any of them.
   - This is the same guard that already keeps a Single Level death from ending the run, so the two
     behaviours cannot drift apart.
+- **It bled into the next game, for one frame.** Reported as a flash of GAME OVER at the start of a
+  new Single Player session. `death_settled_tic` was left set by the run that ended, and the one
+  place that clears it is guarded by `playerstate != PST_DEAD` — which is *still false* after the
+  teardown, because nothing resets `playerstate` on the way back to the title. So the stale tic
+  survived the attract screen and the card painted over the new game's first frame, until the new
+  player's first tic cleared it. Textbook case of the CLAUDE.md rule that returning to the title
+  resets very little.
+  - Fixed twice over, deliberately. **`G_Reset_Arcade_Death()`** clears the flag from
+    `Command_ExitGame_f`, the single funnel every route back to the title passes through — that is
+    the direct fix. And **`G_Arcade_Death_Showing()` now ends in `G_Player_Death_Settled()`**, so
+    there must be a body on the ground *right now*: that makes the bad state unreachable rather
+    than merely reset, and the card cannot be drawn over a living player whatever the flag says.
+  - Measured with a temporary print in the drawer, counting draws either side of the teardown:
+    **1 draw after teardown before the fix, 0 after** — and the leaked frame logged
+    `playerstate=0` (alive), which is exactly what the new test rejects. Total draws in a run:
+    **105, exactly `DEATH_LINGER_TICS`**, so the dwell is the full 3 seconds and not a frame more.
 - Verified headlessly under `SDL_VIDEODRIVER=offscreen`: `kill` in a `-warp 1` game, screenshot
   during the dwell. The patch draws centred (measured: spans 310..710 of 1024, centre 510 against a
   screen centre of 512).

@@ -1172,6 +1172,10 @@ void Command_ExitGame_f(void)
     if( ! devmode )
         HS_Apply_Ranked_Ruleset();
 
+    // [Arcade] Forget any death in progress, so the GAME OVER card cannot
+    // survive into the next game.  See G_Arcade_Death_Showing.
+    G_Reset_Arcade_Death();
+
     // [Arcade] Leave single-level mode on the way out.  The attract page and
     // the background recorder both key off HS_GameId(), which follows this
     // flag -- left set, the attract screen would show single-level times.
