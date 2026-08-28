@@ -2810,11 +2810,13 @@ static void M_Cheat_God(int choice);
 static void M_Cheat_GiveAll(int choice);
 static void M_Cheat_NoClip(int choice);
 static void M_Cheat_ExitLevel(int choice);
+static void M_Cheat_Coords(int choice);
 static void M_Draw_Cheats(void);
 
 // Addressed by position by the state display in M_Draw_Cheats; keep in step
 // with the array.
-enum { cheat_god = 0, cheat_giveall, cheat_noclip, cheat_exitlevel };
+enum { cheat_god = 0, cheat_giveall, cheat_noclip, cheat_exitlevel,
+       cheat_coords };
 
 static menuitem_t  CheatsMenu[] =
 {
@@ -2822,6 +2824,8 @@ static menuitem_t  CheatsMenu[] =
     {IT_WHITESTRING | IT_CALL, NULL, "All Weapons and Keys", M_Cheat_GiveAll,   'a'},
     {IT_WHITESTRING | IT_CALL, NULL, "No Clipping",          M_Cheat_NoClip,    'n'},
     {IT_WHITESTRING | IT_CALL, NULL, "Exit Level",           M_Cheat_ExitLevel, 'e'},
+    // [Arcade] Appended, so the four indices above do not move.
+    {IT_WHITESTRING | IT_CALL, NULL, "Show Coordinates",     M_Cheat_Coords,    'c'},
 };
 
 #define  NUM_CHEATSMENU  (sizeof(CheatsMenu)/sizeof(menuitem_t))
@@ -2883,6 +2887,21 @@ static void M_Cheat_NoClip(int choice)
     M_Cheat_Apply( "noclip", false );
 }
 
+// [Arcade] Position readout for reporting where a bug is: X/Y/Z, angle, the
+// sector you are in and the linedef you are looking at, drawn continuously
+// (hu_stuff.c, HU_Draw_Coords).  Stock Doom's IDMYPOS prints one console
+// line, which a cabinet with no keyboard cannot use.
+//
+// Deliberately NOT routed through M_Cheat_Apply: it shows information and
+// changes nothing in the simulation, so it does not void the run -- the same
+// rule the typed IDDT / IDMYPOS / IDMUS already follow (m_cheat.c).  It is a
+// toggle, so it leaves the menu up for the On/Off to be read.
+static void M_Cheat_Coords(int choice)
+{
+    if( ! M_Cheats_Usable() )  return;
+    CV_SetValue( &cv_coords, ! cv_coords.EV );
+}
+
 static void M_Cheat_ExitLevel(int choice)
 {
     // Not a cheat in the classic sense, but it skips the rest of the map, so
@@ -2935,6 +2954,7 @@ static void  M_Draw_Cheats( void )
 
         M_Draw_Cheat_State( cheat_god,    (pl->cheats & CF_GODMODE) != 0 );
         M_Draw_Cheat_State( cheat_noclip, (pl->cheats & CF_NOCLIP)  != 0 );
+        M_Draw_Cheat_State( cheat_coords, cv_coords.EV != 0 );   // [Arcade]
     }
 
     y = CheatsDef.y + (NUM_CHEATSMENU * LINEHEIGHT) + 8;

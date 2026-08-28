@@ -366,6 +366,23 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     - Measured over four viewpoints, horizontal sliver pixels in the wall region (HUD excluded, or
       its text swamps the count): original **64**, slime fix only **0** but with the vertical tear,
       both fixes **1** and no tear.
+  - **The vertex fix does not remove every seam, and at a near edge-on angle it removes none.**
+    Measured over four *genuinely* grazing viewpoints on the same wall (HUD and readout masked),
+    horizontal sliver pixels before → after: 130→36, 205→33, 112→10, and **377→428**. The fourth
+    is the corridor looked straight down its own length, where linedef 1044 is almost edge-on: a
+    bright line still runs along the wall top, and the pre-fix and post-fix crops of it are
+    **indistinguishable**. That seam is a separate, pre-existing artifact of the wall/flat junction
+    at extreme grazing angles; the vertex rounding is not what causes it and snapping the vertex
+    does not help. Do not read a report of "the seam is back" as the vertex fix having regressed
+    without A/B-ing that exact viewpoint.
+  - **Test angles, not just positions — `mo->angle` alone does not aim the camera.** The ticcmd
+    carries an **absolute** angle (`g_game.c`: `localangle[pind] += cmd->angleturn<<16;
+    cmd->angleturn = localangle[pind] >> 16`), so a debug teleport that writes `mo->angle` has it
+    overwritten on the very next tic and the view stays wherever it was. Every "grazing angle"
+    screenshot in the first two rounds of this work was actually taken at the spawn angle with
+    only the *position* varying, which is exactly why the reporter kept seeing a seam that the
+    measurements said was gone. Set **`localangle[0]`** too. The `Show Coordinates` readout
+    (`menus.md`) is the cheap way to catch this: it prints the angle actually in force.
   - **Do not measure this with the whole frame in the detector.** The red HUD numerals are bright
     pixels between darker rows and score as slivers, which made the combined fix look *worse* than
     the broken one (529 vs 411) until the region was restricted to the wall.

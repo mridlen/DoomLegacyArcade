@@ -126,4 +126,9 @@ int  HU_Delete_FSPic(int handle);
 int  HU_Modify_FSPic(int handle, lumpnum_t lumpnum, int xpos, int ypos);
 
 int  HU_FS_Display(int handle, boolean enable_draw);
+// [Arcade] Position readout, toggled from the Cheats menu.  Informational
+// only -- it does not void the run.
+extern consvar_t cv_coords;
+void HU_Draw_Coords(void);
+
 #endif
