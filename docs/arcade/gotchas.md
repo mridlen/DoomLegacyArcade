@@ -383,6 +383,32 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     only the *position* varying, which is exactly why the reporter kept seeing a seam that the
     measurements said was gone. Set **`localangle[0]`** too. The `Show Coordinates` readout
     (`menus.md`) is the cheap way to catch this: it prints the angle actually in force.
+  - **There is a second, larger seam family that this does NOT fix: cracks between adjacent
+    *flat* polygons.** Reported as E1M5 linedef 308, standing at X 370 Y 1409 ANG 217 in sector
+    100 (coordinates read straight off the `Show Coordinates` readout — this is exactly what it is
+    for). Reproduced at those coordinates and A/B-ed: **938 seam pixels without the vertex fixes,
+    944 with them** — the crops are indistinguishable. It is untouched by anything above.
+    - **Tell them apart by where the line sits.** The wall/flat seam hugs the top or bottom edge
+      of a wall. This one runs *through the ceiling* (or floor), well clear of any wall, along a
+      long straight diagonal — a **BSP partition line**. It is the boundary between two subsector
+      polygons, not between a wall and a flat.
+    - **Why it is still there.** `SolveTProblem` (`hw_bsp.c`) exists for exactly this and fixes
+      only half the cases by design. `PointInSeg` bails out with
+      `// The vertex is to the rightside of the seg, so adding it to the polygon would worsen the
+      crack` — a T-vertex lying *outside* the neighbouring polygon is left alone, because
+      inserting it would push that polygon's edge out and could break convexity, which the fan
+      triangulation depends on. The alternative correction is written but compiled out behind
+      `MOVEVERTEX`, above the comment `BP: can't move vertex : DON'T change polygon geometry !
+      (convex)` — and it is **dead code**: the branch assigns to an `a` that is not in scope, so
+      it would not even build. Do not "just enable" it.
+    - `AdjustSegs` carries the matching admission: *"here we can do better, using PointInSeg and
+      compute the right point position also split a polygon side to solve a T-intersection, but
+      too much work"*. This is a known, deliberately unfinished piece of the upstream hardware
+      renderer, not a local regression. Closing it properly means splitting the neighbouring
+      polygon's edge at the projected point while preserving convexity — a real piece of work,
+      not a patch.
+    - The software renderer does not have it: flats there are drawn by span, not as per-subsector
+      polygons.
   - **Do not measure this with the whole frame in the detector.** The red HUD numerals are bright
     pixels between darker rows and score as slivers, which made the combined fix look *worse* than
     the broken one (529 vs 411) until the region was restricted to the wall.
