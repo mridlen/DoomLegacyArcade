@@ -100,6 +100,9 @@
 
 #include "console.h"
 #include "am_map.h"
+#include "p_local.h"    // [Arcade] P_PathTraverse for the coord readout
+#include "p_maputl.h"   // [Arcade] intercept_t, PT_ADDLINES
+#include "tables.h"     // [Arcade] finesine/finecosine
 #include "d_main.h"
 
 #ifdef HWRENDER
@@ -827,8 +830,85 @@ void HU_Drawer(void)
         }
     }
 
+    HU_Draw_Coords();   // [Arcade]
+
     HU_Draw_Tip();
     HU_Draw_FSPics();
+}
+
+
+//======================================================================
+//                      COORDINATE READOUT  [Arcade]
+//======================================================================
+// A position display for reporting where a bug is.  Stock Doom has IDMYPOS,
+// but it prints one line to the console -- which is no use on a cabinet with
+// no keyboard and no console on screen.  This is the same information, shown
+// continuously, plus the two things that actually identify a spot when
+// reporting a rendering problem: the sector you are standing in and the
+// linedef you are looking at.
+//
+// Informational only: it changes nothing in the simulation, so like IDDT,
+// IDMYPOS and IDMUS it does NOT void the run (see m_cheat.c).  It is reached
+// from the Cheats menu, which is operator-gated by cv_cheatsmenu.
+
+// The linedef the player is facing, found by tracing forward from the eye.
+static line_t * hu_coord_line = NULL;
+
+static boolean  HU_Coord_Trace( intercept_t * in )
+{
+    if( in->isaline )
+    {
+        hu_coord_line = in->d.line;
+        return false;   // first line wins; stop here
+    }
+    return true;        // things do not identify a wall
+}
+
+#define HU_COORD_RANGE  (2048*FRACUNIT)
+
+void  HU_Draw_Coords( void )
+{
+    player_t * pl;
+    mobj_t *   mo;
+    char       buf[80];
+    int        y = 8;
+    int        ang;
+
+    if( ! cv_coords.EV )  return;
+    if( gamestate != GS_LEVEL )  return;
+
+    pl = &players[consoleplayer];
+    mo = pl->mo;
+    if( ! mo )  return;
+
+    // Trace forward for the wall being looked at.  Purely a read: the
+    // traverser records a pointer and changes nothing.
+    hu_coord_line = NULL;
+    P_PathTraverse( mo->x, mo->y,
+                    mo->x + FixedMul( HU_COORD_RANGE, finecosine[mo->angle >> ANGLETOFINESHIFT] ),
+                    mo->y + FixedMul( HU_COORD_RANGE, finesine[mo->angle >> ANGLETOFINESHIFT] ),
+                    PT_ADDLINES, HU_Coord_Trace );
+
+    ang = (int)(mo->angle / ANGLE_1);
+
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+
+    snprintf( buf, sizeof(buf), "X %d  Y %d  Z %d",
+              mo->x >> FRACBITS, mo->y >> FRACBITS, mo->z >> FRACBITS );
+    V_DrawString( 4, y, V_WHITEMAP, buf );
+    y += 8;
+
+    snprintf( buf, sizeof(buf), "ANG %d  SECTOR %d",
+              ang, (int)(mo->subsector->sector - sectors) );
+    V_DrawString( 4, y, V_WHITEMAP, buf );
+    y += 8;
+
+    if( hu_coord_line )
+    {
+        snprintf( buf, sizeof(buf), "LINEDEF %d",
+                  (int)(hu_coord_line - lines) );
+        V_DrawString( 4, y, V_WHITEMAP, buf );
+    }
 }
 
 //======================================================================
@@ -1572,8 +1652,13 @@ void Command_Chatmacro_f (void)
 }
 
 
+// [Arcade] Continuous position readout for bug reporting.  See
+// HU_Draw_Coords.  CV_SAVE, so only a -devmode session persists it.
+consvar_t cv_coords = {"coords", "0", CV_SAVE, CV_OnOff};
+
 void HU_Register_Commands( void )
 {
+    CV_RegisterVar( &cv_coords );   // [Arcade]
     COM_AddCommand ("say"    , Command_Say_f, CC_chat);
     COM_AddCommand ("sayto"  , Command_Sayto_f, CC_chat);
     COM_AddCommand ("sayteam", Command_Sayteam_f, CC_chat);

@@ -290,6 +290,19 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the menu on a toggle made the state it had just set unreadable without reopening the page. The
     two one-shot rows (All Weapons, Exit Level) still close it. `CheatsMenu` is now addressed by
     position, so its indices are named (`cheat_*`).
+  - **Show Coordinates** — a continuous readout of **X / Y / Z**, the view **angle**, the
+    **sector** you are standing in and the **linedef you are looking at**, drawn top-left
+    (`HU_Draw_Coords`, `hu_stuff.c`; cvar **`cv_coords`**, "coords", default Off, `CV_SAVE`). Built
+    for reporting where a rendering bug is: stock Doom has `IDMYPOS`, but it prints a single line
+    to the console, which a cabinet with no keyboard and no visible console cannot use.
+    - The linedef comes from a `P_PathTraverse` with `PT_ADDLINES` forward from the eye, taking
+      the first line hit. It only reads — the traverser records a pointer and changes nothing.
+    - **It does not void the run**, and so is deliberately *not* routed through `M_Cheat_Apply`.
+      It shows information and changes nothing in the simulation, which is the same rule the typed
+      `IDDT` / `IDMYPOS` / `IDMUS` already follow (`m_cheat.c`). It is a toggle, so it leaves the
+      menu up for the On/Off to be read, like God Mode and No Clipping.
+    - Appended to `CheatsMenu` so the four existing indices do not move; `cheat_coords` was added
+      to the enum and `M_Draw_Cheats` shows its state.
   - **Using any cheat voids the run's score**, via `HS_Player_Cheated()` (`hs_stuff.c`), modelled
     exactly on `HS_Player_Died`: it latches `hs_run_cheated`, clears `hs_run_ranked` so the existing
     early return in `HS_LevelExit` stops all further scoring, and closes the background recorder
