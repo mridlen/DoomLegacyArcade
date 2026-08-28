@@ -1859,7 +1859,32 @@ boolean  G_Arcade_Death_Showing( void )
     if( death_settled_tic == 0 )  return false;
     if( death_ended_run )  return false;
     if( HS_Initials_Pending() || M_Initials_Active() )  return false;
-    return true;
+
+    // [Arcade] And there must be a body on the ground *right now*.
+    //
+    // Without this the card bled into the next game: death_settled_tic was
+    // left set by the run that ended, and the one place that cleared it is
+    // guarded by "playerstate != PST_DEAD" -- which is still false after the
+    // teardown, because nothing resets playerstate on the way back to the
+    // title.  So the stale tic survived the attract screen and the card
+    // painted over the first frame of the new game, for exactly one frame,
+    // before the new player's first tic cleared it.
+    //
+    // G_Reset_Arcade_Death below clears the flag at the funnel, which is the
+    // direct fix.  This test is what makes the bad state *unreachable*: the
+    // card cannot be drawn over a living player whatever the flag says.
+    return G_Player_Death_Settled();
+}
+
+
+// [Arcade] Forget any death in progress.  Called from Command_ExitGame_f,
+// the single funnel every route back to the title passes through, for the
+// reason in CLAUDE.md: returning to the title resets very little, and state
+// left behind by a finished run leaks into the next one.
+void  G_Reset_Arcade_Death( void )
+{
+    death_settled_tic = 0;
+    death_ended_run = false;
 }
 
 
