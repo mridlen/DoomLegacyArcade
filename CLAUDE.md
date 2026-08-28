@@ -361,7 +361,6 @@ written up in full in the doc named beside it.
   endpoints and the GL floor/ceiling polygons are clipped from *linedef* endpoints, so the two
   disagree and a tapering gap shows the sky between them. `P_Remove_Slime_Trails` (`p_setup.c`)
   projects those vertices back onto their linedef at load. → `gotchas.md`
-
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
