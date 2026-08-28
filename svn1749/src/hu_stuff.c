@@ -692,6 +692,8 @@ extern consvar_t cv_chasecam;
 
 //  Heads up displays drawer, call each frame
 //
+static void HU_Draw_GameOver(void);   // [Arcade] defined below
+
 void HU_Drawer(void)
 {
     // draw chat string plus cursor
@@ -830,10 +832,67 @@ void HU_Drawer(void)
         }
     }
 
+    HU_Draw_GameOver();  // [Arcade]
     HU_Draw_Coords();   // [Arcade]
 
     HU_Draw_Tip();
     HU_Draw_FSPics();
+}
+
+
+//======================================================================
+//                          GAME OVER  [Arcade]
+//======================================================================
+// The cabinet's death card.  A run that ends in a death is the normal way a
+// cabinet session finishes, and the player was being returned to the attract
+// screen with nothing said -- so the corpse simply stopped being theirs.
+// This names the moment, the way an arcade machine always has.
+//
+// Raised and timed by G_Arcade_Death_Showing (g_game.c), which is also what
+// keeps it out of Single Level, devmode, demos and multiplayer.  It stays up
+// for DEATH_LINGER_TICS, the same dwell the corpse gets, so lengthening one
+// lengthens the other.
+//
+// Drawn from the M_GAMOVR patch when the wad has one, and as plain text when
+// it does not -- so this works on a stock legacy.wad and picks the artwork up
+// as soon as it is added, with no code change.  The lump is looked up once
+// per level rather than per frame; W_CheckNumForName walks the whole
+// directory and this is a drawer.
+static void  HU_Draw_GameOver( void )
+{
+    static lumpnum_t  gameover_lump = NO_LUMP;
+    static int        gameover_checked_level = -1;
+
+    if( ! G_Arcade_Death_Showing() )  return;
+
+    if( gameover_checked_level != gamemap )
+    {
+        gameover_checked_level = gamemap;
+        gameover_lump = W_CheckNumForName( "M_GAMOVR" );
+    }
+
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+
+    if( VALID_LUMP( gameover_lump ) )
+    {
+        patch_t * p = W_CachePatchNum( gameover_lump, PU_CACHE );
+
+        // Centred on the patch's own width, and placed by its height rather
+        // than a guessed y, so any size of artwork lands in the same place.
+        V_DrawScaledPatch( (BASEVIDWIDTH - p->width) / 2,
+                           (BASEVIDHEIGHT - ST_HEIGHT - p->height) / 2,
+                           p );
+    }
+    else
+    {
+        // Fallback: hu_font is 7 tall and proportional, so centre on the
+        // measured width rather than a character count.
+        static const char  go[] = "GAME OVER";
+
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth(go)) / 2,
+                      (BASEVIDHEIGHT - ST_HEIGHT) / 2,
+                      V_WHITEMAP, (char*) go );
+    }
 }
 
 
