@@ -231,6 +231,14 @@ static hs_rule_t  hs_ranked_rules[] =
     { &cv_allowjump,             0 },   // vanilla Doom has no jumping
     { &cv_rndsoundpitch,         0 },   // consumes M_Random, perturbs the RNG
     { &cv_mbf_dogs,              0 },   // no helper dogs fighting for you
+    // [Arcade] Bots.  Reachable by a player from Options -> Game Options ->
+    // Bot Options, and G_InitNew hands cv_bots straight to B_Regulate_Bots
+    // for a *single player* game as readily as for a deathmatch -- so without
+    // this a player could fill a scored run with allies clearing the level
+    // for them and still take the board.  Pinned at none, like the dogs above
+    // and for the same reason; a player who wants them still gets to play,
+    // just not to score.
+    { &cv_bots,                  0 },
     // [Arcade] The player-facing pair, NOT the engine cv_fastmonsters /
     // cv_respawnmonsters -- see the note below the table.
     { &cv_fastmonsters_menu,     0 },
@@ -362,6 +370,30 @@ static boolean hs_run_died = false;
 // Latched by HS_Player_Cheated, the same way and for the same reason.
 static boolean hs_run_cheated = false;
 
+// [Arcade] What the HUD marker should say about *why* this run is unranked.
+// Latched at the moment the run is voided rather than recomputed on demand:
+// a player who changes a setting and then puts it back leaves hs_run_ranked
+// false with the live cvars matching the baseline again, so asking
+// HS_Unranked_Reason() at draw time would come back NULL and the marker
+// would lose its explanation part-way through the run.  NULL means the
+// generic wording.
+static const char * hs_unranked_mark = NULL;
+
+// [Arcade] Record, for the HUD, which side of the ruleset the run fell off.
+// Bots get their own wording: "settings changed" would leave a player who
+// added them with no idea what to undo, and they are the one entry in the
+// table a player is at all likely to reach by accident.
+static void  HS_Latch_Unranked_Mark( void )
+{
+    const char * why = HS_Unranked_Reason();
+
+    hs_unranked_mark =
+        ( why && strcmp( why, cv_bots.name ) == 0 )
+          ? "UNRANKED - BOTS IN GAME"
+          : "UNRANKED - SETTINGS CHANGED";
+}
+
+
 // [Arcade] Void the run the moment the ruleset stops matching, and say which
 // cvar did it.
 //
@@ -397,10 +429,15 @@ static void  HS_Void_If_Ruleset_Changed( void )
     // just finished).  Once per run, on the transition.
     if( hs_run_ranked )
     {
+        const char * why = HS_Unranked_Reason();
+
         GenPrintf( EMSG_info,
             "Run is unranked: \"%s\" differs from the ranked ruleset.\n",
-            HS_Unranked_Reason() );
+            why );
         AU_Unranked( AU_UR_ruleset );   // [Arcade] audit: on the transition
+
+        // [Arcade] Say it on screen too, not only in the log.
+        HS_Latch_Unranked_Mark();
     }
 
     hs_run_ranked   = false;
@@ -450,6 +487,28 @@ boolean  HS_Run_Died( void )
 boolean  HS_Run_Cheated( void )
 {
     return hs_run_cheated;
+}
+
+
+// [Arcade] The text the HUD should paint across the top of the view, or NULL
+// for nothing.  The whole decision lives here rather than in hu_stuff.c
+// because it is entirely about run state and the cases only make sense read
+// together: a cheat is named ahead of everything else (it is the thing the
+// player chose to do), a plain death says nothing at all -- the arcade death
+// sequence already explains itself, and labelling the player DIED for the
+// rest of a run only tells them off -- and anything else names the reason,
+// which is the case a player might not have noticed and could still put
+// right for their next run.
+//
+// Widths measured against the real STCFN lumps (hu_font is proportional):
+// 64, 162, 186 and 196 px of 320 for the four strings below, the widest being
+// "UNRANKED - SETTINGS CHANGED", so all of them centre without clipping.
+const char *  HS_Run_Unranked_Mark( void )
+{
+    if( HS_Run_Is_Ranked() )  return NULL;
+    if( hs_run_cheated )  return "PLAYER CHEATED - UNRANKED";
+    if( hs_run_died )     return NULL;
+    return hs_unranked_mark ? hs_unranked_mark : "UNRANKED";
 }
 
 
@@ -1583,6 +1642,7 @@ void HS_NewGame( void )
     hs_run_is_max = true;   // still eligible until a level is exited short
     hs_run_died = false;
     hs_run_cheated = false;
+    hs_unranked_mark = NULL;
     memset( hs_new_record, 0, sizeof(hs_new_record) );
 
     // [Arcade] Any placement from the previous run is finished with by now:
@@ -1593,6 +1653,12 @@ void HS_NewGame( void )
     // An altered ruleset makes the run unscoreable, so do not spend the
     // demo buffer on it either -- nothing would ever be saved from it.
     hs_run_ranked = HS_Ruleset_Is_Ranked();
+    // Already off before a shot was fired -- bots left set from a previous
+    // game, say.  HS_Void_If_Ruleset_Changed never sees the transition in
+    // that case, so latch the wording here or the marker reads a bare
+    // "UNRANKED" for the whole run.
+    if( ! hs_run_ranked )
+        HS_Latch_Unranked_Mark();
     // The board takes runs that ended in a death -- that is how nearly every
     // cabinet run ends, and ranking on progress first is what gives those a
     // place.  So this tracks the ruleset and cheating *only*, and is

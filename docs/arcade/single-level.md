@@ -26,8 +26,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     during this move**: an insertion point that merely looked like the end of the function reported
     7 main items with Read This still present. Final result: Doom 2 gets 6 items with Quit at 5;
     Ultimate Doom gets 7 with Read This hidden; New Game gets 5 with Single Level at 1. Checked in
-    all four states — Doom 2 player, Ultimate player, `-devmode`, and `twoplayer` off, where the
-    hidden row must be MULTIPLAYER and **not** Single Level.
+    all four states — Doom 2 player, Ultimate player, `-devmode`, and a single-panel cabinet
+    (`localplayers 1`, formerly `twoplayer` off), where the hidden row must be MULTIPLAYER and
+    **not** Single Level.
   - Reuses `cv_nextmap` / `cv_nextepmap` / `cv_skill` from the Start Game screen rather than
     building a level list — `M_Configure` already trims `exmy_cons_t` to the episodes present. The
     per-gamemode swap (`SingleLevelMenu_Map` vs `_EpisodeMap`) is done **in `M_Configure`**, not on

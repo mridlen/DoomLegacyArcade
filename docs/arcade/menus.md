@@ -9,7 +9,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). What a player can reach:
 
   ```
-  Main:     New Game / Options / Quit Game
+  Main:     New Game / Options / [Quit Game]
   New Game: Single Player / Single Level / Multiplayer / End Game
   Options:  Crosshair / Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
@@ -24,8 +24,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   plumbing that means nothing on a cabinet. `NetOptionsMenu` is addressed by position for this, so
   its indices are named (`netoption_*`); keep the enum in step with the array.
 
+  Quit Game is in brackets because it is now an operator setting and hidden by default — see
+  "Quit Game entry" below.
+
   Hidden: Networked Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
-  Always Run, Effects/Connect/Network/Server/Menu Options, Sound Volume, Video Options, Setup
+  Always Run, Effects/Connect/Network/Server/Arcade Options, Sound Volume, Video Options, Setup
   Controls), Network Options again where Game Options nests it, several Start Game server options,
   Always Run/Autoaim/mouse/weaponpref/rebinding on the player config screen, and name/skin on the
   Setup Player screens. Uses **`IT_HIDDEN`**, a locally added
@@ -60,11 +63,18 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
     `TwoPlayerMenu[4]`) still point at the right rows.
 
+- **The operator page is named "Arcade Options"** — `OptionsMenu`'s row, and `MenuOptionsDef`'s own
+  `menutitle`, which had been left as a copy-pasted "Effects". The array and the `menu_t` are still
+  called `MenuOptionsMenu`/`MenuOptionsDef`, and the lockdown still hides the row by its hardcoded
+  index (`OptionsMenu[9]`), so nothing else moved. The old name said where the page sat in the menu
+  tree; the new one says what is on it — every row is a cabinet setting, none of them is about menus.
+
 - **Attract Volume** — `cv_attractvolume`, appended to the end of `MenuOptionsMenu` like every other
   operator row. Written up in `attract.md`; noted here only because it is a row on this page.
 
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
-  **Options → Menu Options** as "Boot Game" beside `cv_twoplayer`, so it is operator-only. Picks
+  **Options → Arcade Options** as "Boot Game" beside the other operator rows, so it is
+  operator-only. Picks
   which game the cabinet starts in instead of whichever IWAD the search finds first.
   - **It cannot be read as a cvar.** `IdentifyVersion()` chooses the IWAD at `d_main.c:3030`;
     `M_LoadConfig` does not run until **3216**. So `D_Read_Default_Game()` parses the single
@@ -205,6 +215,38 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **No confirmation prompts** (`m_menu.c`). Quit, End Game, Nightmare skill, "already playing", and
   quicksave/quickload all take the "yes" path immediately. Only the savegame-slot `Delete Y/N?`
   survives, as it guards irreversible data loss.
+
+- **Quit Game entry** — **`cv_quitmenu`** ("quitmenu", default **Off**, `CV_SAVE`), under
+  **Options → Arcade Options** as "Quit Menu". An arcade cabinet has no Quit button: quitting drops
+  the player onto a desktop they should never see, and on an unattended machine nothing brings the
+  game back. Off by default, so a stock player session cannot reach it; a `-devmode` session always
+  keeps the row whatever this says, so the operator is never locked in.
+  - **The hiding must run *after* the gamemode `switch` in `M_Configure`, not with the rest of the
+    lockdown.** Under Doom 2 that switch does
+    `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; MainDef.numitems--` — a whole-struct copy,
+    `status` included — so before it runs the Quit row is index `MM_quitdoom` and after it is index
+    `MM_readthis`. Hiding the wrong one leaves Quit on the menu with nothing to show for the
+    setting, and under Doom 1 hides Read This instead. The code picks the index off `gamemode` for
+    exactly this reason.
+  - Verified headless by reading `MainMenu[quitrow].status` back through a temporary console
+    command: `144` (`IT_HIDDEN` = `IT_SPACE | IT_NODRAW`) with the default Off, `18`
+    (`IT_PATCH | IT_CALL`) with `quitmenu "On"` in the config.
+
+- **End Game did nothing in single player or Single Level, and the reason was the score recorder.**
+  `M_EndGame` opened with the stock `if (demoplayback || demorecording) { S_StartSound(sfx_oof);
+  return; }`, which is right for a demo the player asked to record — but **`HS_NewGame` starts a
+  background record demo for every ranked run** (`hs_stuff.c`, `G_RecordDemo_maxsize("hs_background",
+  …)`), so `demorecording` is true for the whole of a single player or Single Level game. End Game
+  played the "oof" and returned. Multiplayer worked, which is what made it look like a mode
+  problem rather than a recorder problem: multiplayer is never scored, so it never records.
+  - The fix tests **`demo_scratch`** (`g_game.c`), which is exactly the flag distinguishing the two
+    kinds: `G_RecordDemo` clears it for a `-record` session that will be saved, `HS_NewGame` sets it
+    for the throwaway buffer. The condition is now
+    `demoplayback || (demorecording && ! demo_scratch)`.
+  - Verified headless: a temporary console command called `HS_NewGame` and then `M_EndGame`, with a
+    print on each branch. With the fix the run reported `demorec=1 scratch=1` and **PROCEEDING**;
+    with the old condition reinstated, the identical run reported **REFUSED (oof)**. The bug was
+    reproduced before the clean result was believed.
 - **Cheats menu** (`m_menu.c`, `CheatsMenu`/`CheatsDef`, from a main menu entry using the locally
   added **`M_CHEATS`** graphic). Operator convenience: God Mode (`god`), All Weapons and Keys
   (`gimme health ammo armor keys weapons`, i.e. IDKFA), No Clipping (`noclip`) and Exit Level
@@ -218,10 +260,10 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     references — see the `grep` list under Single Level mode, which uses the same discipline.
   - Devmode only by default, hidden by the usual `IT_HIDDEN` treatment with `MainDef.lastOn` moved
     off it — but an operator can leave it up for players with **`cv_cheatsmenu`** ("cheatsmenu",
-    default Off, `CV_SAVE`), under **Options → Menu Options** beside `cv_twoplayer`. A cabinet at a
+    default Off, `CV_SAVE`), under **Options → Arcade Options**. A cabinet at a
     party is not the same machine as a cabinet keeping scores; cheating voids the run either way.
     - **The hiding therefore lives in `M_Configure`, not `M_Init`'s lockdown**, for the same reason
-      as `cv_twoplayer` and the game selector: `config.cfg` is not loaded until long after `M_Init`
+      as `cv_localplayers` and the game selector: `config.cfg` is not loaded until long after `M_Init`
       runs, so the cvar would still read as its compiled default there. The condition is
       `! devmode && ! cv_cheatsmenu.EV`.
     - Being an operator setting, only a `-devmode` session saves it — a player cannot switch it on

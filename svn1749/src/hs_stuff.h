@@ -34,6 +34,11 @@ boolean   HS_Scored_Game(void);
 void      HS_Death_Demo_Finish(void);
 boolean   HS_Run_Is_Ranked(void);       // has this run stayed ranked?
 const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
+// [Arcade] What the HUD should say about this run being unranked, or NULL to
+// say nothing.  Names the reason -- a cheat, bots, an altered ruleset -- so
+// "UNRANKED" is never left to be guessed at.  See the definition for why a
+// plain death deliberately gets no marker.
+const char *  HS_Run_Unranked_Mark(void);
 
 void  HS_Init(void);
 void  Command_ClearHighScores_f(void);   // console: clearhighscores

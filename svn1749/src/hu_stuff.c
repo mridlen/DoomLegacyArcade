@@ -812,19 +812,19 @@ void HU_Drawer(void)
     // longer score only tells them off for it.  The marker is for the cases a
     // player might not otherwise notice and could put right: a gameplay
     // setting off the standard ruleset, or a cheat.
-    if( !demoplayback && !devmode && HS_Scored_Game() && !HS_Run_Is_Ranked()
-        && !(HS_Run_Died() && !HS_Run_Cheated()) )
+    // [Arcade] Which of those cases applies, and the exact wording, is
+    // HS_Run_Unranked_Mark's to decide -- it is all run state, and having the
+    // same question written out here as well is how the two drift apart.
+    // NULL means draw nothing.
+    if( !demoplayback && !devmode && HS_Scored_Game() )
     {
-        // Name the reason when it was a cheat: "UNRANKED" alone reads as a
-        // settings problem.  Measured against the real STCFN0xx widths: 158px
-        // of 320, so it centers without clipping.
-        // [Arcade] A cheat is still named ahead of a death: if both happened,
-        // the cheat is the thing the player chose to do.
-        const char * mark = HS_Run_Cheated() ? "PLAYER CHEATED - UNRANKED"
-                          :                    "UNRANKED";
-        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-        V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,
-                      V_WHITEMAP, (char*) mark );
+        const char * mark = HS_Run_Unranked_Mark();
+        if( mark )
+        {
+            V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,
+                          V_WHITEMAP, (char*) mark );
+        }
     }
 
     HU_Draw_Tip();
