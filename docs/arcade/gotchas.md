@@ -290,3 +290,48 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Caught in the initials-seed work (`high-scores.md`) only because the instrumentation printed the
     *computed* window rather than the cvar, which is the general lesson: print what the code
     derived, not what you set.
+
+- **A thin bright line along the top or bottom edge of a wall is a node-builder rounding error, not
+  a texture or a lighting problem.** Reported on E1M6 as "linedef 1044 shows a gap through to the
+  sky at the top and bottom of the wall"; there were seven more like it on that map alone.
+  - **The mechanism.** A node builder splits a linedef wherever a BSP partition crosses it and
+    writes that intersection into `VERTEXES` — as **integers**. On a diagonal linedef the true
+    crossing is almost never at an integer, so the split vertex lands off the line it is supposed
+    to lie on. On E1M6, linedef 1044 runs (1240,-192)→(1600,-112) and is split at vertex 1129,
+    stored as (1373,-162) where the exact crossing is (1373,-162.444) — **0.43 map units off**.
+  - **Why that shows.** `HWR_StoreWallRange` (`hw_main.c`) builds the wall quad from the *seg*
+    endpoints, so the wall picks up a slight dogleg at the split. `CutOutSubsecPoly` (`hw_bsp.c`)
+    clips the floor and ceiling polygons with the *original linedef* points, so those keep the
+    straight line — a deliberate 2002 upstream change to avoid BSP round-off, and correct in
+    itself. The two edges therefore disagree by that fraction of a unit, and the wedge between
+    them is a real hole: widest at the split, tapering to nothing at each end of the linedef. The
+    sky backdrop is drawn behind everything, so that is what shows through. Top *and* bottom,
+    because the same deviation applies at the ceiling edge and the floor edge.
+  - **The fix is the long-known one for the long-known bug.** This is the "slime trails" defect,
+    and `P_Remove_Slime_Trails()` (`p_setup.c`, called from `P_SetupLevel` after every node
+    format's loader) projects each node-invented vertex onto the exact line of its own linedef.
+    Only vertices the builder invented move — **a linedef's own two endpoints are map data and are
+    never touched** — and only diagonal linedefs are considered, since an axis-aligned line is
+    split at an exact integer and has nothing to correct.
+    - **It cannot desync a demo.** Collision, the blockmap and sight all work from linedefs:
+      `p_sight.c` walks a subsector's segs but reads `seg->linedef->v1/v2`, never the seg's own
+      vertices. Only the renderers walk seg vertices. Check this again before extending the
+      function — moving a *linedef* endpoint would be a different matter entirely.
+    - Seg lengths are recomputed afterwards; `P_LoadSegs` had already derived them from the
+      pre-snap positions.
+  - **Verified numerically, both ways.** A standalone WAD parser measured every seg endpoint on
+    E1M6 against its linedef line: 16 endpoints off, pairing into **8 distinct split vertices**,
+    with linedef 1044's among the worst. The fix then reports exactly **8** vertices moved — it
+    counts only vertices whose coordinates actually change, not candidates considered, so the
+    number is comparable against that analysis. Too many would mean it was moving things it
+    should not.
+  - **And photographed.** Driven headlessly under `SDL_VIDEODRIVER=offscreen` on the real GPU with
+    a temporary `tppos <x> <y> <angle>` console command to stand the camera at a fixed spot, then
+    `screenshot`, then the same four viewpoints before and after. A "bright pixel sandwiched
+    between two much darker rows" detector counted the sliver: **333 → 11** at the clearest
+    viewpoint, with the same drop at all four. The residue is HUD text, not the seam. The
+    magnified before/after crop shows the white dashed line along the wall's top edge simply gone.
+  - **It is not visible face-on.** A perpendicular view of the same wall looks clean, because the
+    gap is sub-pixel there; it opens up at **grazing angles**, which is why the report came with a
+    screenshot taken looking along the wall. Reproduce at a grazing angle or you will conclude
+    there is nothing wrong.

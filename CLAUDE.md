@@ -355,6 +355,13 @@ written up in full in the doc named beside it.
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`
 - **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
+- **Node-builder split vertices are rounded to integers, and that is a visible rendering bug.**
+  A diagonal linedef split by a BSP partition gets its intersection written to `VERTEXES` as whole
+  numbers, up to ~0.7 map units off the line it should sit on. Walls are drawn from *seg*
+  endpoints and the GL floor/ceiling polygons are clipped from *linedef* endpoints, so the two
+  disagree and a tapering gap shows the sky between them. `P_Remove_Slime_Trails` (`p_setup.c`)
+  projects those vertices back onto their linedef at load. → `gotchas.md`
+
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
