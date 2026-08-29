@@ -9,8 +9,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). What a player can reach:
 
   ```
-  Main:     New Game / Options / [Quit Game]
-  New Game: Single Player / Single Level / Multiplayer / End Game
+  Main:     New Game / Options / [End Game] / [Quit Game]
+  New Game: Single Player / Single Level / Multiplayer
   Options:  Crosshair / Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
   Config:   Crosshair / Player setup >>
@@ -25,7 +25,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   its indices are named (`netoption_*`); keep the enum in step with the array.
 
   Quit Game is in brackets because it is now an operator setting and hidden by default — see
-  "Quit Game entry" below.
+  "Quit Game entry" below. End Game is in brackets because it appears only while a game is
+  actually being played — see "End Game" below.
 
   Hidden: Networked Multiplayer (both entry points), Load/Save on the main menu, most of Options (Messages,
   Always Run, Effects/Connect/Network/Server/Arcade Options, Sound Volume, Video Options, Setup
@@ -247,15 +248,47 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     print on each branch. With the fix the run reported `demorec=1 scratch=1` and **PROCEEDING**;
     with the old condition reinstated, the identical run reported **REFUSED (oof)**. The bug was
     reproduced before the clean result was believed.
+
+- **End Game lives on the main menu and appears only while a game is running.** It used to sit at
+  the bottom of the New Game page, which put it two presses away and read as a fourth way to
+  *start* a game on a page whose other rows all do exactly that. It is now `MM_endgame`, MainMenu
+  index **5**, in the bottom slot Quit used to occupy: Quit is hidden for players
+  (`cv_quitmenu`), so for them End Game is the last row on the menu, and in `-devmode` it sits
+  directly above Quit, which the main menu has the vertical room for.
+  - **Inserted before Read This, not appended after Quit**, for the same reason as Cheats — the
+    Doom 2 fixup copies Quit over the Read This slot and drops the last item, so a row past Quit
+    would vanish under Doom 2. Measured for height: Doom 1 with every row showing is 8 rows from
+    `MainDef.y` 64 at `LINEHEIGHT` 16, so the last patch spans 176..191 of 200; Doom 2 drops to 7
+    rows and `y` 72, ending at 183.
+  - **The show/hide cannot live in `M_Init` or `M_Configure`** — unlike every other row on this
+    menu, the condition changes during play, long after both have run. `M_Update_EndGame_Row` is
+    called from the main menu's drawer (`M_MainMenuDrawer`, and `HereticMainMenuDrawer` for
+    Heretic), which is the single funnel every route onto the menu passes through: Escape, backing
+    out of a submenu, and the reenter event. It only assigns a value computed from current state,
+    so running once a frame is idempotent, as a drawer must be.
+  - **The test is `Game_Playing() && ! demoplayback`**, which covers Single Player, Single Level
+    and Multiplayer alike. The `demoplayback` half is not optional: the menu can be opened straight
+    over the attract screen (`D_Menu_Over_Attract`), where `Game_Playing()` is perfectly true but
+    what is running is a demo, not the player's game.
+  - Hiding the row also moves the cursor off it (`MainDef.lastOn` and, when the main menu is the
+    current one, `itemOn`). With the menu already open the attract cycle keeps advancing
+    underneath it, so a demo starting is enough to hide the row out from under the cursor, and
+    `M_SetupMenu` only walks *down* past hidden items — it cannot recover from index 5.
+  - `M_EndGame` re-tests the same condition itself rather than trusting the row to be the only way
+    in.
+  - **The `MultiPlayerMenu` (Networked Multiplayer) page keeps its own separate End Game row**,
+    untouched. That page is devmode-only and has never been exercised in this build, so it was
+    left alone deliberately rather than swept up in the move.
 - **Cheats menu** (`m_menu.c`, `CheatsMenu`/`CheatsDef`, from a main menu entry using the locally
   added **`M_CHEATS`** graphic). Operator convenience: God Mode (`god`), All Weapons and Keys
   (`gimme health ammo armor keys weapons`, i.e. IDKFA), No Clipping (`noclip`) and Exit Level
   (`exitlevel`). Each issues the ordinary console command through `COM_BufAddText` rather than
   touching `player_t` directly, so there is one implementation of each cheat.
-  - **Inserted at MainMenu index 4, before Read This**, giving `MM_cheats = 4`, `MM_readthis` 5 and
-    `MM_quitdoom` 6. Before it, *not* after: the Doom 2 fixup
+  - **Inserted at MainMenu index 4, before Read This**, giving `MM_cheats = 4` — with End Game
+    later taking index 5, `MM_readthis` is now 6 and `MM_quitdoom` 7. Before it, *not* after: the Doom 2 fixup
     `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--` copies Quit over the Read This slot
-    and drops the last row, so anything appended past Quit would be cut off under Doom 2. The
+    and drops the last row, so anything appended past Quit would be cut off under Doom 2. End Game
+    was later inserted at index 5 for the same reason, pushing Read This to 6 and Quit to 7. The
     lockdown's Load/Save hiding at indices 1,2 is unaffected. Those are the complete set of index
     references — see the `grep` list under Single Level mode, which uses the same discipline.
   - Devmode only by default, hidden by the usual `IT_HIDDEN` treatment with `MainDef.lastOn` moved

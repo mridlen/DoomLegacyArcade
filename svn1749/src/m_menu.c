@@ -1192,16 +1192,20 @@ boolean  M_already_playing( boolean check_netgame )
 static void M_Loadgame(int choice);
 static void M_Savegame(int choice);
 static void M_QuitDOOM(int choice);
+static void M_EndGame(int choice);
+static void M_Update_EndGame_Row(void);
 
 enum
 {
-    // [Arcade] Cheats is inserted at index 4, so these are 5 and 6 rather
-    // than the stock 4 and 5.  Cheats sits *before* Read This deliberately:
-    // the Doom 2 fixup below copies Quit over the Read This slot and drops
-    // one item, which would cut off anything after it.
+    // [Arcade] Cheats is inserted at index 4 and End Game at 5, so Read This
+    // and Quit are 6 and 7 rather than the stock 4 and 5.  Both inserts sit
+    // *before* Read This deliberately: the Doom 2 fixup below copies Quit
+    // over the Read This slot and drops one item, which would cut off
+    // anything after it.
     MM_cheats   = 4,	// referenced
-    MM_readthis = 5,	// referenced
-    MM_quitdoom = 6,	// referenced
+    MM_endgame  = 5,	// referenced
+    MM_readthis = 6,	// referenced
+    MM_quitdoom = 7,	// referenced
 } main_e;
 
 // Compatible with modifications to original graphics
@@ -1219,6 +1223,15 @@ menuitem_t MainMenu[]=
     {IT_SUBMENU | IT_PATCH,"M_OPTION","OPTIONS"  ,&OptionsDef,'o'},
     // [Arcade] Devmode only; hidden by the lockdown for players.
     {IT_SUBMENU | IT_PATCH,"M_CHEATS","CHEATS"   ,&CheatsDef ,'c'},
+    // [Arcade] End Game moved here from the New Game page, into the slot at
+    // the bottom of the menu that Quit used to occupy -- Quit is hidden for
+    // players (cv_quitmenu), so this is the last row they see, and in devmode
+    // it sits directly above Quit.  Shown only while a game is actually being
+    // played; M_Update_EndGame_Row hides it otherwise.  It goes *before* Read
+    // This for the same reason Cheats does: the Doom 2 fixup in M_Configure
+    // copies Quit over the Read This slot and drops the last item, so a row
+    // appended past Quit would vanish under Doom 2.
+    {IT_CALL    | IT_PATCH,"M_ENDGAM","END GAME" ,M_EndGame  ,'e'},
     {IT_SUBMENU | IT_PATCH,"M_RDTHIS","INFO"     ,&ReadDef1  ,'r'},  // Another hickup with Special edition.
     {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'}
 };
@@ -1227,8 +1240,22 @@ void HereticMainMenuDrawer(void)
 {
     int frame = (I_GetTime()/3)%18;
 
+    M_Update_EndGame_Row();
     V_DrawScaledPatch_Num(40, 10, SkullBaseLump+(17-frame) );
     V_DrawScaledPatch_Num(232, 10, SkullBaseLump+frame );
+    M_DrawGenericMenu();
+}
+
+// [Arcade] The main menu's End Game row appears only while a game is running,
+// so its status has to track a condition that changes long after M_Init and
+// M_Configure have run.  The drawer is the one place every route onto this
+// menu passes through -- Escape, backing out of a submenu, the reenter event
+// -- so the update hangs off it rather than off any single entry point.  It
+// only ever assigns a value computed from current state, so running once a
+// frame is idempotent, as a drawer must be.
+static void M_MainMenuDrawer(void)
+{
+    M_Update_EndGame_Row();
     M_DrawGenericMenu();
 }
 
@@ -1237,7 +1264,7 @@ menu_t  MainDef =
     "M_DOOM",
     NULL,
     MainMenu,
-    M_DrawGenericMenu,
+    M_MainMenuDrawer,
     NULL,
     sizeof(MainMenu)/sizeof(menuitem_t),
     97,64,
@@ -1260,7 +1287,6 @@ enum
     singlemulti_singlelevel,
     singlemulti_multi,
     singlemulti_network,
-    singlemulti_endgame,
 };
 
 // DoomLegacy graphics from legacy.wad: M_SINGLE, M_2PLAYR, M_MULTI, M_SINLVL
@@ -1281,8 +1307,11 @@ menuitem_t SingleMulti_Menu[] =
     // [Arcade] The networked server menu is named for what it is and drawn as
     // plain text rather than the M_MULTI graphic, so it cannot be mistaken for
     // the line above.  Already devmode-only: the lockdown hides it.
-    {IT_SUBMENU | IT_WHITESTRING, 0,"Networked Multiplayer >>",&MultiPlayerDef  ,'m'},
-    {IT_CALL | IT_PATCH,"M_ENDGAM","END GAME",M_EndGame ,'e'}
+    // [Arcade] End Game used to sit here.  It moved to the main menu, into
+    // the bottom slot Quit used to hold, where it is reachable in one press
+    // instead of two and does not read as a fourth way to *start* a game on a
+    // page whose other rows all do exactly that.
+    {IT_SUBMENU | IT_WHITESTRING, 0,"Networked Multiplayer >>",&MultiPlayerDef  ,'m'}
 };
 
 menu_t  SingleMultiDef =
@@ -7365,10 +7394,52 @@ void M_EndGameResponse(int ch)
     COM_BufAddText("exitgame\n");
 }
 
+// [Arcade] End Game is shown only while a game is actually being played, in
+// any mode -- Single Player, Single Level or Multiplayer.  On the title screen
+// there is nothing to end, and the row was simply inert.
+//
+// Demo playback is excluded because the attract screen is playing one and the
+// menu can be opened straight over it (D_Menu_Over_Attract): Game_Playing() is
+// true there, but what is running is a demo, not the player's game.
+static boolean  M_Game_In_Progress( void )
+{
+    return Game_Playing() && ! demoplayback;
+}
+
+// [Arcade] Called once a frame from the main menu drawer.  Assigns only, and
+// only from current state, so repeating it every frame changes nothing.
+static void M_Update_EndGame_Row( void )
+{
+    uint16_t  st = M_Game_In_Progress() ? (IT_CALL | IT_PATCH) : IT_HIDDEN;
+
+    if( MainMenu[MM_endgame].status == st )  return;
+
+    MainMenu[MM_endgame].status = st;
+
+    // Do not leave the cursor parked on a row that just vanished.  This can
+    // happen with the menu already open: the attract cycle keeps advancing
+    // underneath it, so a demo starting is enough to hide the row.  M_SetupMenu
+    // only walks *down* past hidden items and cannot recover on its own.
+    if( st == IT_HIDDEN )
+    {
+        if( MainDef.lastOn == MM_endgame )
+            MainDef.lastOn = 0;
+        if( currentMenu == &MainDef && itemOn == MM_endgame )
+            itemOn = 0;
+    }
+}
+
 static
 void M_EndGame(int choice)
 {
     choice = 0;
+    // [Arcade] Belt and braces: the row is hidden when there is no game, but
+    // nothing else stops this being reached with none running.
+    if( ! M_Game_In_Progress() )
+    {
+        S_StartSound(sfx_oof);
+        return;
+    }
     // [Arcade] The background record demo is not a recording the player asked
     // for: HS_NewGame starts one for every ranked run, so single player and
     // Single Level games are recording the entire time they are played.
