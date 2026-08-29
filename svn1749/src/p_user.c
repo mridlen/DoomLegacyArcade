@@ -860,6 +860,44 @@ void P_MoveChaseCamera (player_t *player)
     if (!camera.mo)
         P_ResetCamera (player);
 
+    // [Arcade] Unstick the camera.
+    //
+    // MT_CHASECAM is MF_NOBLOCKMAP|MF_NOSECTOR, so nothing can collide with
+    // *it*, but it still collides with the world: it is moved by momentum
+    // through the ordinary mobj thinker, so P_TryMove stops it on walls.  In
+    // doorways and around corners it wedges, and because the follow below only
+    // ever nudges it a fraction of the way toward the ideal spot, it stays
+    // wedged and the player walks off and leaves it behind -- showing an
+    // empty room while the run continues somewhere else.
+    //
+    // Measured on the doom2_ep1_sk3_speed record demo: ordinary play holds
+    // 100..200 units, but the camera spent 40% of that run beyond 256, in five
+    // excursions, the worst of them stuck for 823 tics -- 23 seconds of
+    // attract screen pointed at nothing.
+    //
+    // Recovery is P_ResetCamera, which puts the camera on the player's own
+    // position.  That spot is always valid (the player is standing in it), so
+    // unlike snapping to the ideal spot behind the player it can never drop
+    // the camera inside a wall; the follow below immediately eases it back
+    // out.  It is also exactly what a teleport already does to the camera,
+    // so the movement is one the cabinet has always shown.
+    //
+    // The threshold has to clear the legitimate follow lag, which is not
+    // small: the camera closes only cv_cam_speed (0.25) of the gap per tic, so
+    // a player moving v units per tic settles about v/0.25 = 4v units behind
+    // the ideal spot.  The demo peaked at 20.3 units per tic, i.e. ~81 units
+    // of lag on top of the 128 hover distance, ~209 in all.  P_AproxDistance
+    // overestimates a true distance by up to 12%, so that reads as ~234 here.
+    // 128 + 160 = 288 clears it, and every stuck excursion measured was far
+    // beyond it.
+#define CAM_SNAP_SLACK  (160*FRACUNIT)
+    if( P_AproxDistance( camera.mo->x - pmo->x, camera.mo->y - pmo->y )
+        > (cv_cam_dist.value + CAM_SNAP_SLACK) )
+    {
+        P_ResetCamera (player);
+        camera.mo->momx = camera.mo->momy = camera.mo->momz = 0;
+    }
+
     angf = ANGLE_TO_FINE( pmo->angle );
 
     // sets ideal cam pos
