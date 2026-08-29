@@ -2167,7 +2167,18 @@ void HS_Draw_IntermissionTable( int x, int y )
     V_DrawString( x, row_y, 0, "YOU" );
     HS_Format_Time_CS( hs_cumulative_time, timebuf, sizeof(timebuf) );
     V_DrawString( x + HS_IM_MAP_X, row_y, 0, hs_last_exit_mapname );
-    V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), row_y, 0, timebuf );
+
+    // [Arcade] The run's own time blinks in step with the record time it is
+    // replacing, so the two read as one swap: the number going out and the
+    // number coming in flash together, and the eye pairs them.  Blinking the
+    // record alone said "this one is being beaten" without ever pointing at
+    // what beat it.  Only the time blinks, on both rows -- the labels, map
+    // names and initials stay put so the block does not appear to flicker
+    // whole.  `any_new`, not a per-category flag: there is one YOU row and it
+    // is the run that took either record.
+    if( ! any_new || blink_on )
+        V_DrawString( x + HS_IM_TIME_R - V_StringWidth(timebuf), row_y, 0,
+                      timebuf );
 
     // Blinking marker, shown the moment the run is ahead of the record --
     // which under Survival is knowable *during* the run rather than only at
