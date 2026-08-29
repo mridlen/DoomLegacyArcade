@@ -447,6 +447,20 @@ const char DL_OPTS_STR[] = "Build opts: "
 int demosequence;
 int pagetic;
 static const char * pagename = "TITLEPIC";
+// [Arcade] The attract chase camera; see cv_chasecamdemo (m_menu.c).
+extern consvar_t  cv_chasecam;     // r_main.c
+extern consvar_t  cv_chasecamdemo; // m_menu.c
+
+// Every Nth *record* demo is shown from the chase camera.  3 rather than 1
+// because the point is that it is occasional -- one per attract cycle would
+// make it the normal way the cabinet looks, and the front view is what an
+// onlooker recognises as Doom.  One record demo plays per attract cycle, so
+// this is roughly one chase cam demo every third cycle.
+#define ATTRACT_CHASECAM_EVERY  3
+
+static boolean attract_chasecam = false;  // this demo is being chased
+static byte    attract_record_demos = 0;  // record demos played, for the count
+
 static boolean hs_attract_page = false;   // [Arcade] high-score table page active
 static int     hs_subpage_tic = 0;        // [Arcade] tics left on the map on screen
 static boolean hs_page_after_demo = false;  // [Arcade] show scores after this demo
@@ -1520,6 +1534,51 @@ void D_Demo_Advance_Retry( void )
 // FIXME - version dependent demo numbers?
 //
 // Called by TryRunTics when demo_ctrl == DEMO_seq_advance
+// [Arcade] Turn the attract chase camera off again.
+//
+// Guarded on attract_chasecam so it can only ever undo a change *it* made:
+// cv_chasecam is an ordinary cvar a -devmode session may have set by hand at
+// the title screen, and clearing that unasked would look like the console
+// command not working.
+void D_Clear_Attract_ChaseCam( void )
+{
+    if( ! attract_chasecam )  return;
+    attract_chasecam = false;
+    CV_SetValue( &cv_chasecam, 0 );
+}
+
+// [Arcade] Decide whether the demo about to start is shown from the chase
+// camera, and switch it on if so.  Called once per attract demo.
+//
+// Safe for the record demos themselves: the chase camera is a view, not part
+// of the simulation.  MT_CHASECAM is MF_NOBLOCKMAP|MF_NOSECTOR, so it is in
+// neither the blockmap nor any sector list and nothing in the playsim can
+// see it.  Verified rather than assumed -- a record demo played with the
+// camera on and off produced identical player position, height, angle and
+// health at every one of 43 samples across 1925 tics.
+static void D_Set_Attract_ChaseCam( boolean is_record_demo )
+{
+    if( ! is_record_demo || ! cv_chasecamdemo.EV )  return;
+
+    // Counted over record demos only, so the period does not drift with how
+    // many stock demos happen to be filling in on a cabinet without records.
+    // Counts up and resets rather than taking a modulo: attract_record_demos
+    // is a byte, and a modulo would put two chase cam demos in a row every
+    // time it wrapped at 255.
+    attract_record_demos++;
+    if( attract_record_demos < ATTRACT_CHASECAM_EVERY )  return;
+    attract_record_demos = 0;
+
+    attract_chasecam = true;
+    CV_SetValue( &cv_chasecam, 1 );
+}
+
+// [Arcade] For the blinking CHASE CAM caption (hu_stuff.c).
+boolean D_Attract_ChaseCam( void )
+{
+    return attract_chasecam;
+}
+
 void D_DoAdvanceDemo(void)
 {
     const char * demo_name;
@@ -1586,6 +1645,7 @@ void D_DoAdvanceDemo(void)
 
     hs_attract_page = false;   // [Arcade] cleared for the graphic/demo pages
     HS_Clear_DemoLabel();      // [Arcade] only the record cases below set it
+    D_Clear_Attract_ChaseCam();  // [Arcade] only the demo case below sets it
 
     switch (demosequence)
     {
@@ -1657,6 +1717,13 @@ void D_DoAdvanceDemo(void)
 
             if( demo_name == NULL )
                 demo_name = HS_NextRecordDemoPath();
+
+            // [Arcade] Whether this is somebody's record run, decided before
+            // the stock fallback below overwrites demo_name -- the chase
+            // camera is for the record holders, and an IWAD demo is nobody's
+            // record.
+            D_Set_Attract_ChaseCam( demo_name != NULL );
+
             if( demo_name == NULL )
             {
                 static const char * stock_demo[3] = { "demo1", "demo2", "demo3" };
@@ -1680,6 +1747,10 @@ void D_DoAdvanceDemo(void)
 // Called when load game or init new game
 void D_DisableDemo(void)
 {
+    // [Arcade] A real game is starting; the attract camera must not follow
+    // the player into it.
+    D_Clear_Attract_ChaseCam();
+
     if( demoplayback )
         G_StopDemo();
     // stop DEMO_seq_advance, but preserve DEMO_seq_playdemo so can abort it

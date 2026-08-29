@@ -771,6 +771,23 @@ void HU_Drawer(void)
             V_DrawString( (BASEVIDWIDTH - V_StringWidth(label)) / 2, 8,
                           V_WHITEMAP, (char*) label );
         }
+
+        // [Arcade] Say so when the record run is being watched from the chase
+        // camera, or the third person view just looks like a bug.  Blinks at
+        // the same 16 on / 16 off cadence as PRESS FIRE below and the
+        // intermission's NEW RECORD, so the attract screen has one heartbeat
+        // rather than three.
+        //
+        // Directly under the demo caption: that is drawn at y 8 and hu_font
+        // glyphs are 7 tall, so 18 clears it with room and stays well above
+        // the status bar.  Centred, so its width needs no measuring.
+        if( D_Attract_ChaseCam() && (gametic & 16) )
+        {
+            static const char chasecam_msg[] = "CHASE CAM";
+            V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth(chasecam_msg)) / 2, 18,
+                          V_WHITEMAP, (char*) chasecam_msg );
+        }
     }
 
     // [Arcade] The arcade "insert coin", on a cabinet that takes no coins:

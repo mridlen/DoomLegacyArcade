@@ -537,6 +537,17 @@ consvar_t cv_defaultgame = {"defaultgame", "None", CV_SAVE, defaultgame_cons_t }
 // that early, the same rule as cv_localplayers above.
 consvar_t cv_cheatsmenu = {"cheatsmenu", "0", CV_SAVE, CV_OnOff };
 
+// [Arcade] Play an occasional attract demo from the chase camera, captioned
+// with a blinking CHASE CAM.  The record demos are somebody's actual run, and
+// seen from behind they read as a person playing rather than as a first
+// person view that a passer-by can mistake for the attract screen being
+// stuck.  Only record demos get it -- the stock IWAD demos are nobody's
+// record -- and only every ATTRACT_CHASECAM_EVERY-th one, so it stays a
+// change of pace instead of the house style.  Operator setting, on by
+// default; it costs nothing when there are no records, since there is then
+// no record demo to apply it to.
+consvar_t cv_chasecamdemo = {"chasecamdemo", "1", CV_SAVE, CV_OnOff };
+
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has
 // no Quit button -- quitting drops the player out to a desktop they should
 // never see, and on an unattended machine nothing brings the game back -- so
@@ -4149,6 +4160,7 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
+    {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
 };
 
@@ -9901,6 +9913,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
   &cv_cheatsmenu,       // [Arcade]
+  &cv_chasecamdemo,     // [Arcade]
   &cv_initialstimeout,  // [Arcade]
 
     // p_mobj.c
