@@ -412,3 +412,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **Do not measure this with the whole frame in the detector.** The red HUD numerals are bright
     pixels between darker rows and score as slivers, which made the combined fix look *worse* than
     the broken one (529 vs 411) until the region was restricted to the wall.
+
+- **A pointer must be cleared because its target is being freed, never because the subsystem still
+  looks active.** `P_SetupLevel` cleared `camera.mo` only `if (camera.chase)`, so switching the
+  chase camera off and then loading a level left `camera.mo` pointing at a freed mobj — and the next
+  time the camera came on, `P_ResetCamera` wrote through it and `R_SetupFrame` read a `subsector`
+  from a level that no longer existed. It crashed the cabinet only *occasionally*, hours into an
+  unattended run, because a use-after-free waits for something to reuse the memory. Core dumps were
+  already being kept by `systemd-coredump` — `coredumpctl list` and
+  `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"` had the answer
+  without any new logging. → `attract.md`

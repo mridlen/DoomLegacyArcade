@@ -332,3 +332,64 @@ means it tracks an operator who changes the hover distance.
   placement (pull the camera in to the first wall between it and the player) is the fuller answer and
   is what the dead code was reaching for. The trigger is cheap, safe and reuses tested code, which
   the raycast would not.
+
+### The chase camera crashed the cabinet, hours in
+
+Symptom: the cabinet, left running unattended, would occasionally segfault once the chase camera
+demos were in the rotation. Never on a short test.
+
+**Found from core dumps, not from new logging.** Fedora's `systemd-coredump` had already kept every
+crash — `coredumpctl list` showed three of the cabinet binary, and all three had the identical stack:
+
+```
+#0  R_SetupFrame        #1  HWR_RenderPlayerView        #2  D_Display        #3  D_DoomLoop
+```
+
+faulting on `mov (%rax),%rax` with `rax` holding garbage (`0x36fa318c3f8ff790`) — not NULL, so a
+**stale** pointer rather than a missing one. The instruction loaded a pointer at offset `0xb8`, then
+read two ints at `0x84`/`0x88`, which matches `r_main.c`'s
+`viewer_sector = viewmobj->subsector->sector;` followed by `viewer_sector->modelsec` and `->model`.
+
+**The bug was in `P_SetupLevel` (`p_setup.c`), and it is pre-existing engine code:**
+
+```c
+    if (camera.chase)        // <-- the guard
+        camera.mo = NULL;
+```
+
+The camera mobj is freed with every other thinker a few lines below, so the pointer must be dropped
+*whatever* the camera's state — but the guard only dropped it while a chase was active. The fatal
+order is:
+
+1. chase camera on — a camera mobj is spawned
+2. chase camera off — `R_SetupFrame` sets `camera.chase = NULL`
+3. **a level load** — the guard is now false, so the mobj is freed and `camera.mo` still points at it
+4. chase camera on again — `P_ResetCamera` takes its "already have one" branch and writes *through
+   the dangling pointer*, keeping it; `R_SetupFrame` then reads a `subsector` belonging to a level
+   that no longer exists
+
+**Nothing performed that sequence until the attract cycle started showing every third record demo in
+chase view**, which does exactly on/off/level-load/on, over and over, all day.
+
+**Why it was occasional:** it is a use-after-free, so it only faults once something else reuses that
+memory. Freed zone memory usually still holds plausible values for a while, which is why a
+deliberate reproduction of the sequence ran to completion without crashing. Proving it therefore
+meant instrumenting the condition rather than waiting for a fault:
+
+```
+CAMLEAK level load: chase=(nil) mo=0x7fa4f53b4d20 -> mo=0x7fa4f53b4d20 *** DANGLING ***
+CAMLEAK P_ResetCamera reusing mo=0x7fa4f53b4d20 (subsector=0x7fa4f51c5e28)
+```
+
+and after making the clear unconditional, the same script gives `-> mo=(nil) cleared` and the
+`P_ResetCamera reusing` line **disappears entirely** — a fresh camera is spawned instead.
+
+- **A crash that will not reproduce on demand is not thereby unproven.** Instrument the *condition*
+  (here: a pointer surviving the free of what it points to) and show it before and after. Waiting
+  for the fault would have proved nothing either way.
+- **Guarded cleanup is where dangling pointers come from.** `if (still_in_use) drop_the_pointer()`
+  is backwards: the pointer must be dropped because the *target* is going away, which has nothing to
+  do with whether the subsystem is currently active.
+- The cabinet binary is built **without `-g`**, so these backtraces have function names but no line
+  numbers. Adding `-g` to `ENV_CFLAGS` in `make_options` costs nothing at runtime and would make the
+  next one far quicker to read.
