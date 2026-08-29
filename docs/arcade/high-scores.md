@@ -284,9 +284,25 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       run takes both. `NEW RECORD` stays, centred in the free space to the left and blinking in
       step, so the two read as one announcement — it says *that* a record fell, the blinking time
       says *which*.
+      - **The `YOU` time blinks in step with the record time it is replacing.** Blinking the
+        record row alone said *this one is being beaten* without ever pointing at what beat it —
+        the incoming number sat there solid while the outgoing one flashed. Both flashing on the
+        same frame reads as one swap and the eye pairs them. Only the *times* blink, on both
+        rows: the labels, map names and initials stay put, so the block never appears to flicker
+        whole. The `YOU` row keys off `any_new` rather than a per-category flag — there is one
+        such row and it is the run that took either record.
       - `hs_new_record[]` is latched at the level exit, **before** the board is updated, so on a
         first-ever record the row still reads `NONE YET` and there is no old time to blink. The
-        marker fires regardless, which is the right way round.
+        marker fires regardless, which is the right way round, and the `YOU` time still blinks —
+        it is the only time on screen in that case.
+      - Verified numerically rather than by eye, under `SDL_VIDEODRIVER=offscreen` with a
+        `runs.dat` written by hand to force each case, three screenshots taken 16 tics apart from
+        an `autoexec.cfg` (`wait` / `exitlevel` / `wait 12` / `screenshot` …) and the changed
+        pixels counted per column rectangle. Beating the record: SPEED time 3277 changed pixels
+        between an on-frame and an off-frame, `YOU` time 3085, `NEW RECORD` 5742 — and **0** for
+        the map, the initials and the untaken MAX row. Not beating it: **0 everywhere**. Two
+        on-frames 32 tics apart differ by 0 in every rectangle, which is the control that proves
+        the counts above are the blink and not the animated background.
       - `HS_Intermission_Record()` picks the source: the map's own three deep board in
         `single_level_mode`, the episode's Survival board otherwise. `HS_Board_Entry` does not
         fill a map name — a single level run is one map by definition — so it is set from the exit.
