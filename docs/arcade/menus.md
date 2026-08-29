@@ -205,6 +205,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   `M_Init`** — `IdentifyVersion()` runs later, as does the doomwaddir setup. Anything menu-related
   that depends on the game or on locating wads must go in `M_Configure`; the game selector's
   availability check is there for the same reason.
+- **Chase Cam Demo** — **`cv_chasecamdemo`** ("chasecamdemo", default **On**, `CV_SAVE`), under
+  **Options → Arcade Options**. Shows every third attract *record* demo from the chase camera with
+  a blinking `CHASE CAM` caption. Appended to `MenuOptionsMenu` before the Audit link; that menu is
+  not addressed by index (unlike most others here), so the insert is safe. Full write-up in
+  `attract.md`.
 - **Settings do not persist** (`m_misc.c`, `M_SaveAllConfig` returns early unless `devmode`).
   Anything a player changes lasts only for that session; every launch reloads the baseline from
   `config.cfg`. The operator sets that baseline by running with `-devmode`, which is the **only**

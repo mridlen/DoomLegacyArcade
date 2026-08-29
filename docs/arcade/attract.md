@@ -239,3 +239,46 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - Verified headlessly under `SDL_VIDEODRIVER=offscreen`: `kill` in a `-warp 1` game, screenshot
   during the dwell. The patch draws centred (measured: spans 310..710 of 1024, centre 510 against a
   screen centre of 512).
+
+---
+
+## The chase camera on record demos
+
+- **Every third record demo in the attract rotation is shown from the chase camera**, captioned
+  with a blinking `CHASE CAM`. A record demo is somebody's actual run, and from behind it reads as
+  a *person playing* rather than as a first person view a passer-by can mistake for the attract
+  screen having frozen.
+  - **Only record demos, never the stock IWAD demos** — the chase camera is for the record holders,
+    and `demo1`/`demo2`/`demo3` are nobody's record. The decision is taken in `D_DoAdvanceDemo`
+    (`attract_demo`) **before** the stock fallback overwrites `demo_name`, since by then the two
+    are indistinguishable.
+  - **Every third, not every one.** One record demo plays per attract cycle, so `1` would make the
+    chase camera the normal way the cabinet looks, and the front view is what an onlooker
+    recognises as Doom. `ATTRACT_CHASECAM_EVERY` (`d_main.c`) is the one constant to change.
+  - The counter **counts up and resets rather than taking a modulo**: it is a byte, and `n % 3`
+    would put two chase cam demos back to back every time it wrapped at 255.
+- **`cv_chasecamdemo`** ("chasecamdemo", default **On**, `CV_SAVE`), under **Options → Arcade
+  Options** as "Chase Cam Demo". Operator setting like the rest of that page. It costs nothing on a
+  cabinet with no records — there is then no record demo to apply it to.
+- **The engine's own `cv_chasecam` is what gets switched**, and it is switched back in two places,
+  because a camera left following the player into a real game would be a serious bug:
+  - `D_Clear_Attract_ChaseCam()` at the top of `D_DoAdvanceDemo`, so the next attract page is
+    normal again.
+  - the same call at the top of **`D_DisableDemo`**, which is the funnel every real game start
+    passes through (`SV_SpawnServer`). Verified: with the camera engaged on a record demo, a `map`
+    command cleared it back to `cv_chasecam=0`.
+  - Both are guarded on the module's own `attract_chasecam` flag, so they can only undo a change
+    *this code* made — `cv_chasecam` is an ordinary cvar a `-devmode` session may have set by hand
+    at the title screen, and clearing that unasked would look like the console command not working.
+- **It does not desync the record demos, and this was measured rather than reasoned.** The camera
+  is a view, not part of the simulation: `MT_CHASECAM` is
+  `MF_NOBLOCKMAP|MF_NOSECTOR|MF_NOGRAVITY|MF_FLOAT` (`info.c`), so it is in neither the blockmap
+  nor any sector list and nothing in the playsim can see it. Proven by playing the same record demo
+  with `chasecam 0` and `chasecam 1` and fingerprinting the player every 35 tics — position,
+  height, angle and health were **identical at all 43 samples across 1925 tics**. Worth keeping in
+  mind before putting anything *else* in front of a record demo.
+- The caption is drawn in `HU_Drawer` (`hu_stuff.c`) inside the existing `demoplayback` block,
+  directly under the demo label: that sits at y 8 and `hu_font` glyphs are 7 tall, so **y 18**
+  clears it and stays well above the status bar. Centred, so its width needs no measuring. It
+  blinks on `gametic & 16`, the same cadence as `PRESS FIRE TO START` and the intermission's
+  `NEW RECORD`, so the attract screen has one heartbeat rather than three.

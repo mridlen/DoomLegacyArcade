@@ -82,6 +82,10 @@ void D_PostEvent (const event_t* ev);
 void D_PostEvent_end (void);    // delimiter for locking memory
 
 void D_Process_Events (void);
+
+// [Arcade] Attract chase camera.
+boolean D_Attract_ChaseCam( void );
+void    D_Clear_Attract_ChaseCam( void );
 void D_DoAdvanceDemo (void);
 
 //
