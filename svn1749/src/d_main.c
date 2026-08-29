@@ -665,6 +665,39 @@ void D_PostEvent(const event_t * ev)
     events[eventhead] = *ev;
     eventhead = (eventhead + 1) & (MAXEVENTS - 1);
     last_input_tic = gametic;  // [Arcade lockdown] any raw input counts as activity
+
+    // [Arcade] This ring has never checked for overflow: the head is advanced
+    // unconditionally, so posting MAXEVENTS events between two drains laps the
+    // head exactly onto the tail -- and the queue then reads as *empty*, so
+    // every one of those events is discarded without a trace.  A lost keyup
+    // leaves the key held as far as the game is concerned, which is precisely
+    // what a stuck key looks like.
+    //
+    // Nothing is changed here yet: the drop is only reported, so a report can
+    // be believed as evidence of the cause rather than of a new guard.  Rate
+    // limited, since the condition arrives in floods.
+    if( eventhead == eventtail )
+    {
+        static tic_t  last_report = 0;
+        static boolean  reported_once = false;
+        static unsigned int  laps = 0;
+        tic_t  now = I_GetTime();
+
+        laps++;
+        // reported_once, not a last_report of 0: early in the run I_GetTime()
+        // is itself below TICRATE, so a plain elapsed test swallows the first
+        // report -- which is the one that says the condition exists at all.
+        if( ! reported_once || (now - last_report) >= TICRATE )
+        {
+            reported_once = true;
+            GenPrintf( EMSG_errlog,
+               "INPUTLOG t=%u EVENT RING LAPPED: %d queued events discarded"
+               " (%u lap(s) since last report) -- a keyup may have been lost\n",
+               (unsigned int) now, MAXEVENTS, laps );
+            last_report = now;
+            laps = 0;
+        }
+    }
 }
 
 // just for lock this function

@@ -678,9 +678,35 @@ extern consvar_t   cv_sdl2_textchar;
 #endif
 
 
+// [Arcade] Input diagnostics.
+//
+// Keyboard trouble that only shows up with a key held down, or only through
+// keyboard/mouse sharing software (Deskflow), is invisible in this engine:
+// nothing records whether a keydown is an auto-repeat, how many events arrive
+// in one poll, or whether the event ring silently lapped.  These three are
+// exactly the things that tell those causes apart, so they are logged here.
+//
+// Enabled by -inputlog, which traces every key event.  Burst and lap warnings
+// are always on but rate limited -- they are rare and they matter.
+//
+// Output goes to EMSG_errlog (stderr and the log file, never the console), so
+// a trace cannot spam the screen of the session being diagnosed.  Capture it
+// with:  ./doomlegacy -inputlog 2> input.log
+static byte  input_log = 0;
+static byte  input_log_checked = 0;
+
+// One poll of the SDL queue can post an unbounded number of events, while the
+// engine ring (events[MAXEVENTS], d_main.c) holds 64 and does not check for
+// overflow.  Anything at or above this in a single poll is worth seeing.
+#define INPUT_BURST_WARN  24
+
+
 void I_GetEvent(void)
 {
   SDL_Event inputEvent;
+  // [Arcade] Per-poll event census, for the burst warning below.
+  unsigned int  n_total = 0, n_keydown = 0, n_keyrepeat = 0, n_keyup = 0,
+                n_mouse = 0;
 #ifdef SDL2
   SDL_Keymod mod;
   SDL_Keycode keycode;
@@ -704,14 +730,45 @@ void I_GetEvent(void)
       I_GetMouse2Event();
 #endif
 
+  // [Arcade] -inputlog is read once, on the first poll: M_CheckParm is not
+  // available early enough to do this at static init.
+  if( ! input_log_checked )
+  {
+      input_log_checked = 1;
+      input_log = ( M_CheckParm("-inputlog") != 0 );
+  }
+
   while (SDL_PollEvent(&inputEvent))
   {
+      n_total++;
       switch (inputEvent.type)
       {
         case SDL_KEYDOWN:
           event.type = ev_keydown;  // doomlegacy keydown event
           keycode = inputEvent.key.keysym.sym; // SDL keyboard
           event.data1 = xlatekey(keycode); // key symbol
+
+          // [Arcade] Auto-repeat census.  SDL2 marks a repeated keydown with
+          // key.repeat; this engine has never looked at it, so a held key
+          // posts a fresh keydown many times a second and nothing downstream
+          // can tell those from real presses.
+          n_keydown++;
+#ifdef SDL2
+          if( inputEvent.key.repeat )  n_keyrepeat++;
+          if( input_log )
+              GenPrintf( EMSG_errlog,
+                 "INPUTLOG t=%u KEYDOWN sym=0x%x scan=%d repeat=%u -> key=0x%02x\n",
+                 (unsigned int) I_GetTime(), (unsigned int) keycode,
+                 (int) inputEvent.key.keysym.scancode,
+                 (unsigned int) inputEvent.key.repeat,
+                 (unsigned int) event.data1 );
+#else
+          if( input_log )
+              GenPrintf( EMSG_errlog,
+                 "INPUTLOG t=%u KEYDOWN sym=0x%x -> key=0x%02x\n",
+                 (unsigned int) I_GetTime(), (unsigned int) keycode,
+                 (unsigned int) event.data1 );
+#endif
 
           mod = inputEvent.key.keysym.mod; // modifier key states
           // this might actually belong in D_PostEvent
@@ -754,6 +811,15 @@ void I_GetEvent(void)
           keycode = inputEvent.key.keysym.sym; // SDL keyboard
           event.data1 = xlatekey(keycode);
 
+          // [Arcade] The keyup is the event that must not be lost: drop one
+          // and the key stays down as far as the game is concerned.
+          n_keyup++;
+          if( input_log )
+              GenPrintf( EMSG_errlog,
+                 "INPUTLOG t=%u KEYUP   sym=0x%x -> key=0x%02x\n",
+                 (unsigned int) I_GetTime(), (unsigned int) keycode,
+                 (unsigned int) event.data1 );
+
           mod = inputEvent.key.keysym.mod; // modifier key states
           shiftdown = mod & KMOD_SHIFT;
           altdown = ((mod & KMOD_ALT) >> 8 ) | (mod & KMOD_ALT);  // force into byte
@@ -779,6 +845,10 @@ void I_GetEvent(void)
 #endif
 
         case SDL_MOUSEMOTION:
+          // [Arcade] Counted even when the mouse is off: sharing software
+          // forwards pointer motion continuously, and those events go into
+          // the same 64 slot ring as the keystrokes.
+          n_mouse++;
           if(cv_usemouse[0].EV)
           {
               event.type = ev_mouse;
@@ -1176,6 +1246,45 @@ void I_GetEvent(void)
 
         default:
           break;
+      }
+  }
+
+  // [Arcade] One poll drains the whole SDL queue into a ring that holds 64
+  // and silently overwrites, so a single large burst can swallow a keyup.
+  // Report the census whenever a poll is big enough to be heading that way.
+  // Rate limited to once a second: a genuine flood would otherwise become its
+  // own flood, and the counts are what matter, not every occurrence.
+  // Only events that actually reach the ring count toward the threshold.
+  // n_total covers everything SDL handed over, window and system events
+  // included, and those never reach D_PostEvent -- gating on it made startup
+  // report a 34 event "burst" of pure window traffic.  It is still printed,
+  // because the gap between the two numbers is informative.
+  if( (n_keydown + n_keyup + n_mouse) >= INPUT_BURST_WARN )
+  {
+      static tic_t  last_burst_report = 0;
+      static boolean  burst_reported_once = false;
+      static unsigned int  suppressed = 0;
+      tic_t  now = I_GetTime();
+
+      // See the note in D_PostEvent: an elapsed-time test alone would swallow
+      // the first report, because I_GetTime() starts below TICRATE.
+      if( ! burst_reported_once || (now - last_burst_report) >= TICRATE )
+      {
+          burst_reported_once = true;
+          GenPrintf( EMSG_errlog,
+             "INPUTLOG t=%u BURST %u input events in one poll"
+             " (keydown %u of which repeat %u, keyup %u, mouse %u;"
+             " %u SDL events total)"
+             " [ring holds %d] [%u similar since last report]\n",
+             (unsigned int) now, n_keydown + n_keyup + n_mouse,
+             n_keydown, n_keyrepeat, n_keyup, n_mouse, n_total,
+             MAXEVENTS, suppressed );
+          last_burst_report = now;
+          suppressed = 0;
+      }
+      else
+      {
+          suppressed++;
       }
   }
 }

@@ -399,3 +399,72 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     from any `-devmode` session** -- which an operator assigning gamepads is doing anyway.
   - A `typedef` length check now fails the build if the two ever differ in *count*. It cannot catch
     a re-ordering, which is what actually went wrong, but it is free.
+
+---
+
+## Input diagnostics, and the event ring
+
+*Added while investigating keyboard-only play through Deskflow (keyboard/mouse sharing), where
+keys held down too long misbehave in a way other ports do not show. Nothing is fixed yet — this
+is the instrumentation that tells the candidate causes apart.*
+
+- **`D_PostEvent` has never checked for overflow** (`d_main.c`). `events[MAXEVENTS]` is a 64 slot
+  ring and the head is advanced unconditionally, so posting 64 events between two drains laps the
+  head exactly onto the tail — at which point `D_Process_Events` sees `eventtail == eventhead`,
+  reads the queue as **empty**, and discards all 64 without a trace. Demonstrated with a standalone
+  simulation of the same arithmetic:
+
+  | posted between drains | processed | silently lost |
+  | --- | --- | --- |
+  | 63 | 63 | 0 |
+  | **64** | **0** | **64** |
+  | 65 | 1 | 64 |
+  | 200 | 8 | 192 |
+
+  **A lost `ev_keyup` leaves the key held as far as the game is concerned**, which is exactly what
+  a stuck key looks like. This is the leading hypothesis for the Deskflow symptom, not a proven
+  cause.
+- **One poll drains the entire SDL queue in one go** — `I_GetEvent` is `while(SDL_PollEvent(...))`
+  and `D_Process_Events` runs once per tic from `NetUpdate` (`d_clisrv.c`). So the ring is only at
+  risk when more than 64 events accumulate *between* polls: a stall (level load, wipe, disk) with a
+  key held, or a genuine flood. Sharing software makes both likelier — it re-injects keystrokes and
+  forwards pointer motion, and network jitter batches them.
+- **The engine has never looked at `key.repeat`** (`sdl/i_system.c`, `SDL_KEYDOWN`). SDL2 marks an
+  auto-repeated keydown with it; DoomLegacy posts every repeat as a fresh `ev_keydown`,
+  indistinguishable downstream from a real press. Ports that discard repeats generate far fewer
+  events. **Do not simply filter them**: menu scrolling and console/chat text rely on repeat, so any
+  filter has to apply to game events only.
+- **Three candidate causes, and they need different fixes**, which is why the logging came first:
+  auto-repeat flooding the ring; the ring lapping and eating a keyup; or Deskflow synthesising a
+  release/press *pair* per repeat, which needs no overflow at all and would show as a keyup that
+  should not be there.
+
+### What is logged
+
+Everything goes to **`EMSG_errlog`** — stderr and the log file, never the console — so a trace
+cannot spam the screen of the session being diagnosed. Capture with
+`./doomlegacy -inputlog 2> input.log`.
+
+- **`-inputlog`** traces every key event: tic, `sym`, scancode, **`repeat`**, and the translated
+  key. This is the line that answers "is it key repeat?".
+- **Burst reports** (always on) fire when one poll delivers `INPUT_BURST_WARN` (24) or more events
+  that actually reach the ring, with the keydown / repeat / keyup / mouse breakdown.
+- **Ring lap reports** (always on, `D_PostEvent`) fire the moment the head laps the tail, naming
+  the number discarded.
+- Both are **rate limited to once a second** and carry a suppressed-since-last-report count.
+
+### Two mistakes made building this, both caught by testing the detector
+
+- **The rate limiter swallowed the first report.** `if( now - last_report >= TICRATE )` with
+  `last_report` starting at 0 is false while `I_GetTime()` is itself below `TICRATE` — so the very
+  first report, the one that says the condition exists at all, never printed. A forced lap at
+  startup produced *nothing*. Both limiters now use an explicit `reported_once` flag. **A rate
+  limiter keyed on elapsed time needs a separate "never reported" state.**
+- **The burst threshold was gated on every SDL event polled**, window and system events included,
+  which never reach `D_PostEvent`. Startup reported a 34 event "burst" of pure window traffic. It
+  now counts only keydown + keyup + mouse, and prints the SDL total alongside, since the gap
+  between the two is itself informative.
+- Verified by forcing 70 events through the real `D_PostEvent` from a temporary `-inputlogtest`
+  hook: both reports fired, with the lap naming 64 discarded. **The control matters as much** — an
+  ordinary run with no flag prints zero `INPUTLOG` lines, so the reports mean something when they
+  do appear. The temporary hook was removed before committing.
