@@ -405,8 +405,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 ## Input diagnostics, and the event ring
 
 *Added while investigating keyboard-only play through Deskflow (keyboard/mouse sharing), where
-keys held down too long misbehave in a way other ports do not show. Nothing is fixed yet — this
-is the instrumentation that tells the candidate causes apart.*
+keys held down too long misbehave in a way other ports do not show. The cause was found with this
+instrumentation and is written up under "What the capture showed" below; the fix is
+`cv_keydebounce`.*
 
 - **`D_PostEvent` has never checked for overflow** (`d_main.c`). `events[MAXEVENTS]` is a 64 slot
   ring and the head is advanced unconditionally, so posting 64 events between two drains laps the
@@ -468,3 +469,73 @@ cannot spam the screen of the session being diagnosed. Capture with
   hook: both reports fired, with the lap naming 64 discarded. **The control matters as much** — an
   ordinary run with no flag prints zero `INPUTLOG` lines, so the reports mean something when they
   do appear. The temporary hook was removed before committing.
+
+### What the capture showed
+
+A capture of the real symptom (turning left and right until it went juttery) settled it, and
+**ruled out the ring**: zero burst reports, zero lap reports, nothing dropped. Only **6 of 169**
+keydowns carried `repeat=1`, so it is not SDL auto-repeat either.
+
+What Deskflow actually sends for a held key is a complete **release-and-press pair, once every 2
+tics**, each press flagged `repeat=0` and so indistinguishable from a real one:
+
+```
+t=337 KEYDOWN a repeat=0      t=339 KEYDOWN a repeat=0
+t=338 KEYUP   a               t=340 KEYUP   a
+```
+
+Not a sample — that is the whole pattern: 67 of 69 down→up gaps were exactly 1 tic, and 64 of the
+intervals between successive presses were exactly 2. The engine is told the key was let go and
+pressed again **17 times a second**.
+
+**Two things then go wrong, and together they are the "juttery" turning.** The key only counts as
+held on every other tic, so half the input is lost; and `turnheld` (`g_game.c`, `SLOWTURNTICS`)
+must count 6 straight tics before the accelerated turn rate engages, and gets reset before it ever
+arrives — so on a shared keyboard the fast turn rate is *never reached at all*.
+
+**The counts reconcile exactly, so nothing was lost.** The 6 "extra" keydowns are precisely the 6
+genuine auto-repeats, which correctly carry no preceding release, and every key was up at the end
+of the log. The reported "gets stuck" symptom is therefore **not** explained by this capture and
+may need its own look — the nearest thing in it is two stretches where `a` stayed down for 17 and
+11 tics.
+
+### The fix: `cv_keydebounce`
+
+**`keydebounce`** ("keydebounce", default **2**, `CV_SAVE`, range 0..6 tics, `g_input.c`). A
+keyboard release is held for this many tics instead of being applied at once, and is **cancelled
+outright** if the same key is pressed again inside the window — which is what a synthetic
+release/press pair does. This is what X's detectable auto-repeat does for clients that ask; it is
+done here because these arrive as genuine presses and nothing upstream can tell them apart.
+
+- **Keyboard only.** The debounce applies to ids below `KEY_NUMKB`, so mouse buttons, joystick
+  buttons and the cabinet panels are untouched. It lives in `G_MapEventsToControls`, which is the
+  game-control funnel, so menus, the console and chat — which read events directly rather than
+  through `gamekeydown[]` — are unaffected.
+- **A cancelled release is not a fresh tap.** `gamekeytapped` drives impulse controls such as
+  weapon switching; re-arming it 17 times a second would fire them repeatedly while the key was
+  merely held. The resumed press deliberately skips it.
+- **`G_Key_Debounce_Ticker` runs from the top of `G_BuildTiccmd`**, before the controls are read,
+  so a release is never held past its window. It is idempotent — with four panels `G_BuildTiccmd`
+  runs several times a tic and only the first does the work — and `G_Clear_Key_Debounce` drops
+  pending releases wherever `gamekeydown[]` is already cleared wholesale.
+- **Cost when not needed:** a real release is acted on up to 2 tics (57ms) late. `keydebounce 0`
+  disables it entirely.
+- **No demo desync risk, and this was checked rather than assumed.** Demos store finished
+  `ticcmd_t` values and playback *replaces* the ticcmd outright (`G_ReadDemoTiccmd`, `g_game.c`),
+  so local input never reaches the simulation during playback. How raw key events become a ticcmd
+  cannot change an existing demo. It does change what a *new* recording contains for the same
+  physical keypresses, but that is a new demo, not a desync of an old one — and the cabinet records
+  from panels, not the keyboard. It is therefore **not** a cvar that needs to go in the demo
+  header.
+
+Verified by replaying the captured pattern (one event per tic, down/up alternating) through the
+real event path and watching `gamekeydown['a']`:
+
+| | `keydebounce 0` (control) | `keydebounce 2` |
+| --- | --- | --- |
+| while the pairs arrive | `1,0,1,0,…` every tic — the jutter | **`1` continuously** |
+| after they stop | 0 | 0, two tics after the last release |
+
+**The control is the point**: the bug was reproduced with the fix disabled before the clean result
+was believed, and the release case was checked too — a debounce that never releases would be the
+very bug it is meant to cure.
