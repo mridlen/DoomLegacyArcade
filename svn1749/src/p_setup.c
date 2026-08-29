@@ -2371,8 +2371,28 @@ boolean P_SetupLevel (int      to_episode,
     script_camera_on = false;
     HU_Clear_Tips();
 
-    if (camera.chase)
-        camera.mo = NULL;
+    // [Arcade] Unconditionally, and this used to be `if (camera.chase)`.
+    //
+    // The camera mobj is freed with every other thinker just below, so the
+    // pointer has to be dropped whatever the camera's state -- but the guard
+    // only dropped it while a chase was *active*.  Turn the chase camera off
+    // and R_SetupFrame sets camera.chase to NULL; the next level load then
+    // freed the mobj and left camera.mo pointing at it.  Switch the camera on
+    // again and P_ResetCamera takes its "already have one" branch, writes
+    // through the dangling pointer, and R_SetupFrame reads
+    // viewmobj->subsector->sector from a subsector belonging to a level that
+    // no longer exists.
+    //
+    // It is a use-after-free, so it only faults once something reuses that
+    // memory -- which is why it crashed the cabinet *occasionally*, hours into
+    // an unattended attract run, and never on a short test.  Three core dumps
+    // all had the same stack: R_SetupFrame <- HWR_RenderPlayerView <-
+    // D_Display, faulting on a garbage subsector pointer.
+    //
+    // Pre-existing engine bug, not new: reaching it needs chase camera on,
+    // then off, then a level load, then on again.  Nothing did that until the
+    // attract cycle started showing every third record demo in chase view.
+    camera.mo = NULL;
 
     // UNUSED W_Profile ();
     
