@@ -282,3 +282,53 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   clears it and stays well above the status bar. Centred, so its width needs no measuring. It
   blinks on `gametic & 16`, the same cadence as `PRESS FIRE TO START` and the intermission's
   `NEW RECORD`, so the attract screen has one heartbeat rather than three.
+
+### The chase camera gets stuck, and how it is unstuck
+
+**`MT_CHASECAM` collides with the world.** It is `MF_NOBLOCKMAP|MF_NOSECTOR`, so nothing can collide
+with *it* — that is what keeps it out of the playsim — but it is moved by momentum through the
+ordinary mobj thinker, so `P_TryMove` stops it against walls like anything else. In doorways and
+around corners it wedges, and since `P_MoveChaseCamera` only nudges it `cv_cam_speed` (0.25) of the
+way toward the ideal spot each tic, it stays wedged while the player walks off — leaving the attract
+screen pointed at an empty room while the run continues somewhere else.
+
+The half-finished intent is still visible in the source: `P_MoveChaseCamera` carries a commented-out
+`P_PathTraverse(...PT_ADDLINES, PTR_UseTraverse)` and a disabled `PTR_FindCameraPoint`, i.e. the
+original authors meant to *raycast* the camera into place and never finished it.
+
+**Measured before fixing anything**, on the `doom2_ep1_sk3_speed` record demo, logging the
+camera-to-player distance every tic:
+
+| | before | after |
+| --- | --- | --- |
+| median distance | 185 | **129** (the hover distance) |
+| p95 | 752 | **200** |
+| max | 832 | **277** |
+| share of run beyond 288 | 35.8% | **0.0%** |
+| worst stuck episode | **823 tics — 23 seconds** | 68 tics, and within normal lag |
+
+The 35.8% is not constant trouble; it is five excursions, one of them catastrophic. That mattered
+for the design: an early worry that a distance trigger would fire constantly was **wrong**, and only
+looking at the time series rather than the percentile table showed it. In the fixed build the
+trigger fires **6 times in ~136 seconds**.
+
+**The fix is a distance trigger, and the recovery is `P_ResetCamera`.** That routine puts the camera
+on the player's *own position*, which is always valid — the player is standing in it — so unlike
+snapping to the ideal spot behind the player it can never drop the camera inside a wall. The follow
+code immediately eases it back out, and it is the same movement a teleport already produces, so the
+visual is one the cabinet has always shown.
+
+**The threshold has to clear the legitimate follow lag, which is not small.** The camera closes only
+`cv_cam_speed` of the gap per tic, so a player moving *v* units per tic settles about *v*/0.25 = 4*v*
+units behind the ideal spot. The demo peaked at 20.3 units/tic — ~81 units of lag on top of the 128
+hover distance, ~209 in all — and `P_AproxDistance` overestimates a true distance by up to 12%, so
+that reads as ~234. **`CAM_SNAP_SLACK` is 160**, giving 288 at the default `cv_cam_dist` of 128:
+clear of legitimate lag, far below every stuck excursion measured. Deriving it from `cv_cam_dist`
+means it tracks an operator who changes the hover distance.
+
+- **No demo desync**, re-verified after the change with the same fingerprint method — the record
+  demos are what the chase camera is mostly used on, so this has to hold. See the desync note above.
+- **Still not a true fix.** The camera is unstuck rather than prevented from sticking; a raycast
+  placement (pull the camera in to the first wall between it and the player) is the fuller answer and
+  is what the dead code was reaching for. The trigger is cheap, safe and reuses tested code, which
+  the raycast would not.

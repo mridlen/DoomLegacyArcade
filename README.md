@@ -51,6 +51,10 @@ Discord is likely to get you banned.
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
   takes no coins.
+- **A chase camera on some record demos.** Every third record demo in the attract cycle is shown
+  from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
+  over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
+  the machine has frozen. Only record demos get it — the stock Doom demos are nobody's record.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.
@@ -65,17 +69,20 @@ Discord is likely to get you banned.
   stick, buttons, or anything else your panel is wired to. One per panel, up to four.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level. Operator-only by
   default, or leave it up for players. Using one voids that run's score.
-- **A configurable initials timeout** (Options → Menu Options, 60 seconds by default), for how long
+- **A configurable initials timeout** (Options → Arcade Options, 60 seconds by default), for how long
   the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
   already back on the attract screen behind the page — so it can afford to be patient.
 - **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
-  all day. **Options → Menu Options → Attract Volume** is a percentage of the normal volumes,
+  all day. **Options → Arcade Options → Attract Volume** is a percentage of the normal volumes,
   applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
   the attract screen silent, `100` is the old behaviour. Defaults to 50.
+- **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
+  attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
+  there is then no record demo to show that way.
 - **An audit page**, the way an arcade board has one: games played and how many people were
   playing, levels finished, deaths, how much of the cabinet's running time is actually being
   played, which maps get played most, and how often a run stopped being scored and why. Under
-  **Options → Menu Options → Audit**, or type `audit` at the console.
+  **Options → Arcade Options → Audit**, or type `audit` at the console.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
@@ -316,6 +323,10 @@ operator guide for the restart-loop wrapper you'll want.
 **New Game → Single Player** or **Multiplayer** from the main menu, then pick a skill. Multiplayer
 here means everyone playing on *this* cabinet, sharing the screen.
 
+**End Game** is on the main menu, at the bottom, and appears **only while a game is actually being
+played** — any kind: Single Player, Single Level or Multiplayer. On the attract screen there is
+nothing to end, so it isn't there.
+
 DoomLegacy's **networked** play between separate machines is still in there, under
 **Networked Multiplayer** in a `-devmode` session, but it is hidden from players because it hasn't
 been tested in this build — cabinet-to-cabinet play needs two cabinets. Treat it as untested rather
@@ -459,7 +470,7 @@ needs, so anything beyond that gets bound on the full page.
 
 ### More than one control panel
 
-**Options → Menu Options → Control Panels** (devmode only) is how many sets of controls the cabinet
+**Options → Arcade Options → Control Panels** (devmode only) is how many sets of controls the cabinet
 has, 1 to 4. It ships at 1, and until you raise it the join screen never appears and panels 3 and 4
 have no configuration pages — which reads as those features being broken, when the cabinet simply
 hasn't been told they exist.
@@ -472,7 +483,7 @@ there is no third set that wouldn't collide.
 
 ### Cheats
 
-**Options → Menu Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
+**Options → Arcade Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
 players: god mode, all weapons and keys, no clipping, and exit level. It ships off, in which case
 the entry is operator-only and reachable just in a `-devmode` session.
 
@@ -503,7 +514,7 @@ regardless of what the last player changed.
 
 ### Choosing which game the cabinet boots into
 
-**Options → Menu Options → Boot Game** (devmode only). By default the cabinet starts in whichever
+**Options → Arcade Options → Boot Game** (devmode only). By default the cabinet starts in whichever
 IWAD the search happens to find first, which is rarely the one you want. Set this to `doomu`,
 `doom2`, `plutonia` or `tnt` and it boots there every time; `None` restores the default behaviour.
 
@@ -716,7 +727,7 @@ ruleset — the console log names which one — or somebody died. Returning to t
 resets the ruleset automatically, so starting a fresh game normally clears it.
 
 **The join screen never appears, or panels 3 and 4 have no settings pages.**
-`Control Panels` under Options → Menu Options is still at 1. Nothing about the extra panels shows up
+`Control Panels` under Options → Arcade Options is still at 1. Nothing about the extra panels shows up
 until the cabinet is told how many it has. Check `Join Time` isn't 0 while you're there.
 
 **Replacement music isn't playing.**
