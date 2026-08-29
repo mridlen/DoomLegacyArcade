@@ -406,8 +406,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 *Added while investigating keyboard-only play through Deskflow (keyboard/mouse sharing), where
 keys held down too long misbehave in a way other ports do not show. The cause was found with this
-instrumentation and is written up under "What the capture showed" below; the fix is
-`cv_keydebounce`.*
+instrumentation — see "What the capture showed" below. **It is still unfixed**: the obvious fix was
+tried, played badly and was reverted, which is written up under "A release debounce was tried and
+rejected". Read that before reaching for the same idea.*
 
 - **`D_PostEvent` has never checked for overflow** (`d_main.c`). `events[MAXEVENTS]` is a 64 slot
   ring and the head is advanced unconditionally, so posting 64 events between two drains laps the
@@ -495,47 +496,34 @@ arrives — so on a shared keyboard the fast turn rate is *never reached at all*
 
 **The counts reconcile exactly, so nothing was lost.** The 6 "extra" keydowns are precisely the 6
 genuine auto-repeats, which correctly carry no preceding release, and every key was up at the end
-of the log. The reported "gets stuck" symptom is therefore **not** explained by this capture and
-may need its own look — the nearest thing in it is two stretches where `a` stayed down for 17 and
-11 tics.
+of the log. The reported "gets stuck" symptom is therefore **not** explained by this capture — the
+nearest thing in it is two stretches where `a` stayed down for 17 and 11 tics.
 
-### The fix: `cv_keydebounce`
+### A release debounce was tried and rejected
 
-**`keydebounce`** ("keydebounce", default **2**, `CV_SAVE`, range 0..6 tics, `g_input.c`). A
-keyboard release is held for this many tics instead of being applied at once, and is **cancelled
-outright** if the same key is pressed again inside the window — which is what a synthetic
-release/press pair does. This is what X's detectable auto-repeat does for clients that ask; it is
-done here because these arrive as genuine presses and nothing upstream can tell them apart.
+The obvious fix is to hold a keyboard release for a couple of tics and cancel it if the same key is
+pressed again inside that window — what X's detectable auto-repeat does for clients that ask. It
+was implemented as `cv_keydebounce` (default 2 tics, keyboard ids only, in
+`G_MapEventsToControls`), and **it worked**: replaying the captured pattern through the real event
+path, `gamekeydown` stayed continuously set with the debounce on and alternated `1,0,1,0` with it
+off.
 
-- **Keyboard only.** The debounce applies to ids below `KEY_NUMKB`, so mouse buttons, joystick
-  buttons and the cabinet panels are untouched. It lives in `G_MapEventsToControls`, which is the
-  game-control funnel, so menus, the console and chat — which read events directly rather than
-  through `gamekeydown[]` — are unaffected.
-- **A cancelled release is not a fresh tap.** `gamekeytapped` drives impulse controls such as
-  weapon switching; re-arming it 17 times a second would fire them repeatedly while the key was
-  merely held. The resumed press deliberately skips it.
-- **`G_Key_Debounce_Ticker` runs from the top of `G_BuildTiccmd`**, before the controls are read,
-  so a release is never held past its window. It is idempotent — with four panels `G_BuildTiccmd`
-  runs several times a tic and only the first does the work — and `G_Clear_Key_Debounce` drops
-  pending releases wherever `gamekeydown[]` is already cleared wholesale.
-- **Cost when not needed:** a real release is acted on up to 2 tics (57ms) late. `keydebounce 0`
-  disables it entirely.
-- **No demo desync risk, and this was checked rather than assumed.** Demos store finished
-  `ticcmd_t` values and playback *replaces* the ticcmd outright (`G_ReadDemoTiccmd`, `g_game.c`),
-  so local input never reaches the simulation during playback. How raw key events become a ticcmd
-  cannot change an existing demo. It does change what a *new* recording contains for the same
-  physical keypresses, but that is a new demo, not a desync of an old one — and the cabinet records
-  from panels, not the keyboard. It is therefore **not** a cvar that needs to go in the demo
-  header.
+**It was reverted anyway.** On the cabinet it "plays like crap — too much lag introduced". The
+mechanism is unavoidable and was understood in advance: a debounce cannot tell a synthetic release
+from a real one without *waiting*, so every genuine key release is delayed by the window. At 2 tics
+that is 57ms added to every keystroke, and it is plainly felt. Dropping to 1 tic would not save it
+— the captured pairs are 1 tic apart, so a 1 tic window cannot separate them, and the latency would
+still be 28ms.
 
-Verified by replaying the captured pattern (one event per tic, down/up alternating) through the
-real event path and watching `gamekeydown['a']`:
+**So do not re-propose a fixed-delay debounce.** Anything that works has to avoid paying latency on
+ordinary releases. The directions that remain:
 
-| | `keydebounce 0` (control) | `keydebounce 2` |
-| --- | --- | --- |
-| while the pairs arrive | `1,0,1,0,…` every tic — the jutter | **`1` continuously** |
-| after they stop | 0 | 0, two tics after the last release |
+- **Detect and adapt.** Watch for the release→press-within-1-tic signature and only start swallowing
+  releases for a key once that pattern has actually been seen, reverting to zero delay otherwise.
+  Costs nothing on a normal keyboard, but the state machine is fiddly and it still lags while
+  engaged.
+- **Fix it upstream.** Deskflow may have an option for how it forwards held keys; that would cost
+  the engine nothing at all and is worth checking first.
+- **Leave it.** It affects a shared keyboard used for development, not the cabinet's panels.
 
-**The control is the point**: the bug was reproduced with the fix disabled before the clean result
-was believed, and the release case was checked too — a debounce that never releases would be the
-very bug it is meant to cure.
+The diagnostic logging above is kept — it is what identified this and is silent unless asked for.
