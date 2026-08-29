@@ -152,42 +152,6 @@ consvar_t  cv_grabinput = {"grabinput","1", CV_SAVE|CV_CALL, CV_OnOff, CV_mouse_
 // A normal double click is approx. 6 tics from previous click.
 CV_PossibleValue_t double_cons_t[]={{1,"MIN"},{40,"MAX"},{0,NULL}};  // double click threshold
 consvar_t  cv_mouse_double   = {"mousedouble","8",CV_SAVE, double_cons_t};
-
-// [Arcade] Keyboard release debounce, in tics.  0 disables it.
-//
-// Keyboard/mouse sharing software (Deskflow) does not forward a held key as
-// auto-repeat.  It forwards a complete release-and-press *pair*, over and
-// over, about every 2 tics -- each press flagged repeat=0, indistinguishable
-// from a real one.  Captured with -inputlog while turning:
-//
-//     t=337 KEYDOWN a repeat=0     t=339 KEYDOWN a repeat=0
-//     t=338 KEYUP   a              t=340 KEYUP   a
-//
-// so the engine is told the key was let go and pressed again 17 times a
-// second.  Two things then go wrong, and both are what "juttery" turning is:
-// the key only counts as held on every other tic, so half the input is lost;
-// and turnheld (g_game.c) -- which must count 6 straight tics before the
-// accelerated turn rate engages -- is reset before it ever gets there, so the
-// fast turn never happens at all.
-//
-// The fix is to hold a keyboard release for a couple of tics instead of
-// applying it at once, and to cancel it outright if the same key is pressed
-// again inside that window.  This is what X's detectable auto-repeat does for
-// clients that ask for it, done here because the events arrive as genuine
-// presses and nothing upstream can tell them apart.
-//
-// Cost when it is not needed: a real key release is acted on up to
-// cv_keydebounce tics late, 2 tics being 57ms.  Set keydebounce 0 to switch
-// it off entirely.  It applies to *keyboard* keys only -- ids below
-// KEY_NUMKB -- so mouse buttons, joystick buttons and the cabinet panels are
-// untouched, as are menus, the console and chat, which read events directly
-// rather than through gamekeydown[].
-CV_PossibleValue_t keydebounce_cons_t[]={{0,"MIN"},{6,"MAX"},{0,NULL}};
-consvar_t  cv_keydebounce = {"keydebounce","2",CV_SAVE, keydebounce_cons_t};
-
-// Pending keyboard releases, awaiting the debounce window.
-static tic_t  key_release_tic[KEY_NUMKB];
-static byte   key_release_pending[KEY_NUMKB];
 #ifdef JOYSTICK_SUPPORT
 #ifdef JOY_BUTTONS_DOUBLE
 consvar_t  cv_joy_double     = {"joydouble",  "8",CV_SAVE, double_cons_t};
@@ -291,41 +255,14 @@ void  G_MapEventsToControls (event_t *ev)
       case ev_keydown:
         if (ev->data1 < NUMINPUTS)
         {
-            // [Arcade] A press inside the debounce window means the release
-            // before it was never real -- cancel it and treat the key as
-            // having been held the whole time.  Deliberately *not* a fresh
-            // tap: gamekeytapped drives impulse controls such as weapon
-            // switching, and re-arming it 17 times a second would fire them
-            // repeatedly while the key was merely being held.
-            boolean resumed = false;
-            if( ev->data1 < KEY_NUMKB && key_release_pending[ev->data1] )
-            {
-                key_release_pending[ev->data1] = 0;
-                resumed = true;
-            }
-
             gamekeydown[ev->data1] = true;
-            if( ! resumed )
-                gamekeytapped[ev->data1] = true; // reset in G_BuildTiccmd
+            gamekeytapped[ev->data1] = true; // reset in G_BuildTiccmd
         }
         break;
 
       case ev_keyup:
         if (ev->data1 < NUMINPUTS)
-        {
-            // [Arcade] Defer a keyboard release by cv_keydebounce tics, so a
-            // synthetic release/press pair can be recognised and swallowed.
-            // G_Key_Debounce_Ticker applies it once the window passes.
-            if( ev->data1 < KEY_NUMKB && cv_keydebounce.EV > 0 )
-            {
-                key_release_pending[ev->data1] = 1;
-                key_release_tic[ev->data1] = gametic;
-            }
-            else
-            {
-                gamekeydown[ev->data1] = false;
-            }
-        }
+          gamekeydown[ev->data1] = false;
         break;
 
       case ev_mouse:           // buttons are virtual keys
@@ -696,35 +633,6 @@ typedef char gamecontrolname_len_check
 //
 //  Detach any keys associated to the given game control
 //  - pass the pointer to the gamecontrol table for the player being edited
-// [Arcade] Apply any keyboard release whose debounce window has passed.
-// Called once per tic from G_BuildTiccmd, before the controls are read, so a
-// release is never held past its window.  Idempotent: with four panels
-// G_BuildTiccmd runs several times a tic and only the first does the work.
-void  G_Key_Debounce_Ticker( void )
-{
-    byte  grace = cv_keydebounce.EV;
-    int   k;
-
-    for( k = 0; k < KEY_NUMKB; k++ )
-    {
-        if( ! key_release_pending[k] )  continue;
-        // tic_t is unsigned, so this subtraction is wrap safe.
-        if( (grace == 0) || ((gametic - key_release_tic[k]) >= grace) )
-        {
-            key_release_pending[k] = 0;
-            gamekeydown[k] = false;
-        }
-    }
-}
-
-// [Arcade] Drop every pending release without applying it.  For the points
-// that already clear gamekeydown[] wholesale, where a leftover pending entry
-// would otherwise clear a key that had just been pressed again.
-void  G_Clear_Key_Debounce( void )
-{
-    memset( key_release_pending, 0, sizeof(key_release_pending) );
-}
-
 void  G_Clear_ControlKeys (int (*setupcontrols)[2], int control)
 {
     setupcontrols[control][0] = KEY_NULL;

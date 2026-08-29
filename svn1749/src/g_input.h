@@ -217,11 +217,6 @@ extern int             dclicks2;
 extern byte  gamekeydown[NUMINPUTS];
 extern byte  gamekeytapped[NUMINPUTS];
 
-// [Arcade] Keyboard release debounce; see g_input.c.
-extern consvar_t  cv_keydebounce;
-void  G_Key_Debounce_Ticker( void );
-void  G_Clear_Key_Debounce( void );
-
 // two key codes (or virtual key) per game control, per local player.
 // [Arcade] Was a pair of separate arrays, gamecontrol and gamecontrol2, which
 // could not express a third or fourth panel.  It is one indexed table now.

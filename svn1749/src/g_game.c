@@ -1186,10 +1186,6 @@ void G_BuildTiccmd(ticcmd_t* cmd, int realtics, byte pind)
     ticcmd_t * base = I_BaseTiccmd ();             // empty, or external driver
     memcpy (cmd,base,sizeof(*cmd));
 
-    // [Arcade] Retire any keyboard release whose debounce window has passed,
-    // before the controls below are read.
-    G_Key_Debounce_Ticker();
-
     
     player_t * this_player;
     int (*gcc)[2];
@@ -1629,7 +1625,6 @@ void G_DoLoadLevel (boolean resetplayer)
     // clear cmd building stuff
     memset(gamekeydown, 0, sizeof(gamekeydown));
     memset(gamekeytapped, 0, sizeof(gamekeytapped));
-    G_Clear_Key_Debounce();  // [Arcade] no release may outlive this reset
     mousex = mousey = mouse2x = mouse2y = 0;
     I_StartupMouse( true );  // play mode
 

@@ -10026,7 +10026,6 @@ consvar_t * menu_command_cvar_list[] =
   &cv_sdl2_textchar,
 #endif
 
-  &cv_keydebounce,   // [Arcade] keyboard release debounce
   &cv_controlperkey,
   &cv_controlscheme[0],   // [Arcade]
   &cv_controlscheme[1],
