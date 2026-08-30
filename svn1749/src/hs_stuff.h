@@ -170,6 +170,7 @@ const char *  HS_NextRecordDemoPath(void);
 // [Arcade] Pacifist and tyson tracking; see hs_stuff.c.
 void          HS_Player_Damaged_Monster(void);
 void          HS_Player_Fired_Weapon(int weapon);
+tic_t         HS_Cumulative_Tics(void);
 boolean       HS_Run_Is_Pacifist(void);
 boolean       HS_Run_Is_Tyson(void);
 

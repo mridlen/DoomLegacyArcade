@@ -93,6 +93,7 @@
 
 #include "z_zone.h"
 #include "hu_stuff.h"
+#include "hs_stuff.h"   // [Arcade] HS_Cumulative_Tics
 #include "d_main.h"
 
 #ifdef HWRENDER
@@ -2110,18 +2111,81 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            }
            break;
 
-         case 't': // level time / time limit remaining
+         case 't': // level time / time limit remaining, and the run total
            {
-               char buf[24];
-               int  sec;
+               // [Arcade] T is this level, TT is the whole run so far.  Both
+               // come from this one element rather than TT getting a letter
+               // of its own, so no saved `overlay` line has to be edited --
+               // see the config caveat that kept the clock itself invisible
+               // when `t` was added.
+               char  tbuf[24], ttbuf[24];
+               int   sec;
+               boolean show_total;
+               int   lab_w, val_w, blk_w, blk_x, y_t;
+
                if( timelimit_tics )
                    sec = (timelimit_tics > leveltime)?
                            (timelimit_tics - leveltime) / TICRATE : 0;
                else
                    sec = leveltime / TICRATE;
-               sprintf(buf, "T %d:%02d", sec/60, sec%60);
-               V_DrawString( SCX(CLK_CX - (V_StringWidth(buf) / 2), x0, xdiv),
-                             lowerbar_y + (int)( CLK_DY * sf_dupy ), 0, buf );
+               sprintf(tbuf, "%d:%02d", sec/60, sec%60);
+
+               // [Arcade] Single player only, on two separate grounds.
+               // HS_Scored_Game() is the meaning: TT is the *run's* total, and
+               // a run only exists in the scored modes (Single Player and
+               // Single Level) -- in a deathmatch there is nothing for it to
+               // total.  The view count is the layout: a split view has no
+               // room for a second row, which is the same limit that caps
+               // CLK_DY at 9 rather than a full character.
+               show_total = HS_Scored_Game() && ( D_NumViews() == 1 );
+               if( show_total )
+               {
+                   tic_t tt = HS_Cumulative_Tics() + leveltime;
+                   int   ts = tt / TICRATE;
+                   sprintf(ttbuf, "%d:%02d", ts/60, ts%60);
+               }
+               else
+               {
+                   ttbuf[0] = 0;
+               }
+
+               // Two columns: labels left aligned, times *right* aligned on a
+               // shared edge so the seconds line up under each other even when
+               // the minutes differ in width, which is the whole point of
+               // stacking them.  Widths are measured at draw time with
+               // V_StringWidth rather than assumed -- hu_font is proportional
+               // and its digits are not fixed width.
+               // Sized to the label actually in use, so with no TT row the
+               // block is exactly the old "T m:ss" string centred on CLK_CX
+               // -- the splitscreen and deathmatch layout this file already
+               // verified is left untouched.
+               lab_w = V_StringWidth( show_total ? "TT " : "T " );
+               val_w = V_StringWidth(tbuf);
+               if( show_total && V_StringWidth(ttbuf) > val_w )
+                   val_w = V_StringWidth(ttbuf);
+               blk_w = lab_w + val_w;
+
+               // Centred on CLK_CX as the single clock always was, so the
+               // block stays clear of the weapon sprite and of health/ammo.
+               blk_x = CLK_CX - (blk_w / 2);
+
+               // T keeps its row; TT goes *above* it, on lowerbar_y itself.
+               // There is nothing below: lowerbar_y is 16 base units above
+               // y 198 and CLK_DY is 9, so the T row already ends at 198.
+               // The row above is free over the same x span, because health
+               // and ammo bound this block horizontally, not vertically.
+               y_t = lowerbar_y + (int)( CLK_DY * sf_dupy );
+
+               if( show_total )
+               {
+                   V_DrawString( SCX(blk_x, x0, xdiv), lowerbar_y, 0, "TT" );
+                   V_DrawString( SCX(blk_x + blk_w - V_StringWidth(ttbuf),
+                                     x0, xdiv), lowerbar_y, 0, ttbuf );
+               }
+
+               V_DrawString( SCX(blk_x, x0, xdiv), y_t, 0, "T" );
+               V_DrawString( SCX(blk_x + blk_w - V_StringWidth(tbuf),
+                                 x0, xdiv), y_t, 0, tbuf );
            }
            break;
 
