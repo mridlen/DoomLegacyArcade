@@ -379,15 +379,17 @@ written up in full in the doc named beside it.
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`
 - **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
-- **Node-builder split vertices are rounded to integers, and that is a visible rendering bug.**
-  A diagonal linedef split by a BSP partition gets its intersection written to `VERTEXES` as whole
-  numbers, up to ~0.7 map units off the line it should sit on. Walls are drawn from *seg*
-  endpoints and the GL floor/ceiling polygons are clipped from *linedef* endpoints, so the two
-  disagree and a tapering gap shows the sky between them. `P_Remove_Slime_Trails` (`p_setup.c`)
-  projects those vertices back onto their linedef at load — and `AdjustSegs` (`hw_bsp.c`) must
-  not snap a linedef's *interior* split point to a subsector polygon vertex, or the two segs
-  snap to different polygons and the wall tears vertically instead. **Both halves are needed.**
-  → `gotchas.md`
+- **Node-builder rounding shows up as hairline seams in the GL renderer, in two separate
+  families, and each needed its own fix.** A diagonal linedef split by a BSP partition gets its
+  intersection written to `VERTEXES` as whole numbers, up to ~0.9 map units off the line. Walls
+  come from *seg* endpoints, flats from per-subsector polygons, and wherever the two disagree the
+  sky backdrop shows through. **Wall against flat**: `P_Remove_Slime_Trails` (`p_setup.c`) puts
+  the seg vertices back on their linedef, and `AdjustSegs` (`hw_bsp.c`) then pulls the *polygon*
+  corner onto the wall rather than the old reverse — the wall is authoritative because it is
+  anchored to map data. **Flat against flat**: `SolveTProblem` handles these and was pruning
+  almost every node away, because `SearchSegInBSP`'s bbox test compared `BOXRIGHT` against
+  `min_y` instead of `min_x`. Both fixes report counts at verbose; the "still not flush" count
+  must stay 0. → `gotchas.md`
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`

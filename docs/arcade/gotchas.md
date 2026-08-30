@@ -383,32 +383,118 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     only the *position* varying, which is exactly why the reporter kept seeing a seam that the
     measurements said was gone. Set **`localangle[0]`** too. The `Show Coordinates` readout
     (`menus.md`) is the cheap way to catch this: it prints the angle actually in force.
-  - **There is a second, larger seam family that this does NOT fix: cracks between adjacent
-    *flat* polygons.** Reported as E1M5 linedef 308, standing at X 370 Y 1409 ANG 217 in sector
-    100 (coordinates read straight off the `Show Coordinates` readout — this is exactly what it is
-    for). Reproduced at those coordinates and A/B-ed: **938 seam pixels without the vertex fixes,
-    944 with them** — the crops are indistinguishable. It is untouched by anything above.
-    - **Tell them apart by where the line sits.** The wall/flat seam hugs the top or bottom edge
-      of a wall. This one runs *through the ceiling* (or floor), well clear of any wall, along a
-      long straight diagonal — a **BSP partition line**. It is the boundary between two subsector
-      polygons, not between a wall and a flat.
-    - **Why it is still there.** `SolveTProblem` (`hw_bsp.c`) exists for exactly this and fixes
-      only half the cases by design. `PointInSeg` bails out with
-      `// The vertex is to the rightside of the seg, so adding it to the polygon would worsen the
-      crack` — a T-vertex lying *outside* the neighbouring polygon is left alone, because
-      inserting it would push that polygon's edge out and could break convexity, which the fan
-      triangulation depends on. The alternative correction is written but compiled out behind
-      `MOVEVERTEX`, above the comment `BP: can't move vertex : DON'T change polygon geometry !
-      (convex)` — and it is **dead code**: the branch assigns to an `a` that is not in scope, so
-      it would not even build. Do not "just enable" it.
-    - `AdjustSegs` carries the matching admission: *"here we can do better, using PointInSeg and
-      compute the right point position also split a polygon side to solve a T-intersection, but
-      too much work"*. This is a known, deliberately unfinished piece of the upstream hardware
-      renderer, not a local regression. Closing it properly means splitting the neighbouring
-      polygon's edge at the projected point while preserving convexity — a real piece of work,
-      not a patch.
+  - **There is a second seam family, cracks between adjacent *flat* polygons.** Reported as E1M5
+    linedef 308, standing at X 370 Y 1409 ANG 217 in sector 100 (coordinates read straight off the
+    `Show Coordinates` readout — this is exactly what it is for). It is untouched by the vertex
+    snapping above, and it needed its own fix.
+    - **Tell the two families apart by where the line sits.** The wall/flat seam hugs the top or
+      bottom edge of a wall. This one runs *through the ceiling* (or floor), well clear of any
+      wall, along a long straight diagonal — a **BSP partition line**. It is the boundary between
+      two subsector polygons, not between a wall and a flat.
     - The software renderer does not have it: flats there are drawn by span, not as per-subsector
       polygons.
+
+- **Both seam families are now closed, and this file had the second one's cause wrong.** It used
+  to say the flat-to-flat cracks were a deliberately unfinished piece of the upstream renderer
+  that could not be closed without "a real piece of work". That was a misreading. Each family
+  turned out to be one small defect, and both are fixed. → the two entries below
+
+- **A hairline of sky along the foot of a wall is the *flat* being in the wrong place, not the
+  wall.** Reported on E1M2 as "a gap between the floor and wall" on linedefs 506 and 648, and it
+  is a crisp one-pixel bright line running the whole length of the junction. The sky backdrop is
+  drawn behind everything, so any hole reads as a bright line whatever is beyond it.
+  - **The mechanism.** `P_Remove_Slime_Trails` put the *seg* vertices exactly on their linedef,
+    and `AdjustSegs` stopped snapping the wall away from them — so the wall is right. The flat is
+    not. `fracdivline` (`hw_bsp.c`) treats a cut landing within `DIVLINE_VERTEX_DIFF` (**0.45**)
+    of a polygon vertex the BSP split already made as passing *through* that vertex, so the flat
+    keeps the node builder's rounded corner while the wall uses the exact one. The wedge between
+    them is a real hole.
+  - Measured on E1M2 linedef 648: the wall endpoint is `(1210.0413, -663.5167)` and the polygon
+    corner `(1210.2347, -663.0609)` — **0.495 units apart**, the same wrong value in all four
+    surrounding subsector polygons. E1M6 linedef 1044's polygon corners were still exactly
+    `(1373, -163)` and `(1373.714, -162.286)`, the two values the earlier round had removed from
+    the *wall* and left in the *flats*.
+  - **The fix inverts the gluing: the wall is authoritative and the flat follows it.** `AdjustSegs`
+    used to move the wall endpoint onto the nearest vertex of its own subsector polygon, which
+    anchors the wall to a point the node builder invented. Now the seg keeps its true map position
+    and the polygon corner is pulled onto it (`pull_polyvertex`).
+    - **Only vertices the node builder invented move.** `in_poly_vert()` ones are level map data
+      and are left alone, so no real map geometry is distorted.
+    - **Pull every corner in range, not just the nearest.** On E1M5 linedef 308 the polygon
+      carries both the right corner `(344, 1312)` *and* a rounded one `(343.236, 1311.745)`; the
+      nearest is already correct, so a nearest-only pull leaves the 0.8 unit notch wide open.
+    - **`FLAT_PULL_DIST` is 1.5, not the old 0.75.** The worst corner actually observed is 0.86
+      out, so the old radius silently missed it. 1.5 is the widest tolerance already in the file
+      (`PointInSeg`'s `MAXDIST`).
+    - Polyvertexes are shared between the polygons meeting at a corner, so one pull fixes every
+      flat that uses it — which is why all four polygons at a split come right together.
+  - **It cannot desync a demo.** Only polyvertexes and `seg_t.length` change, and `r_defs.h` marks
+    that field *"length of the seg : used by the hardware renderer"*. Collision, the blockmap and
+    sight all work from linedefs.
+
+- **A BSP search that prunes on the wrong axis looks exactly like a feature that does not work.**
+  `SolveTProblem` exists to close the flat-to-flat cracks and was closing almost none of them,
+  because `SearchSegInBSP`'s bounding-box test compared the node's **right edge against `min_y`**
+  in both children:
+  ```c
+  && (nodes[bspnum].bbox[0][BOXRIGHT ] >= stp->min_y)   // means min_x
+  ```
+  `BOXRIGHT` is an x edge. On any map whose x range sits below its y range the test fails for
+  essentially every node, the whole subtree is pruned, and the function never looks there at all.
+  At E1M5's reported spot (X 370, Y 1409) that is every node in the region.
+  - **Counted both ways** — T-junction vertices actually inserted, with the bug reinstated versus
+    fixed: E1M5 **1 → 9**, E1M3 **1 → 7**, E1M2 **7 → 16**, MAP01 **4 → 8**, E1M7 34 → 36,
+    MAP15 32 → 33, E1M1 5 → 5, E1M6 2 → 2. Reinstating the bug is what proves the counter means
+    something; a clean number from a check that cannot fail is worth nothing.
+  - **`PointInSeg`'s bail-out is not the problem, and this file used to say it was.** The polygons
+    are **clockwise** (`hw_poly.h`: *"a convex 'plane' polygon, clockwise order"*), so the "right
+    side" of an edge is the polygon's **interior**. The rejected case is a T-vertex lying *inside*
+    the neighbour, which is an overlap and hides no crack; the accepted case is the one outside,
+    which is exactly the case that closes it and which also keeps the polygon convex. The design
+    was right, it simply was not being reached. The `MOVEVERTEX` branch above it is still dead
+    code — it assigns to an `a` that is not in scope and would not build. Do not "just enable" it.
+  - `AdjustSegs` still carries the matching upstream admission (*"here we can do better, using
+    PointInSeg ... but too much work"*), now stale: the wall/flat half is done, above.
+
+- **The engine reports both counts, so a regression is visible in the log.** Printed on every
+  level load, next to the existing `Creating polygons` / `Solving T-joins` lines:
+  `Solve T-joins: N vertices inserted.` and
+  `Wall/flat junctions: N polygon corners pulled onto walls, M still not flush.`
+  They are `EMSG_all`, not `EMSG_ver`, deliberately: **`EMSG_ver` messages do not appear during
+  level setup even with `-v`** — the existing `Slime trails:` line has the same problem and is
+  invisible for the same reason, which cost a while of thinking the fix had not run.
+  **M is the one that matters** — a polygon corner can be the nearest vertex to more than one wall
+  endpoint and would then be pulled twice, ending up flush with only the last. M counts corners
+  still sitting within `FLAT_PULL_DIST` of a wall endpoint without being exactly on it. It is
+  **0 on all nine maps tested** (E1M1, E1M2, E1M3, E1M5, E1M6, E1M7, MAP01, MAP07, MAP15). A
+  non-zero M means a seam survives somewhere.
+
+- **How the two fixes were measured.** Two baselines were built from the same tree — one binary
+  from `HEAD`, one with the fix — and the same viewpoints shot with each under
+  `SDL_VIDEODRIVER=offscreen` on the real GPU, counting "pixel much brighter than the rows two
+  above and two below" inside the wall region only. Seam pixels, baseline → fixed:
+
+  | viewpoint | baseline | fixed |
+  | --- | --- | --- |
+  | E1M5 ld 308, X 370 Y 1409 ANG 217 (ceiling crack) | 1534 | 161 |
+  | E1M6 ld 1044, X 1304 Y -227 ANG 12 | 102 | 50 |
+  | E1M2 ld 648, X 1874 Y -562 ANG 195 (the report) | 34 | 31 |
+  | five unrelated viewpoints across E1M1/E1M2/E1M3/E1M7 | — | unchanged |
+
+  - **The residue is not seam.** Cropping every survivor showed distant `BROWN144` banding, the
+    `COMPUTE` wall texture and sprites — texture detail that trips the same detector. The E1M2
+    count barely moves because only 3 of its 34 pixels were ever the seam; the *line itself* is
+    gone from the magnified crop, which is what the number cannot show. Always crop before
+    believing a count.
+  - **Run the A/B with `-nomonsters`.** With monsters alive the two runs are at different
+    animation frames, so the frames differ almost everywhere and the count picks up sprite edges.
+    That is the whole of a "17 → 19 regression" that vanished (0 → 0) once monsters were off. A
+    whole-frame difference bbox is the quick way to catch it: if it covers the screen, the
+    comparison is not controlled.
+  - The geometry can also be checked without pixels at all, and it is the stronger check: dump
+    each seg's `pv` and its subsector polygon's points and measure the worst polygon corner
+    against the wall endpoint it belongs to. After the fix that distance is **0.000000** on E1M2
+    506 and 648, E1M5 308 and E1M6 1044, with the walls on their linedef to within 3e-5.
   - **Do not measure this with the whole frame in the detector.** The red HUD numerals are bright
     pixels between darker rows and score as slivers, which made the combined fix look *worse* than
     the broken one (529 vs 411) until the region was restricted to the wall.

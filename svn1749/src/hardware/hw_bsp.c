@@ -2457,17 +2457,22 @@ void SearchSegInBSP(int bspnum, split_T_t * stp)
         if (bspnum & NF_SUBSECTOR)  goto got_subsector;
 
         // Not a subsector, visit left and right children.
+        // [Arcade] BOXRIGHT is a right *edge* and must be compared against
+        // min_x.  Both tests read min_y, so on any map whose x range sits
+        // below its y range the whole subtree was pruned and SolveTProblem
+        // never looked there at all -- which is why the E1M5 ceiling crack
+        // survived a function written to close exactly that crack.
         if(    (nodes[bspnum].bbox[0][BOXBOTTOM] <= stp->max_y)
             && (nodes[bspnum].bbox[0][BOXTOP   ] >= stp->min_y)
             && (nodes[bspnum].bbox[0][BOXLEFT  ] <= stp->max_x)
-            && (nodes[bspnum].bbox[0][BOXRIGHT ] >= stp->min_y)
+            && (nodes[bspnum].bbox[0][BOXRIGHT ] >= stp->min_x)
            )
             SearchSegInBSP(nodes[bspnum].children[0], stp);
 
         if(! ( (nodes[bspnum].bbox[1][BOXBOTTOM] <= stp->max_y)
             && (nodes[bspnum].bbox[1][BOXTOP   ] >= stp->min_y)
             && (nodes[bspnum].bbox[1][BOXLEFT  ] <= stp->max_x)
-            && (nodes[bspnum].bbox[1][BOXRIGHT ] >= stp->min_y)
+            && (nodes[bspnum].bbox[1][BOXRIGHT ] >= stp->min_x)
            ) )  break;
         // Tail recursion within loop.
         bspnum = nodes[bspnum].children[1];
@@ -2569,9 +2574,9 @@ void SolveTProblem (void)
             SearchSegInBSP(numnodes-1, & splitt);
         }
     }
-#ifdef DEBUG_HWBSP
-    GenPrintf( EMSG_debug, "DEBUG: SolveT: div polygon line= %d\n", num_T_vertex_fixed );
-#endif
+    // [Arcade] Counts vertices actually inserted, so the number is
+    // comparable across builds when checking this stayed effective.
+    GenPrintf( EMSG_all, "Solve T-joins: %d vertices inserted.\n", num_T_vertex_fixed );
 }
 
 
@@ -2703,10 +2708,37 @@ sector_t *  find_poly_sector( wpoly_t * ssp )
 }
 
 
-#define VERTEX_NEAR_DIST (0.75f) 
-// Only needs to be reasonably larger than VERTEX_NEAR_DIST.
-#define INITIAL_MAX    (10000000000000.0f)
+// [Arcade] VERTEX_NEAR_DIST and INITIAL_MAX were the radius and the sentinel
+// of the nearest-polygon-vertex search that used to move the wall.  The wall
+// no longer moves, so both are gone; FLAT_PULL_DIST below is the radius now.
 #define SEG_SAME_VERT   (0.5f)
+
+// [Arcade] How far a polygon corner may be from the wall endpoint it belongs
+// to and still be pulled onto it.  The node builder's rounding puts these up
+// to ~0.86 units out (E1M5 linedef 308), so 0.75 is not enough; 1.5 matches
+// the widest tolerance already used in this file (PointInSeg's MAXDIST).
+#define FLAT_PULL_DIST   (1.5f)
+
+// [Arcade] Count of polygon corners pulled onto a wall endpoint, and of
+// corners that were still not flush afterwards.  See the block in AdjustSegs.
+static int  num_flat_pulled;
+static int  num_flat_unflush;
+
+// Move a node-invented polygon corner onto the wall endpoint it belongs to.
+//  pv : the polygon corner, may be shared by the polygons meeting there
+//  target : the seg endpoint, which is on the linedef line
+static
+void  pull_polyvertex( polyvertex_t * pv, polyvertex_t * target )
+{
+    if( pv == target )  return;   // already the one shared vertex
+    // A level map vertex is map data and is never moved.
+    if( in_poly_vert( pv ) )  return;
+    if( pv->x == target->x && pv->y == target->y )  return;
+
+    pv->x = target->x;
+    pv->y = target->y;
+    num_flat_pulled++;
+}
 
 // Adds polyvertex_t references to the segs.
 // [WDJ] 2013/12 Removed writes of polyvertex_t* to vertex_t*, it now has its
@@ -2723,8 +2755,9 @@ void AdjustSegs(void)
     sector_t * ss_sector, * poly_sector, * lseg_sector;
     seg_t* lseg;
     wpoly_t *wp;
-    int v1found=0, v2found=0;
-    float nearv1, nearv2;
+
+    num_flat_pulled = 0;
+    num_flat_unflush = 0;
 
     // for all segs in all sectors
     for(ssnum=0; ssnum<numsubsectors; ssnum++)
@@ -2741,7 +2774,6 @@ void AdjustSegs(void)
         for(;segcount--;lseg++)
         {
             polyvertex_t sv1, sv2;  // seg v1, v2
-            float distv1,distv2,tmp;
 
             if( lseg->linedef->sidenum[1] != NULL_INDEX )
             {
@@ -2776,71 +2808,62 @@ void AdjustSegs(void)
             sv2.x = FIXED_TO_FLOAT( lseg->v2->x );
             sv2.y = FIXED_TO_FLOAT( lseg->v2->y );
 
-            nearv1=nearv2 = INITIAL_MAX;
-            // find nearest existing poly pts to seg v1, v2
+            // [Arcade] The wall is authoritative; the flat follows it.
+            //
+            // This gluing used to run the other way: the wall endpoint was
+            // moved to the nearest vertex of its own subsector polygon.  That
+            // anchors the wall to a point the node builder invented, and the
+            // two segs meeting at a linedef split live in *different*
+            // subsectors, so each snapped to a different polygon and the wall
+            // tore open at the split (E1M6 linedef 1044, 0.73 units apart).
+            //
+            // Both endpoints of a seg now keep their true map position:
+            // P_Remove_Slime_Trails has already put a node-invented split
+            // vertex exactly on its linedef's line, and CutOutSubsecPoly cuts
+            // the flats with that same line, so the seg vertex is the point
+            // both surfaces should meet at.  The polygon corner is pulled
+            // onto it instead.
+            //
+            // That corner is off by up to ~0.86 units in practice, because
+            // fracdivline() treats a cut landing within DIVLINE_VERTEX_DIFF
+            // (0.45) of an existing polygon vertex as passing through it, so
+            // the flat keeps the BSP's rounded corner while the wall uses the
+            // exact one.  The wedge between them is a real hole, and the sky
+            // is drawn behind everything, so it reads as a bright hairline
+            // along the foot of the wall (E1M2 linedefs 506 and 648).
+            //
+            // Only vertices the node builder invented are moved -- a level
+            // map vertex is real map data, so in_poly_vert() ones are left
+            // alone.  Polyvertexes are shared between the polygons that meet
+            // at a corner, so one pull fixes every flat using it.
+            lseg->pv1 = store_polyvertex( &sv1, SEG_SAME_VERT );
+            lseg->pv2 = store_polyvertex( &sv2, SEG_SAME_VERT );
+
+            // Every corner in range is pulled, not just the nearest one: a
+            // polygon can carry the right corner *and* a rounded one a
+            // fraction of a unit away, and it is the spurious one that has to
+            // move.  On E1M5 linedef 308 the polygon has both (344,1312) and
+            // (343.236,1311.745), so the nearest is already correct and a
+            // nearest-only pull leaves the 0.8 unit notch open.
             for(j=0; j<wp->numpts; j++)
             {
-                distv1 = wp->ppts[j]->x - sv1.x; 
-                tmp    = wp->ppts[j]->y - sv1.y;
-                distv1 = distv1*distv1 + tmp*tmp;
-                if( distv1 <= nearv1 )
+                float d1x = wp->ppts[j]->x - sv1.x;
+                float d1y = wp->ppts[j]->y - sv1.y;
+                float d2x = wp->ppts[j]->x - sv2.x;
+                float d2y = wp->ppts[j]->y - sv2.y;
+                float d1 = d1x*d1x + d1y*d1y;
+                float d2 = d2x*d2x + d2y*d2y;
+
+                if( d1 <= d2 )
                 {
-                    v1found=j;
-                    nearv1 = distv1;
+                    if( d1 <= FLAT_PULL_DIST*FLAT_PULL_DIST )
+                        pull_polyvertex( wp->ppts[j], lseg->pv1 );
                 }
-                // the same with v2
-                distv2 = wp->ppts[j]->x - sv2.x; 
-                tmp    = wp->ppts[j]->y - sv2.y;
-                distv2 = distv2*distv2 + tmp*tmp;
-                if( distv2 <= nearv2 )
+                else
                 {
-                    v2found=j;
-                    nearv2 = distv2;
+                    if( d2 <= FLAT_PULL_DIST*FLAT_PULL_DIST )
+                        pull_polyvertex( wp->ppts[j], lseg->pv2 );
                 }
-            }
-
-            // [Arcade] An interior split point of a linedef must not snap.
-            //
-            // This snapping glues a wall to its subsector's floor/ceiling
-            // polygon, and for a linedef's own two endpoints that is what is
-            // wanted.  But the point where a node builder split a linedef is
-            // shared by two segs in two *different* subsectors, and each one
-            // snaps to the nearest vertex of its own polygon -- which need
-            // not be the same point.  On E1M6 linedef 1044 they land 0.73
-            // units apart and the wall tears open vertically at the split.
-            //
-            // P_Remove_Slime_Trails has already put that vertex exactly on
-            // the linedef's line, and CutOutSubsecPoly cuts the polygons with
-            // the same line, so leaving it alone keeps the wall straight,
-            // continuous, and flush with both flats.  store_polyvertex()
-            // dedupes within SEG_SAME_VERT, so both segs get the one shared
-            // polyvertex.
-            boolean v1_ld_end = ( lseg->v1 == lseg->linedef->v1
-                               || lseg->v1 == lseg->linedef->v2 );
-            boolean v2_ld_end = ( lseg->v2 == lseg->linedef->v1
-                               || lseg->v2 == lseg->linedef->v2 );
-
-            // close enough to be considered the same ?
-            if( v1_ld_end && nearv1<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
-            {
-                // share vertex with segs
-                lseg->pv1 = wp->ppts[v1found];
-            }
-            else
-            {
-                // BP: here we can do better, using PointInSeg and compute
-                // the right point position also split a polygon side to
-                // solve a T-intersection, but too much work
-
-                lseg->pv1 = store_polyvertex( &sv1, SEG_SAME_VERT );
-            }
-            if( v2_ld_end && nearv2<=VERTEX_NEAR_DIST*VERTEX_NEAR_DIST )
-            {
-                lseg->pv2 = wp->ppts[v2found];
-            }
-            else
-            {
-                lseg->pv2 = store_polyvertex( &sv2, SEG_SAME_VERT );
             }
 
             // recompute length
@@ -2849,9 +2872,6 @@ void AdjustSegs(void)
                 float x=lseg->pv2->x - lseg->pv1->x + (0.5*FIXED_TO_FLOAT_MULT);
                 float y=lseg->pv2->y - lseg->pv1->y + (0.5*FIXED_TO_FLOAT_MULT);
                 lseg->length = sqrt(x*x+y*y)*FRACUNIT;
-                // BP: debug see this kind of segs
-                //if (nearv2>VERTEX_NEAR_DIST*VERTEX_NEAR_DIST || nearv1>VERTEX_NEAR_DIST*VERTEX_NEAR_DIST)
-                //    lseg->length=1;
             }
         }
 
@@ -2896,6 +2916,45 @@ void AdjustSegs(void)
             lseg->pv2 = store_vertex( lseg->v2, SEG_SAME_VERT );
         }
     }
+    // [Arcade] Verify the pull actually left every wall flush with its flat.
+    //
+    // A polygon corner can be the nearest vertex to more than one seg
+    // endpoint, and would then be pulled twice, ending up flush with only the
+    // last one.  Re-checking is the only way to know that did not happen:
+    // count the corners that are still near a wall endpoint without being on
+    // it.  A non-zero count means a seam survives somewhere.
+    for(ssnum=0; ssnum<numsubsectors; ssnum++)
+    {
+        wp = & wpoly_subsectors[ssnum];
+        if( wp->numpts == 0 )  continue;
+
+        segcount = subsectors[ssnum].numlines;
+        lseg = &segs[subsectors[ssnum].firstline];
+        for(; segcount--; lseg++)
+        {
+            int e;
+            for( e = 0; e < 2; e++ )
+            {
+                polyvertex_t * spv = e ? lseg->pv2 : lseg->pv1;
+
+                if( spv == NULL )  continue;
+                for( j=0; j<wp->numpts; j++ )
+                {
+                    float dx = wp->ppts[j]->x - spv->x;
+                    float dy = wp->ppts[j]->y - spv->y;
+                    if( dx*dx + dy*dy > FLAT_PULL_DIST*FLAT_PULL_DIST )
+                        continue;
+                    if( dx != 0.0f || dy != 0.0f )
+                        num_flat_unflush++;
+                }
+            }
+        }
+    }
+
+    GenPrintf( EMSG_all,
+               "Wall/flat junctions: %d polygon corners pulled onto walls, %d still not flush.\n",
+               num_flat_pulled, num_flat_unflush );
+
 #ifdef DEBUG_HWBSP
     GenPrintf( EMSG_debug, "DEBUG: Lost seg sector cnt = %i\n", lost_segsec_cnt );
     GenPrintf( EMSG_debug, "DEBUG: Fixed seg sector cnt = %i\n", fixed_segsec_cnt );
