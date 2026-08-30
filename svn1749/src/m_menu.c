@@ -2308,15 +2308,24 @@ menu_t  PlayerDirectorDef =
     0,
 };
 
+// [Arcade] Always the per-panel list, whatever the splitscreen state.
+//
+// It used to jump straight to player 1's own page unless menu_multiplayer was
+// set, and that flag is only raised when the Multiplayer menu is opened
+// (M_Player2_MenuEnable, from SplitScreen_OnChange).  So Options -> Player
+// showed one thing on a fresh boot and a different thing after somebody had
+// visited New Game -> Multiplayer and backed out again -- the same menu item
+// leading to two different screens depending on where the player had been.
+//
+// It also meant this route still landed on PlayerOptionsDef, which is now the
+// devmode-only remainder, so it was the one path that missed the consolidated
+// per-player page entirely.
+//
+// The list is safe to show unconditionally: the lockdown already hides the
+// rows for panels the cabinet does not have, so a one panel machine shows one
+// entry rather than four.
 static void M_PlayerDirector(int choice)
 {
-    // Select the menu
-    if( ! menu_multiplayer )
-    {
-        M_SetupMultiPlayer_pind( 0 );
-        Push_Setup_Menu( &PlayerOptionsDef );
-        return;        
-    }
     Push_Setup_Menu( &PlayerDirectorDef );
 }
 

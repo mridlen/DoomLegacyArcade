@@ -376,6 +376,16 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     one panel it silently did not mean what it appeared to. `OptionsDef.lastOn` moves 2 → 3 with it,
     or the cursor would start on an invisible row. Options now shows **Player >>, Game Options >>,
     Select Game >>**; devmode still shows everything, verified in both modes.
+  - **Options → Player always shows the per-panel list now** (`M_PlayerDirector`). It used to jump
+    straight to player 1's own page unless `menu_multiplayer` was set — and that flag is only raised
+    when the Multiplayer menu is opened (`M_Player2_MenuEnable`, from `SplitScreen_OnChange`). So the
+    same menu item led to **two different screens depending on where the player had been**: player
+    1's page on a fresh boot, the Player 1-4 list after somebody had visited New Game → Multiplayer
+    and backed out. It was also the one route still landing on `PlayerOptionsDef`, so it missed the
+    consolidated page entirely.
+    - Safe to show unconditionally because the lockdown already hides the rows for panels the
+      cabinet does not have. Verified on a fresh boot with no Multiplayer visit: with four panels
+      configured all four rows show, with one panel only `Player1 config >>` does.
   - Both routes in were repointed: `M_PlayerDirectorChoice` (Options → Player) and
     `M_TwoPlayer_PlayerConfig` (Multiplayer → Player n config). Both go through
     `M_SetupMultiPlayer[]` rather than pushing the menu directly, which brings the rest of the
