@@ -2328,7 +2328,17 @@ static void M_DrawSetupMultiPlayerMenu(void);
 static void M_MultiPlayer_Responder(int choice);
 static boolean M_QuitMultiPlayerMenu(void);
 
-#define PLBOXW    8
+// [Arcade] 7, was 8.  The box was noticeably wider than the man in it.
+//
+// Measured across the whole idle animation rather than from one frame, which
+// matters because the frames differ: widths 41 / 37 / 40 and left offsets
+// 18 / 19 / 16, so the sprite's closest approach to the interior edges was
+// L=13 R=8, not the 14/9 a single sample suggested.  The sprite is centred on
+// the interior, so each unit removed here takes 4px off *each* side: 7 leaves
+// a worst case of L=9 R=4, while 6 would leave R=0 with the sprite touching
+// the frame.  Height is left alone -- there is only 8px of slack vertically
+// and the sprite is drawn with its feet 8px above the interior floor.
+#define PLBOXW    7
 #define PLBOXH    9
 #define PLBOXX    90
 #define PLBOXY    8

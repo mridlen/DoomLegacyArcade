@@ -396,11 +396,30 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   than the 10–14px this page steps by. Dropping `PLBOXH` from 9 to 8 would leave the sprite flush
   against the top of its box and still not buy a row.
 
-  There is real slack **horizontally** (23px), so the box could be narrowed to sit tighter around
-  the sprite. That would not free a row either, but moving the box *right* would let `Control
-  scheme` (label ending at x 135) sit beside it and group all three player rows together — at the
-  risk of the name box, drawn from the same `PLBOXX` at `MAXPLAYERNAME` wide, running off the right
-  edge. Not attempted: it is a visual judgement that needs eyes on the cabinet.
+  There was real slack **horizontally**, and `PLBOXW` is now **7**, was 8 — the box was noticeably
+  wider than the man inside it.
+
+  **Measure across the whole idle animation, not one frame.** The frames differ: widths 41 / 37 / 40
+  with left offsets 18 / 19 / 16, so the sprite's closest approach to the interior edges was
+  **L=13 R=8**, not the 14/9 a single sample reported. The sprite is centred on the interior, so
+  each unit removed takes 4px off *each* side:
+
+  | `PLBOXW` | interior | worst-case margins |
+  | --- | --- | --- |
+  | 8 (was) | 64 | L 13, R 8 |
+  | **7 (now)** | **56** | **L 9, R 4** |
+  | 6 | 48 | L 5, **R 0** — sprite touching the frame |
+
+  Confirmed after the change: interior x 125..181 and worst margins L=9 R=4, exactly as predicted,
+  with the row layout untouched (bottom still y 187 of 200). Height is deliberately left alone —
+  8px of slack against a 10–14px row pitch, as above.
+  - The sprite is clipped at x 0..300 by `V_DrawMappedPatch_Box`, **not** to its own box, so an
+    unusually wide skin already spilled past the frame before this change; narrowing moves that
+    threshold 8px closer. Changing skins is devmode-only, so a player cannot reach it.
+
+  Moving the box *right* instead would let `Control scheme` (label ending at x 135) sit beside it
+  and group all three player rows together — at the risk of the name box, drawn from the same
+  `PLBOXX` at `MAXPLAYERNAME` wide, running off the right edge. Not attempted.
 
   ### It costs no vertical space, which was the worry
 
