@@ -2130,14 +2130,22 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
                    sec = leveltime / TICRATE;
                sprintf(tbuf, "%d:%02d", sec/60, sec%60);
 
-               // [Arcade] Single player only, on two separate grounds.
+               // [Arcade] Single Player only, on three separate grounds.
+               //
                // HS_Scored_Game() is the meaning: TT is the *run's* total, and
-               // a run only exists in the scored modes (Single Player and
-               // Single Level) -- in a deathmatch there is nothing for it to
-               // total.  The view count is the layout: a split view has no
-               // room for a second row, which is the same limit that caps
-               // CLK_DY at 9 rather than a full character.
-               show_total = HS_Scored_Game() && ( D_NumViews() == 1 );
+               // a run only exists in the scored modes -- in a deathmatch
+               // there is nothing for it to total.
+               //
+               // ! single_level_mode narrows that to Single Player.  A Single
+               // Level run is one map by definition, so its total is always
+               // identical to the level clock directly beneath it, and two
+               // rows showing the same number is worse than one row.
+               //
+               // The view count is the layout: a split view has no room for a
+               // second row, which is the same limit that caps CLK_DY at 9
+               // rather than a full character.
+               show_total = HS_Scored_Game() && ! single_level_mode
+                            && ( D_NumViews() == 1 );
                if( show_total )
                {
                    tic_t tt = HS_Cumulative_Tics() + leveltime;

@@ -64,9 +64,9 @@ Discord is likely to get you banned.
   anyone trying. When a run is still holding one of them, **PACIFIST** or **TYSON** blinks at the top
   of the intermission.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
-  In single player a second line above it, **TT**, shows the total time for the whole run so far, so
+  In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
   you can see both how long this level is taking and how the run is going. The two line up in
-  columns.
+  columns. Single Level games do not show it — one map, so it would only repeat the level clock.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.
 - **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
