@@ -380,6 +380,27 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **The new row goes *before* `setupmultiplayer_options` in the array.** `M_SetupMultiPlayer1`
     truncates the page with `numitems = setupmultiplayer_options + 1` to drop the Player2-only rows,
     so anything placed after that index would silently vanish for Player 1.
+  - **On a page with `IT_YOFFSET` rows, the array order *is* the selection order and the two have to
+    be kept in step by hand.** The cursor steps by index — `M_MultiPlayer_Responder` here, and
+    `M_Responder` generally — not by where a row lands on screen. The crosshair row was first placed
+    after Control scheme in the array while drawing above it, and the cursor then went colour →
+    Control scheme *at the bottom of the page* → back up to crosshair. The fix is simply that the y
+    offsets must ascend with the index; there is nothing in the drawer that will do it for you, and
+    nothing that warns.
+
+  ### The preview box, measured
+
+  Asked whether shrinking the player sprite or its box would free a row, the answer from measuring
+  is **no, not vertically**: the sprite is **41 × 56** in a **64 × 72** box interior, and the sprite
+  is drawn with its feet 8px above the interior bottom, so the usable vertical slack is 8px — less
+  than the 10–14px this page steps by. Dropping `PLBOXH` from 9 to 8 would leave the sprite flush
+  against the top of its box and still not buy a row.
+
+  There is real slack **horizontally** (23px), so the box could be narrowed to sit tighter around
+  the sprite. That would not free a row either, but moving the box *right* would let `Control
+  scheme` (label ending at x 135) sit beside it and group all three player rows together — at the
+  risk of the name box, drawn from the same `PLBOXX` at `MAXPLAYERNAME` wide, running off the right
+  edge. Not attempted: it is a visual judgement that needs eyes on the cabinet.
 
   ### It costs no vertical space, which was the worry
 
