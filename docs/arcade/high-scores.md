@@ -875,3 +875,104 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     and `cv_blockmap_gen` are the exceptions — not recorded anywhere**, so changing one would
     desync a record demo. All three are pinned by the ruleset, which is now the only thing keeping
     them consistent. Worth remembering if a demo ever desyncs mysteriously.
+
+---
+
+## Pacifist and Tyson
+
+Two more categories, making four: `speed`, `max`, `pacifist`, `tyson` (`HS_NUMCAT`). They apply to
+Single Player and Single Level; multiplayer is never scored.
+
+**A run is measured against every category it still qualifies for**, which is what makes the
+cross-listing work. An ordinary fast run of the first map is usually pacifist as well, and it lands
+on both boards without the player setting out to do anything special — no separate attempt, no mode
+to select. Confirmed by the smoke test's own scored exit, which records **speed and pacifist** and
+correctly records neither max nor tyson (it gets no kills).
+
+- **Pacifist — never damage a monster.** Hooked in `P_DamageMobj` (`p_inter.c`) on the *source*
+  rather than on the weapon, which covers every route in one test: a hitscan, a melee swing, a
+  rocket's splash **and a barrel chain** all arrive with the player as source, because `A_Explode`
+  passes the barrel's own target — whoever set it off — on as the source of the blast. So "no
+  shooting barrels that harm monsters" needs no rule of its own.
+  - `MF_COUNTKILL` is the monster test. It excludes barrels, which are shootable but are not
+    monsters: blowing one up harms nothing by itself, and if it does harm a monster that damage
+    arrives as its own call with the player still the source.
+  - **Damage-based, not fire-based.** Firing into the air, at a wall, or at a barrel that harms
+    nothing is all still pacifist. Monster infighting is untouched — the source is the other
+    monster.
+  - `source->player` is checked against `source` itself so a voodoo doll cannot be mistaken for the
+    player, the same guard the voodoo code beneath it uses.
+- **Tyson — 100% kills using only fist, chainsaw and pistol.** Two conditions. The weapon half is
+  hooked in `P_FireWeapon` (`p_pspr.c`), **after** its `P_CheckAmmo` early-out so a click on an
+  empty weapon — which fires nothing — does not void the run. Carrying and even selecting other
+  weapons is fine; the hook is only reached when a shot is actually taken. The kills half is
+  per-level, `all_kills`, passed from `WI_Init_Stats` beside the existing `maxed`.
+  - `all_kills` is computed once and `maxed` built from it, rather than the two being written out
+    separately, so they cannot drift apart — the same reason `sp_maxed` exists.
+
+### The per-category endpoint machinery was generalised
+
+Each category ends where *it* ends, not where the speed run ends — the reason `hs_max_endmap` /
+`hs_max_tics` exist, and the subject of the "playing better scored worse" bug above. Pacifist and
+tyson need exactly the same treatment, and three hand-written copies of that reasoning is how that
+bug comes back. So the single max pair and its scattered `cat == HS_CAT_max` tests became arrays:
+
+| was | now |
+| --- | --- |
+| `hs_run_is_max` | `hs_cat_alive[HS_NUMCAT]` |
+| `hs_run_endmap_max` | `hs_cat_alive_at_exit[HS_NUMCAT]` |
+| `hs_max_endmap` / `hs_max_tics` | `hs_cat_endmap[][9]` / `hs_cat_tics[]` |
+
+Speed is simply the category that never stops being alive, so its endpoint follows every exit.
+
+- **`hs_cat_alive[]` must be initialised `{true,...}`, not left zeroed.** A game started from the
+  command line (`-warp`) never runs `HS_NewGame` — the same reason `hs_run_board_ok` and
+  `hs_run_ranked` are initialised true. This is not hypothetical: zero-initialised, it broke the
+  smoke test's `exitlevel` check immediately, because **speed had never consulted a flag before and
+  now does**, so nothing scored at all. Generalising a special case makes the general path depend on
+  state the special case never touched.
+- **Verified against the five scenarios this file already documents**, driven through a temporary
+  console command that calls the scoring entry points directly (a multi-level run cannot be played
+  headlessly — the intermission will not advance), one scenario per skill so they do not compete on
+  the same board:
+
+  | pattern | expected | got |
+  | --- | --- | --- |
+  | `1` | speed MAP01, max MAP01 | ✓ |
+  | `10` | **speed MAP02, max MAP01** | ✓ |
+  | `110` | speed MAP03, max MAP02 | ✓ |
+  | `0` | speed only | ✓ |
+  | `11` | both MAP02 | ✓ |
+
+  The second row is the one that matters: it is the case the endpoint fix was written for, and it
+  still behaves after the refactor.
+- Both detection hooks were confirmed to fire in the real playsim by replaying a record demo with
+  the hooks instrumented: `fired weapon=1` (pistol, allowed) and `PACIFIST voided` at the tic the
+  player first damaged a monster. A MAP01 speedrun demo produced *no* hook calls at all, which is
+  the pacifist case.
+
+### Where they appear
+
+- **Their own attract pages, like speed and max.** `HS_Build_Pages` is generic over `HS_NUMCAT`, so
+  the per-(skill, category) Single Level pages appear on their own. The **Survival** (episode) page
+  had a hardcoded two-column layout (`cat ? COL1 : COL0`), so it is now enumerated **once per
+  category pair** — speed/max, then pacifist/tyson — keeping the same two columns and the same code.
+  `HS_SV_NUMCOL` is that pairing, and `HS_Is_Pair_Tail` uses it so the two halves of a pair still
+  show together in one attract slot. Verified by dumping the enumeration: two survival pages per
+  episode and a single-level page per category, with a skill that has no tyson entry correctly
+  producing no tyson page.
+- **A blinking `PACIFIST` / `TYSON` banner** at the top of the intermission (`wi_stuff.c`),
+  announcing that the run just exited is still holding the condition. Placed above the stats block:
+  `SP_STATSX` is 50 and the Kills row starts at `SP_STATSY` 50, so the band above it is free full
+  width. Blinks on `gametic & 16` like `NEW RECORD`, the `MAX` indicator and `PRESS FIRE`, so the
+  cabinet flashes on one beat. Both can be true at once, so they are laid out as one centred line
+  with a gap rather than each centred separately and overlapping.
+- **Not as rows in the intermission's record table**, and that is a hard layout limit rather than a
+  preference (`HS_IM_NUMROWS`). The block cannot start above y 116 — it draws its own header 14
+  above that, which would land on the Secrets percentage ending at 98 — and steps by `HS_IM_ROW` 12
+  with the `YOU` row after the categories. At four categories `YOU` would sit at 164 and run to 171,
+  straight through the Time/Par row at `SP_TIMEY` = `BASEVIDHEIGHT-32` = **168**. `NEW RECORD` below
+  it still fires for all four categories.
+- **Not in the New Game skill preview either** (`HS_SKR_NUMROWS`). Four rows would fit — 163/172/181/190,
+  ending at 197 of 200 — but it buries the skill menu in numbers for two categories almost nobody is
+  playing for at the moment they choose a difficulty.

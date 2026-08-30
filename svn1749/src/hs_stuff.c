@@ -38,9 +38,26 @@
 // that has taken 100% kills and 100% secrets on every level so far (items
 // are not required); the first level exited short of that ends the max run,
 // while the speed run continues.
-#define HS_NUMCAT  2
-enum { HS_CAT_speed = 0, HS_CAT_max = 1 };
-static const char * hs_catname[HS_NUMCAT] = { "speed", "max" };
+// [Arcade] Four categories, all timed identically and all scored from the
+// same run -- a run is measured against every category it still qualifies
+// for, so one playthrough can take several boards at once.  That is what
+// makes the cross-listing work: an ordinary fast run of E1M1 is usually
+// pacifist as well, and it lands on both boards without the player having
+// set out to do anything special.
+//
+//   speed     just finish
+//   max       100% kills and 100% secrets on every level
+//   pacifist  never damage a monster -- see HS_Player_Damaged_Monster
+//   tyson     100% kills on every level, using only fist, chainsaw and
+//             pistol -- see HS_Player_Fired_Weapon
+//
+// hs_catname[] is the on-disk spelling.  The board and demo files are keyed
+// by it, so adding categories extends the format without invalidating what is
+// already written: an older file simply has no lines for the new ones.
+#define HS_NUMCAT  4
+enum { HS_CAT_speed = 0, HS_CAT_max = 1, HS_CAT_pacifist = 2, HS_CAT_tyson = 3 };
+static const char * hs_catname[HS_NUMCAT] =
+    { "speed", "max", "pacifist", "tyson" };
 
 // Time columns are right-justified at x + HS_COL_TIME + cat*HS_COL_STEP.
 // Sized so the skill label (up to "ITYTD") clears the first column and the
@@ -135,7 +152,9 @@ static char    hs_run_endmap[9]   = "";
 static skill_e hs_run_skill       = sk_baby;
 static tic_t   hs_run_tics        = 0;
 static int     hs_run_levels      = 0;    // scored level exits this run
-static boolean hs_run_endmap_max  = false;// was the max category still alive?
+// Was each category still alive at the last scored exit?  Indexed by
+// HS_CAT_*; speed is always true.
+static boolean hs_cat_alive_at_exit[HS_NUMCAT];
 static char    hs_run_gameid[HS_GAMEID_LEN] = "";
 
 // [Arcade] The *max* run ends where the max run ends, which is not where the
@@ -152,8 +171,13 @@ static char    hs_run_gameid[HS_GAMEID_LEN] = "";
 // recorded nothing at all.  Playing better scored worse, which is how this
 // was found.  Empty endmap means the run was never max (level 1 was already
 // short), and no max entry is committed.
-static char    hs_max_endmap[9]   = "";
-static tic_t   hs_max_tics        = 0;
+// Generalised to one endpoint per category.  It was originally a single
+// hs_max_endmap/hs_max_tics pair with `cat == HS_CAT_max` tests scattered
+// through the commit path; pacifist and tyson end at their own points for
+// exactly the same reason, and three copies of that reasoning is how the bug
+// above gets reintroduced.  Speed's entry simply never stops advancing.
+static char    hs_cat_endmap[HS_NUMCAT][9];
+static tic_t   hs_cat_tics[HS_NUMCAT];
 
 // Ruleset-and-cheating only -- a *death does not clear this*, which is the
 // whole point of the progress board.  hs_run_ranked still goes false on a
@@ -359,7 +383,16 @@ boolean  HS_Ruleset_Is_Ranked( void )
 
 
 static tic_t   hs_cumulative_time = 0;
-static boolean hs_run_is_max = true;   // every level maxed so far this run
+// Is each category still achievable this run?  Latched false and never set
+// true again until HS_NewGame.  Indexed by HS_CAT_*; speed stays true.
+//
+// Initialised true for the same reason as hs_run_board_ok and hs_run_ranked
+// above: a game started from the command line (-warp) never runs HS_NewGame,
+// so a flag defaulting false would silently score nothing at all.  That is
+// not hypothetical -- it broke the smoke test's exitlevel check the moment
+// this array replaced the old single hs_run_is_max, because speed had never
+// consulted a flag before and now does.
+static boolean hs_cat_alive[HS_NUMCAT] = { true, true, true, true };
 // Latched false the moment the ruleset does not match the ranked baseline,
 // so changing a setting mid-run voids it rather than only the levels after.
 static boolean hs_run_ranked = true;
@@ -1221,9 +1254,9 @@ static void  HS_Run_Reset( void )
     hs_run_skill       = sk_baby;
     hs_run_tics        = 0;
     hs_run_levels      = 0;
-    hs_run_endmap_max  = false;
-    hs_max_endmap[0]   = 0;
-    hs_max_tics        = 0;
+    memset( hs_cat_alive_at_exit, 0, sizeof(hs_cat_alive_at_exit) );
+    memset( hs_cat_endmap, 0, sizeof(hs_cat_endmap) );
+    memset( hs_cat_tics,   0, sizeof(hs_cat_tics) );
     hs_run_gameid[0]   = 0;
     hs_initials_pending = false;
     hs_placed_n        = 0;
@@ -1255,7 +1288,12 @@ static boolean  HS_Run_Leads( skill_e skill, int cat )
     int  ns;
 
     if( hs_run_levels == 0 || ! hs_run_board_ok )  return false;
-    if( cat == HS_CAT_max && ! hs_run_endmap_max )  return false;
+    if( cat < 0 || cat >= HS_NUMCAT )  return false;
+    // Only consulted while the category is still alive, at which point its
+    // endpoint and the speed endpoint are identical -- which is also what
+    // stops a later non-qualifying exit re-snapshotting that category's demo
+    // with a buffer that has run past the record.
+    if( ! hs_cat_alive_at_exit[cat] )  return false;
 
     HS_Run_As_Entry( &run, skill, cat );
     ns = HS_Board_Slots( &run, slot, HS_MAX_RUNS );
@@ -1355,7 +1393,7 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
     {
         hs_run_t run;
 
-        if( cat == HS_CAT_max && ! hs_run_is_max )  continue;
+        if( ! hs_cat_alive[cat] )  continue;
 
         if( ! rec->has_record[cat][skill]
             || tics < rec->besttime[cat][skill] )
@@ -1442,18 +1480,17 @@ void  HS_Run_Finished( void )
         // Taking both from the speed endpoint is what used to throw away a
         // max record the moment the run continued past it.
         //
-        // An empty hs_max_endmap means the max was already gone at the first
-        // exit, so there is no max run to commit.
-        if( cat == HS_CAT_max && hs_max_endmap[0] == 0 )  continue;
+        // An empty endmap means the category was already gone at the first
+        // exit, so there is no run of that kind to commit.
+        if( hs_cat_endmap[cat][0] == 0 )  continue;
 
         memset( &run, 0, sizeof(run) );
         dl_strncpy( run.game, hs_run_gameid, HS_GAMEID_LEN-1 );
         dl_strncpy( run.startmap, hs_run_startmap, 8 );
-        dl_strncpy( run.endmap,
-                    (cat == HS_CAT_max) ? hs_max_endmap : hs_run_endmap, 8 );
+        dl_strncpy( run.endmap, hs_cat_endmap[cat], 8 );
         run.skill = (byte) hs_run_skill;
         run.cat   = (byte) cat;
-        run.tics  = (cat == HS_CAT_max) ? hs_max_tics : hs_run_tics;
+        run.tics  = hs_cat_tics[cat];
 
         HS_Record_Placement( &run );
     }
@@ -1606,6 +1643,7 @@ static void  HS_Seed_Runs_From_Splits( void )
 
 void HS_Init( void )
 {
+
     boolean  had_runfile;
 
     cat_filename( hs_scorefile, legacyhome, "highscores.dat" );
@@ -1687,10 +1725,54 @@ void Command_ClearHighScores_f( void )
 }
 
 
+// [Arcade] The player has damaged a monster: the pacifist run is over.
+//
+// Called from P_DamageMobj for any damage whose *source* is the player.  That
+// single test covers more than it looks: a rocket's splash, and a barrel
+// chain, both arrive here with the player as source, because A_Explode passes
+// the barrel's own target -- whoever set it off -- on as the source of the
+// blast.  So shooting a barrel that kills a monster voids the run without
+// needing a rule of its own, which is the behaviour asked for.
+//
+// Deliberately damage-based rather than fire-based: firing into empty air, or
+// at a wall, or at a barrel that harms nothing, is all still pacifist.
+// Monster infighting is untouched, since the source is then the other monster.
+void HS_Player_Damaged_Monster( void )
+{
+    hs_cat_alive[HS_CAT_pacifist] = false;
+}
+
+// [Arcade] The player has fired a weapon: the tyson run survives only fist,
+// chainsaw and pistol.  Carrying and switching to anything else is fine, and
+// this is only called when a shot is actually fired.
+void HS_Player_Fired_Weapon( int weapon )
+{
+    if( weapon == wp_fist || weapon == wp_chainsaw || weapon == wp_pistol )
+        return;
+
+    hs_cat_alive[HS_CAT_tyson] = false;
+}
+
+// [Arcade] Is this category still achievable in the run just exited?  For the
+// intermission's PACIFIST / TYSON banners, which announce that the run is
+// still holding the condition rather than that a record fell.
+boolean  HS_Cat_Still_Alive( int cat )
+{
+    if( cat < 0 || cat >= HS_NUMCAT )  return false;
+    return hs_cat_alive[cat];
+}
+
+boolean  HS_Run_Is_Pacifist( void ) { return hs_cat_alive[HS_CAT_pacifist]; }
+boolean  HS_Run_Is_Tyson( void )    { return hs_cat_alive[HS_CAT_tyson]; }
+
+
 void HS_NewGame( void )
 {
     hs_cumulative_time = 0;
-    hs_run_is_max = true;   // still eligible until a level is exited short
+    {   // every category is eligible until something takes it away
+        int c;
+        for( c=0; c<HS_NUMCAT; c++ )  hs_cat_alive[c] = true;
+    }
     hs_run_died = false;
     hs_run_cheated = false;
     hs_unranked_mark = NULL;
@@ -1897,7 +1979,7 @@ void HS_Demo_Start( void )
 
 
 void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
-                   boolean maxed )
+                   boolean maxed, boolean all_kills )
 {
     if( ! HS_Scored_Game() )  return;
     if( skill < 0 || skill >= HS_NUMSKILLS )  return;
@@ -1923,10 +2005,15 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     // Never score a replay.  Everything below this writes to the table.
     if( demoplayback )  return;
 
-    // One level short of 100% ends the max run for the rest of the game;
-    // the speed run is unaffected and keeps accumulating.
+    // [Arcade] One level short of what a category needs ends that category
+    // for the rest of the run; the speed run is unaffected and keeps
+    // accumulating.  Pacifist and tyson also have *run-level* conditions,
+    // latched as they happen by HS_Player_Damaged_Monster and
+    // HS_Player_Fired_Weapon, so only their per-level part is applied here.
     if( ! maxed )
-        hs_run_is_max = false;
+        hs_cat_alive[HS_CAT_max] = false;
+    if( ! all_kills )
+        hs_cat_alive[HS_CAT_tyson] = false;   // tyson is a 100% kills run
 
     // Re-checked per level, not just at HS_NewGame: the Options menu is
     // reachable mid-game, so a run started under the ranked ruleset can be
@@ -1955,18 +2042,30 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     dl_strncpy( hs_run_endmap, mapname, 8 );
     hs_run_tics       = hs_cumulative_time;
     hs_run_skill      = skill;
-    hs_run_endmap_max = hs_run_is_max;
     hs_run_levels++;
 
-    // [Arcade] Extend the max run only while it is still alive.  Once a level
-    // is exited short of 100% this stops moving, so it holds the furthest
-    // level the run reached with the max intact -- which is exactly the
-    // progress the max board should credit, and exactly what a death at this
-    // point would already have committed.
-    if( hs_run_endmap_max )
+    // [Arcade] Latch which categories survived to this exit, for the
+    // intermission's NEW RECORD marker and for HS_Snapshot_If_Leading.
     {
-        dl_strncpy( hs_max_endmap, mapname, 8 );
-        hs_max_tics = hs_cumulative_time;
+        int c;
+        for( c=0; c<HS_NUMCAT; c++ )
+            hs_cat_alive_at_exit[c] = hs_cat_alive[c];
+    }
+
+    // [Arcade] Extend each category only while it is still alive.  Once a
+    // level is exited that the category cannot claim, its endpoint stops
+    // moving, so it holds the furthest level the run reached with that
+    // category intact -- exactly the progress its board should credit, and
+    // exactly what a death at this point would already have committed.
+    // Speed is always alive, so its endpoint follows every exit.
+    {
+        int c;
+        for( c=0; c<HS_NUMCAT; c++ )
+        {
+            if( ! hs_cat_alive[c] )  continue;
+            dl_strncpy( hs_cat_endmap[c], mapname, 8 );
+            hs_cat_tics[c] = hs_cumulative_time;
+        }
     }
 
     // [Arcade] **No per-map campaign record is kept any more.**  Survival
@@ -1988,7 +2087,7 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
         int cat;
         for( cat=0; cat<HS_NUMCAT; cat++ )
         {
-            if( cat == HS_CAT_max && ! hs_run_is_max )  continue;
+            if( ! hs_cat_alive[cat] )  continue;
             hs_new_record[cat] = HS_Run_Leads( skill, cat );
         }
     }
@@ -2091,7 +2190,23 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 
 // Row labels for the table.  hs_catname[] is the on-disk spelling and is
 // lower case; these are what the player reads.
-static const char * hs_cat_label[HS_NUMCAT] = { "SPEED", "MAX" };
+static const char * hs_cat_label[HS_NUMCAT] =
+    { "SPEED", "MAX", "PACIFIST", "TYSON" };
+
+// [Arcade] How many category rows the *intermission* table shows.
+//
+// Two, not HS_NUMCAT, and this is a layout limit rather than a preference.
+// The block starts at y 116 (it cannot start higher -- it draws its own
+// header 14 above that, which would land on the Secrets percentage ending at
+// 98) and steps by HS_IM_ROW 12, and the YOU row follows the categories.  At
+// four categories the YOU row would sit at 164 and run to 171, straight
+// through the Time/Par row at SP_TIMEY = BASEVIDHEIGHT-32 = 168.
+//
+// Pacifist and tyson are announced on this screen by the blinking banner
+// above the stats instead, and have their own pages in the attract cycle, so
+// nothing is lost by keeping the table to the two categories that have always
+// been there.  NEW RECORD below still fires for all four.
+#define HS_IM_NUMROWS  2
 
 // The record this intermission holds the run up against, for one category.
 //
@@ -2129,18 +2244,20 @@ void HS_Draw_IntermissionTable( int x, int y )
 
     if( hs_last_exit_mapname[0] == 0 )  return;
 
-    // [Arcade] Both categories are shown, one row each.  It used to be the
-    // speed record alone, which said nothing about the run a player going for
-    // 100% is actually competing in -- and the two are independent records
-    // with independent holders.
-    for( cat = 0; cat < HS_NUMCAT; cat++, row_y += HS_IM_ROW )
+    // [Arcade] NEW RECORD answers for *every* category, including the two
+    // that have no row here -- a pacifist or tyson record is still a record.
+    // Latched at the level exit, before the board is updated, so on a first
+    // record there is no old time to blink but the marker still fires.
+    for( cat = 0; cat < HS_NUMCAT; cat++ )
+        if( hs_new_record[cat] )  any_new = true;
+
+    // [Arcade] Speed and max get a row each; see HS_IM_NUMROWS for why the
+    // other two do not.  It used to be the speed record alone, which said
+    // nothing about the run a player going for 100% is actually competing in
+    // -- and they are independent records with independent holders.
+    for( cat = 0; cat < HS_IM_NUMROWS; cat++, row_y += HS_IM_ROW )
     {
         boolean have = HS_Intermission_Record( cat, mapname, ini, &tics );
-
-        // Latched at the level exit, before the board is updated -- so on a
-        // *first* record `have` is false and there is no old time to blink;
-        // the marker below still fires.
-        if( hs_new_record[cat] )  any_new = true;
 
         V_DrawString( x, row_y, 0, (char*) hs_cat_label[cat] );
 
@@ -2227,7 +2344,16 @@ void HS_Draw_IntermissionTable( int x, int y )
 
 void  HS_Draw_Skill_Records( int episode, skill_e skill, int x, int y )
 {
-    static const char * catlabel[HS_NUMCAT] = { "SPEED", "MAX" };
+    // [Arcade] Speed and max only, like the intermission table.  Measured:
+    // NewDef's five skill rows end at 146 and this block starts at 152 with a
+    // header at HS_SKR_HDR_DY 11 then rows of HS_SKR_ROW 9, so four category
+    // rows would run 163/172/181/190 and the last would end at 197 of 200 --
+    // it fits, but it buries the skill menu in a wall of numbers for two
+    // categories almost nobody is playing for at the moment they pick a
+    // difficulty.  Pacifist and tyson have their own attract pages.
+    #define HS_SKR_NUMROWS  2
+    static const char * catlabel[HS_NUMCAT] =
+        { "SPEED", "MAX", "PACIFIST", "TYSON" };
     int  cat;
 
     // Headings in the font's grey (V_WHITEMAP), values in its native red
@@ -2239,7 +2365,7 @@ void  HS_Draw_Skill_Records( int episode, skill_e skill, int x, int y )
 
     y += HS_SKR_HDR_DY;
 
-    for( cat = 0; cat < HS_NUMCAT; cat++, y += HS_SKR_ROW )
+    for( cat = 0; cat < HS_SKR_NUMROWS; cat++, y += HS_SKR_ROW )
     {
         char   mapname[9], ini[HS_INITIALS_LEN], timebuf[16];
         tic_t  tics;
@@ -2444,11 +2570,19 @@ boolean  HS_Survival_Entry( int episode, skill_e skill, int cat,
 
 // Does this episode have any Survival record at all?  Decides whether its
 // page is worth enumerating.
-static boolean  HS_Episode_Has_Records( int episode )
+// [Arcade] The Survival page has room for two category columns, so the four
+// categories are shown two pages at a time: speed/max, then pacifist/tyson.
+#define HS_SV_NUMCOL  2
+
+// [Arcade] Does this episode have anything on either board of one category
+// *pair*?  The Survival page shows two categories side by side and there is
+// only room for two, so the four are split across two pages -- speed/max and
+// pacifist/tyson -- and each is only enumerated when it has something on it.
+static boolean  HS_Episode_Pair_Has_Records( int episode, int cat0 )
 {
     int sk, cat;
     for( sk=0; sk<HS_NUMSKILLS; sk++ )
-      for( cat=0; cat<HS_NUMCAT; cat++ )
+      for( cat=cat0; cat<cat0+HS_SV_NUMCOL && cat<HS_NUMCAT; cat++ )
         if( HS_Survival_Entry(episode, (skill_e)sk, cat, NULL, NULL, NULL) )
             return true;
     return false;
@@ -2516,12 +2650,14 @@ static int  HS_Build_Pages( hs_page_t * out, int out_max )
     int  sk, cat, n = 0;
 
     {
-        int ep, neps = HS_Num_Episodes();
+        int ep, c0, neps = HS_Num_Episodes();
         for( ep=1; ep<=neps; ep++ )
-            if( n < out_max && HS_Episode_Has_Records(ep) )
+          for( c0=0; c0<HS_NUMCAT; c0+=HS_SV_NUMCOL )
+            if( n < out_max && HS_Episode_Pair_Has_Records(ep, c0) )
             {
+                // cat holds the *first* category of the pair this page shows.
                 out[n].kind = HSPG_survival;  out[n].ep = (byte) ep;
-                out[n].skill = 0;  out[n].cat = 0;  n++;
+                out[n].skill = 0;  out[n].cat = (byte) c0;  n++;
             }
     }
 
@@ -2575,14 +2711,17 @@ int HS_Attract_Page_Count( void )
 // shifts the parity.
 #define HS_PAGES_PER_CYCLE  4
 
-// True when b is the max half of the speed/max pair that a is the speed half
-// of.  The single level best-times pages are enumerated in that order, so
-// the two halves of a skill are always adjacent.
+// True when b is the second half of the category pair that a is the first
+// half of, for the same skill.  The single level best-times pages are
+// enumerated in category order, so the halves of a pair are always adjacent.
+// Pairs are speed/max and pacifist/tyson -- the same grouping the Survival
+// page's two columns use.
 static boolean  HS_Is_Pair_Tail( const hs_page_t * a, const hs_page_t * b )
 {
     return ( a->kind == HSPG_single && b->kind == HSPG_single
              && a->skill == b->skill
-             && a->cat == HS_CAT_speed && b->cat == HS_CAT_max );
+             && (a->cat % HS_SV_NUMCOL) == 0
+             && b->cat == a->cat + 1 );
 }
 
 
@@ -2908,7 +3047,7 @@ static void  HS_Draw_SL_Map_Page( void )
 #define HS_SV_ROW0      64
 #define HS_SV_ROWSTEP   14
 
-static void  HS_Draw_SurvivalPage( int ep )
+static void  HS_Draw_SurvivalPage( int ep, int cat0 )
 {
     char  buf[64], mapname[9], ini[HS_INITIALS_LEN], timebuf[16];
     tic_t tics;
@@ -2925,9 +3064,11 @@ static void  HS_Draw_SurvivalPage( int ep )
         snprintf( buf, sizeof(buf), "FURTHEST, THEN FASTEST" );
     V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 24, 0, buf );
 
-    for( cat=0; cat<HS_NUMCAT; cat++ )
+    // The column headings name the two categories this page is showing, so
+    // the page needs no other label to say which of the two it is.
+    for( cat=cat0; cat<cat0+HS_SV_NUMCOL && cat<HS_NUMCAT; cat++ )
     {
-        int x = cat ? HS_SV_COL1 : HS_SV_COL0;
+        int x = (cat == cat0) ? HS_SV_COL0 : HS_SV_COL1;
         snprintf( buf, sizeof(buf), "%s", hs_catname[cat] );
         strupr( buf );
         V_DrawString( x, 46, V_WHITEMAP, buf );
@@ -2940,9 +3081,9 @@ static void  HS_Draw_SurvivalPage( int ep )
         V_DrawString( HS_SV_SKILL_X, y, V_WHITEMAP,
                       (char*) hs_skillnames[sk] );
 
-        for( cat=0; cat<HS_NUMCAT; cat++ )
+        for( cat=cat0; cat<cat0+HS_SV_NUMCOL && cat<HS_NUMCAT; cat++ )
         {
-            int x = cat ? HS_SV_COL1 : HS_SV_COL0;
+            int x = (cat == cat0) ? HS_SV_COL0 : HS_SV_COL1;
 
             if( ! HS_Survival_Entry( ep, (skill_e)sk, cat,
                                      mapname, ini, &tics ) )
@@ -2990,7 +3131,8 @@ void HS_Draw_AttractTable( void )
     switch( pages[hs_attract_page].kind )
     {
      case HSPG_survival:
-        HS_Draw_SurvivalPage( pages[hs_attract_page].ep );
+        HS_Draw_SurvivalPage( pages[hs_attract_page].ep,
+                              pages[hs_attract_page].cat );
         break;
      case HSPG_single:
         HS_Draw_BestTimes( true, pages[hs_attract_page].skill,

@@ -2779,6 +2779,28 @@ boolean P_DamageMobj ( mobj_t*   target,
     target_player = target->player;
     source_player = source? source->player : NULL;
 
+    // [Arcade] Pacifist: the player must not damage a monster.
+    //
+    // Testing the *source* rather than the weapon covers every route in one
+    // place -- a hitscan, a melee swing, a rocket's splash, and a barrel chain
+    // all arrive here with the player as source, because A_Explode passes the
+    // barrel's own target (whoever set it off) on as the source of the blast.
+    // So "no shooting barrels that harm monsters" needs no rule of its own.
+    // Monster infighting is untouched: the source is then the other monster.
+    //
+    // MF_COUNTKILL is the monster test.  It excludes barrels, which are
+    // shootable but are not monsters -- blowing one up harms nothing by
+    // itself, and if it does harm a monster that damage arrives here as its
+    // own call with the player still the source.
+    //
+    // source->player is checked against source itself so a voodoo doll cannot
+    // be mistaken for the player, the same guard the voodoo code below uses.
+    if( damage > 0 && source_player && (source_player->mo == source)
+        && (target_player == NULL) && (target->flags & MF_COUNTKILL) )
+    {
+        HS_Player_Damaged_Monster();
+    }
+
     // [WDJ] 7/2017 Moved the voodoo intercept of damage to be tested earlier
     // because of the weapons and armor specific player checks that
     // can get applied to the wrong player otherwise.
