@@ -396,8 +396,37 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   than the 10–14px this page steps by. Dropping `PLBOXH` from 9 to 8 would leave the sprite flush
   against the top of its box and still not buy a row.
 
-  There was real slack **horizontally**, and `PLBOXW` is now **7**, was 8 — the box was noticeably
-  wider than the man inside it.
+  **The sprite is drawn at half scale**, and the box is sized to it: `PLBOXW` **4** and `PLBOXH`
+  **5**, from 8 and 9. Full size the man dominated the page for no gain — he is a colour swatch,
+  not a portrait.
+
+  **Halve the patch scale only, never the start scale.** `drawinfo` keeps the two apart and so does
+  every renderer: software draws the patch through `xbytes`/`ybytes` and positions it through
+  `x0bytes`/`y0bytes`, and the OpenGL path (`HWR_DrawMappedPatch`, `hw_draw.c`) likewise takes its
+  size from `drawinfo.fdupx` and its position from `drawinfo.fdupx0`. Touching only the patch fields
+  shrinks the sprite **in place**, in both renderers, with no coordinate arithmetic — it contracts
+  toward the point it is anchored at, which is its own feet.
+  - This is why the scale is changed in `drawinfo` rather than by halving `vid.dupx` and re-issuing
+    `V_SetupDraw`, the way the 2x2 HUD does it (`st_stuff.c`). That halves the start scale too, so
+    every position on the page would have to be doubled to compensate — **exactly**, which is not
+    possible when `vid.dupx` is odd. At the measured 3/3 it would have put the sprite at 4/3 of its
+    intended offset.
+  - The integers are still rounded to the halved floats (a 4,3 dup gives 2,2 not 2,1) and clamped
+    to 1, the same rule the HUD block follows.
+  - Verified: outer dup 3/3 → 2/2, sprite 41×56 → **20×28**, sitting in a 32×40 interior with
+    margins **L 7, R 5, T 7, B 5**.
+
+  Sizing the box from the measured half-scale sprite: it is centred on the interior and stands with
+  its feet 8 above the interior floor, so margins are `4*PLBOXW - 9` left, `4*PLBOXW - 11.5` right
+  and `8*PLBOXH - 33.5` top. `PLBOXW` 3 would leave 0.5 on the right and `PLBOXH` 4 would clip the
+  head by 1.5.
+
+  **`PLSKINNAMEY` moved 96 → 72 to follow it.** That constant is where the block below the box
+  starts, and the box got 32 shorter; leaving it alone would have left a visible hole. The box now
+  ends at y 104, so 72 puts the skin row at 112, eight below it. The devmode worst case fell from
+  y 187 to **y 163 of 200**, and the rows still ascend with their indices.
+
+  Before the sprite was rescaled, the box was merely narrowed to `PLBOXW` 7 on the full size sprite:
 
   **Measure across the whole idle animation, not one frame.** The frames differ: widths 41 / 37 / 40
   with left offsets 18 / 19 / 16, so the sprite's closest approach to the interior edges was

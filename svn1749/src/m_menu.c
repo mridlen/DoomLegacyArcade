@@ -2328,21 +2328,32 @@ static void M_DrawSetupMultiPlayerMenu(void);
 static void M_MultiPlayer_Responder(int choice);
 static boolean M_QuitMultiPlayerMenu(void);
 
-// [Arcade] 7, was 8.  The box was noticeably wider than the man in it.
+// [Arcade] Sized for the *half scale* sprite (see the draw below), which is
+// why these are so much smaller than the 8 x 9 they were.
 //
-// Measured across the whole idle animation rather than from one frame, which
-// matters because the frames differ: widths 41 / 37 / 40 and left offsets
-// 18 / 19 / 16, so the sprite's closest approach to the interior edges was
-// L=13 R=8, not the 14/9 a single sample suggested.  The sprite is centred on
-// the interior, so each unit removed here takes 4px off *each* side: 7 leaves
-// a worst case of L=9 R=4, while 6 would leave R=0 with the sprite touching
-// the frame.  Height is left alone -- there is only 8px of slack vertically
-// and the sprite is drawn with its feet 8px above the interior floor.
-#define PLBOXW    7
-#define PLBOXH    9
+// Measured across the whole idle animation rather than from one frame, since
+// the frames differ: widths 41 / 37 / 40, heights 56 / 56 / 55, left offsets
+// 18 / 19 / 16.  At half scale the widest is 20.5 wide and 28 tall with a
+// left offset of 9 and a top offset of 25.5.
+//
+// The sprite is centred on the interior and stands with its feet 8 above the
+// interior floor, so for an interior of 8*PLBOXW x 8*PLBOXH the margins are
+// left 4*PLBOXW - 9, right 4*PLBOXW - 11.5, and top 8*PLBOXH - 33.5:
+//
+//   PLBOXW 4 -> left 7,   right 4.5     PLBOXH 5 -> top 6.5
+//   PLBOXW 3 -> left 3,   right 0.5     PLBOXH 4 -> top -1.5 (clips)
+#define PLBOXW    4
+#define PLBOXH    5
 #define PLBOXX    90
 #define PLBOXY    8
-#define PLSKINNAMEY 96
+// [Arcade] 72, was 96.  This is where the block below the preview box starts
+// -- the skin row and everything under it are placed from it -- and the box
+// got 32 shorter when the sprite went to half scale, so leaving it at 96 left
+// a visible hole between the bottom of the box and the next row.
+//
+// The box now ends at my + PLBOXY + PLBOXH*8 + 16 = 40 + 8 + 40 + 16 = 104,
+// so 72 puts the skin row at y 112, eight below it.
+#define PLSKINNAMEY 72
 
 // Customized by M_SetupMultiPlayer1 and M_SetupMultiPlayer2
 menuitem_t SetupMultiPlayerMenu[] =
@@ -2603,6 +2614,43 @@ void M_DrawSetupMultiPlayerMenu(void)
     // draw player sprite
     // temp usage of sprite lump, until end of function
     patch = W_CachePatchNum (sprfrot->pat_lumpnum, PU_CACHE_DEFAULT);  // endian fix
+
+    // [Arcade] Draw the man at half size.  Full size he dominated the page for
+    // no gain -- he is a colour swatch, not a portrait.
+    //
+    // **Halve the patch scale only, never the start scale.**  drawinfo keeps
+    // the two apart and so does every renderer: software draws the patch
+    // through xbytes/ybytes and positions it through x0bytes/y0bytes, and the
+    // OpenGL path (HWR_DrawMappedPatch, hw_draw.c) likewise takes its size
+    // from drawinfo.fdupx and its position from drawinfo.fdupx0.  Touching
+    // only the patch fields therefore shrinks the sprite *in place*, in both
+    // renderers, with no coordinate arithmetic -- it simply contracts toward
+    // the point it is anchored at, which is its own feet.
+    //
+    // This is why the scale is changed here rather than by halving vid.dupx
+    // and re-issuing V_SetupDraw, the way the 2x2 HUD does it (st_stuff.c):
+    // that halves the start scale too, and every position on the page would
+    // have had to be doubled to compensate -- exactly, which is not possible
+    // when vid.dupx is odd.
+    {
+        float  sv_fdupx = drawinfo.fdupx, sv_fdupy = drawinfo.fdupy;
+        byte   sv_dupx  = drawinfo.dupx,  sv_dupy  = drawinfo.dupy;
+        unsigned int  sv_xbytes = drawinfo.xbytes, sv_ybytes = drawinfo.ybytes;
+        fixed_t  sv_xuf = drawinfo.x_unitfrac, sv_yuf = drawinfo.y_unitfrac;
+
+        drawinfo.fdupx = sv_fdupx / 2.0f;
+        drawinfo.fdupy = sv_fdupy / 2.0f;
+        // Round the integers to the floats, so a 4,3 dup gives 2,2 and not
+        // 2,1 -- the same rule the half scale HUD block follows.
+        drawinfo.dupx = (byte)(drawinfo.fdupx + 0.5f);
+        drawinfo.dupy = (byte)(drawinfo.fdupy + 0.5f);
+        if( drawinfo.dupx < 1 )  drawinfo.dupx = 1;
+        if( drawinfo.dupy < 1 )  drawinfo.dupy = 1;
+        drawinfo.xbytes = drawinfo.dupx * vid.bytepp;
+        drawinfo.ybytes = drawinfo.dupy * vid.ybytes;
+        drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupx << FRACBITS);
+        drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupy << FRACBITS);
+
     if( itemOn>0 )  // Edit skin or color
     {
       // Some skins are too large for the screen, cause segfault.
@@ -2614,6 +2662,12 @@ void M_DrawSetupMultiPlayerMenu(void)
       // Some skins are too large for the box
       V_DrawMappedPatch_Box (mx+PLBOXX+8+(PLBOXW*8/2),my+PLBOXY+8+(PLBOXH*8)-8, patch, colormap,
                            mx+PLBOXX+8, my+PLBOXY+8, PLBOXW*8, PLBOXH*8 );
+    }
+
+        drawinfo.fdupx = sv_fdupx;   drawinfo.fdupy = sv_fdupy;
+        drawinfo.dupx  = sv_dupx;    drawinfo.dupy  = sv_dupy;
+        drawinfo.xbytes = sv_xbytes; drawinfo.ybytes = sv_ybytes;
+        drawinfo.x_unitfrac = sv_xuf; drawinfo.y_unitfrac = sv_yuf;
     }
 }
 
