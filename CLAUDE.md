@@ -37,15 +37,24 @@ make                                      # builds using ../make_options
 
 `make_options` is **gitignored** (it is machine-local), so the settings below are not recoverable
 from the repo — on a fresh checkout the stock `make_options_nix` needs three edits before it will
-build on a modern Linux toolchain (each of these is a hard build failure, not a warning):
+build on a modern Linux toolchain (the first three below are hard build failures, not warnings; the
+`-g` noted with the third is optional but wanted on the cabinet):
 
 - `SDL2=1` — uncomment. The stock file targets SDL 1.2, which modern distros no longer ship; with
   it enabled the Makefile finds `sdl2-config` (via sdl2-compat) and links `-lSDL2 -lSDL2_mixer`.
 - `ARCH=-march=native` — replace the stock `ARCH=-march=i686`, which is 32-bit-only and fails with
   "CPU you selected does not support x86-64 instruction set".
-- `ENV_CFLAGS=-std=gnu17` — add. GCC 15 defaults to `-std=gnu23`, where `true`/`false` are reserved
-  keywords, which breaks this codebase's own `typedef enum {false, true} boolean;` in `doomtype.h`.
-  (`ENV_CFLAGS` is appended to `CFLAGS` unconditionally; the Makefile's `STD` variable is dead code.)
+- `ENV_CFLAGS=-std=gnu17 -g` — add. `-std=gnu17` is required: GCC 15 defaults to `-std=gnu23`, where
+  `true`/`false` are reserved keywords, which breaks this codebase's own
+  `typedef enum {false, true} boolean;` in `doomtype.h`. (`ENV_CFLAGS` is appended to `CFLAGS`
+  unconditionally; the Makefile's `STD` variable is dead code.)
+  - **`-g` is not required to build, but keep it**: the cabinet runs unattended, `systemd-coredump`
+    keeps every crash, and without it a backtrace is bare function names. The chase camera
+    use-after-free was diagnosed from `R_SetupFrame ()` plus hand-decoding the faulting instruction;
+    with `-g` the same trace reads `P_KillMobj (target=0x0, ...) at p_inter.c:2173` — file, line and
+    argument values. It costs nothing at runtime (the binary grows ~1.9MB to ~8.2MB, disk only) and
+    `-O3` is unaffected. Read a crash with `coredumpctl list` then
+    `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`.
 
 Other key `make_options` variables (set in the copied file, not on the CLI, to avoid repeating them
 every invocation):
