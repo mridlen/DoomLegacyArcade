@@ -29,7 +29,16 @@ expected lumps differ before committing.
 **`tools/build.sh` does all of the below automatically** (detects the system, probes the
 dependencies by test-compiling, writes `make_options`, orders `make depend` before the parallel
 build). Use it unless there is a reason not to; `docs/arcade/building.md` explains its design and
-what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents, untested.
+what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents (MSYS2 ucrt64); they now build
+`doomlegacy.exe` end to end and stage its 12 runtime DLLs into `svn1749\bin` (derived by walking the
+import tables — SDL2_mixer's codec DLLs make the list longer than anyone guesses, and it is not
+stable enough to hardcode). The binary loads but has not been played.
+
+**The tree is in a Dropbox folder shared with the Linux cabinet, so `make_options` and `objs/` sync
+between platforms even though they are gitignored.** Both build scripts detect a `make_options`
+whose `OS=` does not match their template, regenerate it, and force a clean — without that, every
+file compiles and the link fails on libraries that do not exist on the platform. See
+`docs/arcade/building.md`.
 
 Building must happen from `svn1749/src/` (the Makefile there locates the rest of the build via
 relative paths and drops `bin/`, `objs/`, `dep/` in `svn1749/`, one level up from `src/`).

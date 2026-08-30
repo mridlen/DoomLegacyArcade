@@ -10,6 +10,9 @@ objs/
 # make_options is a local, machine-specific build config (copied from make_options_*)
 /make_options
 /svn1749/make_options
+# The build scripts set this aside when they find a make_options written for
+# another platform (the tree is in a synced folder shared between machines).
+/svn1749/make_options.foreign
 
 # tools/build.sh --debug builds into here, and BUILD=<dir> needs its own copy
 # of make_options inside the build directory (MAKE_OPTIONS = $(BUILD_DIR)make_options)

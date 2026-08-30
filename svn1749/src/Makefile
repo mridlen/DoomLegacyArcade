@@ -1778,8 +1778,22 @@ endif
 $(FIXDEP):
 	$(MAKE) -C ..  fixdep
 
+# [Arcade] Under MSYS the recipes run in sh, not cmd.exe, and there a backslash
+# is an escape character rather than a path separator.  A DOS-style path in a
+# recipe therefore reaches the program with its separators deleted:
+# "> ..\dep\main1.dep" writes a file in src/ literally named "..depmain1.dep",
+# and fixdep is then handed "..\dep\main1.dep" and answers "Dep file does not
+# exist".  That reads as a broken fixdep or a missing dep directory; it is
+# neither -- the dep file was written, just somewhere nobody looked.  The MSYS
+# case gets its own branch using POSIX paths throughout.  (The MINGW branch
+# below is half-converted already: it redirects to $(DD)/ but still passes
+# $(DD_WIN)\ to fixdep, so it has the same fault.)
 %.dep : | $(FIXDEP)
-  ifeq ($(CC_SELECT), MINGW)
+  ifdef HAVE_MSYS
+	@echo "Making MSYS dependencies $(@F)"
+	$(CC) $(CFLAGS) -MM $^ > $(DD)/$(@F)
+	$(FIXDEP)  $(O)/  $(DD)/$(@F)
+  else ifeq ($(CC_SELECT), MINGW)
 	@echo "Making MINGW dependencies $(@F)"
    ifdef HAVE_DOSCOMMAND
 	$(CC) $(CFLAGS) -MM $^ > $(DD_WIN)\$(@F)

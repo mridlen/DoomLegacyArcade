@@ -278,16 +278,37 @@ if (-not $haveGcc) {
     $missingPkgs += @("$pkgPrefix-SDL2", "$pkgPrefix-SDL2_mixer", "$pkgPrefix-libzip", "$pkgPrefix-zlib")
 } else {
     # -- phase 2: the libraries, by compile-and-link. --
-    # SDL_MAIN_HANDLED keeps SDL from redefining main() in the probe.
+    #
+    # [Arcade] Two Windows-only traps live in these five lines, and both of
+    # them report an installed package as missing:
+    #
+    # 1. The probe source must not contain a double quote.  PowerShell rebuilds
+    #    the argument string when it launches a native program (bash.exe), and
+    #    it eats unescaped `"` on the way -- so `zip_open("x",0,0)` reached the
+    #    compiler as `zip_open(x,0,0)`, which fails on an undeclared `x` and
+    #    reported libzip missing on a machine where pacman said it was up to
+    #    date.  Nothing in the compiler output would have hinted at PowerShell.
+    #    Keep every Src below quote-free; a null pointer argument works as well
+    #    as a string literal for a link test.
+    #
+    # 2. `int main(void)` is wrong for the SDL probes on Windows.  Here
+    #    `sdl2-config --cflags` adds `-Dmain=SDL_main`, which renames the
+    #    probe's main and then collides with SDL_main.h's own
+    #    `int SDL_main(int, char **)` declaration:
+    #        error: conflicting types for 'SDL_main'; have 'int(void)'
+    #    SDL_MAIN_HANDLED does not prevent that -- the declaration is there
+    #    either way.  Declaring the probe with argc/argv matches it.  This is
+    #    why build.sh can use `main(void)` and this script cannot: on Linux
+    #    sdl2-config emits no such define.
     $probes = @(
         @{ Name='SDL2';       Pkg="$pkgPrefix-SDL2"
-           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\nint main(void){SDL_Init(0);return 0;}\n'
+           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\nint main(int argc, char **argv){(void)argc;(void)argv;SDL_Init(0);return 0;}\n'
            Flags='$(sdl2-config --cflags --libs 2>/dev/null || echo -lSDL2)' },
         @{ Name='SDL2_mixer'; Pkg="$pkgPrefix-SDL2_mixer"
-           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\n#include <SDL_mixer.h>\nint main(void){Mix_Init(0);return 0;}\n'
+           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\n#include <SDL_mixer.h>\nint main(int argc, char **argv){(void)argc;(void)argv;Mix_Init(0);return 0;}\n'
            Flags='$(sdl2-config --cflags --libs 2>/dev/null || echo -lSDL2) -lSDL2_mixer' },
         @{ Name='libzip';     Pkg="$pkgPrefix-libzip"
-           Src='#include <zip.h>\nint main(void){zip_open("x",0,0);return 0;}\n'
+           Src='#include <zip.h>\nint main(void){zip_open(0,0,0);return 0;}\n'
            Flags='-lzip' },
         @{ Name='zlib';       Pkg="$pkgPrefix-zlib"
            Src='#include <zlib.h>\nint main(void){return (int)zlibVersion()[0];}\n'
@@ -351,11 +372,53 @@ $template = Join-Path $BuildRoot 'make_options_win'
 $opts     = Join-Path $BuildRoot 'make_options'
 if (-not (Test-Path $template)) { Die "template $template not found" }
 
-if ((Test-Path $opts) -and -not $Reconfigure) {
+# [Arcade] An existing make_options is only reusable if it was written for
+# *this* platform.  The tree is kept in a synced folder (Dropbox) shared with
+# the Linux cabinet, and make_options is gitignored -- which stops git from
+# carrying it between machines but does nothing about the sync, so the Linux
+# file lands here and this script happily reused it.
+#
+# Nothing about that failure names the cause.  Every one of the ~120 source
+# files compiles, because the Linux options are wrong only in what they link
+# against; the build then dies at the very end with
+#     ld.exe: cannot find -lGL / -lGLU / -ldl
+# which reads as three missing packages.  They are not installed on Windows
+# and never will be: the OpenGL import libraries here are -lopengl32 -lglu32,
+# and there is no libdl at all.  The tell is -DLINUX in the compile lines.
+#
+# The templates each carry exactly one uncommented OS= line, so comparing the
+# existing file's against the template's identifies a foreign make_options
+# without needing a marker of our own (and works on files written before this
+# check existed).
+$templateOs = ((Get-Content $template) -match '^OS=' | Select-Object -First 1)
+$existingOs = ''
+if (Test-Path $opts) {
+    $existingOs = ((Get-Content $opts) -match '^OS=' | Select-Object -First 1)
+}
+$foreignOpts = ($existingOs -ne '') -and ($templateOs -ne '') -and ($existingOs -ne $templateOs)
+
+if ((Test-Path $opts) -and -not $Reconfigure -and -not $foreignOpts) {
     # make_options is machine-local and gitignored, and may have been tuned.
     Say "  using the existing make_options"
     Say "  (delete it or pass -Reconfigure to regenerate)"
 } else {
+    if ($foreignOpts) {
+        Say "  the existing make_options says '$existingOs', not '$templateOs' --"
+        Say "  it was written for another platform (a synced folder will do this)."
+        Say "  Regenerating it for Windows; the old one is kept as make_options.foreign."
+        Copy-Item -Path $opts -Destination "$opts.foreign" -Force
+        # Whatever synced make_options here synced ../objs with it, and those
+        # objects are for the other platform.  make compares timestamps, not
+        # targets, so it considers them up to date and links them -- and the
+        # error names neither the sync nor the objects:
+        #     relocation truncated to fit: R_X86_64_32 against `joystick_path'
+        #     undefined reference to `__isoc23_sscanf'  (that is glibc)
+        # with source paths under /home/mridlen. A platform switch invalidates
+        # every object in the tree, so force the clean rather than leaving the
+        # operator to work that out from a linker error.
+        Say "  objects from the other platform are unusable -- forcing a clean."
+        $Clean = $true
+    }
     Say "  writing make_options from make_options_win"
     $lines = Get-Content $template
     $out = foreach ($line in $lines) {
@@ -414,20 +477,90 @@ the build failed. The compiler output above says why.
 }
 
 # ---------------------------------------------------------------------------
+# Runtime DLLs
+# ---------------------------------------------------------------------------
+# [Arcade] Windows has no rpath and no ldconfig: a MinGW binary finds its
+# libraries by filename, in the directory it was launched from and then on
+# PATH.  Outside an MSYS2 shell neither contains /ucrt64/bin, so the exe dies
+# on a bare "SDL2.dll was not found" dialog before main() -- no log, no
+# console output, nothing that names the build.
+#
+# This used to be a printed instruction to "copy SDL2.dll and friends", which
+# understates it: the closure is *twelve* DLLs, because SDL2_mixer pulls in a
+# codec for every music format (FLAC, mpg123, ogg/vorbis, opus/opusfile,
+# wavpack, xmp) and each of those pulls its own. Copying the two named in the
+# error message gets a second dialog, then a third. Worse, the list is not
+# stable -- it tracks whatever SDL2_mixer was compiled against, so a hardcoded
+# list in this script would rot silently into exactly the same dialog.
+#
+# So derive it: walk the PE import tables with objdump, breadth-first, and keep
+# only names that exist under the mingw prefix.  Anything not there is a
+# Windows system DLL (KERNEL32, OPENGL32, GLU32, the api-ms-win-crt-* stubs)
+# which is already present on the machine and must NOT be shipped.
+$binary = Join-Path $BuildRoot 'bin\doomlegacy.exe'
+if (Test-Path $binary) {
+    Step "Staging runtime DLLs"
+    $msysBin = ConvertTo-MsysPath $binary
+    # Single-quoted here-string: the shell's own $ and backslashes must survive
+    # PowerShell.  Written to a file rather than passed as an argument, because
+    # PowerShell strips double quotes out of native-program arguments.
+    $walker = @'
+PREFIX=/@ENV@/bin
+work=$(mktemp); found=$(mktemp)
+echo "$1" > "$work"
+while [ -s "$work" ]; do
+    cur=$(head -n1 "$work")
+    tail -n +2 "$work" > "$work.tmp" && mv "$work.tmp" "$work"
+    objdump -p "$cur" 2>/dev/null | sed -n 's/^[[:space:]]*DLL Name: //p' | while read -r d; do
+        if [ -f "$PREFIX/$d" ] && ! grep -qxF "$d" "$found"; then
+            echo "$d" >> "$found"
+            echo "$PREFIX/$d" >> "$work"
+        fi
+    done
+done
+sort -u "$found"
+rm -f "$work" "$found"
+'@ -replace '@ENV@', $msysEnv
+    $walkerPath = Join-Path $env:TEMP 'dl_dllwalk.sh'
+    Set-Content -Path $walkerPath -Value $walker -Encoding ASCII
+    $msysWalker = ConvertTo-MsysPath $walkerPath
+
+    # The parentheses matter: without them PowerShell reads -split as an
+    # argument to Get-Msys rather than as an operator on its result, and the
+    # whole listing stays one string with newlines embedded in it.  That then
+    # reaches Copy-Item as a single filename and fails with the thoroughly
+    # unhelpful "Illegal characters in path".
+    $dlls = @((Get-Msys "sh '$msysWalker' '$msysBin'") -split "`r?`n" |
+              ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+    Remove-Item $walkerPath -ErrorAction SilentlyContinue
+
+    if ($dlls.Count -eq 0) {
+        # Not fatal -- the binary still runs from an MSYS2 shell -- but say so
+        # rather than leaving the operator to meet the dialog.
+        Warn "could not determine the runtime DLLs (is objdump installed?).
+         The exe will only run from an MSYS2 $msysEnv shell until they are
+         copied from $msysRoot\$msysEnv\bin beside it."
+    } else {
+        $srcDll = Join-Path $msysRoot "$msysEnv\bin"
+        $dstDll = Join-Path $BuildRoot 'bin'
+        foreach ($d in $dlls) {
+            Copy-Item -Path (Join-Path $srcDll $d) -Destination $dstDll -Force
+        }
+        Say ("  copied " + $dlls.Count + " DLLs from $srcDll")
+        Say ("  " + ($dlls -join ', '))
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
-$binary = Join-Path $BuildRoot 'bin\doomlegacy.exe'
 Step "Done"
 if (Test-Path $binary) {
     Say "  built: $binary"
     Say ""
     Say "  Do not run it from the build tree -- it looks for its data next to"
-    Say "  the binary. Copy everything from svn1749\bin into a run directory"
-    Say "  alongside legacy.wad and an IWAD (DOOM.WAD, DOOM2.WAD ...)."
-    Say ""
-    Say "  It also needs the MinGW runtime DLLs (SDL2.dll and friends). Copy"
-    Say "  them from $msysRoot\$msysEnv\bin, or run from an MSYS2 $msysEnv"
-    Say "  shell where they are already on PATH."
+    Say "  the binary. Copy everything from svn1749\bin (the DLLs included)"
+    Say "  into a run directory alongside legacy.wad and an IWAD."
     Say ""
     Say "  An operator session that can change settings is:  doomlegacy.exe -devmode"
 } else {

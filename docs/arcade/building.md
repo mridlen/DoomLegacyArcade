@@ -155,10 +155,103 @@ and `C:\msys64` were all correct. Two bugs sat immediately behind that, and both
   now says explicitly that they are listed because they *cannot be checked yet*, not because they
   are known to be absent.
 
-**The Windows build has still not run to completion** — the first run that gets past dependency
-installation is the real test. The probe strings themselves were validated under `/bin/sh` (silent
-and correctly non-zero when a library is absent, silent and zero when present, including the
-`sdl2-config` command substitution and the embedded quotes).
+### The first Windows run to completion
+
+The run above stopped at the dependency check. Getting past it exposed five more faults, in the
+order the build hits them. Each looked like a missing package or a broken tool and was neither.
+
+- **PowerShell eats double quotes on their way to a native program, so a probe must not contain
+  one.** `Invoke-Msys` passes the probe to `bash.exe` as an argument; PowerShell rebuilds that
+  argument string and drops unescaped `"`. `zip_open("x",0,0)` therefore reached gcc as
+  `zip_open(x,0,0)`, failed on an undeclared `x`, and reported **libzip missing on a machine where
+  pacman said it was installed** — with nothing in the compiler output pointing at PowerShell. The
+  fix is to keep every probe source quote-free (`zip_open(0,0,0)` is as good a link test).
+  Verifying this needs the *real* path: `printf ... | cat` through `& $bash -lc` shows the quotes
+  gone. Note the earlier round's claim that the probes had been validated "including the embedded
+  quotes" — they were, under `/bin/sh` directly, which is exactly the layer that does not have this
+  bug.
+- **`int main(void)` is wrong for an SDL probe on Windows.** Here `sdl2-config --cflags` emits
+  `-Dmain=SDL_main`, which renames the probe's `main` and then collides with SDL_main.h's own
+  declaration:
+  ```
+  error: conflicting types for 'SDL_main'; have 'int(void)'
+  ```
+  `SDL_MAIN_HANDLED` does not prevent it — the declaration is there either way. Declaring the probe
+  `int main(int argc, char **argv)` matches. This is why `build.sh` can use `main(void)` and
+  `build.ps1` cannot: Linux's `sdl2-config` emits no such define. Two of the three "missing"
+  packages were this.
+- **A `make_options` from another platform gets reused, and the failure names none of it.** The tree
+  lives in a synced folder (Dropbox) shared with the Linux cabinet. `make_options` is *gitignored*,
+  which stops git from carrying it between machines and does nothing whatever about the sync — so
+  the Linux file, `OS=LINUX`, was sitting here and the script's "never overwrite an existing
+  make_options" rule dutifully honoured it. Every one of the ~120 source files then compiles (the
+  options are wrong only in what they link against) and the build dies at the very end with
+  ```
+  ld.exe: cannot find -lGL / -lGLU / -ldl
+  ```
+  which reads as three more missing packages. They are not installed on Windows and never will be:
+  the OpenGL import libraries here are `-lopengl32 -lglu32`, and there is no libdl at all. The tell
+  is `-DLINUX` in the compile lines. Both scripts now compare the existing `make_options`'s `OS=`
+  line against their template's, regenerate when they differ, and keep the old file as
+  `make_options.foreign`.
+  - **And the synced `objs/` are just as stale.** make compares timestamps, not target
+    architecture, so it links the Linux objects happily: `relocation truncated to fit`, then
+    undefined references to `__isoc23_sscanf` and `__ctype_b_loc` — *glibc* symbols — with source
+    paths under `/home/mridlen`. A platform switch invalidates every object in the tree, so
+    detecting a foreign `make_options` now forces `--clean` as well. Fixing only the options leaves
+    a second, less legible failure behind it.
+- **Under MSYS the Makefile's Windows dep rule writes its dep files into the wrong place, silently.**
+  The `%.dep` rule used DOS paths (`> ..\dep\main1.dep`), but MSYS recipes run in `sh`, where a
+  backslash is an escape and not a separator. The redirect created a file in `src/` literally named
+  `..depmain1.dep`; `fixdep` was then handed `..\dep\main1.dep` and answered
+  ```
+  Dep file does not exist: ..\dep\main1.dep
+  ```
+  followed by a usage message — which reads as a broken or mis-called `fixdep`. It is neither: the
+  dep file was written, just somewhere nobody looked. `ls src/..dep*` is the check that settles it.
+  `svn1749/src/Makefile` now has an `ifdef HAVE_MSYS` branch on `%.dep` using POSIX paths
+  throughout. (The pre-existing `CC_SELECT=MINGW` branch is half-converted the same way — it
+  redirects to `$(DD)/` but still passes `$(DD_WIN)\` to fixdep — so it has the same fault.)
+- **Windows ships an OpenGL 1.1 `<GL/gl.h>` and nothing newer.** The header is Microsoft's, frozen
+  in 1996, however modern the driver underneath is. The arcade texture-clamp fix uses
+  `GL_CLAMP_TO_EDGE`, core since OpenGL **1.2**, so it exists in every implementation this will run
+  on but is absent from the declarations mingw compiles against:
+  `error: 'GL_CLAMP_TO_EDGE' undeclared`, on a line that compiles without comment on Linux.
+  `r_opengl.c` now defines the enum value (`0x812F`) under `#ifndef`. It is a constant handed to the
+  driver, not a function to resolve, so there is nothing to load at runtime. Expect this class of
+  break for **any** GL constant newer than 1.1 added on the Linux side.
+
+### The runtime DLLs are staged, not documented
+
+The linked exe would not start: **`SDL2_mixer.dll was not found`**, then `SDL2.dll was not found`.
+Windows has no rpath and no `ldconfig` — a MinGW binary finds its libraries by bare filename, in the
+launch directory and then on `PATH`, and outside an MSYS2 shell neither contains `/ucrt64/bin`. The
+dialog appears before `main()`, so there is no log and nothing that names the build.
+
+The script used to *print* an instruction to copy "SDL2.dll and friends". That understates it by an
+order of magnitude and is why the instruction failed in practice:
+
+- **The closure is twelve DLLs, not two.** SDL2_mixer links a codec for every music format it
+  supports, and those pull their own: `SDL2`, `SDL2_mixer`, `libFLAC`, `libmpg123-0`, `libogg-0`,
+  `libopus-0`, `libopusfile-0`, `libvorbis-0`, `libvorbisfile-3`, `libwavpack-1`, `libwinpthread-1`,
+  `libxmp`. Copying the one the dialog names gets you the next dialog.
+- **A hardcoded list would rot into that same dialog.** The set tracks whatever SDL2_mixer was
+  compiled against, which is a packaging decision upstream of this tree. So `build.ps1` derives it:
+  breadth-first over the PE import tables with `objdump -p`, keeping only names that exist under the
+  mingw prefix. Anything *not* there is a Windows system DLL — `KERNEL32`, `OPENGL32`, `GLU32`, the
+  `api-ms-win-crt-*` stubs — already on the machine and not ours to ship.
+- Two PowerShell traps showed up again on the way, both worth recognising by their error text:
+  - The walker is written to a **file** and run as `sh script.sh`, not passed as an argument, because
+    PowerShell strips double quotes out of native-program arguments — the same fault as the libzip
+    probe above.
+  - `Get-Msys "..." -split "\`n"` **without parentheses** parses `-split` as an argument to
+    `Get-Msys` rather than an operator on its result. The listing stays a single string with newlines
+    inside it, reaches `Copy-Item` as one filename, and fails with `Illegal characters in path`.
+    Write `(Get-Msys "...") -split ...`.
+
+The check that settles whether the set is complete is `LoadLibraryW` on the exe **with MSYS2 removed
+from `PATH`** — it resolves the entire import graph without running the program, so it cannot be
+fooled by a DLL that happens to be on PATH, and it returns an error instead of a modal dialog.
 
 ## Verified
 
@@ -171,3 +264,45 @@ On Fedora 42 x86_64, from a checkout with no `make_options`:
 - With a deliberately broken compiler (`CC=false`), every library probe reported `MISS`, the correct
   `dnf` command was printed, and the script exited 1 **without** starting a build.
 - `--debug` produced `svn1749/debug/bin/doomlegacy`.
+
+On Windows 11 Pro x86_64, MSYS2 `ucrt64`, gcc 15.2.0, from a tree whose `make_options` and `objs/`
+had been synced in from the Linux cabinet:
+
+- All seven dependencies report `ok` (they did not before the probe fixes, while pacman reported
+  every package up to date).
+- `build.bat` from that Linux-contaminated state runs the whole recovery unattended — detects
+  `OS=LINUX`, keeps it as `make_options.foreign`, regenerates for Windows, forces the clean, and
+  links `svn1749\bin\doomlegacy.exe` (11.5 MB).
+- The recovery path was re-tested by restoring the Linux `make_options` and running again, so it is
+  confirmed from the actual failing state rather than inferred.
+- The 12 runtime DLLs are staged into `svn1749\bin` automatically, and a copy of that directory
+  passes `LoadLibraryW` with **MSYS2 scrubbed off `PATH`** — every import in the graph resolves from
+  the staged files alone.
+- **It starts.** Reported by the operator from a run directory holding `svn1749\bin` plus
+  `legacy.wad` and an IWAD. Nothing beyond "it loaded" has been checked — no rendering, input,
+  sound, scoring or attract-cycle behaviour on Windows has been observed yet.
+
+### Launching it from `svn1749\bin` crashes silently — it is missing its data, not broken
+
+Double-clicking `doomlegacy.exe` in the build tree "does nothing at all": no window, no dialog, no
+log file. It is not doing nothing — it exits with **`0xC0000374`, `STATUS_HEAP_CORRUPTION`**, and
+because the exe is linked `-mwindows` there is no console for the message to reach.
+
+Redirecting output is what makes it visible (`./doomlegacy.exe > out.txt 2>&1` from an MSYS2 shell —
+stdout redirection still works with no console attached). The log stops here:
+
+```
+Initializing SDL...
+ 0 joystick(s) found.
+StartupGraphics...
+VID_SetMode(window,0)
+```
+
+The cause is the ordinary one — `svn1749\bin` has **no `legacy.wad` and no IWAD**, and this is the
+documented "do not run it from the build tree" case. What is *not* ordinary is the failure mode: it
+should be a legible "IWAD not found", not heap corruption inside video startup. Whether that is
+Windows-specific or a latent bug the Linux side has been getting away with is **unknown and
+uninvestigated**. Do not read a heap-corruption exit here as a fault in the build.
+- `HAVE_LIBZIP` and `HAVE_ZLIB` are **off** in this build: `make_options_win` does not set them, so
+  the Windows binary has no PK3 support. The libraries are probed for and present; only the option
+  is missing. Nothing has been decided about that yet.

@@ -306,12 +306,44 @@ esac
 
 opts="$build_root/make_options"
 
-if [ -f "$opts" ] && [ "$do_reconfigure" = 0 ]; then
+# [Arcade] An existing make_options is only reusable if it was written for
+# *this* platform.  The tree lives in a synced folder (Dropbox) shared with a
+# Windows machine, and make_options is gitignored -- which stops git from
+# carrying it between machines but does nothing about the sync, so the other
+# platform's file arrives and gets reused.  Every source file still compiles
+# (the options are wrong only in what they link against) and the build dies at
+# the link with a list of libraries that look missing but simply do not exist
+# on this platform.  Each template carries exactly one uncommented OS= line, so
+# comparing them identifies a foreign file with no marker of our own.
+template_os=$(grep -m1 '^OS=' "$template" 2>/dev/null || true)
+existing_os=""
+[ -f "$opts" ] && existing_os=$(grep -m1 '^OS=' "$opts" 2>/dev/null || true)
+foreign_opts=0
+if [ -n "$existing_os" ] && [ -n "$template_os" ] && [ "$existing_os" != "$template_os" ]; then
+    foreign_opts=1
+fi
+
+if [ -f "$opts" ] && [ "$do_reconfigure" = 0 ] && [ "$foreign_opts" = 0 ]; then
     # make_options is machine-local and gitignored, and an operator may have
     # tuned it.  Never silently overwrite somebody's settings.
     say "  using the existing $opts"
     say "  (delete it or pass --reconfigure to regenerate)"
 else
+    if [ "$foreign_opts" = 1 ]; then
+        say "  the existing make_options says '$existing_os', not '$template_os' --"
+        say "  it was written for another platform (a synced folder will do this)."
+        say "  Regenerating it; the old one is kept as make_options.foreign."
+        cp "$opts" "$opts.foreign"
+        # Whatever synced make_options here synced ../objs with it, and those
+        # objects are for the other platform.  make compares timestamps, not
+        # targets, so it considers them up to date and links them -- and the
+        # error names neither the sync nor the objects (mingw objects in a
+        # glibc link give "relocation truncated to fit" and undefined
+        # references to __isoc23_* and __ctype_*).  A platform switch
+        # invalidates every object in the tree.
+        say "  objects from the other platform are unusable -- forcing a clean."
+        do_clean=1
+    fi
     say "  writing $opts from $(basename "$template")"
 
     # The three edits the stock template needs on a modern toolchain, each of

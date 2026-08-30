@@ -186,6 +186,19 @@
 //                                                                  CONSTANTS
 // ==========================================================================
 
+// [Arcade] Windows ships an OpenGL 1.1 <GL/gl.h> and nothing newer -- the
+// header is Microsoft's, frozen in 1996, no matter how modern the driver
+// underneath is.  GL_CLAMP_TO_EDGE is core in OpenGL 1.2, so it exists in
+// every GL implementation this will ever run on but is missing from the
+// declaration mingw compiles against, and the build stops with
+//     error: 'GL_CLAMP_TO_EDGE' undeclared
+// on a line that compiles without comment on Linux.  Defining the enum value
+// is the whole fix: it is a constant passed to the driver, not a function
+// that needs resolving, so there is nothing to load at runtime.
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE  0x812F
+#endif
+
 // PI/2
 #define N_PI_DEMI  (1.5707963268f)
 
