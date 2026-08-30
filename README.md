@@ -76,6 +76,10 @@ Discord is likely to get you banned.
 
 - **Settings don't persist for players.** Anything changed during a session is forgotten at the next
   launch. Only an operator session writes the config.
+- **One settings page per player.** Colour, crosshair and control scheme are together on a single
+  page — **Options → Player → Player n** — instead of being spread across two pages and three menu
+  levels. Operator-only settings (autoaim, always run, mouse, weapon preference) are still there
+  under *Player config* in a `-devmode` session.
 - **A guided control setup** that asks for each control in turn and binds whatever you press —
   stick, buttons, or anything else your panel is wired to. One per panel, up to four.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level. Operator-only by

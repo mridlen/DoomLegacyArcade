@@ -13,8 +13,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   New Game: Single Player / Single Level / Multiplayer
   Options:  Crosshair / Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
-  Config:   Crosshair / Player setup >>
-  Setup:    Your color / Control scheme / Player config >>
+  Player n: Your color / Crosshair / Control scheme
   ```
 
   On **Multiplayer → Options** (the Net Options page) only the deathmatch ruleset a player might
@@ -358,3 +357,46 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Verified headless with two otherwise identical `-warp 1` autoexec runs differing only by a
     `god` line: the control wrote `doom2 MAP01 2 104 speed`, the cheated run wrote nothing.
   - `hs_run_cheated` is reset in `HS_NewGame` beside `hs_run_died`.
+
+- **Everything a player can set for themselves is on one page** — `SetupMultiPlayerDef`, one per
+  panel: **Your color**, **Crosshair**, **Control scheme**. It used to take two pages and three
+  levels of menu (Options → Player → *Player n config* → Crosshair, *Player setup >>* → colour and
+  scheme), with the crosshair stranded on its own page away from the other two.
+  - **Consolidated onto this page rather than onto `PlayerOptionsDef`**, and that direction is
+    forced: the colour row is `IT_CV_NOPRINT`, meaning its "value" is not text but the animated
+    player sprite this page's own drawer paints. No other page has that drawer, so colour cannot
+    leave.
+  - **`PlayerOptionsDef` is now the devmode-only remainder** — always run, autoaim, the mouse rows,
+    the weapon preference — reached from the *Player config >>* row on this page, which the lockdown
+    now hides from players. Without that hiding a player would follow a link to a page showing them
+    nothing they could not already see.
+  - Both routes in were repointed: `M_PlayerDirectorChoice` (Options → Player) and
+    `M_TwoPlayer_PlayerConfig` (Multiplayer → Player n config). Both go through
+    `M_SetupMultiPlayer[]` rather than pushing the menu directly, which brings the rest of the
+    per-panel setup with it: `setupm_player`, every repointed cvar, the config row's label, and the
+    `numitems` that drops the Player2-only rows. `M_TwoPlayer_PlayerConfig` still does not
+    `Pop_Menu()` first, and `M_SetupMultiPlayer[]` does not either, so backing out still returns to
+    the Multiplayer page.
+  - **The new row goes *before* `setupmultiplayer_options` in the array.** `M_SetupMultiPlayer1`
+    truncates the page with `numitems = setupmultiplayer_options + 1` to drop the Player2-only rows,
+    so anything placed after that index would silently vanish for Player 1.
+
+  ### It costs no vertical space, which was the worry
+
+  **The crosshair row sits beside the player preview box, not below the list.** Measured rather than
+  assumed, by instrumenting the page's own drawer to report every row's y, every label's right edge,
+  and the box's real extent:
+
+  | | value |
+  | --- | --- |
+  | preview box | x **117..197**, y **48..136** |
+  | `Crosshair` label at y 72 | ends at x **93** — clears the box by 24px |
+  | its value (right-justified at x 293) | starts ~250 — clears the box by ~53px |
+  | devmode worst case (Player 2, 8 rows) | bottom text ends at y **187** of 200 |
+  | player view (3 rows shown) | bottom text ends at y **157** of 200 |
+
+  187 is **exactly what the page measured before the row was added**: the left column beside the box
+  was empty from y 48 to 136, so the row went into space that was already going to waste.
+  - **`Control scheme` cannot go in that column**, and this was found by trying it: its label ends
+    at x **135**, eighteen pixels past the box's left edge at 117. It stays below the box. Only
+    labels shorter than ~90 units fit beside it — `Crosshair` (93) and `Your color` (103) do.

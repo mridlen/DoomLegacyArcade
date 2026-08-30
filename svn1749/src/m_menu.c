@@ -2063,13 +2063,22 @@ enum {
 };
 
 
+// Defined with the per-panel entry points further down; declared here so the
+// two menus that open a player's config can share them.
+static menufunc_t M_SetupMultiPlayer[MAXSPLITSCREENPLAYERS];
+
 // Open a panel's config page.  Unlike M_PlayerDirectorChoice this does not
 // Pop_Menu first, so backing out of the config returns to this page rather
-// than skipping past it.
+// than skipping past it -- and M_SetupMultiPlayer[] does not pop either, so
+// that still holds.
+//
+// [Arcade] Goes to the consolidated page (colour, crosshair, control scheme)
+// like every other route to a player's settings; PlayerOptionsDef is now the
+// devmode-only remainder, reached from a row on that page.
 static void M_TwoPlayer_PlayerConfig(int choice)
 {
-    M_SetupMultiPlayer_pind( choice );   // pind = 0..3
-    Push_Setup_Menu( &PlayerOptionsDef );
+    if( choice >= 0 && choice < MAXSPLITSCREENPLAYERS )
+        M_SetupMultiPlayer[choice]( choice );   // pind = 0..3
 }
 
 menu_t  TwoPlayerDef =
@@ -2261,12 +2270,18 @@ menu_t  PlayerOptionsDef =
 };
 
 
+// [Arcade] Opens the consolidated per-player page (colour, control scheme,
+// crosshair) rather than PlayerOptionsDef, which is now the devmode-only
+// remainder -- always run, autoaim, the mouse rows and the weapon preference.
+// Going through M_SetupMultiPlayer[] rather than pushing the menu directly
+// gets the rest of the per-panel setup with it: setupm_player, every repointed
+// cvar, the config row's label, and the numitems that drops the Player2-only
+// rows for Player 1.
 static void M_PlayerDirectorChoice(int choice)
 {
-    // pind = choice
-    M_SetupMultiPlayer_pind( choice );  // pind = 0,1
     Pop_Menu();
-    Push_Setup_Menu( &PlayerOptionsDef );
+    if( choice >= 0 && choice < MAXSPLITSCREENPLAYERS )
+        M_SetupMultiPlayer[choice]( choice );   // pind = choice
 }
 
 menuitem_t  PlayerDirectorMenu[] =
@@ -2327,6 +2342,16 @@ menuitem_t SetupMultiPlayerMenu[] =
     {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
     // [Arcade] Per-player control scheme, cvar repointed by M_SetupMultiPlayer_pind.
     {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+14},
+    // [Arcade] Crosshair joins colour and control scheme here so that
+    // everything a *player* can set for themselves is on one page.  It lives
+    // on this page rather than the other way round because the colour row is
+    // IT_CV_NOPRINT: its value is not text, it is the animated player sprite
+    // this page's own drawer paints, which no other page has.
+    //
+    // Placed *before* the config link deliberately: M_SetupMultiPlayer1 cuts
+    // the page off at setupmultiplayer_options+1 to drop the Player2-only
+    // rows, so anything after that index would vanish for Player 1.
+    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Crosshair", &cv_crosshair[0], 32},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+24},
  // Player2 only
     {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+34},
@@ -2339,6 +2364,7 @@ enum {
     setupmultiplayer_color,
     setupmultiplayer_skin,
     setupmultiplayer_scheme,
+    setupmultiplayer_crosshair,   // [Arcade]
     setupmultiplayer_options,
     setupmultiplayer_controls,
     setupmultiplayer_mouse2,
@@ -2383,6 +2409,7 @@ void M_SetupMultiPlayer_pind( byte pind )
 
     SetupMultiPlayerMenu[setupmultiplayer_color].itemaction = setupm_cvcolor;
     SetupMultiPlayerMenu[setupmultiplayer_scheme].itemaction = &cv_controlscheme[pind];  // [Arcade]
+    SetupMultiPlayerMenu[setupmultiplayer_crosshair].itemaction = &cv_crosshair[pind];   // [Arcade]
 
     // PlayerOptionsMenu
     PlayerOptionsDef.menutitle = player_pind_str[pind];
@@ -9170,9 +9197,14 @@ void M_Init (void)
         SetupMultiPlayerMenu[setupmultiplayer_skin].status = IT_HIDDEN;  // Your skin
         SetupMultiPlayerMenu[setupmultiplayer_controls].status = IT_HIDDEN;  // Player2 Controls >>
         SetupMultiPlayerMenu[setupmultiplayer_mouse2].status = IT_HIDDEN;  // Second Mouse config >>
+        // [Arcade] Everything a player can set is on this page now, so the
+        // link onward to PlayerOptionsDef would lead to a page showing them
+        // nothing they cannot already see here.
+        SetupMultiPlayerMenu[setupmultiplayer_options].status = IT_HIDDEN;
         if( SetupMultiPlayerDef.lastOn == setupmultiplayer_name
             || SetupMultiPlayerDef.lastOn == setupmultiplayer_skin
             || SetupMultiPlayerDef.lastOn == setupmultiplayer_controls
+            || SetupMultiPlayerDef.lastOn == setupmultiplayer_options
             || SetupMultiPlayerDef.lastOn == setupmultiplayer_mouse2 )
             SetupMultiPlayerDef.lastOn = setupmultiplayer_color;
 
