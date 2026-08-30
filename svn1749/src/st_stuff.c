@@ -2136,15 +2136,18 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
                // a run only exists in the scored modes -- in a deathmatch
                // there is nothing for it to total.
                //
-               // ! single_level_mode narrows that to Single Player.  A Single
-               // Level run is one map by definition, so its total is always
-               // identical to the level clock directly beneath it, and two
-               // rows showing the same number is worse than one row.
+               // HS_Single_Level_Run() narrows that to Single Player.  A one
+               // map run's total is always identical to the level clock
+               // directly beneath it, and two rows showing the same number is
+               // worse than one row.  It covers the *replayed* case too, which
+               // testing single_level_mode by hand did not: that flag belongs
+               // to a live game and an attract demo never sets it, so TT was
+               // appearing over single level record demos.
                //
                // The view count is the layout: a split view has no room for a
                // second row, which is the same limit that caps CLK_DY at 9
                // rather than a full character.
-               show_total = HS_Scored_Game() && ! single_level_mode
+               show_total = HS_Scored_Game() && ! HS_Single_Level_Run()
                             && ( D_NumViews() == 1 );
                if( show_total )
                {

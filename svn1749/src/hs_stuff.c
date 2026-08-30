@@ -3169,9 +3169,30 @@ void HS_Draw_AttractTable( void )
 // nothing) is playing -- D_DoAdvanceDemo clears it before every page.
 static char hs_demo_label[64] = "";
 
+// [Arcade] Does the demo now playing span more than one level?  True only for
+// a Survival record, which is a whole episode run.  A single level record is
+// one map, and so is a stock IWAD demo, and neither has a run total worth
+// showing -- the flag is cleared with the label before every attract page, so
+// anything that is not one of our Survival demos reads as one map.
+static boolean hs_demo_multilevel = false;
+
 void HS_Clear_DemoLabel( void )
 {
     hs_demo_label[0] = 0;
+    hs_demo_multilevel = false;
+}
+
+// [Arcade] Is what is on screen a one-map run?  A live Single Level game, or
+// an attract replay of anything that is not a Survival record.
+//
+// This exists because single_level_mode alone was not enough: it is a *live
+// game* flag, set from the Single Level menu, and a demo replay never sets it.
+// So the HUD's run total appeared over attract replays of single level
+// records, next to a level clock showing the very same number.
+boolean HS_Single_Level_Run( void )
+{
+    if( demoplayback )  return ! hs_demo_multilevel;
+    return single_level_mode != 0;
 }
 
 const char * HS_DemoLabel( void )
@@ -3247,7 +3268,7 @@ static boolean  HS_Demo_Slot( int slot, boolean * out_surv, int * out_idx,
 // anonymous -- it keeps a time and nothing else -- so they come from the
 // board, which is where initials are actually stored.
 static boolean  HS_Demo_At( int slot, char * path, tic_t * out_tics,
-                            char * label, size_t labelsz )
+                            char * label, size_t labelsz, boolean * out_surv )
 {
     boolean surv;
     int     idx, sk, cat;
@@ -3256,6 +3277,8 @@ static boolean  HS_Demo_At( int slot, char * path, tic_t * out_tics,
     tic_t   tics;
 
     if( ! HS_Demo_Slot( slot, &surv, &idx, &sk, &cat ) )  return false;
+
+    if( out_surv )  *out_surv = surv;
 
     ini[0] = 0;
 
@@ -3392,7 +3415,7 @@ static void  HS_Refill_DemoBag( void )
         char   path[MAX_WADPATH];
         tic_t  tics;
 
-        if( ! HS_Demo_At( slot, path, &tics, NULL, 0 ) )  continue;
+        if( ! HS_Demo_At( slot, path, &tics, NULL, 0, NULL ) )  continue;
         if( tics >= HS_LONG_DEMO_TICS )  continue;
 
         if( hs_bag_count >= HS_BAG_MAX )  goto filled;
@@ -3443,6 +3466,7 @@ const char * HS_NextRecordDemoPath( void )
     for( tries=0; tries<hs_bag_count; tries++ )
     {
         int slot;
+        boolean surv = false;
 
         if( hs_bag_pos >= hs_bag_count )
             hs_bag_pos = 0;   // wrap within this pass; refilled on the next call
@@ -3450,8 +3474,12 @@ const char * HS_NextRecordDemoPath( void )
         slot = hs_bag[hs_bag_pos++];
 
         if( HS_Demo_At( slot, path, NULL,
-                        hs_demo_label, sizeof(hs_demo_label) ) )
+                        hs_demo_label, sizeof(hs_demo_label), &surv ) )
         {
+            // [Arcade] Set where the demo is *chosen*, never inside
+            // HS_Demo_At -- see HS_NextLongDemoPath below, which inspects
+            // candidates it then rejects.
+            hs_demo_multilevel = surv;
             hs_bag_last = slot;
             return path;
         }
@@ -3486,14 +3514,24 @@ const char * HS_NextLongDemoPath( void )
     {
         int    slot = cursor % nslot;
         tic_t  tics;
+        boolean surv = false;
 
         cursor++;
 
         if( ! HS_Demo_At( slot, path, &tics,
-                          hs_demo_label, sizeof(hs_demo_label) ) )
+                          hs_demo_label, sizeof(hs_demo_label), &surv ) )
             continue;
         if( tics < HS_LONG_DEMO_TICS )  continue;   // the bag deals these
 
+        // [Arcade] Only now, once this candidate is the one being returned.
+        // HS_Demo_At writes hs_demo_label as a side effect *before* the length
+        // test above, so a rejected short Survival candidate would otherwise
+        // leave the flag set and the single level demo chosen after it would
+        // inherit "spans several levels".  That is exactly what put the run
+        // total on the HUD over single level attract demos.  The stale label
+        // has always been harmless because whichever demo is finally chosen
+        // overwrites it; a flag set in only one branch does not get that.
+        hs_demo_multilevel = surv;
         return path;
     }
 

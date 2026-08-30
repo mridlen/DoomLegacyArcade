@@ -976,3 +976,16 @@ Speed is simply the category that never stops being alive, so its endpoint follo
 - **Not in the New Game skill preview either** (`HS_SKR_NUMROWS`). Four rows would fit — 163/172/181/190,
   ending at 197 of 200 — but it buries the skill menu in numbers for two categories almost nobody is
   playing for at the moment they choose a difficulty.
+
+- **A side effect written before a rejection is a trap**, and `HS_Demo_At` is where it bit.
+  `HS_NextLongDemoPath` calls it on candidate slots and then **rejects** the short ones
+  (`tics < HS_LONG_DEMO_TICS`) — but `HS_Demo_At` has already written `hs_demo_label` by then. That
+  was harmless for the label, because whichever demo is finally chosen overwrites it. It was *not*
+  harmless for a flag set in only one branch: a rejected short **Survival** candidate left
+  "spans several levels" set, and the single level demo chosen afterwards inherited it, putting the
+  HUD's run total over single level attract demos.
+  - The fix is to report the fact out of `HS_Demo_At` and let each caller latch it **at the point
+    the demo is actually chosen**, not inside the function that merely inspects candidates.
+  - Verified by running the attract cycle until both kinds came up: a single level record
+    (`MAP01 ITYTD SPEED …`) reported the run total hidden, a Survival record
+    (`SURVIVAL UV SPEED MAP01 …`) reported it shown.
