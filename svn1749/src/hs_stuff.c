@@ -1762,6 +1762,14 @@ boolean  HS_Cat_Still_Alive( int cat )
     return hs_cat_alive[cat];
 }
 
+// [Arcade] The run's time before the level now being played.  The HUD adds
+// the live leveltime to get a running total; HS_LevelExit folds leveltime in
+// at the exit, so this is "everything already banked" at any point in play.
+tic_t  HS_Cumulative_Tics( void )
+{
+    return hs_cumulative_time;
+}
+
 boolean  HS_Run_Is_Pacifist( void ) { return hs_cat_alive[HS_CAT_pacifist]; }
 boolean  HS_Run_Is_Tyson( void )    { return hs_cat_alive[HS_CAT_tyson]; }
 

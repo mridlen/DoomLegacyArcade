@@ -133,3 +133,49 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the `t` was added to the saved `overlay` line, because the config value overrides the compiled
     default and only a devmode session rewrites it. The cabinet's line is now `"kahmfeist"`, but
     any *other* install still needs the letter added by hand.
+
+- **Run total beside the level clock** — `T` is this level, **`TT`** the whole run so far, drawn as
+  two stacked rows in two columns:
+
+  ```
+  TT 12:34
+  T   4:59
+  ```
+
+  - **Folded into the existing `t` element rather than given a letter of its own.** A new element
+    code would need adding to every saved `overlay` line by hand, and that caveat has already bitten
+    twice in this file — the level clock itself did not appear at all until `t` was added to the
+    cabinet's saved config. Sharing `t` means TT appears the moment the build is installed.
+  - **Single player only, on two separate grounds.** `HS_Scored_Game()` is the *meaning*: TT is the
+    run's total, and a run only exists in the scored modes — in a deathmatch there is nothing for it
+    to total. `D_NumViews() == 1` is the *layout*: a split view has no room for a second row, which
+    is the same limit that caps `CLK_DY` at 9 rather than a full character.
+  - **TT goes above T, on `lowerbar_y` itself, because there is nothing below.** `lowerbar_y` is 16
+    base units above y 198 and `CLK_DY` is 9, so the T row already ends at 198. The row above is
+    free over the same x span: health and ammo bound this block *horizontally* (68..192), not
+    vertically.
+  - **Two columns: labels left aligned, times right aligned on a shared edge**, so the seconds line
+    up under each other even when the minutes differ in width — which is the entire point of
+    stacking them. Widths come from `V_StringWidth` at draw time, never assumed: `hu_font` is
+    proportional and its digits are **not** fixed width.
+  - **With no TT row the block is exactly the old string centred on `CLK_CX`**, because the label
+    column is sized to the label actually in use (`"T "` vs `"TT "`). The splitscreen and deathmatch
+    layout verified above is therefore untouched.
+  - Measured rather than eyeballed, with temporary instrumentation reporting the computed spans and
+    the real `V_StringWidth` values:
+
+    | string | width |
+    | --- | --- |
+    | `TT ` | 20 |
+    | `9:59` | 27 |
+    | `99:59` | 35 |
+    | `199:59` | 40 |
+    | `999:59` | 43 |
+
+    Worst realistic case is a run past an hour and a half: block width 20+40 = **60**, centred on
+    `CLK_CX` 104 giving **74..134** — inside the free span 68..192, clearing health by 6px and ammo
+    by 58px. Vertically at `sf_dupy` 3: TT spans 712..733 and T 739..760 against a 768 limit, a 6px
+    gap between the rows and 8px below.
+  - `HS_Cumulative_Tics()` is the run's time *before* the current level — `HS_LevelExit` folds
+    `leveltime` in at the exit — so the HUD adds the live `leveltime` to it. It is maintained during
+    demo playback too, so a record demo's replay shows its own running total.
