@@ -146,10 +146,17 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     code would need adding to every saved `overlay` line by hand, and that caveat has already bitten
     twice in this file — the level clock itself did not appear at all until `t` was added to the
     cabinet's saved config. Sharing `t` means TT appears the moment the build is installed.
-  - **Single player only, on two separate grounds.** `HS_Scored_Game()` is the *meaning*: TT is the
-    run's total, and a run only exists in the scored modes — in a deathmatch there is nothing for it
-    to total. `D_NumViews() == 1` is the *layout*: a split view has no room for a second row, which
-    is the same limit that caps `CLK_DY` at 9 rather than a full character.
+  - **Single Player only, on three separate grounds.** `HS_Scored_Game()` is the *meaning*: TT is
+    the run's total, and a run only exists in the scored modes — in a deathmatch there is nothing
+    for it to total. **`! single_level_mode`** narrows that from "scored" to Single Player: a Single
+    Level run is one map by definition, so its total is always identical to the level clock directly
+    beneath it, and two rows showing the same number is worse than one row. `D_NumViews() == 1` is
+    the *layout*: a split view has no room for a second row, which is the same limit that caps
+    `CLK_DY` at 9 rather than a full character.
+    - Verified by flipping `single_level_mode` at runtime through a temporary console command (the
+      Single Level menu is the only normal way in and cannot be driven headlessly): `show_total`
+      went 1 → 0 → 1 as the flag went 0 → 1 → 0, with `scored` and the view count unchanged
+      throughout, so the new term is what moved it.
   - **TT goes above T, on `lowerbar_y` itself, because there is nothing below.** `lowerbar_y` is 16
     base units above y 198 and `CLK_DY` is 9, so the T row already ends at 198. The row above is
     free over the same x span: health and ammo bound this block *horizontally* (68..192), not
