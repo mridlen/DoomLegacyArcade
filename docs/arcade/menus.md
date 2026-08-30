@@ -421,6 +421,27 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   and `8*PLBOXH - 33.5` top. `PLBOXW` 3 would leave 0.5 on the right and `PLBOXH` 4 would clip the
   head by 1.5.
 
+  **The crosshair row then moved off the narrow column and onto a line of its own**, in the run of
+  rows below the box beside Control scheme. It was only squeezed in next to the box because, at full
+  sprite size, there was nowhere else for it — that was what forced the "labels wider than ~90 units
+  do not fit here" constraint, and it no longer applies to this row. The freed lines were spent on
+  exactly this.
+
+  The page is now, in both index and screen order:
+
+  | row | y | shown to |
+  | --- | --- | --- |
+  | Your name | 40 | devmode |
+  | Your color | 56 | everyone |
+  | Your skin | 112 | devmode |
+  | **Crosshair** | **126** | everyone |
+  | Control scheme | 140 | everyone |
+  | Player *n* config >> | 150 | devmode |
+  | Player2 Controls >> | 160 | devmode, Player 2 |
+  | Second Mouse config >> | 170 | devmode, Player 2 |
+
+  Devmode worst case ends at y **177** of 200; the player sees three rows ending at **147**.
+
   **`PLSKINNAMEY` moved 96 → 72 to follow it.** That constant is where the block below the box
   starts, and the box got 32 shorter; leaving it alone would have left a visible hole. The box now
   ends at y 104, so 72 puts the skin row at 112, eight below it. The devmode worst case fell from
