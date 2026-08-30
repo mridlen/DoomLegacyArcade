@@ -92,9 +92,33 @@ packages, and drives the same make sequence through the MSYS bash.
 - `build.bat` exists so nobody has to know about PowerShell execution policy; `-ExecutionPolicy
   Bypass` applies to that one invocation and changes nothing on the machine. It keeps the window
   open when double-clicked.
-- **None of the Windows path has been run.** It was written from the Makefile and the working Unix
-  build. Treat the first run on a Windows machine as the test, and expect the package names or the
-  MSYS2 subsystem choice to be where it needs adjusting.
+### What the first Windows run found
+
+Detection and MSYS2 discovery worked first time on Windows 11 x86_64 — the CPU, the `ucrt64` choice
+and `C:\msys64` were all correct. Two bugs sat immediately behind that, and both are the same class:
+**a probe that fails is normal, and the script has to survive it.**
+
+- **`a || b >/dev/null 2>&1` redirects only `b`.** The `||` binds tighter than the redirection, so a
+  missing first command still printed `command not found` to the console. Every probe is now
+  `{ ... ; } >/dev/null 2>&1`, wrapping the whole chain. Reproduced and fixed against real
+  `/bin/sh` before being written back into the PowerShell.
+- **`$ErrorActionPreference = 'Stop'` makes any native stderr a *terminating* error.** So that
+  leaked line did not merely look untidy — it killed the script at the first missing package, before
+  it could print the list of what to install. That list is the entire reason the script exists on a
+  machine that has nothing installed yet. Probes now run with the preference restored to `Continue`
+  and are judged on their exit code alone.
+- **`pkg-config` was the wrong tool to probe with.** A freshly installed MSYS2 does not have it — it
+  arrives with the toolchain — so the probe asked a question that cannot be answered on exactly the
+  machine needing the most help. The Windows script now checks the toolchain first and, only if a
+  compiler exists, probes the libraries by compiling and linking, the same way `build.sh` does.
+  Without a compiler it reports one problem rather than six identical ones.
+- A fresh MSYS2 having none of the packages is the **normal first-run state**, and the script now
+  says so, along with the `pacman -Syu` that a new install needs before it can resolve them.
+
+**The Windows build has still not run to completion** — the first run that gets past dependency
+installation is the real test. The probe strings themselves were validated under `/bin/sh` (silent
+and correctly non-zero when a library is absent, silent and zero when present, including the
+`sdl2-config` command substitution and the embedded quotes).
 
 ## Verified
 

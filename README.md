@@ -299,9 +299,10 @@ Rocky and so on are all recognised through the same mechanism. It will **not** o
 configuration you have already tuned; pass `--reconfigure` if you want it rewritten.
 
 Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
-it as it stands). If MSYS2 is not installed the script tells you how to get it. **The Windows script
-has not been run on a Windows machine yet** — the Linux one is tested; treat the first Windows run
-as the shakedown.
+it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
+empty — which is how it arrives — it lists the packages to install and can install them for you.
+Detection is confirmed working on Windows 11; **the Windows build itself has not yet been run all
+the way through**, so treat the first complete run as the shakedown.
 
 ### The manual way
 

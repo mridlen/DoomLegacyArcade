@@ -34,9 +34,11 @@
     .\tools\build.ps1 -InstallDeps
 
 .NOTES
-    UNTESTED ON WINDOWS.  Written from the Makefile and the Unix build, but
-    the author had no Windows machine to run it on -- treat the first run as
-    the test.  tools/build.sh is the Linux/macOS equivalent and *is* tested.
+    Detection and MSYS2 discovery are confirmed working on Windows 11 x86_64
+    (reported: "Microsoft Windows 11 Pro / AMD64 / MSYS2 ucrt64 / found
+    C:\msys64").  The build itself has still not been run to completion on
+    Windows -- the first run that gets past dependency installation is the
+    test.  tools/build.sh is the Linux/macOS equivalent and is fully tested.
 #>
 
 [CmdletBinding()]
@@ -121,16 +123,37 @@ $bash = Join-Path $msysRoot 'usr\bin\bash.exe'
 # compiler and libraries are on PATH; without it the MSYS shell has its own
 # gcc that produces binaries depending on the MSYS runtime, which is not what
 # a distributable Windows build wants.
+# $ErrorActionPreference is 'Stop' for this script, and under that setting
+# *anything* a native program writes to stderr becomes a terminating
+# PowerShell error.  A probe for a missing tool writes to stderr by
+# definition, so the first missing package killed the script before it could
+# print the list of what to install -- the one message the operator actually
+# needed.  Probes are expected to fail; only the exit code is the answer.
 function Invoke-Msys {
     param([string]$Command, [switch]$Quiet)
     $env:MSYSTEM = $msysEnv.ToUpper()
     $env:CHERE_INVOKING = '1'
-    if ($Quiet) {
-        & $bash -lc $Command 2>&1 | Out-Null
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($Quiet) {
+            & $bash -lc $Command 2>&1 | Out-Null
+        } else {
+            & $bash -lc $Command 2>&1 | ForEach-Object { Write-Host $_ }
+        }
         return $LASTEXITCODE
     }
-    & $bash -lc $Command
-    return $LASTEXITCODE
+    finally { $ErrorActionPreference = $prevEAP }
+}
+
+# Run a shell test and report only true/false.  The command is wrapped in
+# braces before the redirection is applied, because in `a || b >/dev/null`
+# the redirection binds to *b alone* -- so a missing `a` still printed
+# "command not found" to the console.  That is what leaked pkg-config errors
+# out of the probes.
+function Test-Msys {
+    param([string]$Command)
+    return (Invoke-Msys -Command ("{ " + $Command + " ; } >/dev/null 2>&1") -Quiet) -eq 0
 }
 
 # A Windows path as MSYS sees it: C:\a\b -> /c/a/b
@@ -146,42 +169,76 @@ function ConvertTo-MsysPath {
 # ---------------------------------------------------------------------------
 Step "Checking what is installed"
 
-$packages = @(
-    @{ Name='C compiler'; Probe='command -v gcc';        Pkg="$pkgPrefix-gcc" },
-    @{ Name='make';       Probe='command -v make';       Pkg="$pkgPrefix-make" },
-    @{ Name='SDL2';       Probe='command -v sdl2-config || pkg-config --exists SDL2'; Pkg="$pkgPrefix-SDL2" },
-    @{ Name='SDL2_mixer'; Probe='pkg-config --exists SDL2_mixer || test -f /$env/include/SDL2/SDL_mixer.h'; Pkg="$pkgPrefix-SDL2_mixer" },
-    @{ Name='libzip';     Probe='pkg-config --exists libzip'; Pkg="$pkgPrefix-libzip" },
-    @{ Name='zlib';       Probe='pkg-config --exists zlib';   Pkg="$pkgPrefix-zlib" }
-)
+# pkg-config is deliberately not used.  A freshly installed MSYS2 does not
+# have it -- it arrives with the toolchain -- so probing through it asks a
+# question that cannot be answered on exactly the machine that needs the most
+# help.  The toolchain is checked first, and the libraries are then checked the
+# way build.sh does it: by compiling *and linking* a three-line program, which
+# is the only test that stays true when package names change.
 
 $missingPkgs = @()
-foreach ($p in $packages) {
-    $probe = $p.Probe -replace '/\$env/', "/$msysEnv/"
-    $rc = Invoke-Msys -Command "$probe >/dev/null 2>&1" -Quiet
-    if ($rc -eq 0) { Say ("  ok   : " + $p.Name) }
-    else           { Say ("  MISS : " + $p.Name); $missingPkgs += $p.Pkg }
-}
 
-# OpenGL comes with the MinGW toolchain itself (opengl32/glu32 are Windows
-# system libraries), so it is checked by linking rather than by package.
-$glProbe = 'printf "#include <GL/gl.h>\n#include <GL/glu.h>\nint main(void){glFlush();gluErrorString(0);return 0;}\n" > /tmp/dlgl.c && gcc /tmp/dlgl.c -o /tmp/dlgl.exe -lopengl32 -lglu32'
-$rc = Invoke-Msys -Command "$glProbe >/dev/null 2>&1" -Quiet
-if ($rc -eq 0) { Say "  ok   : OpenGL (GL and GLU)" }
-else { Say "  MISS : OpenGL (GL and GLU)"; $missingPkgs += "$pkgPrefix-gcc" }
+# -- phase 1: the toolchain.  Nothing else can be probed without it. --
+$haveGcc  = Test-Msys 'command -v gcc'
+$haveMake = Test-Msys 'command -v make'
+if ($haveGcc)  { Say "  ok   : C compiler (gcc)" } else { Say "  MISS : C compiler"; $missingPkgs += "$pkgPrefix-gcc" }
+if ($haveMake) { Say "  ok   : make" }             else { Say "  MISS : make";       $missingPkgs += "$pkgPrefix-make" }
+
+if (-not $haveGcc) {
+    # Without a compiler the library probes below would all report MISS for
+    # the same single reason, which reads as six problems instead of one.
+    Say "         (the libraries cannot be checked until the compiler is installed)"
+    $missingPkgs += @("$pkgPrefix-SDL2", "$pkgPrefix-SDL2_mixer", "$pkgPrefix-libzip", "$pkgPrefix-zlib")
+} else {
+    # -- phase 2: the libraries, by compile-and-link. --
+    # SDL_MAIN_HANDLED keeps SDL from redefining main() in the probe.
+    $probes = @(
+        @{ Name='SDL2';       Pkg="$pkgPrefix-SDL2"
+           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\nint main(void){SDL_Init(0);return 0;}\n'
+           Flags='$(sdl2-config --cflags --libs 2>/dev/null || echo -lSDL2)' },
+        @{ Name='SDL2_mixer'; Pkg="$pkgPrefix-SDL2_mixer"
+           Src='#define SDL_MAIN_HANDLED\n#include <SDL.h>\n#include <SDL_mixer.h>\nint main(void){Mix_Init(0);return 0;}\n'
+           Flags='$(sdl2-config --cflags --libs 2>/dev/null || echo -lSDL2) -lSDL2_mixer' },
+        @{ Name='libzip';     Pkg="$pkgPrefix-libzip"
+           Src='#include <zip.h>\nint main(void){zip_open("x",0,0);return 0;}\n'
+           Flags='-lzip' },
+        @{ Name='zlib';       Pkg="$pkgPrefix-zlib"
+           Src='#include <zlib.h>\nint main(void){return (int)zlibVersion()[0];}\n'
+           Flags='-lz' },
+        @{ Name='OpenGL (GL and GLU)'; Pkg="$pkgPrefix-gcc"
+           Src='#include <GL/gl.h>\n#include <GL/glu.h>\nint main(void){glFlush();gluErrorString(0);return 0;}\n'
+           Flags='-lopengl32 -lglu32' }
+    )
+    foreach ($p in $probes) {
+        $cmd = "printf '" + $p.Src + "' > /tmp/dlprobe.c && gcc /tmp/dlprobe.c -o /tmp/dlprobe.exe " + $p.Flags
+        if (Test-Msys $cmd) { Say ("  ok   : " + $p.Name) }
+        else { Say ("  MISS : " + $p.Name); $missingPkgs += $p.Pkg }
+    }
+}
 
 if ($missingPkgs.Count -gt 0) {
     $list = ($missingPkgs | Select-Object -Unique) -join ' '
     Say ""
     Say "Missing packages: $list"
     Say ""
-    Say "Install them with:"
+    Say "Install them from an MSYS2 shell with:"
     Say "    pacman -S --needed $list"
+    Say ""
+    Say "A freshly installed MSYS2 has none of these -- it ships only its own"
+    Say "base environment, so this is the normal first-run state, not a fault."
+    Say "If pacman reports nothing to do or cannot find a package, update it"
+    Say "first (this may ask you to close and reopen the shell):"
+    Say "    pacman -Syu"
     Say ""
     if ($InstallDeps) {
         Step "Installing"
+        # -Syu first: on a fresh MSYS2 the package databases are older than the
+        # packages being asked for, and pacman will otherwise say it cannot
+        # find them.
+        Invoke-Msys -Command "pacman -Sy --noconfirm" | Out-Null
         $rc = Invoke-Msys -Command "pacman -S --needed --noconfirm $list"
-        if ($rc -ne 0) { Die "pacman failed (exit $rc)" }
+        if ($rc -ne 0) { Die "pacman failed (exit $rc).
+       Try it by hand in an MSYS2 shell:  pacman -Syu  then  pacman -S --needed $list" }
         Say ""
         Say "Installed. Run the script again to build."
         exit 0
