@@ -17,3 +17,6 @@ objs/
 # tools/build.sh --debug builds into here, and BUILD=<dir> needs its own copy
 # of make_options inside the build directory (MAKE_OPTIONS = $(BUILD_DIR)make_options)
 /svn1749/debug/
+
+# Claude Code session state and scratch worktrees
+/.claude/
