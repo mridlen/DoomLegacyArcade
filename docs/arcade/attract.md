@@ -175,6 +175,20 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     silently undone on the next frame. `S_Attract_Scaled()` changes the *target* that comparison
     comes from, which is why coming out of attract into a game restores full volume by itself,
     within a frame, with no second hook.
+  - **A menu open over the attract screen counts as "in use", not as attract.** The moment somebody
+    presses a key the cabinet is being used, even though the attract cycle is technically still what
+    is on screen — any keypress over a demo raises the menu — and the menu's own sounds were being
+    played at advertising volume, so the first thing a player heard after touching the machine came
+    out quieter than the demo that drew them to it. `S_Attract_Scaled` therefore returns the
+    unscaled volume when `D_Menu_Over_Attract()`, reusing the predicate the menu backdrop already
+    defines rather than growing a second opinion about what counts as the attract screen.
+    - Backing out of the menu without starting anything drops the volume again by itself, because
+      this is reconciled every frame — there is no state to leave the cabinet loud all night, and
+      that is worth checking rather than assuming. Verified across the whole round trip in one
+      process with temporary instrumentation on the mixer change, at `attractvolume 25` with both
+      volumes 20: attract **5**, keypress → **20** one tic later (`attract=1 menuover=1`), Escape →
+      back to **5** one tic later. The pre-existing path still behaves too — `map map01` → **20**
+      (`attract=0`), `exitgame` → **5** — which are the same numbers this file recorded before.
   - **`D_Attract_Running()`** (`d_main.c`) is the predicate: `!(demo_ctrl & DEMO_seq_disabled)`,
     the engine's own "a real game is running" marker. `D_Menu_Over_Attract` was rewritten in terms
     of it, so both readers share one definition. `(demoplayback || gamestate == GS_DEMOSCREEN)`

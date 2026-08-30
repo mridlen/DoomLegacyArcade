@@ -83,7 +83,9 @@ Discord is likely to get you banned.
 - **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
   all day. **Options → Arcade Options → Attract Volume** is a percentage of the normal volumes,
   applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
-  the attract screen silent, `100` is the old behaviour. Defaults to 50.
+  the attract screen silent, `100` is the old behaviour. Defaults to 50. **Pressing anything brings
+  the sound straight back up to normal** — the menu you land on should not be quieter than the demo
+  that got your attention — and it drops back down again if you walk away without starting a game.
 - **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
   attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
   there is then no record demo to show that way.
