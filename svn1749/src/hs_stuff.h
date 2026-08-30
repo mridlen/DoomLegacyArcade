@@ -59,8 +59,10 @@ boolean  HS_Run_Cheated(void);
 // maxed: this level was exited with 100% kills and 100% secrets (items are
 // not required).  A run stays eligible for the "max" record only while every
 // level of it has been maxed; the "speed" record ignores this entirely.
+// [Arcade] all_kills is the tyson category's per-level condition (100% kills,
+// secrets not required); maxed is the max category's (kills and secrets).
 void  HS_LevelExit(int episode, int map, skill_e skill, tic_t leveltime,
-                   boolean maxed);
+                   boolean maxed, boolean all_kills);
 void  HS_Draw_IntermissionTable(int x, int y);
 // [Arcade] Single Level menu support.  "single" selects which table to read,
 // explicitly rather than from single_level_mode, because the menu shows
@@ -165,6 +167,12 @@ const char *  HS_NextRecordDemoPath(void);
 // "E1M1  ITYTD  MAX  4:32", or NULL when the demo playing is not one of
 // ours.  D_DoAdvanceDemo clears it before every attract page, so it only
 // describes the demo actually on screen.
+// [Arcade] Pacifist and tyson tracking; see hs_stuff.c.
+void          HS_Player_Damaged_Monster(void);
+void          HS_Player_Fired_Weapon(int weapon);
+boolean       HS_Run_Is_Pacifist(void);
+boolean       HS_Run_Is_Tyson(void);
+
 void          HS_Clear_DemoLabel(void);
 const char *  HS_DemoLabel(void);
 

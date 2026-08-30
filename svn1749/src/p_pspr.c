@@ -51,6 +51,7 @@
 #include "p_pspr.h"
 #include "d_event.h"
 #include "p_local.h"
+#include "hs_stuff.h"   // [Arcade] HS_Player_Fired_Weapon
 #include "p_inter.h"
 #include "s_sound.h"
 #include "g_game.h"
@@ -507,6 +508,13 @@ void P_FireWeapon (player_t* player)
 
     if (!P_CheckAmmo (player))
         return;
+
+    // [Arcade] Tyson allows fist, chainsaw and pistol only.  Placed after the
+    // ammo check so a click on an empty weapon -- which fires nothing -- does
+    // not void the run.  Carrying and even selecting other weapons is fine;
+    // this is only reached when a shot is actually taken.
+    if( player == &players[consoleplayer] )
+        HS_Player_Fired_Weapon( plwpn );
 
     if( EN_heretic )
     {

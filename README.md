@@ -55,6 +55,14 @@ Discord is likely to get you banned.
   from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
   over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
   the machine has frozen. Only record demos get it — the stock Doom demos are nobody's record.
+- **Pacifist and Tyson runs are tracked too**, in Single Player and Single Level, each with its own
+  score pages. **Pacifist** means never damaging a monster — shooting past them, running by, and
+  letting them fight each other are all fine, but blowing up a barrel that hurts one is not.
+  **Tyson** means 100% kills with only the fist, chainsaw and pistol; you may carry other weapons,
+  you just may not fire them. Neither needs choosing in advance: every run is measured against all
+  four categories at once, so a quick run of the first map usually takes the pacifist board without
+  anyone trying. When a run is still holding one of them, **PACIFIST** or **TYSON** blinks at the top
+  of the intermission.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.

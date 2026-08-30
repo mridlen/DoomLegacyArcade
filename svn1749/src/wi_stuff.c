@@ -2006,11 +2006,16 @@ static void WI_Init_Stats(void)
     // A "max" exit is 100% kills and 100% secrets; items are not required.
     // A map with none of a category (max* <= 0) counts as satisfied -- the
     // percentage display treats those the same way (see the -100 cases).
-    boolean maxed =
-        ( wbs->maxkills  <= 0 || wb_plyr[me].skills  >= wbs->maxkills )
+    // [Arcade] all_kills is tyson's per-level condition: 100% kills, secrets
+    // not required.  Split out rather than recomputed at the call site so the
+    // two categories cannot drift apart, the same reason sp_maxed exists.
+    boolean all_kills =
+        ( wbs->maxkills  <= 0 || wb_plyr[me].skills  >= wbs->maxkills );
+    boolean maxed = all_kills
      && ( wbs->maxsecret <= 0 || wb_plyr[me].ssecret >= wbs->maxsecret );
     sp_maxed = maxed;   // [Arcade] for the MAX indicator, see WI_Draw_Stats
-    HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime, maxed );
+    HS_LevelExit( gameepisode, gamemap, gameskill, wb_plyr[me].stime, maxed,
+                  all_kills );
 
     WI_Init_AnimatedBack();
 }
@@ -2233,6 +2238,37 @@ static void WI_Draw_Stats(void)
     // The block now spans 128..313 of BASEVIDWIDTH 320, and "NEW RECORD" is
     // still centred in the free space to its left (23..100).
     HS_Draw_IntermissionTable( 116, SP_STATSY + 3*lh + 12 );
+
+    // [Arcade] PACIFIST and TYSON announce that the run just exited is still
+    // holding those conditions.  Toward the top of the page, above the stats
+    // block, because they describe the *whole run* rather than any one number
+    // on it -- and because that is the only clear band left: SP_STATSX is 50
+    // and the Kills row starts at SP_STATSY 50, so 50..49 is free full width.
+    //
+    // Blink on `gametic & 16`, matching NEW RECORD lower down, the MAX
+    // indicator beside the percentages and PRESS FIRE on the attract screen,
+    // so the whole cabinet flashes on one beat.  Option 0 is the font's
+    // native red -- V_WHITEMAP is grey and vanishes into this background, the
+    // rule the rest of this screen already follows.
+    //
+    // Two can be true at once (a tyson run that never fired at a monster is
+    // both), so they are laid out as one centred line with a gap rather than
+    // each centred on its own and overlapping.  Widths come from V_StringWidth
+    // at draw time, so nothing here is measured by hand.
+    if( (gametic & 16) && ! deathmatch && ! netgame )
+    {
+        const char * pac = HS_Run_Is_Pacifist() ? "PACIFIST" : NULL;
+        const char * tys = HS_Run_Is_Tyson()    ? "TYSON"    : NULL;
+        int  wp = pac ? V_StringWidth((char*)pac) : 0;
+        int  wt = tys ? V_StringWidth((char*)tys) : 0;
+        int  gap = (pac && tys) ? 12 : 0;
+        int  x = (BASEVIDWIDTH - (wp + gap + wt)) / 2;
+
+        if( pac )
+            V_DrawString( x, SP_STATSY - 14, 0, (char*) pac );
+        if( tys )
+            V_DrawString( x + wp + gap, SP_STATSY - 14, 0, (char*) tys );
+    }
 }
 
 // Called by WI_Ticker
