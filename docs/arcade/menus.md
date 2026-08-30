@@ -11,7 +11,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   ```
   Main:     New Game / Options / [End Game] / [Quit Game]
   New Game: Single Player / Single Level / Multiplayer
-  Options:  Crosshair / Player >> / Game Options >> / Select Game >>
+  Options:  Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
   Player n: Your color / Crosshair / Control scheme
   ```
@@ -370,6 +370,12 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the weapon preference — reached from the *Player config >>* row on this page, which the lockdown
     now hides from players. Without that hiding a player would follow a link to a page showing them
     nothing they could not already see.
+  - **The Crosshair row on the Options page is hidden from players** (`OptionsMenu[2]`), now that
+    the setting lives on the per-player page. A second copy asked the player to set the same thing
+    in two places — and that one is `cv_crosshair[0]`, player 1 only, so on a cabinet with more than
+    one panel it silently did not mean what it appeared to. `OptionsDef.lastOn` moves 2 → 3 with it,
+    or the cursor would start on an invisible row. Options now shows **Player >>, Game Options >>,
+    Select Game >>**; devmode still shows everything, verified in both modes.
   - Both routes in were repointed: `M_PlayerDirectorChoice` (Options → Player) and
     `M_TwoPlayer_PlayerConfig` (Multiplayer → Player n config). Both go through
     `M_SetupMultiPlayer[]` rather than pushing the menu directly, which brings the rest of the

@@ -9239,9 +9239,15 @@ void M_Init (void)
         // that cvar is not loaded from config.cfg until long after M_Init.
 
         // Options stays reachable, but pared down to the few settings a
-        // player may change.  Leaves Crosshair, Player >>, Game Options >>.
+        // player may change.  Leaves Player >>, Game Options >>.
         OptionsMenu[0].status  = IT_HIDDEN;  // Messages:
         OptionsMenu[1].status  = IT_HIDDEN;  // Always Run
+        // [Arcade] Crosshair lives on the per-player page now (Player >>),
+        // alongside colour and control scheme.  Leaving a second copy here
+        // asked the player to set the same thing in two places -- and this
+        // one is cv_crosshair[0], player 1 only, so on a cabinet with more
+        // than one panel it silently did not mean what it appeared to.
+        OptionsMenu[2].status  = IT_HIDDEN;  // Crosshair
         OptionsMenu[4].status  = IT_HIDDEN;  // Effects Options >>
         OptionsMenu[6].status  = IT_HIDDEN;  // Connect Options >>
         OptionsMenu[7].status  = IT_HIDDEN;  // Network Options >>
@@ -9250,7 +9256,7 @@ void M_Init (void)
         OptionsMenu[10].status = IT_HIDDEN;  // Sound Volume >>
         OptionsMenu[11].status = IT_HIDDEN;  // Video Options >>
         OptionsMenu[12].status = IT_HIDDEN;  // Setup Controls >>
-        OptionsDef.lastOn = 2;   // Crosshair, the first item still shown
+        OptionsDef.lastOn = 3;   // Player >>, the first item still shown
 
         // Game Options reaches Network Options too; hide that as well.
         // It is the last entry, and the array length varies with the
