@@ -26,6 +26,11 @@ expected lumps differ before committing.
 
 ## Build
 
+**`tools/build.sh` does all of the below automatically** (detects the system, probes the
+dependencies by test-compiling, writes `make_options`, orders `make depend` before the parallel
+build). Use it unless there is a reason not to; `docs/arcade/building.md` explains its design and
+what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents, untested.
+
 Building must happen from `svn1749/src/` (the Makefile there locates the rest of the build via
 relative paths and drops `bin/`, `objs/`, `dep/` in `svn1749/`, one level up from `src/`).
 
@@ -287,6 +292,7 @@ are kept below, in this file.
 | `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
+| `docs/arcade/building.md` | The build scripts: capability probing, the traps they encode, Windows | `tools/build.sh`, `tools/build.ps1`, `build.bat` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
