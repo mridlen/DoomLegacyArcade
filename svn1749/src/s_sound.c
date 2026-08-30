@@ -1364,6 +1364,22 @@ int mix_musicvolume = 0;
 static int S_Attract_Scaled( int vol )
 {
     if( ! D_Attract_Running() )  return vol;
+
+    // [Arcade] The moment somebody presses a key the cabinet is in use, even
+    // though the attract cycle is technically still what is on screen: any
+    // keypress over a demo raises the menu, and the menu's own sounds were
+    // then played at advertising volume -- the first thing a player hears
+    // after touching the machine came out quieter than the demo that drew
+    // them to it.
+    //
+    // D_Menu_Over_Attract() is exactly "a menu is open over the attract
+    // screen", already defined for the menu backdrop, so both readers share
+    // one definition rather than this growing a second opinion about what
+    // counts as the attract screen.  Backing out of the menu without starting
+    // anything drops the volume again by itself, since this is reconciled
+    // every frame.
+    if( D_Menu_Over_Attract() )  return vol;
+
     return (vol * cv_attractvolume.value) / 100;
 }
 
