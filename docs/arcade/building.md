@@ -126,6 +126,29 @@ and `C:\msys64` were all correct. Two bugs sat immediately behind that, and both
     whose recipes shell out to `sh`, `sed`, `awk`, `mv` and `cp`, and MSYS make understands the
     paths those produce. `mingw32-make` is a *native* Windows make and is not MSYS-aware, so it is
     accepted with a warning rather than trusted silently.
+- **Finding "a gcc" is not enough — it must be the gcc for the chosen subsystem.** MSYS2 ships its
+  own compiler at `/usr/bin/gcc`, targeting the MSYS runtime. If the mingw toolchain is not
+  installed, *that* one is found instead, and it searches `/usr/include` and `/usr/lib` — it cannot
+  see `/ucrt64` at all. The symptom is a maddening half-success, reported from a real machine:
+
+  ```
+    ok   : C compiler (gcc)
+    MISS : SDL2
+    MISS : SDL2_mixer
+    MISS : libzip
+    ok   : zlib
+    ok   : OpenGL (GL and GLU)
+  ```
+
+  with pacman insisting all three were up to date. The split is the clue: **zlib and the OpenGL
+  import libraries exist in the MSYS tree too**, so they linked; SDL2, SDL2_mixer and libzip live
+  only under `/ucrt64`, so they did not. Nothing was missing except the right compiler.
+  - `gcc -dumpmachine` separates them: `x86_64-w64-mingw32` is the toolchain, `x86_64-pc-msys` is
+    MSYS2's own. Matching the substring `mingw` covers all three subsystems this script targets
+    (`x86_64-`, `i686-` and `aarch64-w64-mingw32`) and excludes msys.
+  - The triple is **printed either way**, so if that convention is ever wrong the output says so
+    rather than misdiagnosing silently — it was inferred from the MSYS2 packaging convention and
+    could not be confirmed on the Linux machine this was written on.
 - **When gcc is absent the library list is not evidence.** The libraries are probed by compiling, so
   with no compiler they are all reported missing for one shared reason. On a machine that already
   had SDL2, SDL2_mixer and libzip installed this read as five faults instead of one, so the script

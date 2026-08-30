@@ -146,6 +146,21 @@ function Invoke-Msys {
     finally { $ErrorActionPreference = $prevEAP }
 }
 
+# Run a shell command and return its trimmed output (empty on failure).
+function Get-Msys {
+    param([string]$Command)
+    $env:MSYSTEM = $msysEnv.ToUpper()
+    $env:CHERE_INVOKING = '1'
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $bash -lc ("{ " + $Command + " ; } 2>/dev/null") 2>$null
+        if ($null -eq $out) { return '' }
+        return ($out | Out-String).Trim()
+    }
+    finally { $ErrorActionPreference = $prevEAP }
+}
+
 # Run a shell test and report only true/false.  The command is wrapped in
 # braces before the redirection is applied, because in `a || b >/dev/null`
 # the redirection binds to *b alone* -- so a missing `a` still printed
@@ -177,9 +192,35 @@ Step "Checking what is installed"
 # is the only test that stays true when package names change.
 
 $missingPkgs = @()
+$wrongGcc = $false
 
 # -- phase 1: the toolchain.  Nothing else can be probed without it. --
+# [Arcade] Finding "a gcc" is not enough -- it has to be the gcc for the
+# subsystem whose libraries we are about to link against.
+#
+# MSYS2 ships its own compiler at /usr/bin/gcc, targeting the MSYS runtime.
+# If the mingw toolchain is not installed, that one is found instead, and it
+# searches /usr/include and /usr/lib -- it cannot see /ucrt64 at all.  The
+# result is a maddening half-success: zlib and the OpenGL import libraries
+# exist in the MSYS tree too, so those probes pass, while SDL2, SDL2_mixer and
+# libzip are reported missing no matter how many times pacman says they are
+# installed, because they live only under /ucrt64.  That is exactly what one
+# machine reported.
+#
+# gcc -dumpmachine separates them cleanly:
+#     x86_64-w64-mingw32   the toolchain we want
+#     x86_64-pc-msys       MSYS2's own, which cannot link mingw packages
 $haveGcc  = Test-Msys 'command -v gcc'
+$gccTriple = ''
+$gccPath   = ''
+if ($haveGcc) {
+    $gccTriple = Get-Msys 'gcc -dumpmachine'
+    $gccPath   = Get-Msys 'command -v gcc'
+    if ($gccTriple -notmatch 'mingw') {
+        $haveGcc = $false
+        $wrongGcc = $true
+    }
+}
 # [Arcade] make goes by more than one name here, and getting this wrong
 # reports an installed package as missing.
 #
@@ -198,7 +239,19 @@ foreach ($m in @('make','mingw32-make','gmake')) {
     if (Test-Msys "command -v $m") { $makeCmd = $m; break }
 }
 $haveMake = ($makeCmd -ne '')
-if ($haveGcc)  { Say "  ok   : C compiler (gcc)" } else { Say "  MISS : C compiler"; $missingPkgs += "$pkgPrefix-gcc" }
+if ($haveGcc) {
+    Say "  ok   : C compiler (gcc, $gccTriple)"
+} elseif ($wrongGcc) {
+    Say "  MISS : C compiler for $msysEnv"
+    Say "         found $gccPath, which targets '$gccTriple' -- that is MSYS2's"
+    Say "         own compiler, not the $msysEnv toolchain. It cannot see the"
+    Say "         mingw-w64 packages, so the libraries below will be reported"
+    Say "         missing however many times pacman says they are installed."
+    $missingPkgs += "$pkgPrefix-gcc"
+} else {
+    Say "  MISS : C compiler"
+    $missingPkgs += "$pkgPrefix-gcc"
+}
 # The MSYS package is named plainly `make`, with no mingw-w64 prefix -- it is
 # not part of the toolchain, it is a shell tool like sed and awk.
 if ($haveMake) {
@@ -258,6 +311,12 @@ if ($missingPkgs.Count -gt 0) {
     Say "Install them from an MSYS2 shell with:"
     Say "    pacman -S --needed $list"
     Say ""
+    if ($wrongGcc) {
+        Say "The libraries above are almost certainly installed already: they are"
+        Say "reported missing because the compiler that was found cannot see them."
+        Say "Installing $pkgPrefix-gcc should resolve all of it at once."
+        Say ""
+    }
     Say "A freshly installed MSYS2 has none of these -- it ships only its own"
     Say "base environment, so this is the normal first-run state, not a fault."
     Say "If pacman reports nothing to do or cannot find a package, update it"
