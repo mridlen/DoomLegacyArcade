@@ -456,6 +456,48 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - `AdjustSegs` still carries the matching upstream admission (*"here we can do better, using
     PointInSeg ... but too much work"*), now stale: the wall/flat half is done, above.
 
+- **`AdjustSegs` must run BEFORE `SolveTProblem`, and getting that backwards reopened a seam
+  somewhere else entirely.** Reported on E1M5 at X 497 Y 1455 ANG 183 as a hairline across the
+  sector 100 ceiling *and* floor — the pair is the giveaway that it is a flat/flat crack on a BSP
+  partition, not a wall junction.
+  - **Why.** `AdjustSegs` now *moves* polygon corners, where it only read them before.
+    `SolveTProblem` places a polygon's T-vertices onto whichever neighbouring edge passes through
+    them, so running it first computes those insertions against corners that `AdjustSegs` then
+    shifts by up to `FLAT_PULL_DIST`, stranding them off the edge they were placed on. Subsector
+    263's edge got tilted onto linedef 308's split point at `(254.4603, 1408.4274)` while its
+    neighbours kept vertices at `(832, 1408)` and `(448, 1408)` — **0.286 units** off the new
+    edge, running the width of the room.
+  - **This was a regression the screenshot A/B had not covered**, and the seam count proved it:
+    141 baseline → **243** with the fix, → **72** once the two calls were swapped. Any change that
+    moves geometry has to be re-checked against everything that consumed the old geometry.
+
+- **A crack can be at a *map* vertex, and `SolveTProblem` used to refuse to look at those.** It
+  skipped any polygon corner satisfying `in_poly_vert()`, commented *"no need to process polyvertex
+  from the level map"* — the assumption being that a map vertex is shared exactly by every polygon
+  touching it. It is not: a long polygon edge can run straight past a map vertex that is a corner
+  of the neighbour, and the node builder's rounding leaves the two a fraction of a unit apart.
+  Offering map vertices as T-candidates too takes the **gap-producing T-junction count to zero on
+  every map tested**.
+  - It costs nothing measurable at load: E1M7 4.26 s before, 4.14 s after (both dominated by
+    startup), even though insertions rise from 36 to 103.
+  - **It does not wreck convexity, and convexity was never perfect anyway.** Inserting a vertex
+    that lies *outside* a clockwise polygon bulges the boundary outward, which is a convex turn;
+    the reflex case is the inside one, which `PointInSeg` already rejects. Counting polygons with
+    mixed turn directions across six maps: **113 before, 108 after** — pre-existing, and slightly
+    fewer.
+
+- **Measure seams over the whole map, not through a viewfinder.** Three rounds of this work each
+  ended with "fixed" based on screenshots, and each time the next report was a seam at a spot
+  nobody had photographed. The view-independent check is to dump every subsector polygon and count
+  **gap-producing T-junctions**: a vertex of polygon A lying off an edge of polygon B, on the far
+  side of it, without being one of B's vertices.
+  - **Only the far side counts.** A vertex displaced *into* B is an overlap and hides no crack;
+    one displaced away leaves a wedge neither polygon covers. Counting both together made the
+    numbers useless — E1M7 read 27 → 48 and looked like a bad regression, when the gap-producing
+    subset was 13 → 17 and then 0.
+  - Gap-producing T-junctions, baseline → final: E1M1 4→0, E1M2 16→0, E1M3 10→0, E1M5 16→0,
+    E1M6 0→0, E1M7 13→0, MAP01 2→0, MAP15 8→0.
+
 - **The engine reports both counts, so a regression is visible in the log.** Printed on every
   level load, next to the existing `Creating polygons` / `Solving T-joins` lines:
   `Solve T-joins: N vertices inserted.` and
@@ -476,10 +518,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
   | viewpoint | baseline | fixed |
   | --- | --- | --- |
-  | E1M5 ld 308, X 370 Y 1409 ANG 217 (ceiling crack) | 1534 | 161 |
+  | E1M5 ld 308, X 370 Y 1409 ANG 217 (ceiling crack) | 1536 | 163 |
   | E1M6 ld 1044, X 1304 Y -227 ANG 12 | 102 | 50 |
+  | E1M5 X 497 Y 1455 ANG 183 (sector 100 ceiling) | 141 | 72 |
   | E1M2 ld 648, X 1874 Y -562 ANG 195 (the report) | 34 | 31 |
-  | five unrelated viewpoints across E1M1/E1M2/E1M3/E1M7 | — | unchanged |
+  | eleven unrelated viewpoints across E1M1/E1M2/E1M3/E1M5/E1M6/E1M7 | — | unchanged |
 
   - **The residue is not seam.** Cropping every survivor showed distant `BROWN144` banding, the
     `COMPUTE` wall texture and sprites — texture detail that trips the same detector. The E1M2

@@ -386,10 +386,12 @@ written up in full in the doc named beside it.
   sky backdrop shows through. **Wall against flat**: `P_Remove_Slime_Trails` (`p_setup.c`) puts
   the seg vertices back on their linedef, and `AdjustSegs` (`hw_bsp.c`) then pulls the *polygon*
   corner onto the wall rather than the old reverse — the wall is authoritative because it is
-  anchored to map data. **Flat against flat**: `SolveTProblem` handles these and was pruning
-  almost every node away, because `SearchSegInBSP`'s bbox test compared `BOXRIGHT` against
-  `min_y` instead of `min_x`. Both fixes report counts at verbose; the "still not flush" count
-  must stay 0. → `gotchas.md`
+  anchored to map data. **Flat against flat**: `SolveTProblem` handles these, was pruning almost
+  every node away (`SearchSegInBSP` compared `BOXRIGHT` against `min_y` instead of `min_x`), and
+  was refusing to consider map vertices at all. **`AdjustSegs` must run before `SolveTProblem`** —
+  it moves polygon corners now, so T-joins solved first get stranded. Both report counts on every
+  level load; the "still not flush" count must stay 0. Check seams over the whole map, not
+  through a screenshot: count gap-producing T-junctions. → `gotchas.md`
 - **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`

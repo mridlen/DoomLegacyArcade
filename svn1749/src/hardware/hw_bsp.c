@@ -2553,10 +2553,18 @@ void SolveTProblem (void)
                 GenPrintf( EMSG_debug, "DEBUG: SolveT: NULL vertex, subsector= %d\n", ssnum );
             }
 #endif
-            // No need to process polyvertex from the level map.
-            if( in_poly_vert( wp->ppts[i] ) )  continue;
+            // [Arcade] Level map vertices are candidates too.
+            //
+            // This used to skip them ("no need to process polyvertex from the
+            // level map"), on the assumption that a map vertex is shared
+            // exactly by every polygon that touches it.  It is not: a long
+            // polygon edge can run straight past a map vertex that is a
+            // corner of the neighbour, and the node builder's rounding leaves
+            // the two a fraction of a unit apart.  On E1M1 that left a 0.93
+            // unit wedge at (-1856,656) which nothing else could close,
+            // because the vertex was never offered.
 
-            // This is a vertex added by a split.
+            // This is a vertex added by a split, or a map vertex.
             splitt.pt_index = i;
             splitt.pt = wp->ppts[i];
             splitt.max_x = (fixed_t)((wp->ppts[i]->x + MAXDIST) * 0x10000);
@@ -3068,9 +3076,23 @@ void HWR_Create_PlanePolygons ( void )
                        : ( 0 | NF_SUBSECTOR )),  // Degenerate, sector 0
                      &rootp, NULL, rootbbox );
 
-    SolveTProblem ();
-
+    // [Arcade] AdjustSegs runs first, and the order matters.
+    //
+    // It now *moves* polygon corners (onto the wall endpoint they belong to),
+    // where it used to only read them.  SolveTProblem inserts a polygon's
+    // T-vertices into whichever neighbouring edge passes through them, so if
+    // it runs first those insertions are computed against corners that
+    // AdjustSegs then shifts by up to 1.5 units, stranding them off the edge
+    // they were placed on.
+    //
+    // On E1M5 that reopened the sector 100 ceiling as a hairline running the
+    // width of the room: subsector 263's edge was tilted onto linedef 308's
+    // split point at (254.4603,1408.4274) while its neighbours kept vertices
+    // at (832,1408) and (448,1408), 0.286 units off the new edge.
+    // Solving the T-joins last means they are solved against final geometry.
     AdjustSegs();
+
+    SolveTProblem ();
 #ifdef POLYTILE
     polytile_clean();
 #endif
