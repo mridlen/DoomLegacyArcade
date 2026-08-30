@@ -266,6 +266,45 @@ thermally throttle.
 
 ## Building
 
+**The easy way — one command, and it tells you what to install if anything is missing.**
+
+On Linux, macOS or FreeBSD:
+
+```sh
+./tools/build.sh
+```
+
+On Windows, double-click `build.bat` (or run it from a command prompt).
+
+The script works out which system and CPU it is on, checks that the compiler and libraries are
+present, writes a build configuration for this machine, and builds. If something is missing it says
+exactly what and gives you the install command for *your* distribution, rather than failing halfway
+through a compile:
+
+```
+== Checking what is installed
+  ok   : C compiler (cc)
+  ok   : sdl2-config
+  MISS : libzip
+
+Install with:
+    sudo dnf install -y gcc make SDL2-devel SDL2_mixer-devel libzip-devel ...
+```
+
+Add `--install-deps` (or `-InstallDeps` on Windows) and it will install them for you. Other useful
+switches: `--deps` to only check, `--clean` to start fresh, `--jobs N` to limit parallel compiles.
+
+It knows the Debian, Fedora, Arch and SUSE families and their derivatives — Ubuntu, Mint, Manjaro,
+Rocky and so on are all recognised through the same mechanism. It will **not** overwrite a build
+configuration you have already tuned; pass `--reconfigure` if you want it rewritten.
+
+Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
+it as it stands). If MSYS2 is not installed the script tells you how to get it. **The Windows script
+has not been run on a Windows machine yet** — the Linux one is tested; treat the first Windows run
+as the shakedown.
+
+### The manual way
+
 Build from `svn1749/src`. First time only, copy the platform options file and make three edits:
 
 ```sh
