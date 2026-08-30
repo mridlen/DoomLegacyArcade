@@ -2360,29 +2360,36 @@ menuitem_t SetupMultiPlayerMenu[] =
 {
     {IT_KEYHANDLER | IT_STRING          ,0,"Your name" ,M_MultiPlayer_Responder,0},
     {IT_CVAR | IT_STRING | IT_CV_NOPRINT | IT_YOFFSET, 0,"Your color",&cv_playercolor[0], 16},
-    // [Arcade] Crosshair joins colour and control scheme here so that
-    // everything a *player* can set for themselves is on one page.  It lives
+    {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
+    // [Arcade] Crosshair joins colour and control scheme on this page so that
+    // everything a *player* can set for themselves is in one place.  It lives
     // on this page rather than the other way round because the colour row is
     // IT_CV_NOPRINT: its value is not text, it is the animated player sprite
     // this page's own drawer paints, which no other page has.
     //
+    // It sits here, in the run of rows below the preview box and beside
+    // Control scheme, rather than squeezed into the narrow column next to the
+    // box -- which is where it had to go while the box was full height and
+    // there was nowhere else for it.  Halving the sprite freed 24 lines and
+    // this is what they were spent on.
+    //
     // **The array order is the selection order.** The cursor steps by index
     // (M_MultiPlayer_Responder, and M_Responder generally), not by where a
     // row lands on screen, so with IT_YOFFSET rows the two orders have to be
-    // kept in step by hand.  This row was first placed after Control scheme
-    // while drawing above it, and the cursor then went colour -> control
-    // scheme at the bottom of the page -> back up to crosshair.
-    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Crosshair", &cv_crosshair[0], 32},
-    {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
+    // kept in step by hand: the offsets below must ascend with the index.
+    // This row was once placed after Control scheme while drawing above it,
+    // and the cursor then went colour -> Control scheme at the bottom of the
+    // page -> back up to crosshair.
+    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Crosshair", &cv_crosshair[0], PLSKINNAMEY+14},
     // [Arcade] Per-player control scheme, cvar repointed by M_SetupMultiPlayer_pind.
-    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+14},
+    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+28},
     // Everything from here down is dropped for Player 1 by
     // M_SetupMultiPlayer1's numitems = setupmultiplayer_options + 1, so no
     // row a player needs may be placed after this one.
-    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+24},
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+38},
  // Player2 only
-    {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+34},
-    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Second Mouse config >>", &SecondMouseCfgdef, PLSKINNAMEY+44}
+    {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+48},
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Second Mouse config >>", &SecondMouseCfgdef, PLSKINNAMEY+58}
 };
 
 // index to above menu lines -- keep in step with the array *and* with the
@@ -2391,8 +2398,8 @@ menuitem_t SetupMultiPlayerMenu[] =
 enum {
     setupmultiplayer_name = 0,
     setupmultiplayer_color,
-    setupmultiplayer_crosshair,   // [Arcade]
     setupmultiplayer_skin,
+    setupmultiplayer_crosshair,   // [Arcade]
     setupmultiplayer_scheme,
     setupmultiplayer_options,
     setupmultiplayer_controls,
