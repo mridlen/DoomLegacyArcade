@@ -171,6 +171,7 @@ const char *  HS_NextRecordDemoPath(void);
 void          HS_Player_Damaged_Monster(void);
 void          HS_Player_Fired_Weapon(int weapon);
 tic_t         HS_Cumulative_Tics(void);
+boolean       HS_Single_Level_Run(void);
 boolean       HS_Run_Is_Pacifist(void);
 boolean       HS_Run_Is_Tyson(void);
 

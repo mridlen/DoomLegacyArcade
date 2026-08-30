@@ -148,9 +148,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     cabinet's saved config. Sharing `t` means TT appears the moment the build is installed.
   - **Single Player only, on three separate grounds.** `HS_Scored_Game()` is the *meaning*: TT is
     the run's total, and a run only exists in the scored modes — in a deathmatch there is nothing
-    for it to total. **`! single_level_mode`** narrows that from "scored" to Single Player: a Single
-    Level run is one map by definition, so its total is always identical to the level clock directly
-    beneath it, and two rows showing the same number is worse than one row. `D_NumViews() == 1` is
+    for it to total. **`! HS_Single_Level_Run()`** narrows that from "scored" to Single Player: a one
+    map run's total is always identical to the level clock directly beneath it, and two rows showing
+    the same number is worse than one row.
+    - **Testing `single_level_mode` directly was not enough**, and this shipped wrong: that flag
+      belongs to a *live* game, set from the Single Level menu, and a demo replay never sets it — so
+      TT appeared over the attract cycle's single level record demos, beside a level clock showing
+      the very same number. `HS_Single_Level_Run()` answers for the replayed case too: during
+      playback it reports "one map" unless the demo is a **Survival** record, which is the only kind
+      that spans levels. A stock IWAD demo is one map as well and falls out correctly. `D_NumViews() == 1` is
     the *layout*: a split view has no room for a second row, which is the same limit that caps
     `CLK_DY` at 9 rather than a full character.
     - Verified by flipping `single_level_mode` at runtime through a temporary console command (the
