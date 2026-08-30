@@ -180,14 +180,48 @@ $missingPkgs = @()
 
 # -- phase 1: the toolchain.  Nothing else can be probed without it. --
 $haveGcc  = Test-Msys 'command -v gcc'
-$haveMake = Test-Msys 'command -v make'
+# [Arcade] make goes by more than one name here, and getting this wrong
+# reports an installed package as missing.
+#
+#   make           the MSYS package `make`.  This is the one to want: the
+#                  tree is a Unix Makefile that shells out to sh, sed, awk,
+#                  mv and cp, and the MSYS make understands the paths those
+#                  produce.
+#   mingw32-make   what the *mingw* package `mingw-w64-<arch>-make` installs.
+#                  Same GNU make, different name -- the MinGW convention, so
+#                  that it cannot collide with a native `make` on PATH.  A
+#                  machine with this installed had "MISS : make" reported at
+#                  it while pacman insisted the package was up to date.
+#   gmake          some setups provide this alias.
+$makeCmd = ''
+foreach ($m in @('make','mingw32-make','gmake')) {
+    if (Test-Msys "command -v $m") { $makeCmd = $m; break }
+}
+$haveMake = ($makeCmd -ne '')
 if ($haveGcc)  { Say "  ok   : C compiler (gcc)" } else { Say "  MISS : C compiler"; $missingPkgs += "$pkgPrefix-gcc" }
-if ($haveMake) { Say "  ok   : make" }             else { Say "  MISS : make";       $missingPkgs += "$pkgPrefix-make" }
+# The MSYS package is named plainly `make`, with no mingw-w64 prefix -- it is
+# not part of the toolchain, it is a shell tool like sed and awk.
+if ($haveMake) {
+    Say "  ok   : make ($makeCmd)"
+    if ($makeCmd -ne 'make') {
+        # mingw32-make is a *native* Windows GNU make: it is not MSYS-aware,
+        # so POSIX paths and the sh/sed/awk recipes this Makefile uses can
+        # trip it.  It is accepted because it is what is installed, but the
+        # MSYS package is the one that matches this tree.
+        Warn "using $makeCmd (a native Windows make). If the build fails on paths or on
+         sh/sed/awk, install the MSYS make instead:  pacman -S make"
+    }
+} else { Say "  MISS : make"; $missingPkgs += 'make' }
 
 if (-not $haveGcc) {
     # Without a compiler the library probes below would all report MISS for
     # the same single reason, which reads as six problems instead of one.
-    Say "         (the libraries cannot be checked until the compiler is installed)"
+    # This is worth being loud about: a machine with SDL2, SDL2_mixer and
+    # libzip already installed still sees them listed as missing here, purely
+    # because there is nothing to compile a test with yet.
+    Say "         (the libraries cannot be checked until the compiler is"
+    Say "          installed -- they are listed below for that reason alone,"
+    Say "          not because they are known to be absent)"
     $missingPkgs += @("$pkgPrefix-SDL2", "$pkgPrefix-SDL2_mixer", "$pkgPrefix-libzip", "$pkgPrefix-zlib")
 } else {
     # -- phase 2: the libraries, by compile-and-link. --
@@ -293,11 +327,11 @@ Step "Building ($Jobs jobs)"
 
 # Output directories must exist first or make fails on a .dep file.  `dirs`
 # only works from the build root; in src/ it is an empty placeholder target.
-Invoke-Msys -Command "cd '$msysBuildRoot' && make dirs" -Quiet | Out-Null
+Invoke-Msys -Command "cd '$msysBuildRoot' && $makeCmd dirs" -Quiet | Out-Null
 
 if ($Clean) {
     Say "  cleaning"
-    Invoke-Msys -Command "cd '$msysSrc' && make clean" -Quiet | Out-Null
+    Invoke-Msys -Command "cd '$msysSrc' && $makeCmd clean" -Quiet | Out-Null
 }
 
 # `make depend` must run serially before any parallel build: every ../dep/*.dep
@@ -306,16 +340,16 @@ if ($Clean) {
 # "mv: cannot stat '../dep/sed.dep'" -- an error that points nowhere near the
 # cause.  The compile phase parallelises fine.
 Say "  resolving dependencies (serial -- this phase cannot be parallelised)"
-Invoke-Msys -Command "cd '$msysSrc' && make depend" -Quiet | Out-Null
+Invoke-Msys -Command "cd '$msysSrc' && $makeCmd depend" -Quiet | Out-Null
 
 Say "  compiling"
-$rc = Invoke-Msys -Command "cd '$msysSrc' && make -j$Jobs"
+$rc = Invoke-Msys -Command "cd '$msysSrc' && $makeCmd -j$Jobs"
 if ($rc -ne 0) {
     Say ""
     Die @"
 the build failed. The compiler output above says why.
        If it mentions ../dep/sed.dep, run in an MSYS2 $msysEnv shell:
-           cd $msysSrc && make depend && make
+           cd $msysSrc && $makeCmd depend && $makeCmd
        If it mentions a missing header, re-run this script with -Deps.
 "@
 }

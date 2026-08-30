@@ -115,6 +115,23 @@ and `C:\msys64` were all correct. Two bugs sat immediately behind that, and both
 - A fresh MSYS2 having none of the packages is the **normal first-run state**, and the script now
   says so, along with the `pacman -Syu` that a new install needs before it can resolve them.
 
+- **`make` goes by more than one name, and the wrong probe calls an installed package missing.**
+  A machine reported `MISS : make` while pacman insisted
+  `mingw-w64-ucrt-x86_64-make-4.4.1-4 is up to date`. Both were telling the truth: the *mingw*
+  make package installs its binary as **`mingw32-make.exe`**, the MinGW convention that keeps it
+  from colliding with a native `make` on PATH. The script now looks for `make`, `mingw32-make` and
+  `gmake`, remembers which it found, and drives the whole build with that name.
+  - The one to *want* is the plain MSYS package `make` — no `mingw-w64-` prefix, because it is a
+    shell tool like sed and awk rather than part of the toolchain. This tree is a Unix Makefile
+    whose recipes shell out to `sh`, `sed`, `awk`, `mv` and `cp`, and MSYS make understands the
+    paths those produce. `mingw32-make` is a *native* Windows make and is not MSYS-aware, so it is
+    accepted with a warning rather than trusted silently.
+- **When gcc is absent the library list is not evidence.** The libraries are probed by compiling, so
+  with no compiler they are all reported missing for one shared reason. On a machine that already
+  had SDL2, SDL2_mixer and libzip installed this read as five faults instead of one, so the script
+  now says explicitly that they are listed because they *cannot be checked yet*, not because they
+  are known to be absent.
+
 **The Windows build has still not run to completion** — the first run that gets past dependency
 installation is the real test. The probe strings themselves were validated under `/bin/sh` (silent
 and correctly non-zero when a library is absent, silent and zero when present, including the
