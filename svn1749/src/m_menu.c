@@ -2339,32 +2339,40 @@ menuitem_t SetupMultiPlayerMenu[] =
 {
     {IT_KEYHANDLER | IT_STRING          ,0,"Your name" ,M_MultiPlayer_Responder,0},
     {IT_CVAR | IT_STRING | IT_CV_NOPRINT | IT_YOFFSET, 0,"Your color",&cv_playercolor[0], 16},
-    {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
-    // [Arcade] Per-player control scheme, cvar repointed by M_SetupMultiPlayer_pind.
-    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+14},
     // [Arcade] Crosshair joins colour and control scheme here so that
     // everything a *player* can set for themselves is on one page.  It lives
     // on this page rather than the other way round because the colour row is
     // IT_CV_NOPRINT: its value is not text, it is the animated player sprite
     // this page's own drawer paints, which no other page has.
     //
-    // Placed *before* the config link deliberately: M_SetupMultiPlayer1 cuts
-    // the page off at setupmultiplayer_options+1 to drop the Player2-only
-    // rows, so anything after that index would vanish for Player 1.
+    // **The array order is the selection order.** The cursor steps by index
+    // (M_MultiPlayer_Responder, and M_Responder generally), not by where a
+    // row lands on screen, so with IT_YOFFSET rows the two orders have to be
+    // kept in step by hand.  This row was first placed after Control scheme
+    // while drawing above it, and the cursor then went colour -> control
+    // scheme at the bottom of the page -> back up to crosshair.
     {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Crosshair", &cv_crosshair[0], 32},
+    {IT_KEYHANDLER | IT_STRING | IT_YOFFSET, 0,"Your skin" ,M_MultiPlayer_Responder, PLSKINNAMEY},
+    // [Arcade] Per-player control scheme, cvar repointed by M_SetupMultiPlayer_pind.
+    {IT_CVAR | IT_STRING | IT_YOFFSET, 0,"Control scheme", &cv_controlscheme[0], PLSKINNAMEY+14},
+    // Everything from here down is dropped for Player 1 by
+    // M_SetupMultiPlayer1's numitems = setupmultiplayer_options + 1, so no
+    // row a player needs may be placed after this one.
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Player config >>", &PlayerOptionsDef, PLSKINNAMEY+24},
  // Player2 only
     {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0,"Player2 Controls >>", M_Setup_P2_Controls, PLSKINNAMEY+34},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Second Mouse config >>", &SecondMouseCfgdef, PLSKINNAMEY+44}
 };
 
-// index to above menu lines
+// index to above menu lines -- keep in step with the array *and* with the
+// screen order, which for this page means the y offsets above must ascend
+// with the index.
 enum {
     setupmultiplayer_name = 0,
     setupmultiplayer_color,
+    setupmultiplayer_crosshair,   // [Arcade]
     setupmultiplayer_skin,
     setupmultiplayer_scheme,
-    setupmultiplayer_crosshair,   // [Arcade]
     setupmultiplayer_options,
     setupmultiplayer_controls,
     setupmultiplayer_mouse2,
@@ -2582,7 +2590,6 @@ void M_DrawSetupMultiPlayerMenu(void)
 
     // draw box around guy
     M_DrawTextBox(mx+PLBOXX,my+PLBOXY, PLBOXW, PLBOXH);
-
     // draw player sprite
     // temp usage of sprite lump, until end of function
     patch = W_CachePatchNum (sprfrot->pat_lumpnum, PU_CACHE_DEFAULT);  // endian fix
