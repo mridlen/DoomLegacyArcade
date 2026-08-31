@@ -25,8 +25,9 @@ Discord is likely to get you banned.
 
 **For the player**
 
-- **Menus are locked down.** New Game, a handful of Options, and Quit. No save/load, no multiplayer
-  setup, no video or sound settings to get lost in.
+- **Menus are locked down.** New Game, a handful of Options, and — while a game is running — End
+  Game. No save/load, no multiplayer setup, no video or sound settings to get lost in. Quit is
+  hidden as well, since a cabinet has nothing to quit *to*; the operator can put it back.
 - **The cabinet buttons drive the menus.** No keyboard needed — the stick moves the cursor, fire
   selects, use backs out.
 - **Up to four players on one machine.** Two share the screen as the usual stacked halves; three or
@@ -43,7 +44,8 @@ Discord is likely to get you banned.
 - **A run leaderboard, with your initials on it.** Separate from the per-map best times: a board of
   whole runs, ranked by **how far you got first and how fast second**. That means a run ending in a
   death partway through — which is how most runs end — still has somewhere to land, while finishing
-  the episode naturally tops the board. Ten places for the campaign, three per map for Single Level.
+  the episode naturally tops the board. One place per episode, skill and category for the campaign
+  — "who got furthest, and fastest among those" has one answer — and three per map for Single Level.
   Finish a run that makes the board and you are asked for three initials. The page opens on the
   last player's initials, so a regular playing run after run confirms with one press; it goes back
   to `AAA` once the cabinet has been left alone and the next person is a stranger.
@@ -67,8 +69,12 @@ Discord is likely to get you banned.
   In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
   you can see both how long this level is taking and how the run is going. The two line up in
   columns. Single Level games do not show it — one map, so it would only repeat the level clock.
-- **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive.
-- **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself.
+- **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive, and a
+  breakdown of all four ammo types, stacked above the keys. Both are single player only.
+- **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself — 60 seconds
+  by default, with a 15-second warning counting down first. Both are console settings
+  (`idletimeout`, `idlewarntime`) rather than menu rows, and neither applies in a `-devmode`
+  session.
 - **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
   in, so the cabinet can offer several games from one menu.
 
@@ -77,13 +83,15 @@ Discord is likely to get you banned.
 - **Settings don't persist for players.** Anything changed during a session is forgotten at the next
   launch. Only an operator session writes the config.
 - **One settings page per player.** Colour, crosshair and control scheme are together on a single
-  page — **Options → Player → Player n** — instead of being spread across two pages and three menu
-  levels. Operator-only settings (autoaim, always run, mouse, weapon preference) are still there
-  under *Player config* in a `-devmode` session.
+  page — **Options → Player → `Player1 config`**, through `Player4 config` — instead of being spread
+  across two pages and three menu levels. Only the panels the cabinet has are listed. Operator-only
+  settings (autoaim, always run, mouse, weapon preference) are still there under *Player config* in
+  a `-devmode` session.
 - **A guided control setup** that asks for each control in turn and binds whatever you press —
   stick, buttons, or anything else your panel is wired to. One per panel, up to four.
-- **A cheats menu** — god mode, all weapons and keys, no clipping, exit level. Operator-only by
-  default, or leave it up for players. Using one voids that run's score.
+- **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
+  readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
+  except the position readout, which only shows information.
 - **A configurable initials timeout** (Options → Arcade Options, 60 seconds by default), for how long
   the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
   already back on the attract screen behind the page — so it can afford to be patient.
@@ -93,6 +101,10 @@ Discord is likely to get you banned.
   the attract screen silent, `100` is the old behaviour. Defaults to 50. **Pressing anything brings
   the sound straight back up to normal** — the menu you land on should not be quieter than the demo
   that got your attention — and it drops back down again if you walk away without starting a game.
+- **Quit is off the menu.** **Options → Arcade Options → Quit Menu** puts the Quit Game entry back
+  for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
+  never see. A `-devmode` session always keeps Quit whatever the setting says, so the operator is
+  never locked in.
 - **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
   attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
   there is then no record demo to show that way.
@@ -158,6 +170,16 @@ to anyone else running this port. Each is written up in full in the commit that 
 - **The spectre fuzz effect did not exist in OpenGL** — every partially invisible thing was drawn
   as flat translucency. The original boiling-outline effect is now reproduced on the hardware path,
   as far as a fixed-function backend can.
+- **Hairline seams where surfaces meet.** Thin bright lines along walls and across flats, in two
+  separate families with two separate causes — the sky is drawn behind everything, so either hole
+  shows as a one-pixel white line. The node builder rounds a split vertex to whole units, so the
+  wall (built from segs) and the flat (built from subsector polygons) disagree by up to ~0.9 map
+  units. Wall against flat is now closed by pulling the *polygon* corner onto the wall, which is
+  anchored to real map data; flat against flat by `SolveTProblem`, which was pruning nearly every
+  candidate away on a bbox test comparing an x edge against a y bound. Checked over whole maps by
+  counting gap-producing T-junctions rather than through screenshots: E1M1 4→0, E1M2 16→0,
+  E1M3 10→0, E1M5 16→0, E1M7 13→0, MAP01 2→0, MAP15 8→0. Software rendering is unaffected, and
+  neither change can touch gameplay or demos.
 - **A level's palette tint outlived the level.** Finishing a level in a radiation suit left
   everything after it green, and taking a hit at the exit switch left it red, right through the
   intermission and into whatever came next — the tint is only ever reset when the *next* level
@@ -301,8 +323,10 @@ configuration you have already tuned; pass `--reconfigure` if you want it rewrit
 Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
 it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
 empty — which is how it arrives — it lists the packages to install and can install them for you.
-Detection is confirmed working on Windows 11; **the Windows build itself has not yet been run all
-the way through**, so treat the first complete run as the shakedown.
+Confirmed on Windows 11: the script builds `doomlegacy.exe` end to end and stages the twelve
+runtime DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a
+longer list than anyone guesses. **The resulting binary has not been played**, only started, so
+treat the first real session as the shakedown.
 
 ### The manual way
 
@@ -318,14 +342,25 @@ Then edit `svn1749/make_options`:
 ```make
 SDL2=1                      # uncomment; the stock file targets SDL 1.2
 ARCH=-march=native          # replace ARCH=-march=i686, which is 32-bit only
-ENV_CFLAGS=-std=gnu17       # add; GCC 15 defaults to gnu23, which breaks this code
+ENV_CFLAGS=-std=gnu17 -g    # add; GCC 15 defaults to gnu23, which breaks this code
 ```
 
-Each of those is a hard build failure if skipped, not a warning. Then:
+Each of the three is a hard build failure if skipped, not a warning. The `-g` is optional, but
+worth keeping on a cabinet that runs unattended: without it a crash backtrace is bare function
+names, and it costs nothing at runtime. Then:
 
 ```sh
-make
+cd ..           # svn1749
+make dirs       # create bin/, objs/ and dep/ -- they are build output, not in the repo
+cd src
+make depend     # run this serially, before any parallel build
+make -j8
 ```
+
+`make depend` first is not optional if you want `-j`: every dependency rule pipes through the same
+temporary file, so parallel dep generation clobbers itself and fails with
+`mv: cannot stat '../dep/sed.dep'`, which points nowhere near the cause. The compile phase
+parallelises fine. Plain `make` on its own also works.
 
 The binary lands in `svn1749/bin/doomlegacy`, together with a `legacyhome/` folder holding the
 cabinet's configuration.
@@ -335,20 +370,30 @@ appropriate flag, e.g. `-mcpu=cortex-a53`. No x86 assembly is involved, so nothi
 
 ## Installing the game data
 
-Copy `common/legacy.wad` and your IWADs into the same directory as the binary:
+Copy `common/legacy.wad`, `common/dogs.wad` and your IWADs into the same directory as the binary:
 
 ```sh
-cp ../../common/legacy.wad ../bin/
+cp ../../common/legacy.wad ../../common/dogs.wad ../bin/
 cp /path/to/DOOM2.WAD ../bin/
 ```
 
-`legacy.wad` is required — it ships with this repository and holds the engine's own menu graphics.
+`legacy.wad` is required — it ships with this repository and holds the engine's own menu graphics,
+including the cabinet's own artwork (the Single Level, join, cheats and game-over screens), so use
+the copy from `common/` rather than one from an upstream DoomLegacy release.
+
+`dogs.wad` is optional and lives in exactly the same place, beside the binary. It carries the
+sprites and sounds for MBF helper dogs, which the engine has none of its own for. It does nothing
+unless the **Dogs** setting is raised (Options → Game Options → Adv Options, second page), and that
+is an operator-only `-devmode` affair: the competitive ruleset pins helper dogs to none, like bots,
+so a scored run never has them.
+
 IWADs are the commercial game data and are **not** included; supply your own from a purchased copy.
 
 The Select Game menu offers four: **Ultimate Doom** (`DOOM.WAD`, also accepted as `DOOMU.WAD` or
 `DOOM_SE.WAD`), **Doom II** (`DOOM2.WAD`), **Plutonia** (`PLUTONIA.WAD`) and **TNT** (`TNT.WAD`).
 Names are case-insensitive. Only games whose IWAD is actually found are listed, and the Select Game
-entry disappears altogether if fewer than two are installed.
+entry disappears altogether when there are fewer than two things to switch between — installed
+games and level packs both count.
 
 As well as beside the binary, the game searches `<bindir>/wads/`, `~/games/doom`,
 `~/games/doomwads`, `~/games/doomlegacy/wads` and the usual system locations, so an existing
@@ -436,10 +481,10 @@ binding a run button on one of the spares and turning autorun off. Sticks that o
 The stick both moves and turns. Binding all of this is an operator job — see
 [Setting up a control panel](#setting-up-a-control-panel), which needs `-devmode`.
 
-**Two schemes** are offered per player under Options → Player → Player setup: **Look and Move** and
-**WASD**. They swap which pair of controls turns and which strafes, and both work on the same
-wiring, so it's purely a player preference. Look and Move matches how most joysticks and digital
-gamepads are normally set up, and is the better default.
+**Two schemes** are offered per player under Options → Player → `Player1 config` (through
+`Player4 config`): **Look and Move** and **WASD**. They swap which pair of controls turns and which
+strafes, and both work on the same wiring, so it's purely a player preference. Look and Move
+matches how most joysticks and digital gamepads are normally set up, and is the better default.
 
 **In the menus**, the same buttons navigate: stick up/down moves the cursor, left/right changes a
 setting, **fire** selects, **use** backs out. No keyboard is needed.
@@ -541,12 +586,17 @@ there is no third set that wouldn't collide.
 ### Cheats
 
 **Options → Arcade Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
-players: god mode, all weapons and keys, no clipping, and exit level. It ships off, in which case
-the entry is operator-only and reachable just in a `-devmode` session.
+players: god mode, all weapons and keys, no clipping, exit level, and **Show Coordinates**. It ships
+off, in which case the entry is operator-only and reachable just in a `-devmode` session.
 
 Cheats are single-player only, and using any of them — from the menu, the console, or a typed
 IDDQD/IDKFA/IDCLIP — voids that run's score. The HUD then shows `PLAYER CHEATED - UNRANKED` for the
 rest of the run.
+
+**Show Coordinates** is the exception. It draws position, angle, the sector you are in and the
+linedef you are looking at, changes nothing in the simulation, and so does not void the run — the
+same rule the typed IDDT/IDMYPOS/IDMUS already follow. It is there to report where a bug is on a
+cabinet with no keyboard to read a console line from.
 
 ### Keeping the cabinet running
 
@@ -666,8 +716,9 @@ From the console, or at launch:
 ./doomlegacy -clearhighscores
 ```
 
-This clears the table *and* deletes the saved record demos. Deleting `highscores.dat` by hand is
-not enough — the table is held in memory while the game runs and gets written back out.
+This clears both tables — `highscores.dat` and the `runs.dat` leaderboard with its initials — *and*
+deletes the saved record demos. Deleting the files by hand is not enough: the tables are held in
+memory while the game runs and get written back out.
 
 ### Taking a screenshot
 
@@ -716,13 +767,16 @@ Everything is in `legacyhome/` beside the binary:
 | | |
 | --- | --- |
 | `config.cfg` | All settings. Written only by a `-devmode` session. |
-| `highscores.dat` | The score table. Plain text, one record per line. |
+| `config8p.cfg`, `configgl.cfg`, `confign.cfg` | Video settings for each drawmode, applied after `config.cfg`. |
+| `highscores.dat` | Best cumulative times per map, skill and category. Plain text, one record per line. |
+| `runs.dat` | The run leaderboard — whole runs with their initials. Plain text. |
 | `demos/` | Saved record demos, one per map/skill/category. |
 | `levels/` | Level packs you've added. |
 | `audit.dat` | Operator bookkeeping counters. Plain text. |
+| `autoexec.cfg` | Optional. Console commands run at startup — where the `addfile` lines for soundtrack wads go. |
 
-**Back up `highscores.dat` and `demos/`.** They are the only things here that can't be recreated —
-your players' scores and the runs that set them. Everything else can be rebuilt from this
+**Back up `highscores.dat`, `runs.dat` and `demos/`.** They are the only things here that can't be
+recreated — your players' scores and the runs that set them. Everything else can be rebuilt from this
 repository or reinstalled.
 
 If no `legacyhome/` folder exists beside the binary, the game falls back to `~/.doomlegacy/`
@@ -772,7 +826,8 @@ Player sessions don't save settings — that's deliberate. Use `-devmode` to mak
 The overlay only appears at the largest view size, with no status bar. Check `viewsize` is `11` in
 `config.cfg`. Which elements show is controlled by the `overlay` line, a string of one-letter
 codes — `k` keys, `a` ammo, `h` health, `m` armor, `f` frags, `e` kills, `i` items, `s` secrets,
-`t` the level clock. The default is `kahmfeist`.
+`t` the level clock (and, in Single Player, the `TT` run total above it), `b` the four ammo counts
+broken out, single player only. The default is `kahmfeistb`.
 
 **A new HUD element still doesn't appear after rebuilding.**
 `config.cfg` overrides the compiled default, so an existing install keeps its old `overlay` line.
@@ -808,6 +863,7 @@ DoomLegacy is by Fabrice Denis, Boris Pereira and the DoomLegacy team, based on 
 source released by id Software. This build tracks DoomLegacy 1.48.18 (SVN r1749) with local arcade
 customisations.
 
-Licensed under the **GNU General Public License**; see
-[`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt). Doom, Doom II, Final Doom and Heretic game
-data remain the property of their respective owners and are not distributed here.
+Licensed under the **GNU General Public License**; see [`LICENSE`](LICENSE), and
+[`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt) for the copy that came with the port. Doom,
+Doom II, Final Doom and Heretic game data remain the property of their respective owners and are
+not distributed here.
