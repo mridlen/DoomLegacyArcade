@@ -91,9 +91,44 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   game via `Command_ExitGame_f()` and warns
   beforehand through the existing `HU_SetTip` centered-text mechanism, or restarts the program when
   a level pack is loaded (see the game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime`
-  (default 60s/15s, `0` disables). Skipped in devmode and demo playback. **Local splitscreen sets
+  (default 60s/15s, `Off` disables) from **Options > Arcade Options**, rows "Idle Timeout" and
+  "Idle Warning". Skipped in devmode and demo playback. **Local splitscreen sets
   `netgame`**, so the check tests `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
   meant no two player game ever timed out, which is exactly when an unattended cabinet needs it.
+
+  - **Both cvars are named lists, and are on the Arcade Options page.** They used to be
+    `MIN`..`MAX` ranges reachable only from the console or a hand-edited `config.cfg`, which was
+    wrong twice over. The setting that decides how long a paying player may stand still before the
+    cabinet takes the game away from them could not be changed on the machine at all; and the
+    range's own low end was a trap — `idletimeout 3` is a cabinet that throws a player back to the
+    attract screen mid-fight, and nothing stopped an operator typing it. The lists make the unsafe
+    settings **unreachable** rather than merely discouraged: `Off, 15, 20, 30, 45, 60, 90, 120,
+    180, 240, 300, 600, 900` for the timeout and `Off, 3, 5, 10, 15, 20, 30, 45, 60` for the
+    warning. 15s is the floor because below that the countdown has no room to be read, and the
+    warning lead time defaults to exactly 15.
+    - **A list also fixes the menu, not just the values.** A `MIN`..`MAX` cvar steps by 1 from the
+      menu, so crossing 0..3600 meant holding right for minutes. An `INC` entry sets a step size,
+      but does **not** make the range safe to page through: `CV_ValueIncDec` wraps a bounded cvar
+      by `newvalue % (max - min + 1)`, so unless the `INC` divides that span exactly, the wrap
+      lands *off* the grid and every later step stays off it. A list is cycled by index instead
+      and wraps cleanly by construction.
+    - **Keep every entry a value the old range allowed.** `CV_set_str_value` refuses a value that
+      is not in the list, prints `"..." is not a possible value for "..."` to the console, and
+      leaves the previous value standing — so a list that dropped a value someone already had in
+      `config.cfg` would silently reset their setting. The cabinet's own 60/15 are both listed.
+    - `Off` is the disabled setting and is what gets written to `config.cfg` (`cvar->string`
+      becomes the list's own `strvalue`). It round-trips: a config saying `idletimeout "Off"`
+      loads with no complaint and the check returns immediately.
+  - **The countdown says `Returning to title in 5...`, with no `s`.** It is obviously seconds, and
+    the unit was just noise on a full-screen tip.
+  - Verified headlessly end to end, not by reading the code: with `idletimeout 20` /
+    `idlewarntime 5` in the scratch config and a `-warp` game left idle, temporary
+    `GenPrintf(EMSG_warn, ...)` instrumentation on the warn and fire branches printed
+    `Returning to title in 5...` down to `1...` and then fired. With `idletimeout "Off"` the same
+    run sat 45s — well past the 20s that had just fired — and printed nothing. Off-list values
+    (`7`, `9`, `3600`, `2`, `61`) were all refused while listed ones set in the same autoexec
+    (`120`, `45`) took, proving the refusal rather than assuming it. The instrumentation was
+    removed and `g_game.c` diffed back to byte-identical afterwards.
 
   It also runs in **`GS_DEMOSCREEN` when `menuactive`** — a menu left open on the attract screen
   would otherwise sit there for ever, since the states below only cover an abandoned *game*. That

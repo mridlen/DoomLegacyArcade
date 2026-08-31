@@ -1437,6 +1437,23 @@ void I_SysInit(void)
   }
 
 #ifdef SDL2
+  // [Arcade] Do not minimize the fullscreen window when it loses focus.
+  //
+  // SDL2 minimizes a SDL_WINDOW_FULLSCREEN window on focus loss by default,
+  // which drops the game to the background the moment anything else takes
+  // focus.  On the cabinet that is a desktop the operator never wanted to
+  // see; with a KVM (Deskflow) it happens every time the pointer crosses to
+  // the other machine, which is not a request to leave the game at all.
+  // Turned off, the window stays mapped and fullscreen and the window
+  // manager decides the stacking -- so Super still brings up the switcher
+  // and alt-tab still works, but nothing hides the game on its own.
+  //
+  // Safe here only because the cabinet's SDL_WINDOW_FULLSCREEN request is
+  // the desktop's own resolution, so no mode change is being held open
+  // while unfocused.  SDL re-reads this hint at each focus loss, so setting
+  // it once, before any window exists, covers both the software and OpenGL
+  // window paths and survives a drawmode switch.
+  SDL_SetHint( SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0" );
 #else
   // SDL 1.2
   // Window title

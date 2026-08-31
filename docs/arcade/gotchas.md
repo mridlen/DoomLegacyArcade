@@ -280,8 +280,10 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **A cvar's `.EV` is a byte, so any cvar whose range exceeds 255 truncates when read through it.**
   `consvar_t` carries both `int value` and `byte EV` (`command.h`), and most of the tree reads `.EV`
   because most cvars are small enums where the two agree. They stop agreeing the moment the range
-  does not fit: `cv_idletimeout` allows 0..3600, so `idletimeout 3600` read through `.EV` comes back
-  as **16** — 3600 & 0xFF — and a computation built on it is quietly out by two orders of magnitude.
+  does not fit: `cv_idletimeout` used to allow 0..3600, so `idletimeout 3600` read through `.EV`
+  came back as **16** — 3600 & 0xFF — and a computation built on it was quietly out by two orders
+  of magnitude. Its top is 900 now (a named list, see `attract.md`), which does not make the trap
+  go away: 900 & 0xFF is **132**, still wrong and still silent. Any cvar over 255 has this.
   - There is no warning and no clamp. The value in the config is right, the menu displays it right,
     and only the arithmetic downstream is wrong, which is why this reads as a logic bug in whatever
     consumed it rather than as a truncation.
@@ -551,3 +553,39 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   already being kept by `systemd-coredump` — `coredumpctl list` and
   `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"` had the answer
   without any new logging. → `attract.md`
+
+- **SDL2 minimizes a fullscreen window when it loses focus, and that is what drops the cabinet to
+  the GNOME desktop.** Nothing in this tree asked for it: `SDL_WINDOW_FULLSCREEN` (both window
+  paths — `sdl/i_video.c` for software, `sdl/ogl_sdl.c` for OpenGL) is an *exclusive* fullscreen
+  request, and SDL iconifies such a window on focus loss so the display mode can be given back.
+  With a KVM (Deskflow) that fires every time the pointer crosses to the other machine, which is
+  not a request to leave the game. `I_SysInit` (`sdl/i_system.c`) now sets
+  `SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS` to `"0"`, once, before any window exists — so it covers
+  both window paths and survives a drawmode switch. The window stays mapped and the window manager
+  decides the stacking, so Super and alt-tab still work; nothing hides the game on its own.
+  - **Safe here only because the cabinet's fullscreen request is the desktop's own resolution**
+    (1366x768 in `config.cfg`, and the panel's native mode). Not minimizing means SDL holds the
+    mode while unfocused; if the game ever asks for a *smaller* mode, that would strand the
+    desktop at the game's resolution when the operator switches away.
+  - **Check the SDL you are actually linking before believing a hint fixes anything.** Fedora
+    ships `sdl2-compat` over SDL3, not SDL2, so the hint is forwarded to SDL3 and SDL3 gets to
+    decide what it means — and SDL3 changed this exact code. Two things had to be shown, not
+    assumed:
+    - *The hint reaches SDL3.* A five-line program that calls SDL2's `SDL_SetHint` and then reads
+      the value back through `dlopen("libSDL3.so.0", RTLD_NOLOAD)` + SDL3's own `SDL_GetHint`,
+      in the same process. Both sides reported `0`, so `sdl2-compat` passes it straight through
+      (the names are identical in SDL2 and SDL3).
+    - *The hint is not a no-op.* This is the part worth the trouble. SDL3's
+      `ShouldMinimizeOnFocusLoss` calls `SDL_GetHintBoolean(..., false)` — **default false** — so
+      it is easy to conclude SDL3 never minimizes and the fix changes nothing. It is wrong: that
+      default only applies **when the hint is set**. Disassembling it (`objdump -d` on
+      `libSDL3.so.0`, finding the two references to the hint string in `.rodata`) shows the unset
+      path skips the `SDL_GetHintBoolean` call entirely and falls through to a heuristic on
+      `window->fullscreen_exclusive` plus a video-device capability bit, which *does* reach the
+      minimize call for an exclusive-fullscreen window. Setting the hint to `"0"` is what takes
+      that branch out of play.
+    - The disassembly beats guessing here because the machine has no SDL3 sources and no
+      debuginfo, and the behaviour cannot be exercised headlessly — focus loss needs a real window
+      manager, and popping a fullscreen test window over a session someone is using is not
+      something to do casually. → `attract.md` for the idle timeout this interacts with (an
+      unfocused cabinet still counts as idle; the timeout does not care about focus)

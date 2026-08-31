@@ -72,6 +72,22 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **Attract Volume** — `cv_attractvolume`, appended to the end of `MenuOptionsMenu` like every other
   operator row. Written up in `attract.md`; noted here only because it is a row on this page.
 
+- **Idle Timeout / Idle Warning** — `cv_idletimeout` / `cv_idlewarntime`, inserted after "Initials
+  Timeout" so the three timeouts sit together. Written up in `attract.md`; noted here for the
+  geometry and for why inserting rather than appending was safe.
+  - **`MenuOptionsMenu` is the one arcade page nothing indexes by position.** The lockdown hides
+    its whole entry in the parent (`OptionsMenu[9]`) rather than touching rows inside it, and
+    `grep -n "MenuOptionsMenu\[" m_menu.c` is empty. So rows can go anywhere in it — which is not
+    true of `ServerMenu`, `MainMenu`, `TwoPlayerMenu` or `SetupMultiPlayerMenu`, and the check
+    costs one grep. The comment in the array still says "appended, the lockdown addresses menu
+    items by hardcoded index"; that is about the *parent* page, and is why these two went in
+    without renumbering anything.
+  - Geometry: `MenuOptionsDef` is at `y` 40 with `M_DrawGenericMenu`, and every row is `IT_STRING`
+    at `STRINGHEIGHT` 10. Thirteen rows put the last one at `y` 160, glyphs 7 tall, so the page
+    ends at 167 of 200 — room to spare. Both labels are shorter than "Initials Timeout" which
+    already sits above them, and the values (`Off`, `900`) are far shorter than the game names
+    "Boot Game" renders on the same page, so the right-justified value column cannot collide.
+
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
   **Options → Arcade Options** as "Boot Game" beside the other operator rows, so it is
   operator-only. Picks
