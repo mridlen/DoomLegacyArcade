@@ -618,13 +618,40 @@ consvar_t cv_joy_deadzone     = {"joydeadzone" ,"800",CV_SAVE,joy_deadzone_cons_
 
 // [Arcade lockdown] Idle-to-title timeout: if the player gives no input for
 // this many seconds during gameplay, the game ends and returns to the title
-// screen.  0 disables.  Skipped when launched with -devmode or in a netgame.
-CV_PossibleValue_t idletimeout_cons_t[]  = { {0,"MIN"}, {3600,"MAX"}, {0,NULL} };
+// screen.  Off disables it.  Skipped when launched with -devmode or in a netgame.
+//
+// [Arcade] A named list, not the MIN..MAX range this used to be, because both
+// ends of that range were wrong for a cabinet.  A range steps by 1, so setting
+// this from the Arcade Options page meant holding right for minutes to cross
+// 0..3600 -- and, worse, every value between 1 and about 14 seconds is a
+// cabinet that throws a paying player back to the attract screen mid-fight, so
+// the range's own minimum was a trap the operator could walk into by accident.
+// A list makes the unsafe settings unreachable rather than merely discouraged,
+// gives the disabled setting a name instead of leaving "0" to be read as "no
+// wait at all", and wraps cleanly (CV_ValueIncDec cycles a list by index; the
+// MIN..MAX path modulos over the span instead, so an INC that does not divide
+// it lands off the grid at the wrap and never returns to it).
+//
+// 15s is the floor: below that the warning countdown has no room to be read,
+// and G_Idle_Timeout_Check's own warning lead time (cv_idlewarntime) defaults
+// to exactly 15.  Keep every entry a value the old range allowed, so an
+// existing config.cfg still loads -- an unlisted value is refused by
+// CV_set_str_value with a console complaint and leaves the default standing.
+CV_PossibleValue_t idletimeout_cons_t[]  = {
+    {0,"Off"}, {15,"15"}, {20,"20"}, {30,"30"}, {45,"45"}, {60,"60"},
+    {90,"90"}, {120,"120"}, {180,"180"}, {240,"240"}, {300,"300"},
+    {600,"600"}, {900,"900"}, {0,NULL} };
 consvar_t cv_idletimeout  = { "idletimeout", "60", CV_SAVE, idletimeout_cons_t };
 
 // Lead time (seconds) before idletimeout fires during which an on-screen
-// "Returning to title in Ns..." countdown is shown.
-CV_PossibleValue_t idlewarntime_cons_t[] = { {0,"MIN"}, {60,"MAX"}, {0,NULL} };
+// "Returning to title in N..." countdown is shown.  A list for the same
+// reasons as above; Off means the countdown never appears and the timeout
+// arrives unannounced.  Values above the timeout itself are harmless --
+// G_Idle_Timeout_Check clamps warn_tics to 0, so the countdown simply runs
+// for the whole idle period.
+CV_PossibleValue_t idlewarntime_cons_t[] = {
+    {0,"Off"}, {3,"3"}, {5,"5"}, {10,"10"}, {15,"15"}, {20,"20"},
+    {30,"30"}, {45,"45"}, {60,"60"}, {0,NULL} };
 consvar_t cv_idlewarntime = { "idlewarntime", "15", CV_SAVE, idlewarntime_cons_t };
 
 consvar_t cv_showmessages     = {"showmessages","2",CV_SAVE | CV_CALL | CV_NOINIT,showmessages_cons_t,ShowMessage_OnChange};
@@ -2015,7 +2042,7 @@ static void G_Idle_Timeout_Check( boolean in_menu )
         if( remain_secs != last_warn_secs_shown )
         {
             char idlemsg[64];
-            snprintf(idlemsg, sizeof(idlemsg), "Returning to title in %ds...", remain_secs);
+            snprintf(idlemsg, sizeof(idlemsg), "Returning to title in %d...", remain_secs);
             HU_SetTip(idlemsg, 3*TICRATE);
             last_warn_secs_shown = remain_secs;
         }

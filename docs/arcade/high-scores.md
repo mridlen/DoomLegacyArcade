@@ -614,12 +614,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       seed lasts exactly as long as an abandoned game would; 60s stands in when the operator has
       disabled the timeout. Player input keeps `last_input_tic` fresh (`D_PostEvent`), so a session
       that runs for an hour never expires it.
-    - **Read `cv_idletimeout.value`, not `.EV`.** `EV` is a *byte* (`command.h`) and this cvar's
-      range is 0..3600, so `.EV` silently truncates — `idletimeout 3600` came back as 16, giving a
-      16-second hold instead of an hour. `g_game.c` uses `.value` for the same cvar. Caught only
-      because the harness below printed the computed hold rather than trusting it.
+    - **Read `cv_idletimeout.value`, not `.EV`.** `EV` is a *byte* (`command.h`) and this cvar
+      exceeds 255, so `.EV` silently truncates — back when its range went to 3600, `idletimeout
+      3600` came back as 16, giving a 16-second hold instead of an hour. The cvar is a named list
+      topping out at 900 now (`attract.md`), which does not fix it: 900 through `.EV` is 132.
+      `g_game.c` uses `.value` for the same cvar. Caught only because the harness below printed
+      the computed hold rather than trusting it.
     - Verified headlessly with temporary console commands driving the page directly
-      (`tmpinit_open`/`set`/`confirm`/`seed`, removed after): at `idletimeout 3600` the second page
+      (`tmpinit_open`/`set`/`confirm`/`seed`, removed after): at `idletimeout 3600` (a value the
+      cvar still accepted at the time) the second page
       opened on `MJR` after 311 idle tics; at `idletimeout 5` (hold 175) the seed was still valid at
       112 idle tics and cleared at 312, and the page then opened on `AAA`. The boundary either side
       is the point — a test that only shows it clearing does not prove it ever held.

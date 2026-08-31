@@ -4273,6 +4273,13 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
     {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
+    // [Arcade] The idle-to-title timeout was console/config only, so the one
+    // setting that decides how long a paying player may stand still before
+    // the cabinet takes the game away from them could not be tuned on the
+    // machine.  Both are named lists (g_game.c) rather than ranges, so the
+    // page cannot produce a value that cuts a game short.
+    {IT_STRING | IT_CVAR,0, "Idle Timeout"    , &cv_idletimeout   , 0},
+    {IT_STRING | IT_CVAR,0, "Idle Warning"    , &cv_idlewarntime  , 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
