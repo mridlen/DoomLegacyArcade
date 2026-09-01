@@ -4302,7 +4302,7 @@ menuitem_t MenuOptionsMenu[]=
     // they are only reachable under -devmode.  Appended rather than inserted
     // -- the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
-    {IT_STRING | IT_CVAR,0, "Two Player Split", &cv_splitvertical , 0},
+    {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},

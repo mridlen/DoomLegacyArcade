@@ -88,6 +88,21 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     already sits above them, and the values (`Off`, `900`) are far shorter than the game names
     "Boot Game" renders on the same page, so the right-justified value column cannot collide.
 
+- **2 Player Split** — `cv_splitvertical`, inserted directly after "Control Panels" because it
+  qualifies it: the panel count decides how many views there are, this decides the shape of two of
+  them. Written up in `multiplayer-views.md`; noted here for the geometry and for the insert.
+  - Inserting mid-array was safe for the reason above — nothing indexes `MenuOptionsMenu` by
+    position. Re-checked with `grep -n "MenuOptionsMenu\[" m_menu.c`, still empty.
+  - Geometry: fourteen rows now, so the last one ("Audit >>") sits at `y` 170 and the page ends at
+    177 of 200 — room to spare.
+  - **The label was cut from "Two Player Split" to "2 Player Split" by measurement, not by eye.**
+    `MenuOptionsDef.x` is 60 and `M_DrawGenericMenu` right-justifies the value at
+    `BASEVIDWIDTH - x`, so the label runs from 60 and the value column ends at 260. Measured
+    against the real `STCFN` lumps, "Two Player Split" is 116 wide — the widest label on the page,
+    past "Initials Timeout" and "Attract Volume" at 108 — and the wider of the two values,
+    "Top/Bottom", is 80 and so starts at 180. That is a **4px** end-to-start gap, the tightest row
+    on a page where the next tightest has 66. "2 Player Split" is 99 wide and leaves 21.
+
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
   **Options → Arcade Options** as "Boot Game" beside the other operator rows, so it is
   operator-only. Picks
