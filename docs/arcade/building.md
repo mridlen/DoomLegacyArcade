@@ -68,6 +68,12 @@ These are the same traps documented in `CLAUDE.md`, encoded so nobody has to kno
 script uses it and says so; `--reconfigure` is the only way to have it rewritten. Getting this wrong
 would silently discard somebody's settings on what looks like a routine rebuild.
 
+Both scripts write `SDL2=1` and `ARCH=` by **replacing** the template's line, and then append the
+setting if no such line was found. The append is not belt-and-braces: `make_options_win` has every
+`ARCH=` line commented out, so on Windows the replacement never fired and the flag was silently
+dropped for the life of the script — see `ci-releases.md`. Any setting written this way needs the
+fallback, because a template that lacks the line fails without a word.
+
 `--arch` (`-Arch` on Windows) is the one option that has to reach into an existing file, since it
 changes what `make_options` says — so it implies `--reconfigure`. Without that it would appear to
 work and change nothing, which is worse than refusing. It exists for builds that will be *run
@@ -292,6 +298,15 @@ had been synced in from the Linux cabinet:
 - **It starts.** Reported by the operator from a run directory holding `svn1749\bin` plus
   `legacy.wad` and an IWAD. Nothing beyond "it loaded" has been checked — no rendering, input,
   sound, scoring or attract-cycle behaviour on Windows has been observed yet.
+
+On a GitHub Actions `windows-latest` runner, from a clean checkout — which is the first time the
+script has run on a machine nobody prepared for it:
+
+- `-InstallDeps` brought up the whole ucrt64 toolchain from the runner's stock MSYS2 unattended, and
+  the build then linked `doomlegacy.exe` (11.5 MB) and staged all 12 DLLs. Every earlier Windows run
+  was on a machine that already had MSYS2 set up by hand.
+- That run is also what exposed the `ARCH=` hole above: it had been silently dropping the flag on
+  Windows since the script was written, and only a check that read `make_options` back could see it.
 
 ### Launching it from `svn1749\bin` crashes silently — it is missing its data, not broken
 

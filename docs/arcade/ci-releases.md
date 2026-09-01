@@ -91,6 +91,34 @@ binary until it reaches the wrong CPU. Verified locally by building with the CI 
 disassembling the result — `objdump -d` finds zero AVX or SSE4 instructions, where the default
 `-march=native` build on the development machine is full of them.
 
+### The check earned its keep on the first Windows run
+
+That `make_options` grep is not ceremony. The first Windows CI run built `doomlegacy.exe` and staged
+all twelve DLLs — the first end-to-end Windows build this tree has ever completed — and then failed
+on the arch check, correctly.
+
+`make_options_win` has **every** `ARCH=` line commented out. `make_options_nix` carries one live at
+line 59. Both build scripts write the flag by *replacing* the line matching `^ARCH=`, so on Windows
+the replacement never fired, no `ARCH` line reached the file, and the Makefile's `ifdef ARCH` left
+`CFLAGS` empty and compiled with no `-march` switch at all — while the script printed
+`ARCH=-march=native` as though it had set it. Both the detected CPU and an explicit `-Arch` were
+being discarded in silence.
+
+The exe was harmless, as it happens: no `-march` is a generic build, which is what a release wants.
+It was right by accident, and it would have gone on being right by accident until somebody wanted a
+tuned build and got a generic one, or the template changed.
+
+Both scripts now append an `ARCH=` line when the template supplied none, mirroring the `SDL2=1`
+safety net that was already there for the same reason. `build.sh` had the identical latent hole —
+`make_options_nix` happens to have a live line today, and a template edit would have removed it just
+as quietly.
+
+Verified by making `make_options_nix` mimic the Windows template (every `ARCH=` commented out) and
+running the real script: the flag lands. Then the net was removed again and the same run produced no
+`ARCH` line at all, which is what proves the net is the thing doing the work rather than something
+else in the file. With the real template restored the file has exactly one `ARCH=` line — the net
+does not double up on a template that already has one.
+
 ## What CI can and cannot check
 
 **It proves the tree compiles and links on both platforms.** With no test suite that is most of the

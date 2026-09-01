@@ -421,6 +421,15 @@ else
     ' "$template" > "$opts"
 
     grep -q '^SDL2=1' "$opts" || echo "SDL2=1" >> "$opts"
+    # The same net for ARCH.  make_options_nix carries one live ARCH= line so
+    # the awk above finds it, but make_options_win has every one of them
+    # commented out -- there the replacement never fires, no ARCH line is
+    # written, and the Makefile's `ifdef ARCH` compiles with no -march switch
+    # while the script reports the flag it thought it set.  A template edit
+    # would do the same here, and it would be just as quiet.
+    if [ -n "$arch_flag" ]; then
+        grep -q '^ARCH=' "$opts" || echo "ARCH=$arch_flag" >> "$opts"
+    fi
     say "  SDL2=1, ARCH=${arch_flag:-none}, ENV_CFLAGS=-std=gnu17 -g"
 fi
 

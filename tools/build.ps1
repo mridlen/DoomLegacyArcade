@@ -455,6 +455,16 @@ if ((Test-Path $opts) -and -not $Reconfigure -and -not $foreignOpts) {
     # -g so a crash gives a backtrace with file and line.
     $out += 'ENV_CFLAGS=-std=gnu17 -g'
     if (-not ($out -match '^SDL2=1')) { $out += 'SDL2=1' }
+    # The same safety net for ARCH, and on Windows it is not a net but the only
+    # thing that works: make_options_win has *every* ARCH= line commented out
+    # (make_options_nix carries one live), so the '^ARCH=' replacement above
+    # never fires and no ARCH line reaches the file at all.  The Makefile's
+    # `ifdef ARCH` then leaves CFLAGS empty and compiles with no -march switch,
+    # while this script cheerfully reports the flag it thought it had set.
+    # Both the detected CPU and an explicit -Arch were being discarded in
+    # silence -- which is exactly the failure -Arch exists to prevent, so the
+    # CI check on make_options is what found it.
+    if ($archFlag -and -not ($out -match '^ARCH=')) { $out += "ARCH=$archFlag" }
     Set-Content -Path $opts -Value $out -Encoding ASCII
     Say "  SDL2=1, ARCH=$(if($archFlag){$archFlag}else{'none'}), ENV_CFLAGS=-std=gnu17 -g"
 }
