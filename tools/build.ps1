@@ -28,6 +28,16 @@
 .PARAMETER Jobs
     Parallel compile jobs.  Defaults to the number of processors.
 
+.PARAMETER Arch
+    Override the -march flag written into make_options.  Use 'none' for no
+    flag at all.  The default is -march=native, which is right for a machine
+    building for itself and wrong for one building for somebody else: it bakes
+    in whatever the *builder's* CPU supports, and the binary then dies with an
+    illegal-instruction fault on an older cabinet PC.  A build that will be
+    distributed (a GitHub Actions release, or a binary copied elsewhere) should
+    name a baseline instead:  -Arch '-march=x86-64 -mtune=generic'.
+    Passing -Arch implies -Reconfigure.
+
 .EXAMPLE
     .\tools\build.ps1
     .\tools\build.ps1 -Deps
@@ -47,7 +57,8 @@ param(
     [switch]$InstallDeps,
     [switch]$Reconfigure,
     [switch]$Clean,
-    [int]$Jobs = 0
+    [int]$Jobs = 0,
+    [string]$Arch = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,8 +100,19 @@ switch ($archRaw) {
               Warn "unrecognised architecture '$archRaw'; assuming 64-bit x86" }
 }
 
+# -Arch overrides the detected flag.  See the .PARAMETER note above for why a
+# distributable build must not use -march=native.  It implies -Reconfigure, or
+# an existing make_options would be reused and the flag silently ignored.
+if ($Arch) {
+    if ($Arch -ieq 'none') { $archFlag = '' } else { $archFlag = $Arch }
+    $Reconfigure = $true
+    $archSrc = ' (from -Arch)'
+}
+if (-not $archSrc) { $archSrc = '' }
+
 Say "  system    : $osCaption"
 Say "  cpu       : $archRaw ($archDesc)"
+Say "  arch flag : $(if($archFlag){$archFlag}else{'none'})$archSrc"
 Say "  toolchain : MSYS2 $msysEnv"
 
 # ---------------------------------------------------------------------------

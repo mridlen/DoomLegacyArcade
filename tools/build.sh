@@ -14,6 +14,7 @@
 #   ./tools/build.sh --clean         clean first
 #   ./tools/build.sh --debug         debug build, into svn1749/debug/bin
 #   ./tools/build.sh --jobs N        parallel compile jobs (default: all cores)
+#   ./tools/build.sh --arch FLAG     override the -march flag ('none' for no flag)
 #
 # Written for /bin/sh: it has to run on a machine that may not have bash.
 #
@@ -45,6 +46,7 @@ do_reconfigure=0
 do_clean=0
 do_debug=0
 jobs=""
+arch_override=""      # set by --arch; empty means "detect from this CPU"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -55,7 +57,12 @@ while [ $# -gt 0 ]; do
       --debug)         do_debug=1 ;;
       --jobs)          shift; jobs="${1:-}" ;;
       --jobs=*)        jobs="${1#--jobs=}" ;;
-      -h|--help)       sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --arch)          shift; arch_override="${1:-}"; do_reconfigure=1 ;;
+      --arch=*)        arch_override="${1#--arch=}"; do_reconfigure=1 ;;
+      # Print the comment block at the top of this file, stopping at the first
+      # line that is not a comment -- a fixed line range goes stale the moment
+      # an option is added, and used to spill "set -eu" into the help text.
+      -h|--help)       awk 'NR>1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
       *) echo "error: unknown option '$1' (try --help)" >&2; exit 1 ;;
     esac
     shift
@@ -115,6 +122,7 @@ fi
 # rather than assumed.
 arch_flag="-march=native"
 arch_note=""
+arch_src=""        # note appended to the summary line when --arch overrode it
 case "$uname_m" in
   x86_64|amd64)          arch_desc="64-bit x86" ;;
   i386|i486|i586|i686)   arch_desc="32-bit x86" ;;
@@ -136,9 +144,26 @@ if [ "$os_family" = macos ]; then
     esac
 fi
 
+# --arch overrides all of the above.  -march=native is right for a machine
+# building for itself and wrong for a machine building for somebody else: it
+# bakes in whatever the *builder's* CPU happens to support, and the binary then
+# dies with "Illegal instruction" on a cabinet PC that is a few generations
+# older.  A build that will be distributed -- a GitHub Actions release, or a
+# binary copied to another machine -- must name a baseline instead, e.g.
+#   --arch '-march=x86-64 -mtune=generic'
+# Passing --arch implies --reconfigure, or an existing make_options would be
+# reused and the flag silently ignored.
+if [ -n "$arch_override" ]; then
+    case "$arch_override" in
+      none|NONE) arch_flag=""; arch_note="" ;;
+      *)         arch_flag="$arch_override"; arch_note="" ;;
+    esac
+    arch_src=" (from --arch)"
+fi
+
 say "  system      : ${distro_pretty:-$uname_s}"
 say "  cpu         : $uname_m ($arch_desc)"
-say "  arch flag   : ${arch_flag:-none}"
+say "  arch flag   : ${arch_flag:-none}${arch_src}"
 [ -z "$arch_note" ] || warn "$arch_note"
 
 # --------------------------------------------------------------------------

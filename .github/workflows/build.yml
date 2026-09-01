@@ -1,0 +1,244 @@
+# [Arcade] Build DoomLegacy on GitHub's runners, and publish a release on demand.
+#
+# This deliberately does NOT use the "CMake multi-platform" starter workflow that
+# GitHub offers.  This tree's CMakeLists.txt is secondary, SDL-only and not kept
+# in step with the Makefile options (see CLAUDE.md); the GNU Make build driven by
+# tools/build.sh and tools/build.ps1 is the one that is actually maintained, and
+# those scripts already encode every trap this build has -- serial `make depend`
+# before `make -j`, the three edits make_options needs on a modern toolchain, the
+# foreign-make_options check, the Windows runtime-DLL closure.  Driving them from
+# CI keeps the runners and a developer's machine on one code path instead of two
+# that drift apart.
+#
+# See docs/arcade/ci-releases.md.
+
+name: Build
+
+on:
+  # Every push to main that touches something the build depends on.  A doc-only
+  # commit is skipped -- there is no point spending minutes to recompile nothing.
+  push:
+    branches: [main]
+    paths:
+      - 'svn1749/**'
+      - 'tools/**'
+      - 'common/**'
+      - 'cabinet/**'
+      - 'build.bat'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+
+  # The "click a button" path: Actions -> Build -> Run workflow.
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a GitHub Release from this build'
+        type: boolean
+        default: false
+      tag:
+        description: 'Release tag, e.g. v1.0.0 (required when publishing)'
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        type: boolean
+        default: false
+
+# Read-only by default.  Only the release job is granted write, so a compromised
+# build step cannot push a tag or a release asset.
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch.  A superseded pull-request run is worth cancelling; a run
+  # that may be about to publish a release is not.
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Never -march=native for a binary somebody else will run.  The runner's CPU is
+  # not the cabinet's, and the mismatch does not show up as a build error: it
+  # links, it ships, and it dies with an illegal-instruction fault the first time
+  # it reaches an instruction the target CPU does not have.  x86-64 is the
+  # baseline every 64-bit x86 machine implements; -mtune still favours modern
+  # ones without emitting anything an old one cannot execute.
+  ARCH_FLAGS: '-march=x86-64 -mtune=generic'
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Settle the version and validate the release inputs before anything compiles,
+  # so a missing tag costs a few seconds rather than two full builds.
+  # --------------------------------------------------------------------------
+  check-inputs:
+    name: Check inputs
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - id: decide
+        shell: bash
+        env:
+          PUBLISH: ${{ inputs.release || false }}
+          TAG_IN: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if [ "$PUBLISH" = "true" ]; then
+            case "$TAG_IN" in
+              v[0-9]*) version="$TAG_IN" ;;
+              '')      echo "::error::'Publish a GitHub Release' was checked but no tag was given."; exit 1 ;;
+              *)       echo "::error::Tag '$TAG_IN' should look like v1.0.0."; exit 1 ;;
+            esac
+          else
+            # Not a release: name the packages after the commit, so a build
+            # downloaded from a run can be traced back to its source.
+            version=$(printf '%s' "$GITHUB_SHA" | cut -c1-8)
+          fi
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version '$version' (publish=$PUBLISH)"
+
+  # --------------------------------------------------------------------------
+  linux:
+    name: Linux (x86-64)
+    needs: check-inputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # build.sh already knows the package names per distribution family, so CI
+      # does not keep a second copy of the list to fall out of date.
+      # --install-deps installs and then exits, hence the separate build step
+      # below; if nothing were missing this call would build instead, and the
+      # build step becomes a no-op make.
+      - name: Install dependencies
+        run: ./tools/build.sh --install-deps --arch "$ARCH_FLAGS"
+
+      - name: Build
+        run: ./tools/build.sh --arch "$ARCH_FLAGS"
+
+      # There is no test suite, and tools/smoke.sh needs a commercial IWAD that
+      # cannot live in this repository -- so CI proves the tree compiles and
+      # links, not that the game plays.  Play-testing stays a human job.
+      - name: Check the binary
+        run: |
+          set -eu
+          test -x svn1749/bin/doomlegacy
+          file svn1749/bin/doomlegacy
+          # A binary built for the wrong baseline still links, so confirm the
+          # flag actually reached the compiler rather than trusting that it did.
+          grep -q -- '-march=x86-64' svn1749/make_options
+
+      - name: Package
+        run: |
+          set -eu
+          name="doomlegacy-arcade-${{ needs.check-inputs.outputs.version }}-linux-x86_64"
+          mkdir -p "dist/$name/docs-arcade"
+          # `make` stages legacyhome/ into bin/ already (cabinet/README.md), so
+          # bin/ is the runnable directory; the wads belong beside the binary.
+          cp -a svn1749/bin/. "dist/$name/"
+          cp common/legacy.wad common/dogs.wad "dist/$name/"
+          cp LICENSE README.md README_install.txt "dist/$name/"
+          cp docs/arcade/*.md "dist/$name/docs-arcade/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          ls -l "dist/$name.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  windows:
+    name: Windows (x86-64)
+    needs: check-inputs
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub's windows runners ship MSYS2 at C:\msys64, which is the first
+      # place build.ps1 looks.  It installs the ucrt64 toolchain and libraries
+      # itself, so no setup action is needed here.
+      - name: Install dependencies
+        shell: pwsh
+        run: .\tools\build.ps1 -InstallDeps -Arch "$env:ARCH_FLAGS"
+
+      - name: Build
+        shell: pwsh
+        run: .\tools\build.ps1 -Arch "$env:ARCH_FLAGS"
+
+      - name: Check the binary
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'svn1749\bin\doomlegacy.exe')) { throw 'doomlegacy.exe was not built' }
+          Get-Item 'svn1749\bin\doomlegacy.exe' | Format-List Name, Length
+          # build.ps1 derives the runtime DLL closure by walking the import
+          # tables.  If that silently found nothing the package would look
+          # complete and fail before main() with a bare "SDL2.dll was not found".
+          $dlls = @(Get-ChildItem svn1749\bin\*.dll)
+          Write-Host "staged $($dlls.Count) DLLs: $($dlls.Name -join ', ')"
+          if ($dlls.Count -lt 2) { throw 'runtime DLLs were not staged' }
+          if (-not (Select-String -Path svn1749\make_options -Pattern '-march=x86-64' -Quiet)) {
+            throw 'make_options was not written with the baseline ARCH'
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "doomlegacy-arcade-${{ needs.check-inputs.outputs.version }}-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path "dist\$name\docs-arcade" | Out-Null
+          Copy-Item -Recurse -Force svn1749\bin\* "dist\$name\"
+          Copy-Item common\legacy.wad, common\dogs.wad "dist\$name\"
+          Copy-Item LICENSE, README.md, README_install.txt "dist\$name\"
+          Copy-Item docs\arcade\*.md "dist\$name\docs-arcade\"
+          Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip" -Force
+          Get-Item "dist\$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [check-inputs, linux, windows]
+    if: needs.check-inputs.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # the only job that may write; the builds stay read-only
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check-inputs.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -eu
+          ls -l dist
+          # gh creates the tag at this commit.  Refuse rather than reuse an
+          # existing tag: moving one leaves every earlier download link pointing
+          # at a release whose contents have quietly changed underneath it.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Pick a new tag."
+            exit 1
+          fi
+          # An `if`, not `[ ... ] && ...`: under `set -e` a trailing && list that
+          # tests false is itself a failing command, and the step would exit 1
+          # every time the box was left unchecked.
+          flags=""
+          if [ "${PRERELEASE:-false}" = "true" ]; then flags="--prerelease"; fi
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "DoomLegacy Arcade $TAG" \
+            --generate-notes $flags

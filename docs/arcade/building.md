@@ -63,6 +63,12 @@ These are the same traps documented in `CLAUDE.md`, encoded so nobody has to kno
 script uses it and says so; `--reconfigure` is the only way to have it rewritten. Getting this wrong
 would silently discard somebody's settings on what looks like a routine rebuild.
 
+`--arch` (`-Arch` on Windows) is the one option that has to reach into an existing file, since it
+changes what `make_options` says — so it implies `--reconfigure`. Without that it would appear to
+work and change nothing, which is worse than refusing. It exists for builds that will be *run
+somewhere else*, where the default `-march=native` is a shipping hazard rather than an
+optimisation; `ci-releases.md` covers why.
+
 ## `BUILD=<dir>` needs its own make_options *inside* that directory
 
 `--debug` builds into `svn1749/debug/`, and this cost a debugging session to find: the Makefile sets
