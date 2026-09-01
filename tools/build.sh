@@ -14,6 +14,7 @@
 #   ./tools/build.sh --clean         clean first
 #   ./tools/build.sh --debug         debug build, into svn1749/debug/bin
 #   ./tools/build.sh --jobs N        parallel compile jobs (default: all cores)
+#   ./tools/build.sh --arch FLAG     override the -march flag ('none' for no flag)
 #
 # Written for /bin/sh: it has to run on a machine that may not have bash.
 #
@@ -45,6 +46,7 @@ do_reconfigure=0
 do_clean=0
 do_debug=0
 jobs=""
+arch_override=""      # set by --arch; empty means "detect from this CPU"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -55,7 +57,12 @@ while [ $# -gt 0 ]; do
       --debug)         do_debug=1 ;;
       --jobs)          shift; jobs="${1:-}" ;;
       --jobs=*)        jobs="${1#--jobs=}" ;;
-      -h|--help)       sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --arch)          shift; arch_override="${1:-}"; do_reconfigure=1 ;;
+      --arch=*)        arch_override="${1#--arch=}"; do_reconfigure=1 ;;
+      # Print the comment block at the top of this file, stopping at the first
+      # line that is not a comment -- a fixed line range goes stale the moment
+      # an option is added, and used to spill "set -eu" into the help text.
+      -h|--help)       awk 'NR>1 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
       *) echo "error: unknown option '$1' (try --help)" >&2; exit 1 ;;
     esac
     shift
@@ -115,6 +122,7 @@ fi
 # rather than assumed.
 arch_flag="-march=native"
 arch_note=""
+arch_src=""        # note appended to the summary line when --arch overrode it
 case "$uname_m" in
   x86_64|amd64)          arch_desc="64-bit x86" ;;
   i386|i486|i586|i686)   arch_desc="32-bit x86" ;;
@@ -136,9 +144,26 @@ if [ "$os_family" = macos ]; then
     esac
 fi
 
+# --arch overrides all of the above.  -march=native is right for a machine
+# building for itself and wrong for a machine building for somebody else: it
+# bakes in whatever the *builder's* CPU happens to support, and the binary then
+# dies with "Illegal instruction" on a cabinet PC that is a few generations
+# older.  A build that will be distributed -- a GitHub Actions release, or a
+# binary copied to another machine -- must name a baseline instead, e.g.
+#   --arch '-march=x86-64 -mtune=generic'
+# Passing --arch implies --reconfigure, or an existing make_options would be
+# reused and the flag silently ignored.
+if [ -n "$arch_override" ]; then
+    case "$arch_override" in
+      none|NONE) arch_flag=""; arch_note="" ;;
+      *)         arch_flag="$arch_override"; arch_note="" ;;
+    esac
+    arch_src=" (from --arch)"
+fi
+
 say "  system      : ${distro_pretty:-$uname_s}"
 say "  cpu         : $uname_m ($arch_desc)"
-say "  arch flag   : ${arch_flag:-none}"
+say "  arch flag   : ${arch_flag:-none}${arch_src}"
 [ -z "$arch_note" ] || warn "$arch_note"
 
 # --------------------------------------------------------------------------
@@ -154,8 +179,26 @@ say "  arch flag   : ${arch_flag:-none}"
 #
 # The package lists are therefore *hints* printed when a probe fails.
 
+# pkg_refresh runs before pkg_install where a stale package index is a real
+# failure rather than a slow one.  apt resolves package versions from the index
+# it last downloaded, and Debian/Ubuntu delete superseded .debs from the pool as
+# soon as a new one lands -- so an index even a few days old asks the mirror for
+# files that are no longer there and the install dies on a 404, naming packages
+# nobody asked for:
+#
+#   E: Failed to fetch .../uuid-dev_2.39.3-9ubuntu6.5_amd64.deb  404  Not Found
+#
+# This is not hypothetical and it is not a mirror outage: a GitHub Actions
+# ubuntu-24.04 runner ships an index frozen at image-build time and hits it
+# within days.  (tools/build.ps1 already runs `pacman -Sy` first for the same
+# reason.)  dnf and zypper expire their own metadata and need no help; plain
+# `pacman -Sy` is left to the Arch user, for whom refreshing the database
+# without upgrading invites a partial upgrade.
+pkg_refresh=""
+
 case "$distro_family" in
-  debian) pkg_install="sudo apt install -y"
+  debian) pkg_refresh="sudo apt-get update"
+          pkg_install="sudo apt install -y"
           pkg_list="build-essential libsdl2-dev libsdl2-mixer-dev libzip-dev zlib1g-dev libgl1-mesa-dev libglu1-mesa-dev" ;;
   fedora) pkg_install="sudo dnf install -y"
           pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel mesa-libGL-devel mesa-libGLU-devel" ;;
@@ -263,6 +306,9 @@ if [ -n "$missing" ]; then
     say ""
     if [ -n "$pkg_list" ]; then
         say "Install with:"
+        # Print the refresh too -- someone copying this by hand off a stale
+        # index hits the same 404 the script would have.
+        [ -z "$pkg_refresh" ] || say "    $pkg_refresh"
         say "    $pkg_install $pkg_list"
         if [ "$distro_family" = fedora ]; then
             say ""
@@ -279,6 +325,11 @@ if [ -n "$missing" ]; then
     say ""
     if [ "$do_install_deps" = 1 ] && [ -n "$pkg_list" ]; then
         step "Installing dependencies"
+        if [ -n "$pkg_refresh" ]; then
+            say "  refreshing the package index"
+            # shellcheck disable=SC2086
+            $pkg_refresh || warn "could not refresh the package index; the install may 404"
+        fi
         # Deliberately not quoted: the list is several words.
         # shellcheck disable=SC2086
         $pkg_install $pkg_list
@@ -370,6 +421,15 @@ else
     ' "$template" > "$opts"
 
     grep -q '^SDL2=1' "$opts" || echo "SDL2=1" >> "$opts"
+    # The same net for ARCH.  make_options_nix carries one live ARCH= line so
+    # the awk above finds it, but make_options_win has every one of them
+    # commented out -- there the replacement never fires, no ARCH line is
+    # written, and the Makefile's `ifdef ARCH` compiles with no -march switch
+    # while the script reports the flag it thought it set.  A template edit
+    # would do the same here, and it would be just as quiet.
+    if [ -n "$arch_flag" ]; then
+        grep -q '^ARCH=' "$opts" || echo "ARCH=$arch_flag" >> "$opts"
+    fi
     say "  SDL2=1, ARCH=${arch_flag:-none}, ENV_CFLAGS=-std=gnu17 -g"
 fi
 

@@ -20,3 +20,7 @@ objs/
 
 # Claude Code session state and scratch worktrees
 /.claude/
+
+# Release staging built by the GitHub Actions workflow (and by anyone reproducing
+# its packaging step locally)
+/dist/

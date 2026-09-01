@@ -302,6 +302,7 @@ are kept below, in this file.
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
 | `docs/arcade/building.md` | The build scripts: capability probing, the traps they encode, Windows | `tools/build.sh`, `tools/build.ps1`, `build.bat` |
+| `docs/arcade/ci-releases.md` | GitHub Actions: the build-on-push workflow, the release button, the `-march` baseline | `.github/workflows/`, the `--arch`/`-Arch` options |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -405,6 +406,12 @@ written up in full in the doc named beside it.
 - **Returning to the title screen resets very little.** State leaks from the finished game into the
   attract screen. Fix leftover state in `Command_ExitGame_f`, which is the single funnel every
   route back to the title passes through. → `gotchas.md`
+- **A binary anyone else will run must not be built with `-march=native`.** It is the build
+  scripts' default and it is right only for a machine building for itself: it bakes in whatever the
+  *builder's* CPU supports, links and packages without a murmur, and then dies on the target with a
+  bare `Illegal instruction`. Pass `--arch '-march=x86-64 -mtune=generic'` (`-Arch` on Windows) for
+  anything distributed — and note it implies `--reconfigure`, or an existing `make_options` is
+  reused and the flag is silently ignored. → `ci-releases.md`
 
 ## Architecture
 

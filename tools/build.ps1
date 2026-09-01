@@ -28,6 +28,16 @@
 .PARAMETER Jobs
     Parallel compile jobs.  Defaults to the number of processors.
 
+.PARAMETER Arch
+    Override the -march flag written into make_options.  Use 'none' for no
+    flag at all.  The default is -march=native, which is right for a machine
+    building for itself and wrong for one building for somebody else: it bakes
+    in whatever the *builder's* CPU supports, and the binary then dies with an
+    illegal-instruction fault on an older cabinet PC.  A build that will be
+    distributed (a GitHub Actions release, or a binary copied elsewhere) should
+    name a baseline instead:  -Arch '-march=x86-64 -mtune=generic'.
+    Passing -Arch implies -Reconfigure.
+
 .EXAMPLE
     .\tools\build.ps1
     .\tools\build.ps1 -Deps
@@ -47,7 +57,8 @@ param(
     [switch]$InstallDeps,
     [switch]$Reconfigure,
     [switch]$Clean,
-    [int]$Jobs = 0
+    [int]$Jobs = 0,
+    [string]$Arch = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,8 +100,19 @@ switch ($archRaw) {
               Warn "unrecognised architecture '$archRaw'; assuming 64-bit x86" }
 }
 
+# -Arch overrides the detected flag.  See the .PARAMETER note above for why a
+# distributable build must not use -march=native.  It implies -Reconfigure, or
+# an existing make_options would be reused and the flag silently ignored.
+if ($Arch) {
+    if ($Arch -ieq 'none') { $archFlag = '' } else { $archFlag = $Arch }
+    $Reconfigure = $true
+    $archSrc = ' (from -Arch)'
+}
+if (-not $archSrc) { $archSrc = '' }
+
 Say "  system    : $osCaption"
 Say "  cpu       : $archRaw ($archDesc)"
+Say "  arch flag : $(if($archFlag){$archFlag}else{'none'})$archSrc"
 Say "  toolchain : MSYS2 $msysEnv"
 
 # ---------------------------------------------------------------------------
@@ -433,6 +455,16 @@ if ((Test-Path $opts) -and -not $Reconfigure -and -not $foreignOpts) {
     # -g so a crash gives a backtrace with file and line.
     $out += 'ENV_CFLAGS=-std=gnu17 -g'
     if (-not ($out -match '^SDL2=1')) { $out += 'SDL2=1' }
+    # The same safety net for ARCH, and on Windows it is not a net but the only
+    # thing that works: make_options_win has *every* ARCH= line commented out
+    # (make_options_nix carries one live), so the '^ARCH=' replacement above
+    # never fires and no ARCH line reaches the file at all.  The Makefile's
+    # `ifdef ARCH` then leaves CFLAGS empty and compiles with no -march switch,
+    # while this script cheerfully reports the flag it thought it had set.
+    # Both the detected CPU and an explicit -Arch were being discarded in
+    # silence -- which is exactly the failure -Arch exists to prevent, so the
+    # CI check on make_options is what found it.
+    if ($archFlag -and -not ($out -match '^ARCH=')) { $out += "ARCH=$archFlag" }
     Set-Content -Path $opts -Value $out -Encoding ASCII
     Say "  SDL2=1, ARCH=$(if($archFlag){$archFlag}else{'none'}), ENV_CFLAGS=-std=gnu17 -g"
 }
