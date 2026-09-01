@@ -72,14 +72,16 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       rectangle was stale both times.
     - **The cabinet runs OpenGL** (`drawmode "OpenGL"` in the tracked config), which is why the
       grid went into `hw_main.c`: a viewport there is just a rectangle. `HWR_SetViewSize` halves
-      `gr_viewheight` for two views and `gr_viewwidth` as well for four, and
-      `HWR_RenderPlayerView` offsets `gr_viewwindowx/y` by the view's column and row.
+      `gr_viewheight` and `gr_viewwidth` on whichever axes the grid divides, and
+      `HWR_RenderPlayerView` offsets `gr_viewwindowx/y` by the view's column and row. (Both read
+      `D_View_Grid`/`D_View_Cell_Pos` now — see the side-by-side split at the end of this file.)
     - **The "does the view fill the screen" test had to become "does it fill its cell"**
       (`gr_viewwidth == view_span_w`, not `vid.width`). Left as it was, a half-width quadrant took
       the status-bar centering path and the top row came out at **y = -61**.
     - A quadrant is very nearly the screen's own aspect ratio, so it must **not** get the
-      2-view projection squash: `atransform.splitscreen` is now `(D_NumViews() == 2)`, and the
-      same for the weapon-sprite nudge that keys off fov 90.
+      2-view projection squash, and the same for the weapon-sprite nudge that keys off fov 90.
+      (`atransform.splitscreen` was `(D_NumViews() == 2)` at this phase; it is `D_View_Squash()`
+      now, which also says *which way* a view is squashed — see the end of this file.)
     - `viewsv_need_sky[]` and `view_dynlights[]` were `[2]`, indexed by view number.
     - **Phase 3: the software renderer draws the 2x2 grid too.** It used to draw at most two
       views — `r_draw.c` had exactly `ylookup1`/`ylookup2` for stacked halves, and `D_Display`
@@ -93,8 +95,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
         places both tables on any cell of the grid, and `D_Display` calls it per view. The two
         precomputed half-screen tables are **gone**: they can only describe stacked halves and
         nothing said so at the call site.
-      - **Only the software path halves the width**, gated on `rendermode` by `soft_grid` in
-        `R_ExecuteSetViewSize`. The hardware renderer places its views by GL viewport and reads
+      - **Only the software path halves the width**, gated on `rendermode` by `soft_columns` in
+        `R_ExecuteSetViewSize` (named `soft_grid` when it could only mean the 2x2). The hardware renderer places its views by GL viewport and reads
         `rdraw_viewwidth` only through **`vid.fit_width`/`fit_height`**, which feed
         `atransform.scalex/scaley`, `HWR_Init_TextureMapping`'s focal length and
         `gr_pspritescale_*` — halving those visibly widened the OpenGL field of view and
@@ -414,3 +416,89 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Verified headless by reading `SingleMulti_Menu[singlemulti_multi].status` back through a
     temporary console command: `18` (`IT_PATCH | IT_CALL`, shown) with `localplayers "4"`, `144`
     (`IT_HIDDEN`) with `localplayers "1"`.
+
+- **Two players can be split side by side instead of stacked** (`cv_splitvertical`, "2 Player
+  Split" on the Arcade Options page, `Top/Bottom` or `Side by Side`, default `Top/Bottom`). Two
+  players only: three or four are the 2x2 grid either way, and one player has the whole screen.
+  - **Why it is worth a setting.** The stacked halves are 1366x384 each on this cabinet — a
+    letterbox slot that crops away what is above and below, which is where the things shooting at
+    you are. Side by side gives each player 683x768: the full height of the corridor, cropped left
+    and right instead. Which reads better depends on the monitor the cabinet was built around, so
+    it is an operator setting rather than a change of default.
+  - **"Two views" no longer says which way they are cut**, and that is the whole shape of the
+    change. Every placement decision used to be written inline, once per call site, as some
+    variant of `col = (num_views >= 4) ? (cell & 1) : 0; row = (num_views >= 4) ? (cell >> 1) :
+    cell`. There were nine of those. They all moved behind four helpers in `d_clisrv.c`:
+
+    | helper | answers |
+    | --- | --- |
+    | `D_View_Grid(&cols, &rows)` | how many columns and rows the screen is carved into |
+    | `D_Cell_Pos(cell, &col, &row)` | where a given cell sits in that grid |
+    | `D_View_Cell_Pos(vind, &col, &row)` | where a *view* is drawn — the panel's cell, not the join order, clamped to 0,0 for a single view |
+    | `D_View_Squash()` | 0 none, 1 half height, 2 half width |
+
+    A cell is `vid.width / cols` by `vid.height / rows`, and that is the only sizing rule left.
+    The callers are both renderers' viewports, the software draw tables (`R_Set_View_Window`), the
+    HUD overlay, the deathmatch rankings, the crosshair, the black fill of an unclaimed cell in
+    `D_Display`, and the join screen's boxes. **Add a layout and you change `D_View_Grid`, not
+    nine call sites** — which is the reason to do it this way even though only one new layout
+    exists.
+  - **The projection is the part that is not just geometry, and getting it wrong is not subtle.**
+    A 2x2 cell keeps the screen's own aspect ratio, so halving both axes leaves the field of view
+    unchanged and simply draws it smaller. **A side-by-side cell is not that case**: it is full
+    height. It has to keep the *full width* projection and crop what it shows to left and right,
+    exactly the way the stacked halves keep the full height projection and crop above and below.
+    - Halved instead — the obvious reading of "it is half the screen, so halve it" — the world
+      zooms out to half scale and the vertical field of view opens from 58 degrees to about 96.
+      Undistorted, and completely wrong: sprites at half size and a fish-eye.
+    - Software: `vid.fit_width` is taken from `fit_ref_width`, which **undoes** the halving for
+      this layout only. Written as an undo rather than as `vid.width` so a single view at a
+      reduced `cv_viewsize` is untouched. `case 2` of the `viewfit` switch has to use the same
+      width, or the two axes disagree and the image stretches.
+    - Hardware: a third `gluPerspective` case in `SetTransform` (`r_opengl.c`). The stacked half
+      is `gluPerspective(53.13, 2*ASPECT_RATIO)` — half the vertical fov (53.13 = 2*atan(0.5), whose
+      tangent is exactly half of 90's) at double the aspect, so the horizontal fov is unchanged.
+      Side by side is the mirror: `gluPerspective(fovxangle, ASPECT_RATIO/2)`. It needs no
+      `fov == 90` guard, unlike the stacked case whose 53.13 is hand fitted to that one fov.
+    - `FTransform_t.splitscreen` **carries a value now, not a flag** (0/1/2, from
+      `D_View_Squash`). The old `atransform.splitscreen = (D_NumViews() == 2)` could not say
+      *which* way. Only `r_opengl` reads it; the dead Glide/D3D/miniGL backends never did.
+    - The **weapon sprite's nudge is stacked-only** in both renderers, for the same reason — it
+      compensates for a weapon drawn at the full screen height inside a half height view. Keyed on
+      `D_View_Squash() == 1`, replacing `D_NumViews() == 2` in `r_things.c` (`vis->texturemid`) and
+      `hw_main.c` (`ty -= 20`).
+  - **The HUD overlay needed its art scale separated from its layout scale.** They had always been
+    the same thing: `ST_overlayDrawer` halves the global `vid.dupx/fdupx` for a quarter-screen
+    view, and `SCX`/`SCY` read those same globals for positions. That works while every cell is
+    either the full screen or half of it in *both* axes. A side-by-side cell is half width and
+    full height, and no single scale can be both.
+    - `SCX`/`SCY` now take **a scale, not a divisor**: `x0 + (int)(x * xsc)`, with
+      `xsc = fdupx / cols` and `ysc = fdupy / rows`, taken before the art scale is halved. For the
+      three layouts that already existed this is the same arithmetic to the pixel — checked at
+      1366x768 for y = 1, 4, 11, 21 and 198, where the old truncate-then-divide and the new
+      divide-then-truncate agree.
+    - The art halving is keyed on the cell being half the screen **wide** (`cols >= 2`), because
+      that is what the overlay runs out of room in: the 320 unit layout has to fit across the
+      cell. A stacked half is full width and keeps full size art, as it always has.
+  - **The rankings block is centred vertically in its cell now**, clamped at zero. A cell can be
+    taller than the block for the first time: 200 base units at `dupy` 2 is 400px, which
+    overflows a 384px stacked half or quadrant (so the clamp keeps those exactly where they were)
+    but leaves the block floating in the top half of a 768px side-by-side cell.
+  - **The join screen lays its boxes out the same way**, so the page says which half is yours
+    before the game starts.
+  - Verified headless under `SDL_VIDEODRIVER=offscreen` at 1024x768, by screenshot, in **both**
+    renderers — the geometry is renderer-specific, so one of them proves nothing about the other:
+    - Side by side draws two full-height views, correct undistorted geometry (ceiling and floor
+      both in frame, which is the visible difference from the stacked half), a complete half-scale
+      HUD inside each half, and the weapon at the bottom centre of each.
+    - **One view and the 2x2 grid are pixel-identical with the setting on and off** (`magick
+      compare -metric AE` → 0), which is the check that the setting cannot reach the layouts it
+      is not meant to touch.
+    - Against a binary built from the previous commit: one view and software stacked are
+      pixel-identical; GL stacked and the 2x2 differ **only** in the level clock digits and one
+      moving monster — the same difference two runs of the *same* binary produce, which is the
+      control that says it is run variance and not the change.
+    - Deathmatch rankings, the K/I/S block and the ammo breakdown all sit inside their own half.
+    - `splitvertical 1` typed at the console mid-game re-carves the screen immediately, which is
+      the `CV_CALL` → `R_SetViewSize` path the menu row uses; and a `-devmode` session writes
+      `splitvertical "Side by Side"` back to `config.cfg`.

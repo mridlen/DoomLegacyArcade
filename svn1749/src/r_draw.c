@@ -401,15 +401,16 @@ void  R_Setup_Drawmode( void )
 
 
 // [Arcade] Size of one cell of the view grid, in screen pixels.  This is what
-// the player sees, so it is the same for both renderers.
-//   1 view  -> the whole screen
-//   2 views -> the stacked halves splitscreen has always drawn
-//   4 views -> a 2x2 grid (three players leave one quadrant unused)
+// the player sees, so it is the same for both renderers.  D_View_Grid says
+// how the screen is carved up -- two views are the stacked halves or side by
+// side, three or four a 2x2 grid.
 void  R_View_Cell_Size( int * span_w, int * span_h )
 {
-    byte num_views = D_NumViews();
-    *span_w = vid.width  / ((num_views >= 4) ? 2 : 1);
-    *span_h = vid.height / ((num_views >= 2) ? 2 : 1);
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+    *span_w = vid.width  / cols;
+    *span_h = vid.height / rows;
 }
 
 
@@ -422,7 +423,10 @@ void  R_View_Cell_Size( int * span_w, int * span_h )
 // a negative x.
 static boolean  R_Draw_Column_Split( void )
 {
-    return (D_NumViews() >= 4) && (rdraw_scaledviewwidth <= (vid.width / 2));
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+    return (cols >= 2) && (rdraw_scaledviewwidth <= (vid.width / 2));
 }
 
 
@@ -468,16 +472,18 @@ boolean  R_View_Fills_Cell( void )
 //   vind : which view, 0 .. D_NumViews()-1
 void R_Set_View_Window( byte vind )
 {
-    byte num_views = D_NumViews();
-    // The panel's cell, not the join order -- see D_View_Cell.
-    byte cell   = (num_views >= 2) ? D_View_Cell(vind) : 0;
-    // Clamped to 0 for a single view: one player gets the whole screen
-    // whichever panel they are at, and an unclamped cell 1 would still push
-    // row to 1 and draw into a half of the screen that is not shown.
-    byte col    = R_Draw_Column_Split() ? (cell & 1) : 0;
-    byte row    = (num_views >= 4) ? (cell >> 1) : cell;
+    byte col, row;
     int  span_w, span_h;
     int  i;
+
+    // The panel's cell, not the join order, and clamped to the first cell
+    // for a single view -- see D_View_Cell_Pos.
+    D_View_Cell_Pos( vind, &col, &row );
+
+    // The hardware renderer leaves the draw window spanning the screen (see
+    // R_Draw_Column_Split), so a column offset would place the tables at a
+    // negative x.
+    if( ! R_Draw_Column_Split() )  col = 0;
 
     R_Draw_Cell_Size( &span_w, &span_h );
 

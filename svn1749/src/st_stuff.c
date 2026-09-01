@@ -1727,28 +1727,29 @@ void ST_drawOverlayNum (int x, int y,
 
 //  y : status position in 320x200 space
 //  y0 : top edge of this player's view, in screen pixels
-//  ydiv : 2 when the view is half the screen height, else 1
+//  ysc : screen pixels per base unit down this view's cell
 // [Arcade] Was hardcoded to the two-view split (cv_splitscreen, y0 only).
-// A 2x2 grid halves both axes and needs an x origin as well, so both
-// scalers now take the view's rectangle.
-static inline int SCY( int y, int y0, byte ydiv )
+// The view grid needs an x origin as well, and a cell is not always half the
+// screen in both axes, so both scalers now take the view's rectangle: an
+// origin and a scale that maps the 320x200 layout across one cell.
+//
+// The scale is passed in rather than read from vid.fdupx/fdupy here because
+// the two are not the same thing.  The *art* is drawn at the global vid
+// scale, which the caller halves for a cell that is half the screen wide;
+// the *layout* has to span the cell whatever the art is doing, and a
+// side-by-side cell is half width but full height.
+static inline int SCY( int y, int y0, float ysc )
 { 
     //31/10/99: fixed by Hurdler so it _works_ also in hardware mode
     // do not scale to resolution for hardware accelerated
     // because these modes always scale by default
-    y = (int)( y * vid.fdupy );     // scale to resolution
-    if( ydiv > 1 )
-        y /= ydiv;   // this view is a fraction of the screen height
-    return y + y0;   // base position of this view
+    return y0 + (int)( y * ysc );   // base position of this view
 }
 
 
-static inline int SCX( int x, int x0, byte xdiv )
+static inline int SCX( int x, int x0, float xsc )
 {
-    int sx = (int)( x * vid.fdupx );
-    if( xdiv > 1 )
-        sx /= xdiv;
-    return sx + x0;
+    return x0 + (int)( x * xsc );
 }
 
 static
@@ -1798,30 +1799,30 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     float  sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy ;
 
     // [Arcade] This view's cell of the screen, matching the viewport grid in
-    // hw_main.c: 2 views stack, 4 views are a 2x2 read left-to-right then
-    // top-to-bottom.
-    byte  num_views = D_NumViews();
-    byte  cell  = (num_views >= 2) ? D_View_Cell(vind) : 0;   // [Arcade] panel's cell, not join order.
-    // Clamped to 0 for a single view: one player gets the whole screen
-    // whichever panel they are at, and an unclamped cell 1 would still
-    // push row to 1 and offset everything into a half that is not drawn.
-    byte  col   = (num_views >= 4) ? (cell & 1) : 0;
-    byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
-    // [Arcade] With the 2x2 grid the global draw scale is halved below, which
-    // shrinks positions as well as art, so no extra divisor is wanted here.
-    // The two-view split keeps its old behaviour: full size art at halved y.
-    byte  xdiv  = 1;
-    byte  ydiv  = (num_views == 2) ? 2 : 1;
-    int   x0    = col * (vid.width / 2);
-    int   y0    = row * (vid.height / 2);
+    // hw_main.c: two views stack or sit side by side, four are a 2x2 read
+    // left-to-right then top-to-bottom.  D_View_Cell_Pos takes the panel's
+    // cell, not the join order, and clamps a single view to the first cell.
+    byte  cols, rows, col, row;
+    // [Arcade] Screen pixels per base unit across and down this cell, so the
+    // 320x200 layout spans the cell whichever shape it is.  Taken before the
+    // art scale is halved below, which is a separate question -- see SCX/SCY.
+    float xdiv, ydiv;
+    int   x0, y0;
     int  lowerbar_y;
-    // [Arcade] Global draw scale, saved so the quarter-screen halving below
-    // can be undone before returning.
+    // [Arcade] Global draw scale, saved so the halving below can be undone
+    // before returning.
     byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
     float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
 
+    D_View_Grid( &cols, &rows );
+    D_View_Cell_Pos( vind, &col, &row );
+    x0   = col * (vid.width / cols);
+    y0   = row * (vid.height / rows);
+    xdiv = sv_fdupx / cols;
+    ydiv = sv_fdupy / rows;
+
     // Draw screen0, scaled, abs position
-    // [Arcade] Shrink the whole overlay to match a quarter-screen view.  The
+    // [Arcade] Shrink the overlay art to match a half-width view.  The
     // HUD is 320x200 base art multiplied by vid.dupx/dupy, not fixed-size
     // graphics, so halving that scale gives a quadrant the same HUD-to-view
     // proportions the full screen has.
@@ -1837,7 +1838,12 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     // Halve the floats and round the integers to them, rather than halving
     // the integers: at 1366x768 dup is 4,3, and integer halving gives 2,1 --
     // art twice as wide as tall.  Rounding gives 2,2.
-    if( num_views >= 4 )
+    //
+    // Keyed on the cell being half the screen *wide*, which is what the
+    // overlay runs out of room in: the 320 unit layout has to fit across the
+    // cell, and at the full scale it is twice as wide as one.  A stacked half
+    // is full width and keeps the full size art, as it always has.
+    if( cols >= 2 )
     {
         vid.fdupx = sv_fdupx / 2.0f;
         vid.fdupy = sv_fdupy / 2.0f;

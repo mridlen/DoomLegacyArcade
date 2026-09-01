@@ -1430,12 +1430,13 @@ void HU_Draw_Rankings_In_Cell ( byte cell )
     // [Arcade] The caller resolves the cell, because the two callers get it
     // from different places: a player's view from D_View_Cell(pind), and the
     // spare quadrant from whichever cell no player claimed.
-    byte  col   = (num_views >= 4) ? (cell & 1) : 0;
-    byte  row   = (num_views >= 4) ? (cell >> 1) : cell;
+    byte  col, row;
     int   offx  = 0, offy = 0;   // in base units, at the scale set below
     // Global draw scale, restored at the end (single exit).
     byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
     float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
+
+    D_Cell_Pos( (num_views >= 2) ? cell : 0, &col, &row );
 
     // Halve the scale uniformly so the 320x200 ranking block covers a quarter
     // of the screen, which is exactly a 2x2 cell and half of a 2-view cell.
@@ -1479,12 +1480,27 @@ void HU_Draw_Rankings_In_Cell ( byte cell )
     // a row by BASEVIDHEIGHT would push the lower row off the screen bottom.
     if( num_views >= 2 )
     {
-        int cell_w = vid.width / ((num_views >= 4) ? 2 : 1);
-        int cell_h = vid.height / 2;
-        int block_w = BASEVIDWIDTH * vid.dupx;
+        byte cols, rows;
+        int  cell_w, cell_h, block_w, block_h, pad_y;
+
+        D_View_Grid( &cols, &rows );
+        cell_w  = vid.width / cols;
+        cell_h  = vid.height / rows;
+        block_w = BASEVIDWIDTH * vid.dupx;
+        block_h = BASEVIDHEIGHT * vid.dupy;
+
+        // [Arcade] Centred vertically as well as horizontally, which matters
+        // once a cell can be taller than the block: a side-by-side cell is
+        // the full screen height, and pinning the block to the top of it
+        // would leave the rankings floating in the upper third.  Clamped at
+        // zero, so the cells that are shorter than the block -- a stacked
+        // half and a 2x2 quadrant, 384px against 400 -- are placed exactly
+        // where they always were.
+        pad_y = (cell_h - block_h) / 2;
+        if( pad_y < 0 )  pad_y = 0;
 
         offx = ((col * cell_w) + ((cell_w - block_w) / 2)) / vid.dupx;
-        offy = (row * cell_h) / vid.dupy;
+        offy = ((row * cell_h) + pad_y) / vid.dupy;
     }
 
     // draw the ranking title panel
@@ -1625,7 +1641,7 @@ void HU_Draw_Crosshair( void )
 
     for( vind=0; vind<num_views; vind++ )
     {
-        byte cell, col, row;
+        byte col, row;
         int  chv;
 
         if( localplayer[vind] >= MAXPLAYERS )  continue;   // panel with no player
@@ -1633,10 +1649,8 @@ void HU_Draw_Crosshair( void )
         chv = cv_crosshair[ D_Panel_Of(vind) ].value & 3;
         if( ! chv )  continue;
 
-        // The panel's cell, not the join order -- see D_View_Cell.
-        cell = (num_views >= 2) ? D_View_Cell(vind) : 0;
-        col  = (num_views >= 4) ? (cell & 1) : 0;
-        row  = (num_views >= 4) ? (cell >> 1) : cell;
+        // The panel's cell, not the join order -- see D_View_Cell_Pos.
+        D_View_Cell_Pos( vind, &col, &row );
 
         V_DrawTranslucentPatch( base_x + (col * span_w),
                                 base_y + (row * span_h),

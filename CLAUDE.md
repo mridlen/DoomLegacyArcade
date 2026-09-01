@@ -289,7 +289,7 @@ are kept below, in this file.
 | doc | covers | read before touching |
 | --- | --- | --- |
 | `docs/arcade/high-scores.md` | Scoring, record demos, the run board, the ranked ruleset, initials entry, intermission tables | `hs_stuff.c`, `HS_*` call sites, `wi_stuff.c` |
-| `docs/arcade/multiplayer-views.md` | Four local players, the 2x2 view grid, the join screen, per-panel identity, HUD placement | `D_NumViews`, `localplayer*[]`, viewport geometry, `st_stuff.c`, `hu_stuff.c` |
+| `docs/arcade/multiplayer-views.md` | Four local players, the view grid (2x2, stacked or side-by-side), the join screen, per-panel identity, HUD placement | `D_View_Grid`, `D_NumViews`, `localplayer*[]`, viewport geometry, `st_stuff.c`, `hu_stuff.c` |
 | `docs/arcade/input.md` | Panels, Xbox gamepads, analog axes, control schemes, guided setup, menu key translation | `g_input.c`, `sdl/i_system.c` joystick code, `gamecontrol_pl[]`, `M_Cabinet_Menu_Key` |
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
@@ -318,7 +318,7 @@ everything else is arcade blocks inside an upstream file.
 | Scoring, boards, record demos | `hs_stuff.c` entire. Life cycle: `HS_NewGame` → `HS_LevelExit` → `HS_Run_Finished`, voided by `HS_Player_Died` / `HS_Player_Cheated`, ruleset in `HS_Apply_Ranked_Ruleset` / `HS_Ruleset_Is_Ranked`. Called from `g_game.c` (`G_DoCompleted`, `G_DoWorldDone`), `p_inter.c` (`P_KillMobj`), `m_cheat.c`, `wi_stuff.c` |
 | Attract cycle | `d_main.c`: `D_AdvanceDemo` / `D_DoAdvanceDemo` / `D_PageTicker` / `D_PageDrawer`, the `hs_attract_page` / `hs_page_after_demo` / `hs_subpage_tic` page state, `D_Menu_Over_Attract`, `D_Demo_Advance_Retry` |
 | Arcade death, idle timeout | `g_game.c`: `G_Arcade_Death_Check`, `G_Player_Death_Settled`, `G_Idle_Timeout_Check`, and the `death_ended_run` / `finale_after_intermission` flags they set for `G_DoWorldDone` |
-| Four players, panels, view grid | `d_clisrv.c`: `localplayer[]`, `D_NumViews`, `D_Panel_Of`, `D_View_Cell`, `D_Reset_View_Cells`. Viewport geometry in `d_main.c` `D_Display`; software draw window in `r_draw.c` (`R_View_Fills_Cell`, the cell tables) |
+| Four players, panels, view grid | `d_clisrv.c`: `localplayer[]`, `D_NumViews`, `D_View_Grid`, `D_Cell_Pos`, `D_View_Cell_Pos`, `D_View_Squash`, `D_Panel_Of`, `D_View_Cell`, `D_Reset_View_Cells`. Viewport geometry in `d_main.c` `D_Display`; software draw window in `r_draw.c` (`R_View_Fills_Cell`, the cell tables) |
 | HUD | `st_stuff.c` `ST_overlayDrawer` (per-view, and the quarter-screen half-scale block). `hu_stuff.c` for the per-view rankings, the attract demo caption, `PRESS FIRE TO START`, the `UNRANKED` markers and `HU_Draw_Tip` |
 | Menus | `m_menu.c`, by region: operator cvars ~475–530, main/new-game lockdown ~1150–1270, Single Level ~1670–1860, cheats ~2780–2930, join screen ~2935, initials entry ~3134, game select and level packs ~3520–3790, program restart ~3791 |
 | Input | `g_input.c`: `gamecontrol_pl[]`, the per-panel presets, `cv_customcontrols` and the guided setup. `sdl/i_system.c` for joystick slots, hotplug, both sticks and the triggers |
@@ -375,6 +375,11 @@ written up in full in the doc named beside it.
   viewports are drawn, `localplayer[]` who is playing, `D_Panel_Of(pind)` which physical panel
   drives them, `D_View_Cell(pind)` which quadrant they occupy. Conflating any two has broken
   something every time. → `multiplayer-views.md`
+- **The view count does not say how the screen is carved up.** Two views are the stacked halves
+  *or* side by side (`cv_splitvertical`), so never write `(num_views >= 4) ? (cell & 1) : 0` again:
+  ask `D_View_Grid` for the columns and rows, `D_Cell_Pos`/`D_View_Cell_Pos` for where something
+  goes, and `D_View_Squash` for which way a view is squashed. A cell is `vid.width / cols` by
+  `vid.height / rows`. → `multiplayer-views.md`
 - **When widening a per-player cvar, grep for its `[1]` registration.** The declaration being
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`

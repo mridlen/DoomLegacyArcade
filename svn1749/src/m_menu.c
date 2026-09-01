@@ -493,6 +493,35 @@ consvar_t cv_menusound = {"menusound", "1", CV_SAVE | CV_CALL, menusound_cons_t,
 CV_PossibleValue_t localplayers_cons_t[] = {{1,"1"},{2,"2"},{3,"3"},{4,"4"},{0,NULL}};
 consvar_t cv_localplayers = {"localplayers", "1", CV_SAVE, localplayers_cons_t };
 
+// [Arcade] Which way the screen is cut for two players: the stacked halves
+// splitscreen has always drawn, or side by side.  Operator setting like the
+// rest of this group.
+//
+// Worth having because the two shapes are not equivalent on a cabinet.  A
+// stacked half is 1366x384 here -- a letterbox slot that crops what each
+// player can see above and below, which is where the things shooting at them
+// are.  Side by side gives each of them 683x768: the full height of the
+// corridor, cropped left and right instead.  Which reads better depends on
+// the monitor the cabinet was built around, so it is a setting rather than a
+// change of default.
+//
+// Two players only.  Three or four are a 2x2 grid either way (see
+// D_View_Grid), and one player has the whole screen.
+//
+// CV_CALL because the viewport sizes are only recomputed on request, exactly
+// as D_Set_View_Cell has to do it: without this the halves would keep their
+// old shape until something else asked for a resize.  R_SetViewSize only
+// sets a flag, so it is safe to fire from config.cfg long before the
+// renderer exists.
+static void CV_Splitvertical_OnChange( void );
+CV_PossibleValue_t splitvertical_cons_t[] = {{0,"Top/Bottom"},{1,"Side by Side"},{0,NULL}};
+consvar_t cv_splitvertical = {"splitvertical", "0", CV_SAVE | CV_CALL, splitvertical_cons_t, CV_Splitvertical_OnChange };
+
+static void CV_Splitvertical_OnChange( void )
+{
+    R_SetViewSize();
+}
+
 // [Arcade] Seconds the join screen waits before starting with whoever has
 // pressed in.  Operator setting like the two above.  0 skips the wait, which
 // starts the game with panel 1 alone -- useful on a single panel cabinet that
@@ -3290,13 +3319,18 @@ static void  M_Join_Drawer( void )
     int   secs = (join_endtic - (int)gametic) / TICRATE;
     char  buf[48];
 
-    // One box per panel, laid out as the view grid will be: two panels stack
-    // as halves, three or four are a 2x2, matching D_NumViews.
+    // One box per panel, laid out as the view grid will be: three or four are
+    // a 2x2, two are the stacked halves or side by side, matching
+    // D_View_Grid.  Two panels side by side put the boxes in two columns
+    // here as well, so the join screen says which half is yours before the
+    // game starts.
+    byte  vsplit = (panels == 2) && cv_splitvertical.EV;
+
     for( panel=0; panel < panels; panel++ )
     {
-        byte col = (panels >= 3) ? (panel & 1) : 0;
-        byte row = (panels >= 3) ? (panel >> 1) : panel;
-        int  cw  = (panels >= 3) ? (BASEVIDWIDTH/2) : BASEVIDWIDTH;
+        byte col = (panels >= 3) ? (panel & 1) : (vsplit ? panel : 0);
+        byte row = (panels >= 3) ? (panel >> 1) : (vsplit ? 0 : panel);
+        int  cw  = ((panels >= 3) || vsplit) ? (BASEVIDWIDTH/2) : BASEVIDWIDTH;
         int  cx  = col * cw;
         int  cy  = 60 + row * 50;
         const char * state = join_pressed[panel] ? "READY" : "PRESS FIRE";
@@ -4268,6 +4302,7 @@ menuitem_t MenuOptionsMenu[]=
     // they are only reachable under -devmode.  Appended rather than inserted
     // -- the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
+    {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
@@ -10041,6 +10076,7 @@ consvar_t * menu_command_cvar_list[] =
 
   &cv_screenslink,
   &cv_localplayers,     // [Arcade]
+  &cv_splitvertical,    // [Arcade]
   &cv_quitmenu,         // [Arcade]
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]

@@ -2193,7 +2193,10 @@ void R_DrawPSprite (pspdef_t* psp)
     // in mid-air.  The hardware renderer already draws this distinction the
     // same way (atransform.splitscreen = (D_NumViews() == 2), and its own
     // weapon nudge).
-    vis->texturemid = (D_NumViews() == 2) ?
+    // [Arcade] D_View_Squash() == 1 is exactly "half height, full width".
+    // A side-by-side view is full height and wants the ordinary centre, the
+    // same as a 2x2 cell and a full screen.
+    vis->texturemid = (D_View_Squash() == 1) ?
         (120<<(FRACBITS)) + FRACUNIT/2 - (psp->sy - sprlump->topoffset)
         : (BASEYCENTER<<FRACBITS) + FRACUNIT/2 - (psp->sy - sprlump->topoffset);
 
