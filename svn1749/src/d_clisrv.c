@@ -520,6 +520,121 @@ byte  D_NumViews( void )
 }
 
 
+// [Arcade] How the screen is carved up: the number of columns and rows of
+// the view grid.
+//
+//   1 view    1 x 1   the whole screen
+//   2 views   1 x 2   the stacked halves splitscreen has always drawn, or
+//             2 x 1   side by side, when the operator sets cv_splitvertical
+//   3-4 views 2 x 2   a 2x2 grid, three players leaving one cell unused
+//
+// Everything that places anything per view -- both renderers, the HUD
+// overlay, the rankings, the crosshair, the black fill of an unused cell --
+// asks here rather than testing the view count, because "2 views" no longer
+// says which way they are cut.  A cell is (vid.width / cols) by
+// (vid.height / rows), and D_Cell_Pos says which one a cell is.
+//
+// Three or four players stay a 2x2 whatever the split setting says: the
+// setting is about the *two* player shape, and a 2x2 has no other
+// arrangement.
+void  D_View_Grid( byte * out_cols, byte * out_rows )
+{
+    byte n = D_NumViews();
+    byte cols = 1, rows = 1;
+
+    if( n >= 4 )
+    {
+        cols = 2;
+        rows = 2;
+    }
+    else if( n >= 2 )
+    {
+        if( cv_splitvertical.EV )
+            cols = 2;
+        else
+            rows = 2;
+    }
+
+    *out_cols = cols;
+    *out_rows = rows;
+}
+
+
+// [Arcade] Where a cell of the view grid sits, as a column and a row.
+// Takes the cell rather than the view, because the callers get it from
+// different places -- a player's view from D_View_Cell, an empty cell from
+// whichever one no player claimed.
+void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row )
+{
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+
+    if( (cols >= 2) && (rows >= 2) )
+    {
+        *out_col = cell & 1;    // left to right, then top to bottom
+        *out_row = cell >> 1;
+    }
+    else if( cols >= 2 )
+    {
+        *out_col = cell;        // side by side
+        *out_row = 0;
+    }
+    else
+    {
+        *out_col = 0;           // stacked, and the single view
+        *out_row = cell;
+    }
+}
+
+
+// [Arcade] Where view 'vind' is drawn, as a column and a row of the grid.
+//
+// Clamped to the first cell for a single view: one player gets the whole
+// screen whichever panel they are standing at, and an unclamped cell 1 would
+// still place them in a half of the screen that is never drawn.
+void  D_View_Cell_Pos( byte vind, byte * out_col, byte * out_row )
+{
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+    if( (cols * rows) < 2 )
+    {
+        *out_col = 0;
+        *out_row = 0;
+        return;
+    }
+
+    // The panel's cell, not the join order -- see D_View_Cell.
+    D_Cell_Pos( D_View_Cell(vind), out_col, out_row );
+}
+
+
+// [Arcade] Whether a view is a squashed piece of the screen, and which way:
+//   0 : the whole screen, or a 2x2 cell -- a quadrant has very nearly the
+//       screen's own aspect ratio, so it needs no correction
+//   1 : half height, full width -- the stacked halves
+//   2 : full height, half width -- side by side
+//
+// The projection has to know.  A stacked half keeps the full width
+// projection and crops what it shows vertically, which is the squash
+// splitscreen has always had; side by side is the mirror of it, keeping the
+// full height projection and cropping left and right.  Both renderers read
+// this -- r_things.c for the weapon sprite, hw_main.c for
+// atransform.splitscreen, which the GL driver turns into its own perspective.
+byte  D_View_Squash( void )
+{
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+
+    if( (cols >= 2) && (rows >= 2) )  return 0;   // a 2x2 cell
+    if( rows >= 2 )  return 1;
+    if( cols >= 2 )  return 2;
+    return 0;
+}
+
+
 // [Arcade] Mark every local player slot unused.
 void CL_Init_localplayer( void )
 {

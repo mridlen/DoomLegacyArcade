@@ -4057,8 +4057,11 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
 
     // set top/bottom coords
     ty = FIXED_TO_FLOAT( psp->sy - sprlump->topoffset );
-    if ((D_NumViews() == 2) && (cv_grfov.value == 90))
-        ty -= 20;       //Hurdler: so it's a bit higher, [Arcade] 2 view split only
+    // [Arcade] Only the stacked halves, which draw the weapon at the full
+    // screen height inside a half height view (D_View_Squash).  A
+    // side-by-side view is full height and wants no nudge.
+    if ((D_View_Squash() == 1) && (cv_grfov.value == 90))
+        ty -= 20;       //Hurdler: so it's a bit higher
     if (EN_heretic_hexen)
     {
         if (rdraw_viewheight == vid.height
@@ -4430,18 +4433,21 @@ void HWR_SetViewSize( int viewsize )
         gr_viewheight = (float) ((viewsize * (vid.height - stbar_height / 2) / 10) & ~1);
     }
 
-    // [Arcade] 2 views stack as halves; 4 views are a 2x2 grid, so the width
-    // halves as well.  view_span_* is the size of one cell of that grid.
-    byte num_views = D_NumViews();
+    // [Arcade] The viewport is one cell of the view grid, so it is halved on
+    // whichever axes the grid divides: two views stack as halves or sit side
+    // by side, four are a 2x2.  view_span_* is the size of one cell.
+    byte cols, rows;
     float view_span_w = (float) vid.width;
     float view_span_h = (float) vid.height;
 
-    if( num_views >= 2 )
+    D_View_Grid( &cols, &rows );
+
+    if( rows >= 2 )
     {
         gr_viewheight /= 2;
         view_span_h /= 2;
     }
-    if( num_views >= 4 )
+    if( cols >= 2 )
     {
         gr_viewwidth /= 2;
         view_span_w /= 2;
@@ -4540,16 +4546,15 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
 
     // set window position
     // [Arcade] Place the view in its cell of the grid.  With 2 views that is
-    // the old upper/lower split; with 4 it is a 2x2, pind 0..3 reading
-    // left-to-right then top-to-bottom, so panel order matches screen order.
+    // the old upper/lower split, or two columns when the cabinet is set to
+    // split side by side; with 4 it is a 2x2, reading left-to-right then
+    // top-to-bottom, so panel order matches screen order.  D_View_Cell_Pos
+    // takes the panel's cell rather than the join order, and clamps a single
+    // view to the first cell.
     {
-        byte num_views = D_NumViews();
-        byte cell = (num_views >= 2) ? D_View_Cell(pind) : 0;   // [Arcade] panel's cell, not join order.
-        // Clamped to 0 for a single view: one player gets the whole screen
-        // whichever panel they are at, and an unclamped cell 1 would still
-        // push row to 1 and offset everything into a half that is not drawn.
-        byte col = (num_views >= 4) ? (cell & 1) : 0;
-        byte row = (num_views >= 4) ? (cell >> 1) : cell;
+        byte col, row;
+
+        D_View_Cell_Pos( pind, &col, &row );
 
         gr_centery = gr_basecentery;
         gr_viewwindowx = gr_baseviewwindowx;
@@ -4562,7 +4567,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
             gr_viewwindowx += (vid.width / 2);
             gr_windowcenterx += (vid.width / 2);
         }
-        if( row && (num_views >= 2) )
+        if( row )
         {
             gr_viewwindowy += (vid.height / 2);
             gr_windowcentery += (vid.height / 2);
@@ -4605,9 +4610,11 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     atransform.scalez = 1;
     atransform.fovxangle = cv_grfov.value;
     atransform.fovyangle = cv_grfov.value;
-    // [Arcade] Only the 2 view split squashes the aspect.  A 2x2 quadrant is
-    // very nearly the screen's own ratio, so it must not get this correction.
-    atransform.splitscreen = (D_NumViews() == 2);
+    // [Arcade] Which way this view is squashed, if it is: 1 for the stacked
+    // halves, 2 for side by side.  A 2x2 quadrant is very nearly the screen's
+    // own ratio and gets neither correction.  The driver turns this into its
+    // own perspective -- see SetTransform in r_opengl.c.
+    atransform.splitscreen = D_View_Squash();
     gr_fovlud = 1 / tan(cv_grfov.value * PI / 360);
 
 #ifdef NO_MLOOK_EXTENDS_FOV

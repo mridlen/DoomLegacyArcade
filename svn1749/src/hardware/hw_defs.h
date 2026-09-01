@@ -166,6 +166,8 @@ typedef struct
     float  anglex,angley;   // aimingangle / viewangle 
     float  scalex,scaley,scalez;
     float  fovxangle, fovyangle;
+    // [Arcade] 0 none, 1 half height (stacked), 2 half width (side by side).
+    // Was a flag; the driver reads the value.  See D_View_Squash.
     int	   splitscreen;
 } FTransform_t;
 

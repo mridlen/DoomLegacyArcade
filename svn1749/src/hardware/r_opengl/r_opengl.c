@@ -1620,9 +1620,23 @@ EXPORT void HWRAPI( DrawMD2 ) (int *gl_cmd_buffer, md2_frame_t *frame,
 // -----------------+
 // SetTransform     : 
 // -----------------+
+// [Arcade] gluPerspective takes the *vertical* fov and the viewport's aspect
+// ratio, and both of the split layouts have to say so or the image comes out
+// stretched to fill a cell that is not the screen's shape:
+//
+//   1 : half height, full width.  Halve the vertical fov (90 -> 53.13, whose
+//       tangent is exactly half) and double the aspect, so the horizontal
+//       field of view is unchanged and the view crops above and below.
+//   2 : full height, half width.  The mirror image: keep the vertical fov and
+//       halve the aspect, so the vertical field of view is unchanged and the
+//       view crops left and right.
+//
+// ASPECT_RATIO is 1.0 here -- the real screen shape comes from the GL
+// viewport, which HWR_SetViewSize has already sized to one cell.
 EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
 {
-    static int special_splitscreen;
+    static int special_splitscreen;   // [Arcade] 0 none, 1 stacked, 2 side by side
+    static float split_fovy = 90.0f;  // [Arcade] for the side-by-side case
 
     glLoadIdentity();
     if (transform)
@@ -1636,10 +1650,20 @@ EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        special_splitscreen = (transform->splitscreen && transform->fovxangle==90.0f);
-        if (special_splitscreen)
+        // [Arcade] The stacked halves keep their fov==90 restriction, which
+        // is what the 53.13 is hand fitted to.  Side by side does not need
+        // one: halving the aspect is correct at any fov.
+        special_splitscreen = (transform->splitscreen == 2) ? 2
+             : ((transform->splitscreen && transform->fovxangle==90.0f) ? 1 : 0);
+        split_fovy = transform->fovxangle;
+        if (special_splitscreen == 1)
         {
             gluPerspective( 53.13, 2*ASPECT_RATIO,  // 53.13 = 2*atan(0.5)
+                            near_clipping_plane, FAR_CLIPPING_PLANE);
+        }
+        else if (special_splitscreen == 2)
+        {
+            gluPerspective( split_fovy, ASPECT_RATIO/2,   // [Arcade] side by side
                             near_clipping_plane, FAR_CLIPPING_PLANE);
         }
         else
@@ -1657,9 +1681,14 @@ EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        if (special_splitscreen)
+        if (special_splitscreen == 1)
         {
             gluPerspective( 53.13, 2*ASPECT_RATIO,  // 53.13 = 2*atan(0.5)
+                            near_clipping_plane, FAR_CLIPPING_PLANE);
+        }
+        else if (special_splitscreen == 2)
+        {
+            gluPerspective( split_fovy, ASPECT_RATIO/2,   // [Arcade] side by side
                             near_clipping_plane, FAR_CLIPPING_PLANE);
         }
         else

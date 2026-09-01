@@ -1059,10 +1059,12 @@ void D_Display(void)
 
                     for( c = 0; c < num_views; c++ )
                     {
+                        byte col, row;
+
                         if( cell_used & (1 << c) )  continue;
 
-                        V_DrawVidFill( (num_views >= 4)? ((c & 1) * span_w) : 0,
-                                       ((num_views >= 4)? (c >> 1) : c) * span_h,
+                        D_Cell_Pos( c, &col, &row );
+                        V_DrawVidFill( col * span_w, row * span_h,
                                        span_w, span_h, 0 );
                     }
                 }

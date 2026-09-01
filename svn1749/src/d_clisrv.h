@@ -613,6 +613,11 @@ byte  D_Pind_Of_Panel( byte panel );
 void  D_Set_Panel( byte pind, byte panel );
 void  D_Set_View_Cell( byte pind, byte cell );
 void  D_Reset_View_Cells( void );
+// [Arcade] The view grid: columns and rows, and where a cell sits in it.
+void  D_View_Grid( byte * out_cols, byte * out_rows );
+void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row );
+void  D_View_Cell_Pos( byte vind, byte * out_col, byte * out_row );
+byte  D_View_Squash( void );   // 0 none, 1 half height, 2 half width
 
 // [Arcade] How many panels the join screen counted in.  0 = not asked.
 void  D_Set_Join_Count( byte count );

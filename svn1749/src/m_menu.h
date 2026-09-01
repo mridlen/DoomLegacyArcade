@@ -120,6 +120,9 @@ void M_Register_Menu_Controls( void );
 // d_clisrv.c to decide how many players join on this machine.  See
 // D_NumLocalPlayers(), which clamps it to MAXSPLITSCREENPLAYERS.
 extern consvar_t cv_localplayers;
+// [Arcade] Two players side by side instead of stacked.  Read by d_clisrv.c
+// (D_View_Grid), which is where every placement decision comes from.
+extern consvar_t cv_splitvertical;
 extern consvar_t cv_jointime;       // [Arcade] join screen countdown, seconds
 extern consvar_t cv_initialstimeout;// [Arcade] initials entry timeout, seconds
 
