@@ -179,8 +179,26 @@ say "  arch flag   : ${arch_flag:-none}${arch_src}"
 #
 # The package lists are therefore *hints* printed when a probe fails.
 
+# pkg_refresh runs before pkg_install where a stale package index is a real
+# failure rather than a slow one.  apt resolves package versions from the index
+# it last downloaded, and Debian/Ubuntu delete superseded .debs from the pool as
+# soon as a new one lands -- so an index even a few days old asks the mirror for
+# files that are no longer there and the install dies on a 404, naming packages
+# nobody asked for:
+#
+#   E: Failed to fetch .../uuid-dev_2.39.3-9ubuntu6.5_amd64.deb  404  Not Found
+#
+# This is not hypothetical and it is not a mirror outage: a GitHub Actions
+# ubuntu-24.04 runner ships an index frozen at image-build time and hits it
+# within days.  (tools/build.ps1 already runs `pacman -Sy` first for the same
+# reason.)  dnf and zypper expire their own metadata and need no help; plain
+# `pacman -Sy` is left to the Arch user, for whom refreshing the database
+# without upgrading invites a partial upgrade.
+pkg_refresh=""
+
 case "$distro_family" in
-  debian) pkg_install="sudo apt install -y"
+  debian) pkg_refresh="sudo apt-get update"
+          pkg_install="sudo apt install -y"
           pkg_list="build-essential libsdl2-dev libsdl2-mixer-dev libzip-dev zlib1g-dev libgl1-mesa-dev libglu1-mesa-dev" ;;
   fedora) pkg_install="sudo dnf install -y"
           pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel mesa-libGL-devel mesa-libGLU-devel" ;;
@@ -288,6 +306,9 @@ if [ -n "$missing" ]; then
     say ""
     if [ -n "$pkg_list" ]; then
         say "Install with:"
+        # Print the refresh too -- someone copying this by hand off a stale
+        # index hits the same 404 the script would have.
+        [ -z "$pkg_refresh" ] || say "    $pkg_refresh"
         say "    $pkg_install $pkg_list"
         if [ "$distro_family" = fedora ]; then
             say ""
@@ -304,6 +325,11 @@ if [ -n "$missing" ]; then
     say ""
     if [ "$do_install_deps" = 1 ] && [ -n "$pkg_list" ]; then
         step "Installing dependencies"
+        if [ -n "$pkg_refresh" ]; then
+            say "  refreshing the package index"
+            # shellcheck disable=SC2086
+            $pkg_refresh || warn "could not refresh the package index; the install may 404"
+        fi
         # Deliberately not quoted: the list is several words.
         # shellcheck disable=SC2086
         $pkg_install $pkg_list

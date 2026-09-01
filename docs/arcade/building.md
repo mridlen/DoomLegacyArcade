@@ -31,6 +31,11 @@ on the Fedora 42 machine this was written on, the build is satisfied by:
 | `zlib-devel` | **zlib-ng-compat-devel** |
 | `mesa-libGL-devel` | **libglvnd-devel** |
 
+On the Debian family `--install-deps` runs `apt-get update` first, and prints it in the hint. That
+is not politeness: apt resolves versions from its stored index, Debian and Ubuntu delete superseded
+`.deb`s from the pool immediately, and a stale index therefore fails with a 404 on packages nobody
+asked for. `ci-releases.md` has the case that found it.
+
 A script that checked for those three package names would have declared a working machine broken.
 Asking the compiler *"can you build and link this?"* is the only question that stays true. The
 package lists in the script are therefore **hints printed when a probe fails**, not the test.

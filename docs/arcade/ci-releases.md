@@ -36,6 +36,34 @@ Both scripts are invoked twice, which looks redundant and is not: `--install-dep
 exits with "run the script again", so the second call is the one that builds. If nothing were
 missing the first call would build and the second is a no-op `make`.
 
+## The runner's package index is always stale
+
+The first CI run failed before it compiled a line, in `apt install`, on three packages nobody had
+asked for:
+
+```
+E: Failed to fetch .../uuid-dev_2.39.3-9ubuntu6.5_amd64.deb          404  Not Found
+E: Failed to fetch .../libblkid-dev_2.39.3-9ubuntu6.5_amd64.deb      404  Not Found
+E: Failed to fetch .../libmount-dev_2.39.3-9ubuntu6.5_amd64.deb      404  Not Found
+```
+
+Nothing was wrong with the mirror or with the packages the build actually wants — those three are
+transitive dependencies of `libsdl2-dev`. `apt` resolves versions from the index it last downloaded,
+and Debian and Ubuntu **delete superseded `.deb` files from the pool** the moment a replacement
+lands. A GitHub runner image ships an index frozen at image-build time, so within days it is asking
+the mirror for files that no longer exist. The error names the version it wanted (`…6.5`) but never
+says that `…6.6` is what is there now, which is what makes it read as a broken mirror.
+
+The fix is `apt-get update` first, and it went into `build.sh` rather than the workflow: `build.sh`
+is the one place that knows package management per distribution family, and `build.ps1` already runs
+`pacman -Sy` before installing for exactly this reason — the Linux side was simply inconsistent with
+its own Windows sibling. It is printed in the "Install with:" hint too, so someone copying that
+command by hand off a stale index does not hit the same 404.
+
+Only the Debian family gets it. `dnf` and `zypper` expire their own metadata and need no help, and a
+bare `pacman -Sy` is left to the Arch user, for whom refreshing the database without upgrading
+invites a partial upgrade.
+
 ## `-march=native` must never reach a release
 
 This is the one thing CI can get wrong in a way that no build error reveals.
