@@ -887,9 +887,31 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
         goto failed;
 #endif
 
+    // Get surface for palette draw.
+    // [Arcade] Not present on every driver: SDL2 cannot give a window surface
+    // once the window has a renderer, unless the video driver has its own
+    // framebuffer (X11 and Wayland do, KMSDRM does not), so it can legitimately
+    // be NULL and must not be dereferenced blindly.
+    vidSurface = SDL_GetWindowSurface( sdl_window );
+
     // Will need an SDL_Texture.
     // Get Pixel format (Eternity Engine).
-    uint32_t pixel_format = SDL_GetWindowPixelFormat( sdl_window );
+    // [Arcade] The window SURFACE's format, not SDL_GetWindowPixelFormat().
+    // The engine's own drawing format is taken from the surface (below), and
+    // the texture is what that drawn buffer is uploaded into, so the two must
+    // be the same or the software drawer and the upload disagree about how wide
+    // a pixel is.  SDL_GetWindowPixelFormat reports the format of the display
+    // *mode*, which is not always the format of the window's framebuffer -- on
+    // a Raspberry Pi they differ, and taking them from different places drew
+    // every software mode with the wrong drawer.
+    uint32_t pixel_format = SDL_PIXELFORMAT_UNKNOWN;
+
+    if( vidSurface )
+        pixel_format = vidSurface->format->format;
+
+    if( pixel_format == SDL_PIXELFORMAT_UNKNOWN )
+        pixel_format = SDL_GetWindowPixelFormat( sdl_window );
+
     if( pixel_format == SDL_PIXELFORMAT_UNKNOWN )
         pixel_format = sdl_pixelformats[ vid.drawmode ];
 
@@ -897,24 +919,47 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     sdl_texture = SDL_CreateTexture( sdl_renderer, pixel_format,
                                     SDL_TEXTUREACCESS_STREAMING,
                                     req_width, req_height );
+    if( sdl_texture == NULL )
+    {
+        // [Arcade] The renderer need not support the window's own format.
+        // Fall back to the display mode format, and then draw in that instead,
+        // keeping the texture and the drawing format together.
+        uint32_t alt_format = SDL_GetWindowPixelFormat( sdl_window );
+
+        if( (alt_format != SDL_PIXELFORMAT_UNKNOWN) && (alt_format != pixel_format) )
+        {
+            GenPrintf( EMSG_warn, "No %s texture, using %s\n",
+                SDL_GetPixelFormatName( pixel_format ),
+                SDL_GetPixelFormatName( alt_format ) );
+            sdl_texture = SDL_CreateTexture( sdl_renderer, alt_format,
+                                    SDL_TEXTUREACCESS_STREAMING,
+                                    req_width, req_height );
+            if( sdl_texture )
+                pixel_format = alt_format;  // draw in what we actually got
+        }
+    }
     if( sdl_texture == NULL)
         goto failed;
 
-    // [Arcade] The drawing format must come from the texture, which is what
-    // I_FinishUpdate actually fills, not from the window surface.  The window
-    // surface is a separate buffer that is never presented under SDL2, and in
-    // fullscreen it can have a different size, format and pitch than the mode
-    // that was requested (the window manager, or a failed mode switch, gives
-    // back the desktop size).  Taking the geometry from it put a foreign pitch
-    // into SDL_UpdateTexture and skewed every row of the screen.
-    vid.bitpp = SDL_BITSPERPIXEL( pixel_format );
-    vid.bytepp = SDL_BYTESPERPIXEL( pixel_format );
+    // [Arcade] Drawing format follows the texture that I_FinishUpdate fills.
+    // Where the window surface exists these are its own values, bit for bit as
+    // stock had them; where it does not, they are derived the same way instead
+    // of from a NULL dereference.
+    //
+    // It has to be SDL_AllocFormat, NOT the SDL_BITSPERPIXEL macro.  They
+    // disagree for the packed formats: SDL_PIXELFORMAT_RGB888 is 24 to the
+    // macro and 32 to an SDL_PixelFormat, because the macro reports the bits
+    // that carry colour while the struct reports the bits a pixel occupies.
+    // vid.bitpp picks the software drawer, so the macro selects the 24bpp
+    // drawer for what is really a 32bpp pixel and every texture on screen comes
+    // out mangled.  See docs/arcade/gotchas.md.
+    SDL_PixelFormat * texture_format = SDL_AllocFormat( pixel_format );
+    if( texture_format == NULL )
+        goto failed;
 
-    // Get surface for palette draw.
-    // Not present on every driver: SDL2 cannot give a window surface once the
-    // window has a renderer, unless the video driver has its own framebuffer
-    // (X11 and Wayland do, KMSDRM does not), so it can legitimately be NULL.
-    vidSurface = SDL_GetWindowSurface( sdl_window );
+    vid.bitpp = texture_format->BitsPerPixel;
+    vid.bytepp = texture_format->BytesPerPixel;
+    SDL_FreeFormat( texture_format );
 
     if( vidSurface )
     {
@@ -922,14 +967,6 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
         vid.direct_rowbytes = vidSurface->pitch; // correct, even on Mac
         vid.direct_size = vidSurface->pitch * vid.height; // correct, even on Mac
         vid.direct = vidSurface->pixels;
-
-        if( verbose
-            && (vidSurface->format->BytesPerPixel != vid.bytepp) )
-        {
-            GenPrintf( EMSG_ver, "  Window surface is %i bpp %i byte, texture is %i bpp %i byte\n",
-                vidSurface->format->BitsPerPixel, vidSurface->format->BytesPerPixel,
-                vid.bitpp, vid.bytepp );
-        }
     }
     else
     {
@@ -946,6 +983,9 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
                 req_width, req_height, vid.bitpp, vid.bytepp,
                 SDL_GetPixelFormatName( pixel_format ),
                 win_width, win_height );
+        GenPrintf( EMSG_ver, "  Window surface %s, display mode format %s\n",
+                vidSurface ? SDL_GetPixelFormatName( vidSurface->format->format ) : "none",
+                SDL_GetPixelFormatName( SDL_GetWindowPixelFormat( sdl_window ) ) );
     }
 
    

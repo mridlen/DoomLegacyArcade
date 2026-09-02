@@ -72,14 +72,42 @@ Note the read is also *out of bounds*: 400 rows at a 4096-byte stride is 1.6 MB 
 ## The rule
 
 **`SDL_UpdateTexture` takes the pitch of the data you are giving it, not the pitch of anything on
-the screen.** More generally, in the SDL2 path the window surface describes the *window*, and the
-engine's geometry must come from what it actually fills — the texture.
+the screen.**
 
-So `vid.bitpp` / `vid.bytepp` are now derived from the texture's pixel format
-(`SDL_BITSPERPIXEL` / `SDL_BYTESPERPIXEL` of `pixel_format`) rather than from `vidSurface->format`.
-On X11 the two agree (`SDL_PIXELFORMAT_RGB888`, 24 bpp in 4 bytes) so nothing changes on a working
-machine; where they disagree, the texture is the one that is right, because it is the one being
-filled. A verbose mismatch line reports it if they ever differ.
+## The second bug, which was mine
+
+The first attempt at this went further and took `vid.bitpp` / `vid.bytepp` from the texture as well,
+via `SDL_BITSPERPIXEL()` / `SDL_BYTESPERPIXEL()` of the format enum, on the reasoning that the
+texture is what gets filled so the texture is what must be described. The reasoning is right. The
+macros are a trap:
+
+```
+                             SDL_PixelFormat | SDL_BITSPERPIXEL macro
+  SDL_PIXELFORMAT_RGB888        32 bpp       |       24 bpp        DIFFER
+  SDL_PIXELFORMAT_BGR888        32 bpp       |       24 bpp        DIFFER
+  SDL_PIXELFORMAT_ARGB8888      32 bpp       |       32 bpp        same
+  SDL_PIXELFORMAT_RGB565        16 bpp       |       16 bpp        same
+  ...
+```
+
+For the packed 32-bit-with-no-alpha formats the macro reports the bits that carry **colour** (24)
+while an `SDL_PixelFormat` reports the bits a pixel **occupies** (32). `RGB888` is the format an
+ordinary X11 window has, so `vid.bitpp` went 32 → 24 on every such machine, `V_Setup_VideoDraw`
+selected `DRAW24` instead of `DRAW32`, and the software renderer drew 4-byte pixels with the 3-byte
+drawer. Every texture on screen came out mangled — in the software and native drawmodes only, since
+OpenGL does not go through this at all.
+
+So: derive the drawing format with **`SDL_AllocFormat( pixel_format )`**, never the macros. Where a
+window surface exists that yields its `format->BitsPerPixel` and `format->BytesPerPixel` unchanged —
+it is the same call SDL made to build the surface's own format — so this is bit-for-bit what stock
+did. Where there is no surface it is derived the same way instead of dereferencing NULL.
+
+The texture is then created from the **window surface's** format rather than
+`SDL_GetWindowPixelFormat()`, which reports the format of the display *mode* — a different thing
+that need not match the window's framebuffer. Both ends now come from one place, which is what the
+original bug was really about. If the renderer cannot make a texture in that format, the code falls
+back to the display mode format *and moves the drawing format with it*, so the two can never drift
+apart again.
 
 ## `vidSurface` can legitimately be NULL
 
@@ -109,13 +137,33 @@ out wide; `SDL_RenderSetLogicalSize` would pillarbox it instead.
 `./doomlegacy -v` prints one line per mode set:
 
 ```
-  Draw 1024x768, 24 bpp, 4 bytes (SDL_PIXELFORMAT_RGB888), window 1024x768
+  Draw 1024x768, 32 bpp, 4 bytes (SDL_PIXELFORMAT_RGB888), window 1024x768
+  Window surface SDL_PIXELFORMAT_RGB888, display mode format SDL_PIXELFORMAT_RGB888
 ```
 
 **If the two sizes differ, the display is being scaled** — fine in itself, but it is the condition
-under which the old pitch bug appeared, so it is worth knowing. The line is printed for both the
-initial window and every later mode change, including the switch into fullscreen.
+under which the pitch bug appeared, so it is worth knowing. The second line names the window
+surface's format and the display mode's; where *those* differ is where the second bug hid. Both are
+printed for the initial window and for every later mode change, including the switch into
+fullscreen.
+
+**Check the bpp against stock before believing a change here is harmless.** The `DRAW32`→`DRAW24`
+regression was invisible to everything automated: it builds, it runs, `make smoke` passes 5/5, and
+it only shows as wrong *pixels*. What catches it is comparing the drawing format with what the
+previous build derived — build the old commit in a throwaway worktree, add a temporary
+`GenPrintf(EMSG_warn, ...)` of `vid.bitpp`/`vid.bytepp` to it, and run both:
+
+```
+STOCK: STOCKPROBE draw 1024x768 bitpp=32 bytepp=4 surf_fmt=SDL_PIXELFORMAT_RGB888
+FIXED:   Draw 1024x768, 32 bpp, 4 bytes (SDL_PIXELFORMAT_RGB888), window 1024x768
+```
+
+Comparing *screenshots* between the two builds does not work, and the attempt is a good warning: a
+`-warp` run is not deterministic enough. Repeated runs of the same binary produce several different
+images — the shot lands a tic or two apart depending on load time — so a real difference and normal
+jitter look alike. Both builds have to be checked against each other for run-to-run variation before
+any frame comparison means anything, and here it meant nothing.
 
 `make smoke` covers this path only as far as "it still runs"; the `warp` and `exitlevel` checks run
 under `dummy`, where the window matches the drawing size and the wrong pitch is invisible. A change
-to the present path needs either the probe above or Mark's eyes on the cabinet.
+to the present path needs the probe above, the bpp comparison, or Mark's eyes on the cabinet.

@@ -6,6 +6,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 ---
 
+- **`SDL_BITSPERPIXEL()` and `SDL_PixelFormat.BitsPerPixel` disagree, and the difference selects
+  the wrong software drawer.** For the packed 32-bit formats that carry no alpha, the macro
+  reports the bits that hold **colour** and the struct reports the bits a pixel **occupies**:
+
+  ```
+                          SDL_PixelFormat | SDL_BITSPERPIXEL
+    SDL_PIXELFORMAT_RGB888     32 bpp     |      24 bpp       DIFFER
+    SDL_PIXELFORMAT_BGR888     32 bpp     |      24 bpp       DIFFER
+    SDL_PIXELFORMAT_ARGB8888   32 bpp     |      32 bpp       same
+    SDL_PIXELFORMAT_RGB565     16 bpp     |      16 bpp       same
+  ```
+
+  `RGB888` is the format of an ordinary X11 window, and `vid.bitpp` is what `V_Setup_VideoDraw`
+  switches on to pick the drawer — so reading it through the macro quietly asked for `DRAW24` on a
+  32bpp screen and drew 4-byte pixels with the 3-byte drawer. Every texture on screen came out
+  mangled, in the software and native drawmodes only.
+  - `SDL_BYTESPERPIXEL()` agrees with the struct for every format, so the *stride* stays right and
+    nothing shears; only the pixel packing is wrong, which is why it reads as "glitchy textures"
+    rather than as a video mode fault.
+  - Use **`SDL_AllocFormat( fmt )`** and read `BitsPerPixel`/`BytesPerPixel` from it. That is the
+    same call SDL makes when it builds a surface's format, so it matches what a surface would have
+    reported, for any format.
+  - It cost a bad build on the cabinet. Nothing automated catches it: it compiles, it runs, and
+    `make smoke` passes — the damage is only in the pixels. → `software-fullscreen.md`
+
 - **The 24 and 32 bpp software column drawers had an unsigned `heightmask`, and it crashed every
   sprite.** `R_DrawColumn_24`/`_32` (`r_draw24.c`/`r_draw32.c`) declared
   `unsigned int heightmask = dc_texheight - 1`, where `R_DrawColumn_8` (Boom's original, killough)
