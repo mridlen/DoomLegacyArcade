@@ -105,6 +105,9 @@ SDL_Window * sdl_window = NULL;
 SDL_Texture * sdl_texture = NULL;
 SDL_Renderer * sdl_renderer = NULL;
 uint16_t  display_index = 0;  // SDL2 can have multiple displays
+// [Arcade] The startup window was created hidden and has not been shown.
+// See VID_SetMode_vid and I_FinishUpdate.
+static byte  sdl_window_unshown = 0;
 #endif
 
 // Only one vidSurface, else releasing oldest faults in SDL.
@@ -324,6 +327,17 @@ void I_FinishUpdate(void)
     if( rendermode == render_soft )
     {
 #ifdef SDL2
+        // [Arcade] Something is drawing to the startup window, which is
+        // created hidden: the fatal-error console or the Launcher.  Bring it
+        // up.  This is deliberately not the same as the alt-tab test below --
+        // that one is a window which *was* shown and has been hidden by the
+        // window manager, and must be left alone.
+        if( sdl_window_unshown )
+        {
+            SDL_ShowWindow( sdl_window );
+            sdl_window_unshown = 0;
+        }
+
         // From Eternity Engine.
         // Windows alt-tab during fullscreen will hide fullscreen,
         // and bad things happen (unspecified) if we draw to it then.
@@ -887,6 +901,7 @@ void VID_SDL_release( void )
         SDL_DestroyWindow( sdl_window );
         sdl_window = NULL;
     }
+    sdl_window_unshown = 0;  // [Arcade] belongs to that window
 #endif
 }
 
@@ -898,6 +913,26 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
 {
 #ifdef SDL2
     uint32_t sdl_reqflags = sdl_window_flags[req_fullscreen];
+
+    // [Arcade] Create the startup window hidden.
+    //
+    // I_StartupGraphics opens an 800x600 window before the wads are read, and
+    // on a normal launch **nothing is ever drawn to it** -- the startup
+    // messages go to the terminal and the log, and the only screen update
+    // before I_RequestFullGraphics replaces this window is the one inside
+    // d_main.c's fatal_error branch.  So all it does is flash an empty window
+    // of the wrong size, and on a cabinet that is the first thing anyone sees.
+    //
+    // It is not removed, because two things do still need it: the fatal-error
+    // console and the Launcher both draw here, before the real video mode
+    // exists.  Instead it is shown lazily, by I_FinishUpdate, the moment
+    // anything actually draws -- so an error still puts itself on screen, and
+    // a healthy launch shows nothing until the real mode is up.
+    if( graphics_state <= VGS_startup )
+    {
+        sdl_reqflags = (sdl_reqflags & ~SDL_WINDOW_SHOWN) | SDL_WINDOW_HIDDEN;
+    }
+
     // SDL2 does not have test for VideoModeOK
 #else
     // [WDJ] SDL_VideoModeOK calls SDL_ListModes which invalidates the previous modelist.
@@ -938,6 +973,8 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
 #endif
     if( sdl_window == NULL)
         return;  // Modes were prechecked, SDL should not fail.
+
+    sdl_window_unshown = ( sdl_reqflags & SDL_WINDOW_HIDDEN ) ? 1 : 0;
 
     // Can get the window surface, and draw to that.
     // Or can get a texture, and copy our screen to that.

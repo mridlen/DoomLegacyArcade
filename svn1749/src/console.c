@@ -1293,6 +1293,26 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
     {
         // Protect against segfaults during video mode switch.
         if( ! vid.draw_ready )   goto done;
+
+        // [Arcade] Nothing goes on screen before the real video mode exists.
+        //
+        // This is the "loading console": con_self_refresh is set until
+        // D_DoomLoop starts drawing, so every startup message repainted the
+        // window I_StartupGraphics opens -- 800x600, fixed, opened before the
+        // wads are even read, and then thrown away when the configured mode is
+        // set.  On a cabinet that flash of a wrong-sized window is the first
+        // thing anyone sees, and the text in it is already going to the
+        // terminal and to the log, where it can actually be read afterwards.
+        //
+        // The startup window still exists, still has its buffers, and is still
+        // where the fatal-error console and the Launcher draw -- both of which
+        // call CON_Draw_Console and I_FinishUpdate themselves rather than
+        // coming through here, and both of which bring the window up when they
+        // do (sdl/i_video.c, sdl_window_unshown).  So an error still puts
+        // itself on screen; a healthy launch shows nothing until the real mode
+        // is up, and then only if a message arrives before D_DoomLoop clears
+        // con_self_refresh.
+        if( graphics_state < VGS_fullactive )   goto done;
         // Have graphics, but do not have refresh loop running.
 #if defined(SMIF_WIN_NATIVE) || defined(SMIF_OS2_NATIVE) 
         // show startup screen and message using only 'software' graphics
@@ -1311,6 +1331,13 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
     {
         // Protect against segfaults during video mode switch.
         if( ! vid.draw_ready )   goto done;
+
+        // [Arcade] Same rule as above: nothing on screen before the real
+        // video mode exists.  This is the branch the startup messages
+        // actually take -- con_video is not up yet that early -- so it is the
+        // one that was painting the 800x600 startup window.
+        if( graphics_state < VGS_fullactive )   goto done;
+
         // Text messages without con_video graphics.
         CON_Draw_Console ();  // Text with or without con_video
         I_FinishUpdate ();

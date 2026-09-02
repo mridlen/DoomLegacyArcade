@@ -1,8 +1,9 @@
 # Software rendering in fullscreen, and the pitch that skews it
 
 *Part of the DoomLegacy arcade cabinet build. Read before changing `VID_SetMode_vid`,
-`I_FinishUpdate`, or anything else that touches `sdl_texture`, `vidSurface`, `vid.direct*` or the
-fullscreen mode list in `sdl/i_video.c`.*
+`I_FinishUpdate`, the startup window, or anything else that touches `sdl_texture`, `vidSurface`,
+`vid.direct*` or the fullscreen mode list in `sdl/i_video.c`. The startup window also involves the
+self-refresh block in `console.c`.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index. For the
 *other* way a video mode change goes wrong — the one that looks like a freeze — see
@@ -230,3 +231,47 @@ any frame comparison means anything, and here it meant nothing.
 `make smoke` covers this path only as far as "it still runs"; the `warp` and `exitlevel` checks run
 under `dummy`, where the window matches the drawing size and the wrong pitch is invisible. A change
 to the present path needs the probe above, the bpp comparison, or Mark's eyes on the cabinet.
+
+---
+
+## The startup window
+
+`I_StartupGraphics` opens a window **before the wads are read**, at a fixed 800x600
+(`INITIAL_WINDOW_WIDTH`/`HEIGHT`), and `I_RequestFullGraphics` later throws it away and creates the
+configured one. On a cabinet that is a wrong-sized window flashing up as the first thing anyone
+sees.
+
+**It is not decoration — it is the startup console.** `con_self_refresh` is true until `D_DoomLoop`
+clears it, and `GenPrintf_va` (`console.c`) repaints and flips on *every* message while it is set,
+so the wad list and the init messages were being drawn there. Two other things draw to it as well,
+and they are the reason it cannot simply be deleted: the **fatal-error console** and the
+**Launcher**, both in `d_main.c`, run before the real video mode exists and are the only way an
+operator with no terminal sees a startup failure.
+
+So it is suppressed rather than removed, in two halves:
+
+- **`sdl/i_video.c`** creates it with `SDL_WINDOW_HIDDEN` when `graphics_state <= VGS_startup`, and
+  `I_FinishUpdate` shows it the first time anything actually draws (`sdl_window_unshown`). That is
+  deliberately *not* the same as the alt-tab test beside it: that one is a window which **was**
+  shown and has been hidden by the window manager, and must be left alone.
+- **`console.c`** returns early from both self-refresh branches while
+  `graphics_state < VGS_fullactive`, so routine startup messages no longer paint. Without this the
+  first `CONS_Printf` after the window exists brings it straight back up, which is exactly what the
+  first attempt did.
+
+**Gate the second branch, not just the first.** The `if( con_self_refresh || (emsg & EMSG_now) )`
+block is the obvious one and is *not* the one that fires: `con_video` is not up that early, so
+startup messages take the `else if( ! con_video )` branch below it. Both are gated now. This was
+found by printing `__builtin_return_address(0)` from the show path and running it through
+`addr2line` — worth remembering, because `console.c` is one of the **ISO-8859 files that grep
+silently skips** (`gotchas.md`), so grepping it for `I_FinishUpdate` returns nothing at all and the
+call sites look like they do not exist.
+
+Verified both ways round: on a healthy launch the window is created hidden and never shown, and
+the startup text still appears on stdout and in the log; with an explicit early
+`I_FinishUpdate` — the shape of the fatal-error console — the show path fires and the window
+appears.
+
+The cost is that a slow load now shows whatever was on screen before rather than a progress
+console. On the Pi the load is a couple of seconds, and the text is still in the terminal and the
+log where it can be read after the fact.

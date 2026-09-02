@@ -284,6 +284,12 @@ to anyone else running this port. Each is written up in full in the commit that 
   Raspberry Pi asked for 320x200 came up rendering 1024x768 in software. Software fullscreen also no
   longer changes the display mode at all, so switching to it is instant and does not make the monitor
   re-sync.
+- **No loading window at startup.** The engine used to open a fixed 800x600 window before it had
+  even read the wads, paint the startup messages into it, and then throw it away when the configured
+  video mode was set — so launching flashed a wrong-sized window before the game appeared. The
+  startup messages go to the terminal and the log as they always did, and nothing is put on screen
+  until the real video mode is up. A startup *failure* still shows itself: the error console and the
+  Launcher bring the window up when they draw.
 - **The Launcher screen** no longer appears on every launch, only after an actual startup error.
 - **Screenshots are on F12** rather than the stock SysRq (Alt+PrtSc), which a GNOME desktop
   intercepts before the game ever sees it.
