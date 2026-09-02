@@ -61,6 +61,59 @@ A fixed-bpp software drawmode's depth is not negotiable, so the config does not 
 also makes an **already-wrong config file harmless**, which matters because `create_initial_
 drawmode_config()` can still create one — and it corrects the file on the next config save.
 
+## The same bug at startup, fixed later
+
+The assertion above sat inside `V_switch_drawmode`'s `if( change_config )` branch, which is the
+**menu** path. Startup calls `V_switch_drawmode( set_drawmode, 0 )` — `change_config` is 0 — so the
+assertion never ran, and `SCR_apply_video_settings` overwrote the validated depth from
+`cv_scr_depth` exactly as before. A config carrying a `scr_depth` its drawmode cannot do therefore
+still failed, just at launch rather than at the menu:
+
+```
+Request video: 320 x 200 (32 bits)
+Modes  24bpp 1920x1080 ... 24bpp 640x350 24bpp 320x240 24bpp 320x200No 32 bpp modes
+Change Graphics failed: err=-102, fullscreen=0
+```
+
+Note what that mode list says: the display offers **28 modes, every one of them 24bpp**, including
+the 320x200 being asked for. Nothing about the size was wrong. The only thing missing was a 32-bit
+mode, which was never the drawmode's depth in the first place — `scr_depth "32 bits"` was left in
+`config.cfg` from an OpenGL session.
+
+The startup failure does not look like the menu one. `I_RequestFullGraphics` returns `FAIL_select`
+before it ever reaches `VID_SetMode`, so the engine keeps the **startup console window** it already
+had — `INITIAL_WINDOW_WIDTH` x `INITIAL_WINDOW_HEIGHT`, 800x600 — and runs there. It reads as "the
+loading screen sets the resolution and it stays that way", which sends you looking at the resolution
+and not at the depth.
+
+So the assertion is now made on both paths: once before the `if( change_config )` block, covering
+startup, and again inside it after the drawmode's own config file is loaded, because that file
+carries its own `scr_depth` and would put the wrong value straight back.
+
+```
+                                  before            after
+  Software 8bit,  scr_depth 32    err, 800x600      320x200 fullscreen
+  Software 24bit, scr_depth 32    err, 800x600      320x200 fullscreen
+  Native,         scr_depth 32    already worked    unchanged
+  OpenGL,         scr_depth 32    already worked    unchanged
+```
+
+The guard is `(drawmode >= DRM_8pal) && (drawmode <= DRM_32)`. The lower bound matters now that this
+runs on every switch: `drawmode_to_bpp[DRM_none]` is 0, which is not a valid `scr_depth`.
+
+**Expect one extra `M_Verify_Config` complaint** wherever a config file's `scr_depth` disagrees with
+its drawmode, because the override is now exactly the "did not take" condition the verifier looks
+for:
+
+```
+config line 202: "scr_depth" did not take -- file says "24 bits", value is "8 bits"
+```
+
+That is the assertion doing its job, not a lost setting, and it clears itself the next time a
+`-devmode` session saves the config. `make smoke` shows it because the harness forces
+`Software 8bit` over a config written at another depth; the cabinet's own config selects OpenGL,
+where the assertion does not apply, so it does not appear there.
+
 ## What was tried first and rejected
 
 The first attempt was a recovery in `SCR_SetMode`: catch the failure and re-enter `SCR_SetMode` with
