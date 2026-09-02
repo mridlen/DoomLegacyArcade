@@ -32,6 +32,51 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     default in `st_stuff.c` does nothing on a machine with an existing config — the saved
     `overlay` line has to be edited (or re-saved from a `-devmode` session) as well.
 
+- **Small status numbers when the view is too small for the tall ones** (`ST_overlayDrawer`,
+  `compact_hud`). Element *positions* come from the layout scale `xdiv`, which a view grid divides
+  by the number of columns. The digits are drawn at the *art* scale `vid.dupx`, which is
+  `vid.width / 320` — an **integer**, and it floors at 1. Above 640x480 the two move together; below
+  it they part company, and in a 2x2 the layout keeps shrinking while the 14x16 `STTNUM` digits do
+  not. Measured, three-digit values, top-left cell:
+
+  | mode | health | ammo | armor | |
+  | --- | --- | --- | --- | --- |
+  | 320x200 2x2 | **-17**..25 | 75..117 | 108..150 | 9px overlap, health off the left edge |
+  | 400x300 2x2 | **-11**..31 | 104..146 | 145..187 | 1px overlap |
+  | 512x384 2x2 | -2..40 | 145..187 | 198..240 | 11px clear |
+  | 640x480 2x2 | 8..50 | 192..234 | 258..300 | the layout as designed |
+
+  The tightest pair is **ammo against armor** — 66 base units apart with three digits to fit
+  between — so that is the test, and it lands exactly where the overlap starts. `STYSNUM` is
+  **4x6** against `STTNUM`'s **14x16**, is already cached for the classic status bar, and the same
+  `ST_drawOverlayNum` takes it, so three digits become 12 pixels instead of 42.
+  - **The icons go with the tall digits.** `SBOHEALT` and friends are 16 wide and cannot be drawn
+    smaller either; three of them is a fifth of a 160 pixel cell, and the armour one lands past the
+    right edge and into the next player's view. Position carries the meaning instead, as it does in
+    the stock bar — health left, ammo middle, armour right. The blue-armour cue is lost in a
+    compact view; there is nowhere to put it.
+  - **A full screen view is never compact, at any resolution.** There `xdiv` and `vid.dupx` agree
+    and the layout is the 320x200 one it was drawn for — so single player at 320x200 keeps the tall
+    digits and the icons, which is the vanilla HUD and fits by construction. Verified unchanged at
+    every resolution tested, and unchanged for 2x2 at 640x480 and above.
+  - The K/I/S block, the ammo breakdown and the run total are `ST_SOLO_HUD` already, so they never
+    appear in a split view and needed nothing. The **level clock** did benefit for free: at
+    `CLK_DY` 9 below `lowerbar_y` it was inside the 16-tall digits in a 2x2 at 320x200 and now
+    clears them.
+  - Verified by measurement, not by eye: a probe printing each element's span at 320x200, 400x300,
+    512x384 and 640x480 for one, two and four views, then a screenshot diff against the previous
+    build. The status row differs by 59% of its pixels while **both 3D view areas are pixel
+    identical**, which is also what proves the run pair was deterministic enough for the comparison
+    to mean anything.
+
+- **Key icons never step by less than they are wide** (`ST_drawOverlayKeys`). Same cause, separate
+  symptom: the step is `(ST_KEY_WIDTH + 1) * vid.fdupx` — the *layout* scale — while each key is
+  drawn at the art scale. In a 2x2 at 320x200 that is a **3 pixel step for a 7x5 patch**, so the
+  three keys are drawn on top of each other. Floored at the patch size, taken from the patch rather
+  than assumed: `ST_KEY_WIDTH` is 6 but `STKEYS0` is **7** wide. Floored at the width and not
+  width+1 deliberately, so the normal scales are untouched — there the step already equals it
+  (7*fdupx against a 7 wide patch, 14 against 14 at 640x480).
+
 - **Blue armour gets its own overlay icon** — **`SBOARMBL`**, added to `legacy.wad`, drawn by the
   `m` element in place of `SBOARMOR` when `armortype >= 2`. Green absorbs a third and blue a half,
   so 100 green points are worth much less than 100 blue ones and the bare number could not say
