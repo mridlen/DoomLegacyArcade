@@ -390,9 +390,13 @@ written up in full in the doc named beside it.
   window's framebuffer, a different buffer that SDL2 never presents, and `vid.direct_rowbytes` is
   its pitch. The two are equal only while the window is exactly the size being drawn — true in a
   window, routinely false in fullscreen — so passing the wrong one worked everywhere except
-  fullscreen, where it sheared every row after the first. Geometry in the SDL2 path comes from
-  the texture, never the window surface, and `SDL_GetWindowSurface` can return NULL (KMSDRM).
-  → `software-fullscreen.md`
+  fullscreen, where it sheared every row after the first. `SDL_GetWindowSurface` can also return
+  NULL (KMSDRM). → `software-fullscreen.md`
+- **Never read a pixel depth with `SDL_BITSPERPIXEL()` — use `SDL_AllocFormat()`.** They disagree
+  for the packed no-alpha formats: `SDL_PIXELFORMAT_RGB888`, which is what an ordinary X11 window
+  has, is 24 to the macro and 32 to an `SDL_PixelFormat`. `vid.bitpp` picks the software drawer, so
+  the macro drew 4-byte pixels with the 3-byte drawer and mangled every texture on screen — in the
+  software and native drawmodes only, and with `make smoke` passing throughout. → `gotchas.md`
 - **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
 - **Node-builder rounding shows up as hairline seams in the GL renderer, in two separate
   families, and each needed its own fix.** A diagonal linedef split by a BSP partition gets its
