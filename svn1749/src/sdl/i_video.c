@@ -575,10 +575,23 @@ boolean  VID_Query_Modelist( byte request_drawmode, byte request_fullscreen, byt
         byte bpp = SDL_BITSPERPIXEL( mode.format );
         // [Arcade] The size bound applies to what the engine draws, which for
         // a scaled software fullscreen is not the size of the display mode it
-        // is shown in.  Applying it here would reject the software drawmodes
-        // outright on a display that advertises nothing small enough, and fall
-        // back to a native window before the mode list is ever built.
-        byte size_ok = (request_drawmode < DRM_opengl)
+        // is shown in.  Applying it here would reject these drawmodes outright
+        // on a display that advertises nothing small enough, and fall back to
+        // a native window before the mode list is ever built.
+        //
+        // Only DRM_8pal and DRM_native, NOT the explicit-bpp software
+        // drawmodes (Software 15/16/24/32bit), even though they are software
+        // too.  Those are the ones whose request survives into
+        // I_RequestFullGraphics as DRM_explicit_bpp, where an empty mode list
+        // is a dead end -- "No 24 bpp modes", goto no_modes -- rather than the
+        // fallthrough to draw_8pal that rebuilds at the native depth and picks
+        // up the scaled modes.  Letting them past this test replaced a clean
+        // early rejection (V_switch_drawmode returns 0, the caller falls back
+        // to a native window) with "Change Graphics failed: err=-102" after
+        // the rendermode teardown has already run.  An explicit bpp that the
+        // display does not offer should still be refused here.
+        byte size_ok = (request_drawmode == DRM_8pal)
+                        || (request_drawmode == DRM_native)
                         || ((mode.w <= MAXVIDWIDTH) && (mode.h <= MAXVIDHEIGHT));
 
         if( (bpp == request_bitpp) && size_ok )
