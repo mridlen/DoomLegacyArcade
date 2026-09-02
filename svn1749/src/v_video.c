@@ -429,6 +429,26 @@ byte  V_switch_drawmode( byte drawmode, byte change_config )
     // Any HWR functions triggered by any OnChange functions
     // must have been setup in I_Rendermode_setup.
 
+    // [Arcade] Reconcile the screen depth with the drawmode, on the startup
+    // path too.  The checks above validated this drawmode against its own bit
+    // depth -- and then SCR_apply_video_settings, which runs next on both
+    // paths, throws that away and takes req_bitpp straight from cv_scr_depth.
+    // A config whose scr_depth does not match its drawmode therefore asks
+    // I_RequestFullGraphics for a depth nothing validated.
+    //
+    // On a display that does not offer it, that is a dead end rather than a
+    // fallback: "No 32 bpp modes", goto no_modes, "Change Graphics failed:
+    // err=-102".  A cabinet with scr_depth "32 bits" left over from an OpenGL
+    // config, switched to a software drawmode on a 24bpp X server, would not
+    // start in that drawmode at all -- and every mode the display offered was
+    // 24bpp, including the 320x200 being asked for.
+    //
+    // The identical assertion below covers the menu path, where it has to be
+    // repeated because the drawmode's own config file is loaded in between and
+    // carries its own scr_depth.  See docs/arcade/drawmode-switching.md.
+    if( (drawmode >= DRM_8pal) && (drawmode <= DRM_32) )
+        CV_SetValue( &cv_scr_depth, drawmode_to_bpp[drawmode] );
+
     // Must not execute on first drawmode change.
     if( change_config )
     {
@@ -472,7 +492,7 @@ byte  V_switch_drawmode( byte drawmode, byte change_config )
             // This also makes an already-wrong config file harmless, which
             // matters because create_initial_drawmode_config() writes
             // whatever depth was current when the file was created.
-            if( drawmode <= DRM_32 )
+            if( (drawmode >= DRM_8pal) && (drawmode <= DRM_32) )
                 CV_SetValue( &cv_scr_depth, drawmode_to_bpp[drawmode] );
 
             SCR_apply_video_settings( 1 );  // setmodeneeded

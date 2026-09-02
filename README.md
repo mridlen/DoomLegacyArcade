@@ -151,6 +151,13 @@ to anyone else running this port. Each is written up in full in the commit that 
   empty, and that is a fatal error at startup rather than a fallback: "setup drawmode failed, cannot
   use native window". The software renderer now scales into whatever the desktop is, so it no longer
   needs the display to offer a mode it can draw at.
+- **A colour depth left over from another drawmode stopped the game starting in software mode.**
+  Each drawmode has a fixed depth and the engine checks it, then immediately discards that check and
+  takes the depth from the config instead — so a `config.cfg` still saying 32 bits from an OpenGL
+  session asked a 24-bit display for a 32-bit mode, found none, and gave up. The engine keeps
+  running in its 800x600 startup window, which reads as the loading screen setting the resolution
+  rather than as a failure. The drawmode's own depth is now asserted at startup as well as on the
+  menu path.
 - **Selecting a software drawmode from the video menu killed the display.** Each drawmode's config
   file carries its own colour depth, and nothing checked it against what that drawmode can actually
   do — so a palette mode asked for a 32-bit screen, the mode change failed *after* the renderer had
