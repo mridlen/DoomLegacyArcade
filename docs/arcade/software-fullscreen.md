@@ -164,10 +164,28 @@ if this is touched again:
   modes added before that suppress the fallthrough and the display's own modes drop out of the list
   entirely. That was the first version of this change, and the tell was `Found 5 Video Modes` where
   6 were expected.
-- **`VID_Query_Modelist` had to stop applying the size bound to software drawmodes**, or the
-  drawmode is rejected before the list is ever built and the whole thing falls back to a native
-  window. The bound is on what the engine can *draw*, which is no longer the size of the mode it is
-  displayed in.
+- **`VID_Query_Modelist` had to stop applying the size bound — but only for `DRM_8pal` and
+  `DRM_native`**, or the drawmode is rejected before the list is ever built and the whole thing
+  falls back to a native window. The bound is on what the engine can *draw*, which is no longer the
+  size of the mode it is displayed in.
+
+  Relaxing it for *every* software drawmode, which is what the first version did, is a regression.
+  The explicit-bpp ones (`Software 15/16/24/32bit`) reach `I_RequestFullGraphics` as
+  `DRM_explicit_bpp`, where an empty list is a **dead end** — `No 24 bpp modes`, `goto no_modes` —
+  not the fallthrough to `draw_8pal` that rebuilds at the native depth and picks up the scaled
+  modes. Letting them past the test traded a clean early rejection (`V_switch_drawmode` returns 0,
+  the caller falls back to a native window, nothing is torn down) for
+
+  ```
+  Change Graphics failed: err=-102, fullscreen=1
+  Modes  24bpp 1024x768No 24 bpp modes
+  ```
+
+  arriving *after* the rendermode teardown — which is the dead-display-that-looks-like-a-freeze
+  from `drawmode-switching.md`. An explicit bpp the display does not offer must still be refused
+  here. With the bound restricted to the two recoverable drawmodes, `no_modes` is unreachable for
+  the software renderer: either the depth matches and the list is non-empty, or the drawmode is
+  rejected before anything is torn down.
 
 The copy stretches to the window's aspect, so a 4:3 drawing size on a 16:9 panel comes out wide —
 the same as it always was for a 4:3 fullscreen mode. `SDL_RenderSetLogicalSize` would pillarbox it
