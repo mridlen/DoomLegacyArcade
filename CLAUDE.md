@@ -299,6 +299,7 @@ are kept below, in this file.
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
 | `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
+| `docs/arcade/software-fullscreen.md` | The SDL2 present path: texture pitch versus the window surface, why software fullscreen skewed, the fullscreen mode list and GPU scaling | `VID_SetMode_vid`, `I_FinishUpdate`, `sdl_texture`/`vidSurface`/`vid.direct*` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
 | `docs/arcade/building.md` | The build scripts: capability probing, the traps they encode, Windows | `tools/build.sh`, `tools/build.ps1`, `build.bat` |
@@ -384,6 +385,14 @@ written up in full in the doc named beside it.
 - **When widening a per-player cvar, grep for its `[1]` registration.** The declaration being
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`
+- **`SDL_UpdateTexture` takes the pitch of the buffer you hand it, not the pitch of anything on
+  screen.** The engine draws into its own buffer (`vid.ybytes` per row); `vidSurface` is the
+  window's framebuffer, a different buffer that SDL2 never presents, and `vid.direct_rowbytes` is
+  its pitch. The two are equal only while the window is exactly the size being drawn — true in a
+  window, routinely false in fullscreen — so passing the wrong one worked everywhere except
+  fullscreen, where it sheared every row after the first. Geometry in the SDL2 path comes from
+  the texture, never the window surface, and `SDL_GetWindowSurface` can return NULL (KMSDRM).
+  → `software-fullscreen.md`
 - **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
 - **Node-builder rounding shows up as hairline seams in the GL renderer, in two separate
   families, and each needed its own fix.** A diagonal linedef split by a BSP partition gets its

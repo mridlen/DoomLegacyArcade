@@ -349,7 +349,11 @@ void I_FinishUpdate(void)
 
 #ifdef SDL2
         // Update the SDL_Texture that is in video memory.
-        SDL_UpdateTexture( sdl_texture, NULL, vid.display, vid.direct_rowbytes );
+        // [Arcade] The pitch is that of the SOURCE, vid.display, which is our
+        // own malloc'ed buffer of vid.ybytes per row.  It is not the pitch of
+        // the window surface (vid.direct_rowbytes), which is a different buffer
+        // and, in fullscreen, usually a different width.
+        SDL_UpdateTexture( sdl_texture, NULL, vid.display, vid.ybytes );
 
         // SDL2 docs use RenderClear, but we do not have any conflicting drawers.
 //        SDL_RenderClear( sdl_renderer );
@@ -896,18 +900,52 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     if( sdl_texture == NULL)
         goto failed;
 
-    // Get surface for palette draw
-//    if( modelist_bitpp == 8 )
+    // [Arcade] The drawing format must come from the texture, which is what
+    // I_FinishUpdate actually fills, not from the window surface.  The window
+    // surface is a separate buffer that is never presented under SDL2, and in
+    // fullscreen it can have a different size, format and pitch than the mode
+    // that was requested (the window manager, or a failed mode switch, gives
+    // back the desktop size).  Taking the geometry from it put a foreign pitch
+    // into SDL_UpdateTexture and skewed every row of the screen.
+    vid.bitpp = SDL_BITSPERPIXEL( pixel_format );
+    vid.bytepp = SDL_BYTESPERPIXEL( pixel_format );
+
+    // Get surface for palette draw.
+    // Not present on every driver: SDL2 cannot give a window surface once the
+    // window has a renderer, unless the video driver has its own framebuffer
+    // (X11 and Wayland do, KMSDRM does not), so it can legitimately be NULL.
+    vidSurface = SDL_GetWindowSurface( sdl_window );
+
+    if( vidSurface )
     {
-        vidSurface = SDL_GetWindowSurface( sdl_window );
-
-        vid.bitpp = vidSurface->format->BitsPerPixel;
-        vid.bytepp = vidSurface->format->BytesPerPixel;
-
         // The video buffer might be padded to power of 2, for some modes (Mac)
         vid.direct_rowbytes = vidSurface->pitch; // correct, even on Mac
         vid.direct_size = vidSurface->pitch * vid.height; // correct, even on Mac
         vid.direct = vidSurface->pixels;
+
+        if( verbose
+            && (vidSurface->format->BytesPerPixel != vid.bytepp) )
+        {
+            GenPrintf( EMSG_ver, "  Window surface is %i bpp %i byte, texture is %i bpp %i byte\n",
+                vidSurface->format->BitsPerPixel, vidSurface->format->BytesPerPixel,
+                vid.bitpp, vid.bytepp );
+        }
+    }
+    else
+    {
+        vid.direct_rowbytes = 0;
+        vid.direct_size = 0;
+        vid.direct = NULL;
+    }
+
+    if( verbose )
+    {
+        int win_width = 0, win_height = 0;
+        SDL_GetWindowSize( sdl_window, &win_width, &win_height );
+        GenPrintf( EMSG_ver, "  Draw %ix%i, %i bpp, %i bytes (%s), window %ix%i\n",
+                req_width, req_height, vid.bitpp, vid.bytepp,
+                SDL_GetPixelFormatName( pixel_format ),
+                win_width, win_height );
     }
 
    
