@@ -1760,6 +1760,23 @@ void  ST_drawOverlayKeys( int x, int y, player_t * plyr )
 
     xinc = (int)((ST_KEY_WIDTH + 1) * vid.fdupx);
     yinc = (int)((ST_KEY_HEIGHT + 1) * vid.fdupy);
+
+    // [Arcade] Never step by less than the key patch is actually drawn.
+    // The step comes from the *layout* scale, which a view grid divides by the
+    // number of columns, while the patch is drawn at the *art* scale, which is
+    // an integer and cannot go below 1.  In a 2x2 at 320x200 that is a 3 pixel
+    // step for a 7x5 patch, so the three keys are drawn on top of each other.
+    // Floored at the patch size rather than patch+1: at the normal scales the
+    // step already equals it -- 7*fdupx against a 7 wide patch -- so this
+    // changes nothing there.
+    {
+        patch_t * kp = V_patch( keys[0] );
+        int  minx = kp->width  * vid.dupx;
+        int  miny = kp->height * vid.dupy;
+
+        if( xinc < minx )  xinc = minx;
+        if( yinc < miny )  yinc = miny;
+    }
     yh = y;  // upper row is same as lower row when no skull keys
     // if both skull and cards, then move cards up a row	  
     if( cards & 0x38 )
@@ -1813,6 +1830,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     // before returning.
     byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
     float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
+    // [Arcade] Status numbers small enough for this view, and whether the
+    // icons beside them have room.  Set once, below.
+    boolean    compact_hud;
+    patch_t ** statnum;
 
     D_View_Grid( &cols, &rows );
     D_View_Cell_Pos( vind, &col, &row );
@@ -1854,11 +1875,45 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
         sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy;
     }
 
+    // [Arcade] Small status numbers when the tall ones do not fit the view.
+    //
+    // Element positions come from the layout scale (xdiv), which a view grid
+    // divides by the number of columns; the digits are drawn at the art scale
+    // (vid.dupx), which is an integer and floors at 1.  Below 640x480 those
+    // two part company, and in a 2x2 the layout keeps shrinking while the
+    // 14x16 STTNUM digits do not, until the columns run into each other.
+    // Measured, 2x2, three digit values:
+    //
+    //     320x200  health -17..25  ammo  75..117  armor 108..150   9px overlap
+    //     400x300  health -11..31  ammo 104..146  armor 145..187   1px overlap
+    //     512x384  health  -2..40  ammo 145..187  armor 198..240   11px clear
+    //     640x480  health   8..50  ammo 192..234  armor 258..300   the design
+    //
+    // The tightest pair is ammo against armor, 66 base units apart, needing
+    // three digits between them -- so that is the test, and it reproduces
+    // where the overlap actually starts.  STYSNUM is 4x6 against STTNUM's
+    // 14x16 and is already cached for the classic status bar, so the same
+    // drawer takes it: three digits become 12 pixels instead of 42.
+    //
+    // The icons go with them.  SBOHEALT and friends are 16 wide and, like the
+    // digits, cannot be drawn smaller -- three of them is a fifth of a 160
+    // pixel cell, and the armour one lands past the right edge and into the
+    // next player's view.  Position carries the meaning here, as it does in
+    // the stock bar: health left, ammo middle, armour right.
+    //
+    // A full screen view is never compact, at any resolution: there xdiv and
+    // vid.dupx agree and the layout is the 320x200 one it was drawn for.
+    {
+        patch_t * tp = V_patch( tallnum[0] );
+
+        compact_hud = ( (300 - 234) * xdiv ) < (float)( 3 * tp->width * vid.dupx );
+    }
+    statnum = compact_hud ? shortnum : tallnum;
+
     V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH );
 
     lowerbar_y = SCY(198,y0,ydiv) - (int)( 16 * sf_dupy );
     // x, y are already scaled.
-
     cmds = cv_stbaroverlay.string;
 
     while ((c=*cmds++))
@@ -1870,9 +1925,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
          case 'h': // draw health
            ST_drawOverlayNum(SCX(50, x0, xdiv), lowerbar_y,
                              plyr->health,
-                             tallnum, NULL, plyr->health_pickup);
+                             statnum, NULL, plyr->health_pickup);
 
-           V_DrawScalePic_Num (SCX(52, x0, xdiv), lowerbar_y, sbo_health);
+           if( ! compact_hud )
+               V_DrawScalePic_Num (SCX(52, x0, xdiv), lowerbar_y, sbo_health);
            break;
 
          case 'f': // draw frags
@@ -1882,9 +1938,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            {
                ST_drawOverlayNum(SCX(300, x0, xdiv), SCY(2, y0, ydiv),
                                  st_fragscount,
-                                 tallnum, NULL, 0);
+                                 statnum, NULL, 0);
 
-               V_DrawScalePic_Num (SCX(302, x0, xdiv), SCY(2, y0, ydiv), sbo_frags);
+               if( ! compact_hud )
+                   V_DrawScalePic_Num (SCX(302, x0, xdiv), SCY(2, y0, ydiv), sbo_frags);
            }
            break;
 
@@ -1894,9 +1951,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            {
                ST_drawOverlayNum(SCX(234, x0, xdiv), lowerbar_y,
                                  plyr->ammo[plyr->weaponinfo[plyr->readyweapon].ammo],
-                                 tallnum, NULL, plyr->ammo_pickup);
+                                 statnum, NULL, plyr->ammo_pickup);
 
-               V_DrawScalePic_Num (SCX(236, x0, xdiv), lowerbar_y, i);
+               if( ! compact_hud )
+                   V_DrawScalePic_Num (SCX(236, x0, xdiv), lowerbar_y, i);
            }
            break;
 
@@ -1907,7 +1965,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
          case 'm': // draw armor
            ST_drawOverlayNum(SCX(300, x0, xdiv), lowerbar_y,
                              plyr->armorpoints,
-                             tallnum, NULL, plyr->armor_pickup);
+                             statnum, NULL, plyr->armor_pickup);
 
            // [Arcade] Blue icon for blue armour.  armortype is 1 for the
            // green (1/3 absorption) and 2 for the blue (1/2) -- p_inter.c
@@ -1915,6 +1973,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            // which also picks up the megasphere.  The number beside it is the
            // same either way; it is the *type* that this makes visible, and
            // 100 green points are worth much less than 100 blue ones.
+           if( ! compact_hud )
            {
                boolean blue = ( plyr->armortype >= 2 )
                               && VALID_LUMP(sbo_armor_blue);

@@ -229,6 +229,14 @@ to anyone else running this port. Each is written up in full in the commit that 
   for it, which is how a player ends up wedged somewhere vanilla cannot reach — the lift by the
   E1M2 exit being the cabinet's own example. There is now a **Monster Height** setting, defaulting
   to vanilla, with Heretic exempt.
+- **The HUD overlapped itself in splitscreen below 640x480.** Where the elements *sit* scales
+  smoothly with the screen, but the size they are *drawn* at is a whole-number multiple that cannot
+  go below 1:1 — so in a four-way split at 320x200 the ammo and armour counts ran into each other,
+  the health count ran off the left edge of its quarter, and the three key icons were drawn on top
+  of one another. A view too small for the big status numbers now uses the small ones (the same
+  digits the classic status bar uses for ammo) and drops the icons beside them, and the key icons
+  never step by less than they are wide. Full screen play is unchanged at every resolution, and so
+  is a four-way split at 640x480 and above.
 - **Deathmatch rankings covered the whole screen when anybody died**, replacing both views in an
   ordinary two-player game rather than just the dead player's. They are drawn per view now.
 - **Time Limit in Net Options did nothing.** The row edited the engine's own limit, which is
