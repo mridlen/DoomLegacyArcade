@@ -139,6 +139,12 @@ to anyone else running this port. Each is written up in full in the commit that 
   and `R_DrawColumn_32` declared their height mask unsigned where the 8-bit drawer declares it
   signed, turning a no-op mask into a read four gigabytes past the texture. On a modern desktop
   colour depth that meant a segfault a second or two into any software-mode game.
+- **Software rendering was garbled in fullscreen.** The top line of the screen correct and
+  everything below it sheared sideways. The engine hands its finished frame to SDL with the wrong
+  row stride — that of the window's own framebuffer, a different buffer that is never displayed,
+  rather than that of the buffer being sent. The two match exactly while the window is the size
+  being drawn, which is always true in a window and rarely true in fullscreen, so the bug hid until
+  you went fullscreen. It also read 1.6 MB out of a 1.0 MB buffer.
 - **Selecting a software drawmode from the video menu killed the display.** Each drawmode's config
   file carries its own colour depth, and nothing checked it against what that drawmode can actually
   do — so a palette mode asked for a 32-bit screen, the mode change failed *after* the renderer had
