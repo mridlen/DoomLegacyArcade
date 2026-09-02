@@ -312,6 +312,21 @@ will sit at 100% of one core permanently, including while idling on the attract 
 sustained load rather than average, and make sure a fanless machine in a sealed cabinet won't
 thermally throttle.
 
+**A Raspberry Pi is enough.** Measured on a **Pi 3B+** with the software renderer, running
+four-player splitscreen — the heaviest thing the cabinet does, since every view is rendered
+separately:
+
+| Resolution | Four-player splitscreen |
+| --- | --- |
+| 640x480 | 35 FPS |
+| 800x600 | ~30 FPS |
+
+35 is the **engine's** ceiling, not the hardware's: `D_Display` is called once per game tic and the
+tic rate is 35, so nothing ever draws faster than that. 640x480 four-up is therefore full speed with
+headroom to spare, and fewer players is easier again. If a heavier level or a bigger screen does
+fall short, 320x200 and 400x300 can be selected fullscreen and are scaled up by the GPU, so dropping
+the render resolution costs sharpness rather than screen size.
+
 ## Building
 
 **The easy way — one command, and it tells you what to install if anything is missing.**
