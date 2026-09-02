@@ -140,9 +140,20 @@ const char * fullscreen_str[2] = {
 
 #ifdef SDL2
 // indexed by fullscreen
+// [Arcade] Only VID_SetMode_vid uses these, and only for the software
+// renderer; OpenGL creates its own window in ogl_sdl.c.
+//
+// Software fullscreen is SDL_WINDOW_FULLSCREEN_DESKTOP, not
+// SDL_WINDOW_FULLSCREEN.  The finished frame reaches the display as a texture
+// that SDL scales to the window, so the drawing size does not have to be a
+// mode the display can set -- and asking for one is worse than not: a real
+// mode switch is slow, it flickers, and a modern panel scales it anyway.
+// Keeping the desktop mode and scaling into it means any drawing size works,
+// the switch is instant, and the upscale is done by the GPU with nearest
+// filtering (SDL_HINT_RENDER_SCALE_QUALITY, set in VID_SetMode_vid).
 const static uint32_t sdl_window_flags[2] = {
   SDL_WINDOW_INPUT_GRABBED | SDL_WINDOW_SHOWN,   // windowed
-  SDL_WINDOW_FULLSCREEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_GRABBED,  // fullscreen
+  SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_GRABBED,  // fullscreen
 };
 
 #else
@@ -223,6 +234,46 @@ void  add_vid_mode( int w, int h )
     vm->w = w;
     vm->h = h;
 }
+
+// [Arcade] Offer the low resolutions in fullscreen too.
+//
+// Stock builds the fullscreen list from what the display advertises, which is
+// a leftover from SDL 1.2 where the drawing buffer *was* the video mode.
+// Under SDL2 the software renderer draws into a texture that is scaled to the
+// window, so any drawing size works fullscreen.  Without these, a request for
+// 320x200 fullscreen silently snapped to the nearest advertised mode -- a
+// Raspberry Pi set to 320x200 came up rendering 1024x768 in software, which on
+// that machine is the difference between comfortable and unplayable.
+//
+// Software only: the hardware renderer has no such scaling step and would put
+// a 320x200 viewport in the corner of the screen.
+//
+// Idempotent, so it is safe to call on either path into found_modes.
+static
+void  VID_add_scaled_modes( void )
+{
+    static const uint16_t scaled_modelist[][2] =
+      { {320,200}, {400,300}, {512,384}, {640,480}, {800,600} };
+    int m;
+
+    if( rendermode != render_soft )  return;
+
+    for( m = 0; m < (int)(sizeof(scaled_modelist)/sizeof(scaled_modelist[0])); m++ )
+    {
+        int sw = scaled_modelist[m][0];
+        int sh = scaled_modelist[m][1];
+        int j;
+
+        // The display may advertise it for real already.
+        for( j = 0; j < num_vid_mode; j++ )
+        {
+            if( (vid_modelist[j].w == sw) && (vid_modelist[j].h == sh) )  break;
+        }
+        if( j >= num_vid_mode )
+            add_vid_mode( sw, sh );
+    }
+}
+
 
 #ifdef SDL2
 // indexed by sw_drawmode_e
@@ -522,9 +573,15 @@ boolean  VID_Query_Modelist( byte request_drawmode, byte request_fullscreen, byt
         // Query display=0
         if( SDL_GetDisplayMode( 0, i, & mode ) < 0 )  continue;
         byte bpp = SDL_BITSPERPIXEL( mode.format );
-        if( (bpp == request_bitpp)
-            && (mode.w <= MAXVIDWIDTH)
-            && (mode.h <= MAXVIDHEIGHT) )
+        // [Arcade] The size bound applies to what the engine draws, which for
+        // a scaled software fullscreen is not the size of the display mode it
+        // is shown in.  Applying it here would reject the software drawmodes
+        // outright on a display that advertises nothing small enough, and fall
+        // back to a native window before the mode list is ever built.
+        byte size_ok = (request_drawmode < DRM_opengl)
+                        || ((mode.w <= MAXVIDWIDTH) && (mode.h <= MAXVIDHEIGHT));
+
+        if( (bpp == request_bitpp) && size_ok )
         {
 # ifdef DEBUG_VID
                 printf( "VALID\n" );
@@ -1403,12 +1460,33 @@ draw_8pal:
     VID_make_fullscreen_modelist( 1 );  // request_NULL or native
     if( num_vid_mode == 0 )
     {
-        // should not happen with fullscreen modes
-        GenPrintf( EMSG_error, "No usable fullscreen video modes.\n");
-        goto no_modes;
+        // [Arcade] MAXVIDWIDTH/MAXVIDHEIGHT bound what the engine can *draw*,
+        // and every mode of a display bigger than that is filtered out -- so a
+        // plain 1920x1080 panel that advertises nothing smaller leaves this
+        // list empty.  For software that is no longer a dead end: it draws at
+        // its own size and scales into whatever the desktop is, so the modes
+        // added at found_modes stand on their own.
+        if( rendermode != render_soft )
+        {
+            GenPrintf( EMSG_error, "No usable fullscreen video modes.\n");
+            goto no_modes;
+        }
+
+        VID_add_scaled_modes();
+        if( num_vid_mode == 0 )
+        {
+            GenPrintf( EMSG_error, "No usable fullscreen video modes.\n");
+            goto no_modes;
+        }
     }
 
 found_modes:
+    // [Arcade] After the bpp negotiation, so this cannot disturb it: an empty
+    // list at get_modelist is what makes an 8bpp request fall through to
+    // draw_8pal, and modes added before that would suppress the fallthrough
+    // and drop the display's own modes from the list.
+    VID_add_scaled_modes();
+
     // Have some requested video modes in modelist
     vid.bitpp = modelist_bitpp;
     vid.bytepp = select_bytepp;

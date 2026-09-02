@@ -119,18 +119,63 @@ rather than garbled. It is guarded now; the only loss without a surface is the 8
 the SDL2 path does not use anyway (the texture is never `INDEX8` — SDL2 has no palettized textures,
 so the engine always ends up drawing at the window's depth).
 
-## Drawing size does not have to match the window
+## Drawing size does not have to match the window, and now it usually doesn't
 
 `SDL_RenderCopy( ..., NULL, NULL )` scales the texture to the whole window, so the engine's
-resolution is independent of the display's. Fullscreen at a mode the display cannot set still comes
-out right — the GPU scales it — and `SDL_HINT_RENDER_SCALE_QUALITY` is set to `nearest`, so the
+resolution is independent of the display's. `SDL_HINT_RENDER_SCALE_QUALITY` is `nearest`, so the
 upscale stays sharp rather than blurring.
 
-That also means the mode-list filtering above is a leftover from SDL 1.2, where the surface *had* to
-be a real video mode. If low-resolution fullscreen is ever wanted on a slow machine — draw 320x200,
-let the GPU stretch it — the change is to offer the small sizes in the fullscreen list, not to
-touch this path. Note the copy stretches to the window's aspect, so a 4:3 mode on a 16:9 panel comes
-out wide; `SDL_RenderSetLogicalSize` would pillarbox it instead.
+The mode-list filtering above was a leftover from SDL 1.2, where the drawing buffer *was* the video
+mode, and it had two consequences on a machine that wants to render small:
+
+- **A low resolution could not be selected fullscreen at all.** The list holds only what the display
+  advertises, and `VID_GetModeForSize` snaps a request to the nearest entry — so a Pi set to
+  320x200 came up rendering 1024x768 in software, which on that machine is the difference between
+  comfortable and unplayable. Nothing reported the substitution.
+- **A display that advertises nothing small enough could not run software mode at all.** Every mode
+  wider than `MAXVIDWIDTH` (1600) or taller than `MAXVIDHEIGHT` (1200) is filtered out, so a panel
+  offering only 1920x1080 leaves the list empty — and that is not a fallback, it is
+  `I_Error( "FullGraphics: setup drawmode failed, cannot use native window." )`. The game does not
+  start. Reproduced by building with `MAXVIDWIDTH`/`MAXVIDHEIGHT` lowered to 800x600 so the one
+  advertised mode is filtered out:
+
+  ```
+  before:  No modes for Fullscreen, 8 bitpp
+           FullGraphics: setup drawmode failed, no valid modes.
+           No modes for Window, 24 bitpp
+           Error: FullGraphics: setup drawmode failed, cannot use native window.
+  after:   Found 5 Video Modes at 24 bpp
+           VID_SetMode(fullscreen,1)
+             Draw 320x200, 32 bpp, 4 bytes (SDL_PIXELFORMAT_RGB888), window 1024x768
+  ```
+
+So `VID_add_scaled_modes()` appends 320x200, 400x300, 512x384, 640x480 and 800x600 to the fullscreen
+list, skipping any the display already advertises for real, and the software fullscreen window is
+now **`SDL_WINDOW_FULLSCREEN_DESKTOP`** rather than `SDL_WINDOW_FULLSCREEN`: no mode switch at all,
+the desktop stays as it is, and the engine's frame is scaled into it. Three things to keep straight
+if this is touched again:
+
+- **Software only.** The hardware renderer has no scaling step — a 320x200 GL fullscreen would draw
+  a viewport in the corner of the screen. `VID_add_scaled_modes` returns immediately unless
+  `rendermode == render_soft`, and `sdl_window_flags` is read only by `VID_SetMode_vid`, which
+  `VID_SetMode` calls only for the software renderer (OpenGL builds its own window in `ogl_sdl.c`).
+- **It has to be appended at `found_modes:`, not inside `VID_make_fullscreen_modelist`.** An *empty*
+  list is what makes an 8-bit request fall through to `draw_8pal` and rebuild at the native depth;
+  modes added before that suppress the fallthrough and the display's own modes drop out of the list
+  entirely. That was the first version of this change, and the tell was `Found 5 Video Modes` where
+  6 were expected.
+- **`VID_Query_Modelist` had to stop applying the size bound to software drawmodes**, or the
+  drawmode is rejected before the list is ever built and the whole thing falls back to a native
+  window. The bound is on what the engine can *draw*, which is no longer the size of the mode it is
+  displayed in.
+
+The copy stretches to the window's aspect, so a 4:3 drawing size on a 16:9 panel comes out wide —
+the same as it always was for a 4:3 fullscreen mode. `SDL_RenderSetLogicalSize` would pillarbox it
+instead, if that is ever wanted.
+
+Mouse motion is in window pixels, so a 320x200 screen scaled to 1080p moves the pointer about six
+times slower relative to the game screen. The cabinet has no mouse and the mouse settings are
+devmode-only, so this is left alone.
 
 ## Verifying a change here
 
