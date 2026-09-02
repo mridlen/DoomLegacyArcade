@@ -145,6 +145,12 @@ to anyone else running this port. Each is written up in full in the commit that 
   rather than that of the buffer being sent. The two match exactly while the window is the size
   being drawn, which is always true in a window and rarely true in fullscreen, so the bug hid until
   you went fullscreen. It also read 1.6 MB out of a 1.0 MB buffer.
+- **Software mode would not start at all on a display that offers no small resolution.** The
+  fullscreen list is built from the modes the display advertises, with anything bigger than the
+  engine's own 1600x1200 drawing limit filtered out — so a panel offering only 1920x1080 leaves it
+  empty, and that is a fatal error at startup rather than a fallback: "setup drawmode failed, cannot
+  use native window". The software renderer now scales into whatever the desktop is, so it no longer
+  needs the display to offer a mode it can draw at.
 - **Selecting a software drawmode from the video menu killed the display.** Each drawmode's config
   file carries its own colour depth, and nothing checked it against what that drawmode can actually
   do — so a palette mode asked for a 32-bit screen, the mode change failed *after* the renderer had
@@ -256,6 +262,13 @@ to anyone else running this port. Each is written up in full in the commit that 
 
 **Smaller things**
 
+- **Low resolutions can be chosen in fullscreen**, not just in a window. 320x200, 400x300, 512x384,
+  640x480 and 800x600 are offered fullscreen for the software renderer and scaled up by the GPU with
+  nearest-neighbour filtering, so they stay sharp. Previously the fullscreen list held only the modes
+  the display advertised and a request for anything else was silently snapped to the nearest one — a
+  Raspberry Pi asked for 320x200 came up rendering 1024x768 in software. Software fullscreen also no
+  longer changes the display mode at all, so switching to it is instant and does not make the monitor
+  re-sync.
 - **The Launcher screen** no longer appears on every launch, only after an actual startup error.
 - **Screenshots are on F12** rather than the stock SysRq (Alt+PrtSc), which a GNOME desktop
   intercepts before the game ever sees it.
