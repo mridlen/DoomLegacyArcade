@@ -24,8 +24,3 @@ objs/
 # Release staging built by the GitHub Actions workflow (and by anyone reproducing
 # its packaging step locally)
 /dist/
-
-# [Arcade] Locally rebuilt BSP nodes: derived from the operator's own IWADs.
-# Contains id Software map data -- never commit these.
-*-nodes.wad
-tools/.zdbsp/

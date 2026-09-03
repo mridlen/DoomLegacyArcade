@@ -403,6 +403,19 @@ else
   CC:=$(CC_CMD)
 endif
 
+# [Arcade] The vendored ZDBSP node builder (src/nodebuild) is the only C++ in
+# the tree.  Match the C compiler family so both halves agree on the runtime.
+ifeq ($(CC_SELECT), clang)
+  CXX_CMD:=clang++
+else
+  CXX_CMD:=g++
+endif
+ifdef CC_ENVIRONMENT
+  CXX ?= $(CXX_CMD)
+else
+  CXX:=$(CXX_CMD)
+endif
+
 SMIF_LIST:= SDL LINUX_X11 FREEBSD_X11 WIN_NATIVE OS2_NATIVE DOS_NATIVE
 
 # Default system media interface
@@ -1359,6 +1372,14 @@ CFLAGS+=-ffast-math -fno-strict-aliasing
 LCFLAGS:=$(CFLAGS)
 CFLAGS+=$(OPTS) $(OPTINC)
 
+# [Arcade] Flags for the vendored ZDBSP node builder (the only C++ here).
+# Same optimization and defines as the C build, minus the C language standard,
+# which g++ rejects.  -fno-strict-aliasing is already in CFLAGS and matters:
+# the builder type-puns.
+CXXFLAGS:=$(filter-out -std=%,$(CFLAGS)) -std=gnu++11
+# The C driver links, so ask it for the C++ runtime explicitly.
+LIBS+=-lstdc++
+
 ifdef MAC
   # MAC linker does not accept these flags.
 else
@@ -1409,8 +1430,13 @@ ifdef UMAPINFO_DIR
 UMIOBJS:= doom_umi_api.o doom_umi_parser.o doom_umi_lexer.o doom_umi_keywords.o
 endif
 
+# [Arcade] nodebuild directory: vendored ZDBSP, built at level load so the
+# WAD's rounded node partitions cannot mis-order the BSP (the slime trail).
+NBOBJS:= nb_build.o nodebuild.o nodebuild_events.o nodebuild_extract.o \
+	nodebuild_gl.o nodebuild_utility.o nodebuild_classify_nosse2.o
+
 # combine all objs ( main, INTERFACE specific, asm, CDMUS )
-OBJS:=$(addprefix $(O)/, $(SMIFOBJS) $(OPTOBJS) $(MOBJS) $(UMIOBJS))
+OBJS:=$(addprefix $(O)/, $(SMIFOBJS) $(OPTOBJS) $(MOBJS) $(UMIOBJS) $(NBOBJS))
 MAINOBJ:=$(addprefix $(O)/, $(MAINOBJ))
 
 
@@ -1654,6 +1680,13 @@ endif
 
 ifdef UMAPINFO_DIR
 # UMAPINFO rules
+# [Arcade] C++ rule for the vendored node builder.
+# DISABLE_SSE keeps it on the portable scalar classifier, so the same source
+# builds on every target instead of needing ZDBSP's runtime SSE dispatch (whose
+# selector lives in its command-line main.cpp).  NB_QUIET drops its progress bar.
+$(O)/%.o: $(SD)nodebuild/%.cpp
+	$(CXX) $(CXXFLAGS) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
+
 $(O)/%.o: $(SD)umapinfo/%.c
 	$(CC) $(CFLAGS) -Iumapinfo/ -c $< -o $@
 endif

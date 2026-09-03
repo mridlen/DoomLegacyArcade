@@ -615,46 +615,6 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       something to do casually. → `attract.md` for the idle timeout this interacts with (an
       unfocused cabinet still counts as idle; the timeout does not care about focus)
 
-### The software renderer's slime trail is a *different* bug, and the vertex fix does not touch it
-
-Reported on E1M1 in software 24bpp: a thin green stripe running down from the nukage pool through
-the brown floor to the bottom of the screen, at X 2994 Y -2879 Z -24, ANG 295, sector 49.
-
-**It is not the wall/flat seam family above, and `P_Remove_Slime_Trails` neither causes nor cures
-it.** Proved by A/B in one binary with a temporary `-noslimefix` switch: the two renders differ
-(bbox `(406,274)-(753,455)`, so the switch was working) but the stripe is byte-identical in both.
-Do not re-diagnose this as vertex rounding.
-
-**What it actually is — an occlusion-ordering error, not a geometry error.** Instrumenting the
-visplanes and `R_StoreWallRange` at that viewpoint, at 1024x768:
-
-- The stripe is exactly 4 columns, x=406..409, colour `(23,51,15)` — NUKAGE3, sector 53, floor -48.
-- The nukage plane (`pic=0 h=-48`) has `bot=553` at every neighbouring column but `bot=767` — the
-  bottom of the screen — at 406..409. Nothing clipped it there.
-- The brown floor (`pic=18 h=-24`, FLOOR5_2, sectors 49/56) is drawn by two visplanes, one ending
-  at x=405 and one starting at x=410. Columns 406..409 belong to neither: a 4-column hole, which
-  the nukage behind it fills.
-- The hole's cause: **line 178, the near nukage/brown floor edge (~240 units away), asks
-  `R_ClipPassWallSegment` for `[119..409]` but only stores `[378..405]`.** Columns 406..409 had
-  already been marked solid by line 265 — a one-sided wall in sector 55, **~730 units away**. A far
-  wall clipped a near one, so the step that should bound the pool was never drawn.
-- The BSP traversal log shows why it can happen: the player's own neighbouring subsector (nearest
-  seg **27.5** units) is visited *after* subsector 145 (nearest seg **694** units), which is what
-  marks 406..418 solid. The viewpoint sits essentially on top of linedef 191 and its node-split
-  vertex 441 — i.e. right on a partition, where the traversal's side test is degenerate.
-
-**Not yet fixed.** The remaining question is why that subtree is ordered ahead of the near one.
-Note `r_bsp.c:632` drops any seg narrower than one pixel (`if (x1 >= x2) return;`, with the comment
-"this is where PrBoom fixes gaps in OpenGL, by adding segs") and seg 442 of line 427 is dropped at
-exactly x=406 — suggestive, but it is one column and the hole is four, so it is not on its own the
-explanation.
-
-**Reproducing it.** Use the `setpos` command (below); the artifact is sensitive to where you stand,
-so nothing less than the exact coordinates is a reproduction. Measure it, never eyeball it: scan the
-floor band for a column with a long run of pixels where `g > r+18 and g > b+18`. Beware comparing
-"before" and "after" from *different* viewpoints — moving even 16 units reframes the scene enough
-that a fixed pixel window silently reports zero.
-
 ### The E1M1 slime trail is a rounded *node partition* -- and re-aligning it does NOT work
 
 The classic one, at X 2994 Y -2879 Z -24, ANG 295, sector 49: a green stripe running down from the
@@ -715,40 +675,64 @@ the hairline viewpoint as clean. Beware comparing "before" and "after" from *dif
 -- moving even 16 units reframes the scene enough that a fixed pixel window silently reports zero,
 which reads as a fix.
 
-### Rebuilt nodes are the fix: `tools/rebuild-nodes.sh`
+### Rebuilt nodes are the fix, and the engine builds them itself
 
-ZDBSP rebuilds the BSP with fixed-point vertices, so the partition rounding that causes the stripe
-never happens. Measured with the stock engine, at both reported viewpoints:
+ZDBSP is vendored into `svn1749/src/nodebuild/` and run at level load, so the WAD's rounded node
+partitions never reach the renderer. It keeps its vertices and partitions in fixed point, so the
+rounding that causes the whole slime-trail family cannot happen.
 
-| | stock nodes | ZDBSP nodes |
+`P_Rebuild_Nodes` (`p_setup.c`) is the glue: it hands the loaded VERTEXES/LINEDEFS/SIDEDEFS to
+`NB_Build` (`nodebuild/nb_build.cpp`) and converts the result into `vertex_t`/`seg_t`/
+`subsector_t`/`node_t` in `PU_LEVEL`. It runs after every node-format loader and before
+`P_Remove_Slime_Trails`, `P_GroupLines` and `HWR_SetupLevel`, all of which derive geometry from the
+segs. `-nonodebuild` turns it off, which is the A/B switch every measurement below used.
+
+**Measured**, same binary, `-nonodebuild` versus default:
+
+| | stock nodes | rebuilt |
 | --- | --- | --- |
-| X 2994 Y -2879 ANG 295 (stripe) | 4 columns | **0** |
-| X 3031 Y -2925 ANG 305 (hairline) | absent | absent, and one fewer suspect column |
+| stripe at X 2994 Y -2879 ANG 295 | 4 columns | **0** |
+| hairline at X 3031 Y -2925 ANG 305 | absent | absent |
+| built-in demos 1/2/3 at tic 900 | -- | **100% identical**, no desync |
+| E1M1 wall/flat corners pulled | 20 | 0 |
+| E1M7 wall/flat corners pulled | 43 | 1 |
+| E1M7 T-joins inserted | 103 | 17 |
+| "still not flush" | 0 | **0** |
+| MAP15 level load | 2798 ms | 2842 ms |
 
-The rest of the frame is 97.6% pixel-identical, so it is the same map, correctly ordered. All nine
-E1 maps load and quit cleanly with the rebuilt set; the whole IWAD rebuilds in under half a second.
+The seam numbers are the interesting corroboration: the arcade's own wall/flat and T-join fixers
+were largely compensating for the same node rounding, and with a properly built tree they have
+almost nothing left to do. "Still not flush" stays 0, which is the number that must not move.
 
-`./tools/rebuild-nodes.sh` fetches and builds ZDBSP into a gitignored `tools/.zdbsp/` if it is not
-already on PATH, runs it over each IWAD in `~/games/doom`, and writes `<NAME>-nodes.wad` beside it
-carrying only the maps (3.4 MB for DOOM, 2.9 MB for DOOM2). Load it with `-file`.
+**Things worth knowing before touching this.**
 
-**Three things to know before relying on this.**
-
-- **The output must never be committed or released.** A rebuilt map carries id Software's
-  LINEDEFS/SIDEDEFS/VERTEXES/SECTORS verbatim, and its nodes are a derivative of them. Generating it
-  locally from an IWAD you own is ordinary personal use; putting it in the repo or in a GitHub
-  release is redistributing id's map data. `*-nodes.wad` and `tools/.zdbsp/` are gitignored -- do
-  not force-add them. ZDBSP itself is GPLv2-or-later (Randy Heit); used as an external tool it puts
-  no obligation on DoomLegacy or its output, and linking it in later would be permitted (DoomLegacy
-  is GPL) provided its notices travel with it and source is offered.
-- **Nodes are gameplay state, not just rendering.** `R_PointInSubsector` decides which sector a
-  thing is in, so a rebuilt tree can in principle change simulation on a boundary case, and
-  **existing record demos for a rebuilt map may desync** -- including the ones the attract screen
-  plays back. Not tested here, because the scratch home had no recorded demos. Watch the attract
-  cycle after adopting this, and be ready to clear the affected records.
-- **The engine has no autoload.** It only picks up a nodes wad from `-file` on the command line,
-  and the cabinet launches `./doomlegacy` bare, so adopting this needs either a launcher wrapper or
-  a small engine change to add `<iwad>-nodes.wad` automatically when it sits next to the binary.
+- **It is a command-line switch, not a cvar, deliberately.** Nodes feed `R_PointInSubsector`, so
+  this is gameplay-affecting, and a gameplay-affecting cvar has to go into the demo header or
+  `G_demo_defaults()` or demos desync. A switch sidesteps that entirely, and the default is on, so
+  an operator never needs it.
+- **Demos do not desync** -- all three of DOOM.WAD's built-in demos are pixel-identical at tic 900
+  with the rebuild on and off, which is what makes replacing the tree outright viable rather than
+  needing a separate render-only tree. Re-check this if the builder is ever updated.
+- **The tree had never compiled C++.** `r_d3d/*.cpp` has a dep rule but is never built. The
+  Makefile now has a `CXX`, a `CXXFLAGS` (`CFLAGS` minus the C standard, which g++ rejects), a
+  `$(O)/%.o: $(SD)nodebuild/%.cpp` rule and `-lstdc++`. `-fno-strict-aliasing` matters: the builder
+  type-puns.
+- **`-DDISABLE_SSE` is not a performance oversight.** ZDBSP picks an SSE classifier at runtime
+  through a selector that lives in its command-line `main.cpp`, which is not vendored; the scalar
+  path is portable and the cost is invisible next to a level load.
+- **Local modifications to the vendored source are marked `[Arcade]`** -- currently only the
+  progress bar, gated behind `NB_QUIET`. `main.cpp` globals it needs (`MaxSegs`, `SplitCost`,
+  `AAPreference`, `PointToAngle`, `Warn`) and three `FLevel` members are reimplemented in
+  `nb_build.cpp` rather than vendoring `processor.cpp`, which is all wad file I/O.
+- **Nothing derived from an IWAD is written to disk**, which is the point of doing it in the engine
+  rather than shipping a re-noded PWAD: a rebuilt map carries id Software's map data verbatim, so
+  it could never have gone into the repo or a release. ZDBSP is GPLv2-or-later (Randy Heit) and
+  DoomLegacy is GPL, so linking it is fine; `COPYING.zdbsp` travels with the source.
+- **`P_Rebuild_Nodes` validates before it commits.** The builder de-duplicates vertices and drops
+  any a linedef does not use, so its vertex array is a *different set in a different order* -- it
+  hands back each line's remapped v1/v2, and that is what re-points the linedefs. The checks confirm
+  every index is in range and that no linedef endpoint moved (`dx`/`dy`, the bbox and the blockmap
+  were all derived from them already). Any failure logs and keeps the wad's nodes.
 
 ### `setpos` places the camera for headless rendering bugs
 

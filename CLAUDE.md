@@ -84,6 +84,9 @@ with "No such file or directory" on a `.dep` file. Create them with `make dirs` 
 
 Adding a new `.c` file requires manually adding its `.o` to the hand-maintained `MOBJS:=` list in
 `svn1749/src/Makefile` — there is no wildcard or auto-discovery, and omitting it fails at link time.
+The vendored ZDBSP node builder in `svn1749/src/nodebuild/` is the tree's **only C++**; its objects
+are the separate `NBOBJS:=` list, built by a `$(SD)nodebuild/%.cpp` rule with `$(CXX)`/`$(CXXFLAGS)`
+and linked via `-lstdc++`. → `docs/arcade/gotchas.md`
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
 `make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`, and
@@ -327,6 +330,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+| Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Driven by `P_Rebuild_Nodes` (`p_setup.c`); `-nonodebuild` disables it |
 
 `devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of
 this is gated on.

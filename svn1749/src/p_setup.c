@@ -184,6 +184,8 @@
 
 #include "hu_stuff.h"
 #include "console.h"
+#include "nodebuild/nb_build.h"   // [Arcade]
+#include "m_argv.h"
 
 
 #ifdef HWRENDER
@@ -481,6 +483,212 @@ void P_LoadSegs ( lumpnum_t lumpnum )
     }
 
     Z_Free (data);
+}
+
+
+// [Arcade] Rebuild the BSP with the vendored ZDBSP node builder.
+//
+// The WAD's NODES lump records each partition as the seg the builder split on,
+// and that seg's far endpoint is a node-invented vertex rounded to whole map
+// units -- so the stored partition can sit a fraction of a degree off the
+// linedef it lies on.  A viewpoint that lands within a unit or two of such a
+// partition is then put on the wrong side, the BSP is walked out of order, and
+// a wall hundreds of units away is drawn -- and marked solid -- before the near
+// wall that should have occluded it.  The near wall loses those columns and the
+// sector behind shows through as a vertical stripe: the E1M1 slime trail.
+//
+// Rebuilding sidesteps the whole family, because ZDBSP keeps its vertices and
+// partitions in fixed point and never rounds them into the lump format.  It
+// costs a few tens of milliseconds per level.
+//
+// Patching the *loaded* nodes instead does not work -- see docs/arcade/gotchas.md,
+// which records the attempt and why it merely moved the artifact.
+static void P_Rebuild_Nodes( void )
+{
+    nb_level_t    nb;
+    nb_vertex_t * in_v = NULL;
+    nb_line_t   * in_l = NULL;
+    nb_side_t   * in_s = NULL;
+    uint32_t    * line_v1 = NULL;  // original vertex indices, to re-point lines
+    uint32_t    * line_v2 = NULL;
+    uint32_t      i;
+    boolean       ok = false;
+
+    if( numvertexes < 3 || numlines < 1 || numsides < 1 || numsectors < 1 )
+        return;
+
+    memset( &nb, 0, sizeof(nb) );
+
+    in_v = malloc( sizeof(nb_vertex_t) * numvertexes );
+    in_l = malloc( sizeof(nb_line_t) * numlines );
+    in_s = malloc( sizeof(nb_side_t) * numsides );
+    line_v1 = malloc( sizeof(uint32_t) * numlines );
+    line_v2 = malloc( sizeof(uint32_t) * numlines );
+    if( !in_v || !in_l || !in_s || !line_v1 || !line_v2 )  goto done;
+
+    for( i = 0; i < numvertexes; i++ )
+    {
+        in_v[i].x = vertexes[i].x;
+        in_v[i].y = vertexes[i].y;
+    }
+    for( i = 0; i < numsides; i++ )
+        in_s[i].sector = (int32_t)(sides[i].sector - sectors);
+    for( i = 0; i < numlines; i++ )
+    {
+        line_v1[i] = (uint32_t)(lines[i].v1 - vertexes);
+        line_v2[i] = (uint32_t)(lines[i].v2 - vertexes);
+        in_l[i].v1 = line_v1[i];
+        in_l[i].v2 = line_v2[i];
+        in_l[i].sidenum[0] = (lines[i].sidenum[0] == NULL_INDEX)
+                             ? NB_NO_SIDE : lines[i].sidenum[0];
+        in_l[i].sidenum[1] = (lines[i].sidenum[1] == NULL_INDEX)
+                             ? NB_NO_SIDE : lines[i].sidenum[1];
+    }
+
+    nb.in_vertexes = in_v;      nb.num_in_vertexes = numvertexes;
+    nb.in_lines = in_l;         nb.num_in_lines = numlines;
+    nb.in_sides = in_s;         nb.num_in_sides = numsides;
+    nb.num_in_sectors = numsectors;
+
+    if( ! NB_Build( &nb ) )
+    {
+        GenPrintf( EMSG_warn, "Node rebuild failed; keeping the wad's nodes.\n" );
+        goto done;
+    }
+
+    // The builder de-duplicates the vertices and drops any a linedef does not
+    // use, so out_vertexes is a different set in a different order.  It hands
+    // back each line's remapped v1/v2, which is what re-points the linedefs.
+    // Check every index before anything walks the tree.
+    for( i = 0; i < numlines; i++ )
+    {
+        if( nb.out_line_v1[i] >= nb.num_out_vertexes
+            || nb.out_line_v2[i] >= nb.num_out_vertexes )
+            goto build_bad;
+        // The rebuild must not move a linedef: its endpoints are map data, and
+        // dx/dy, the bbox and the blockmap were all derived from them already.
+        if( nb.out_vertexes[ nb.out_line_v1[i] ].x != lines[i].v1->x
+            || nb.out_vertexes[ nb.out_line_v1[i] ].y != lines[i].v1->y
+            || nb.out_vertexes[ nb.out_line_v2[i] ].x != lines[i].v2->x
+            || nb.out_vertexes[ nb.out_line_v2[i] ].y != lines[i].v2->y )
+            goto build_bad;
+    }
+    // Seg and subsector indices must be in range before anything walks them.
+    for( i = 0; i < nb.num_out_segs; i++ )
+    {
+        if( nb.out_segs[i].v1 >= nb.num_out_vertexes
+            || nb.out_segs[i].v2 >= nb.num_out_vertexes
+            || nb.out_segs[i].linedef >= numlines )
+            goto build_bad;
+    }
+    for( i = 0; i < nb.num_out_subsectors; i++ )
+    {
+        if( nb.out_subsectors[i].firstline + nb.out_subsectors[i].numlines
+            > nb.num_out_segs )
+            goto build_bad;
+    }
+
+    // --- commit ---------------------------------------------------------
+    {
+        vertex_t    * nv = Z_Malloc( nb.num_out_vertexes * sizeof(vertex_t), PU_LEVEL, NULL );
+        seg_t       * ns = Z_Malloc( nb.num_out_segs * sizeof(seg_t), PU_LEVEL, NULL );
+        subsector_t * nss = Z_Malloc( nb.num_out_subsectors * sizeof(subsector_t), PU_LEVEL, NULL );
+        node_t      * nn = Z_Malloc( nb.num_out_nodes * sizeof(node_t), PU_LEVEL, NULL );
+
+        memset( ns, 0, nb.num_out_segs * sizeof(seg_t) );
+        memset( nss, 0, nb.num_out_subsectors * sizeof(subsector_t) );
+        memset( nn, 0, nb.num_out_nodes * sizeof(node_t) );
+
+        for( i = 0; i < nb.num_out_vertexes; i++ )
+        {
+            nv[i].x = nb.out_vertexes[i].x;
+            nv[i].y = nb.out_vertexes[i].y;
+        }
+
+        vertexes = nv;
+        numvertexes = nb.num_out_vertexes;
+        // line_t held pointers into the old array, and the builder renumbered
+        // the vertices, so re-point through its mapping rather than by index.
+        for( i = 0; i < numlines; i++ )
+        {
+            lines[i].v1 = &vertexes[ nb.out_line_v1[i] ];
+            lines[i].v2 = &vertexes[ nb.out_line_v2[i] ];
+        }
+
+        for( i = 0; i < nb.num_out_segs; i++ )
+        {
+            seg_t *  li = &ns[i];
+            line_t * ldef = &lines[ nb.out_segs[i].linedef ];
+            int      side = nb.out_segs[i].side ? 1 : 0;
+
+            li->v1 = &vertexes[ nb.out_segs[i].v1 ];
+            li->v2 = &vertexes[ nb.out_segs[i].v2 ];
+            li->angle = ((angle_t) nb.out_segs[i].angle) << 16;
+            li->offset = ((fixed_t) nb.out_segs[i].offset) << FRACBITS;
+            li->linedef = ldef;
+            if( ldef->sidenum[side] == NULL_INDEX )  side = 0;
+            li->side = side;
+            li->sidedef = &sides[ ldef->sidenum[side] ];
+            li->frontsector = sides[ ldef->sidenum[side] ].sector;
+            if( (ldef->flags & ML_TWOSIDED) && (ldef->sidenum[side^1] != NULL_INDEX) )
+                li->backsector = sides[ ldef->sidenum[side^1] ].sector;
+            else
+                li->backsector = NULL;
+#ifdef HWRENDER
+            li->pv1 = li->pv2 = NULL;
+            li->length = P_SegLength( li );
+            li->lightmaps = NULL;
+#endif
+            li->numlights = 0;
+            li->rlights = NULL;
+        }
+
+        for( i = 0; i < nb.num_out_subsectors; i++ )
+        {
+            nss[i].numlines = nb.out_subsectors[i].numlines;
+            nss[i].firstline = nb.out_subsectors[i].firstline;
+        }
+
+        for( i = 0; i < nb.num_out_nodes; i++ )
+        {
+            int j, k;
+            nn[i].x = nb.out_nodes[i].x;
+            nn[i].y = nb.out_nodes[i].y;
+            nn[i].dx = nb.out_nodes[i].dx;
+            nn[i].dy = nb.out_nodes[i].dy;
+            for( j = 0; j < 2; j++ )
+            {
+                for( k = 0; k < 4; k++ )
+                    nn[i].bbox[j][k] = nb.out_nodes[i].bbox[j][k] << FRACBITS;
+                // ZDBSP's subsector flag is 0x80000000; the engine's is
+                // NF_SUBSECTOR, so re-flag rather than pass the bits through.
+                nn[i].children[j] = (nb.out_nodes[i].children[j] & NB_SUBSECTOR)
+                    ? ((nb.out_nodes[i].children[j] & ~NB_SUBSECTOR) | NF_SUBSECTOR)
+                    : nb.out_nodes[i].children[j];
+            }
+        }
+
+        segs = ns;              numsegs = nb.num_out_segs;
+        subsectors = nss;       numsubsectors = nb.num_out_subsectors;
+        nodes = nn;             numnodes = nb.num_out_nodes;
+        ok = true;
+    }
+
+build_bad:
+    if( !ok && nb.out_nodes )
+        GenPrintf( EMSG_warn, "Node rebuild rejected; keeping the wad's nodes.\n" );
+    NB_Free( &nb );
+
+done:
+    if( in_v )  free( in_v );
+    if( in_l )  free( in_l );
+    if( in_s )  free( in_s );
+    if( line_v1 )  free( line_v1 );
+    if( line_v2 )  free( line_v2 );
+
+    if( ok )
+        GenPrintf( EMSG_all, "Nodes rebuilt: %i segs, %i subsectors, %i nodes.\n",
+                   numsegs, numsubsectors, numnodes );
 }
 
 
@@ -2545,6 +2753,10 @@ boolean P_SetupLevel (int      to_episode,
     // [Arcade] After every node format's loader, before anything derives
     // geometry from the segs (P_GroupLines, and HWR_SetupLevel below, which
     // builds the floor and ceiling polygons these have to agree with).
+    // [Arcade] Rebuild the BSP before anything derives geometry from it.
+    if( ! M_CheckParm("-nonodebuild") )
+        P_Rebuild_Nodes();
+
     P_Remove_Slime_Trails();
 
     // [WDJ] Limits numsectors to 0xFFFE, or else reject calc will overflow.
