@@ -422,11 +422,20 @@ written up in full in the doc named beside it.
   the screen" was. Whole-screen pages now pass `V_SCALEEXACT`; menus, HUD and status bar keep the
   whole number on purpose. Scale through `V_scale_x`/`V_scale_y`, never by multiplying out by hand:
   they round, and the rounding is what stops adjacent runs leaving a seam. → `screen-fill.md`
-- **Under SDL2, `sdl_texture` belongs to the software renderer alone.** `VID_SetMode` required it in
-  both, so every OpenGL mode change failed, left `vid.modenum` describing the old mode, and the video
-  menu went on highlighting the resolution you had just changed away from. Likewise
-  `SDL_GetWindowDisplayMode` is the *fullscreen* mode, not the window: use
-  `SDL_GL_GetDrawableSize` for what GL actually draws on. → `screen-fill.md`
+- **An OpenGL resolution change is a real display mode switch, and three separate things stopped it.**
+  `VID_SetMode` required `sdl_texture`, which belongs to the software path alone, so every GL mode
+  change took the failure branch and left `vid.modenum` describing the old mode.
+  `SDL_GetWindowDisplayMode` reports the mode SDL *intends*, not the one it got — use
+  `SDL_GL_GetDrawableSize`. And a window created with `SDL_WINDOW_FULLSCREEN` only has its mode
+  applied once it has input focus, which a window created moments after its predecessor was destroyed
+  does not reliably get: it comes back flagged fullscreen at the desktop's size (winflags 0x517, no
+  `SDL_WINDOW_INPUT_FOCUS`, versus 0x717). Pin it with `SDL_SetWindowDisplayMode` and re-assert
+  fullscreen. There is no scaling step in the GL renderer, so if the mode cannot switch, GL renders at
+  the desktop resolution and nothing else will change that. → `screen-fill.md`
+- **A standalone SDL probe that does not reproduce the fault has not exonerated the code.** Three of
+  them got the resolution they asked for while the game did not; the fix had to be developed against
+  the game. And `SDL_GetError()` is stale unless a call just failed — `'Invalid window'` showed up
+  after a *successful* `SDL_CreateWindow` in the working probe too. → `screen-fill.md`
 - **A mechanical text-match edit in this tree can land in a commented-out copy of the line.**
   Several drawers in `v_video.c` keep `//    destend = ...` next to the live statement, and the
   indented live text is a substring of the commented one — so the replacement silently hits the

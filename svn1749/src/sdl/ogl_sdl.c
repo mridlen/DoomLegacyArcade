@@ -319,6 +319,66 @@ boolean OglSdl_SetMode(int w, int h, byte req_fullscreen)
     if( sdl_window == NULL)
         return false;  // Modes were prechecked, SDL should not fail.
 
+    // [Arcade] Make the fullscreen mode actually take.
+    //
+    // Creating the window with SDL_WINDOW_FULLSCREEN leaves SDL to infer which
+    // display mode to use, and its X11 backend only *applies* that mode once
+    // the window has input focus.  A window created immediately after its
+    // predecessor was destroyed -- which is exactly what a mode change from the
+    // menu does -- does not reliably get focus, and the result is a window that
+    // reports SDL_WINDOW_FULLSCREEN while still being the size of the desktop
+    // (flags 0x517 rather than 0x717: no SDL_WINDOW_INPUT_FOCUS).  The GL
+    // viewport is then the desktop's, so every resolution the operator picked
+    // rendered at the desktop resolution and the setting looked dead.
+    //
+    // Pinning the mode with SDL_SetWindowDisplayMode and re-asserting
+    // fullscreen applies it without waiting for focus.
+    if( req_fullscreen )
+    {
+        SDL_DisplayMode want, got;
+        int di = SDL_GetWindowDisplayIndex( sdl_window );
+        if( di < 0 )  di = 0;
+
+        SDL_zero( want );
+        want.w = w;
+        want.h = h;
+        want.format = 0;
+        want.refresh_rate = 0;
+
+        if( SDL_GetClosestDisplayMode( di, &want, &got ) )
+        {
+            SDL_SetWindowDisplayMode( sdl_window, &got );
+            // Drop out of fullscreen and back in, so the pinned mode is the
+            // one applied rather than whatever was inferred at create time.
+            SDL_SetWindowFullscreen( sdl_window, 0 );
+            SDL_SetWindowSize( sdl_window, w, h );
+            SDL_SetWindowFullscreen( sdl_window, SDL_WINDOW_FULLSCREEN );
+        }
+
+        SDL_RaiseWindow( sdl_window );
+
+        // The size arrives by ConfigureNotify, so give it a bounded moment to
+        // settle rather than reading a stale one.  20 x 10ms is imperceptible
+        // and is only spent when the size has not already arrived.
+        {
+            int k, dw = 0, dh = 0;
+            for( k = 0; k < 20; k++ )
+            {
+                SDL_PumpEvents();
+                SDL_GL_GetDrawableSize( sdl_window, &dw, &dh );
+                if( dw == w && dh == h )  break;
+                SDL_Delay( 10 );
+            }
+            if( (dw != w) || (dh != h) )
+            {
+                // Say so.  Silently rendering at a size nobody asked for is
+                // what made this look like the setting being ignored.
+                GenPrintf( EMSG_warn,
+                    "OpenGL: asked %ix%i fullscreen, got %ix%i\n", w, h, dw, dh );
+            }
+        }
+    }
+
     // SDL2 Wiki:
     // On the Apple OS X you must set the NSHighResolutionCapable Info.plist  property to YES,
     // otherwise you will not receive a High DPI OpenGL canvas.

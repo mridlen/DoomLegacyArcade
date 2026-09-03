@@ -223,23 +223,82 @@ vid.height = sdl_displaymode.h;
 ```
 
 `SDL_GetWindowDisplayMode` reports the mode the window would use **if it were fullscreen**, which for
-a windowed GL window is just the desktop mode. So every windowed OpenGL mode came up claiming the
-desktop's size whatever was requested, and the GL viewport was set to a rectangle bigger than the
-window it draws into. It now uses `SDL_GL_GetDrawableSize`, which is the real pixel size of the GL
-drawable in both window and fullscreen — and on a HiDPI display is the backing-store size, which is
-what a viewport wants. The display mode is still used for the pixel format.
+a windowed GL window is just the desktop mode — and, worse, for a fullscreen window it reports the
+mode SDL *intends* rather than the one it got. It now uses `SDL_GL_GetDrawableSize`, which is the
+real pixel size of the GL drawable in both window and fullscreen, and on a HiDPI display is the
+backing-store size, which is what a viewport wants. The display mode is still used for the pixel
+format.
 
-### What is *not* claimed
+### The third one, which was the actual complaint
 
-The cabinet's own behaviour was not reproduced end to end: the `offscreen` SDL driver advertises a
-single display mode, so a headless run cannot actually change resolution and watch it take. What was
-measured is that the stock binary emits `VID_SetMode failed to provide display` on every OpenGL mode
-change and the fixed one does not, and that the two assignments above are consequently reached. The
-real display (`xrandr`: 1366x768, 1280x720, 1024x768, 800x600, 640x480 — all inside the
-`MAXVIDWIDTH`/`MAXVIDHEIGHT` bound) offers five modes, so the mode list is not the constraint. **The
-resolution actually changing in OpenGL still needs checking on the cabinet.**
+With both of the above fixed the resolution *still* did not change. The engine was asking correctly —
+the log showed the mode list intact, `VID_GetModeForSize(800,600)` resolving to index 5, and
+`VID_SetMode(fullscreen,5)` calling `OglSdl_SetMode(800,600,1)` — and getting back a window the size
+of the desktop:
 
----
+```
+DIAG request 800x600 -> modetype=2 index=5 (800x600)
+VID_SetMode(fullscreen,5)
+DIAG OglSdl_SetMode asked 800x600 fs=1 flags=0x113
+DIAG   window 1366x768 drawable 1366x768 display 1366x768 winflags=0x517
+  OpenGL Got 1366x768, 24 bpp
+```
+
+The tell is in `winflags`. The window that worked (at startup) came back **0x717**; the one that did
+not came back **0x517**. The missing bit is `0x200`, `SDL_WINDOW_INPUT_FOCUS`. `SDL_WINDOW_FULLSCREEN`
+is set in both — SDL believes the window is fullscreen — but its X11 backend only *applies* the
+display mode once the window has input focus, and a window created in the same breath as its
+predecessor was destroyed does not reliably get it. So the window sat there flagged fullscreen at the
+desktop's size, `glViewport` was set to that, and every resolution the operator picked rendered at
+1366x768.
+
+Creating the window with `SDL_WINDOW_FULLSCREEN` also leaves SDL to *infer* which mode to use, from
+the window's dimensions. The fix pins it and re-asserts fullscreen so it is applied without waiting
+for focus:
+
+```c
+SDL_GetClosestDisplayMode( di, &want, &got );
+SDL_SetWindowDisplayMode( sdl_window, &got );
+SDL_SetWindowFullscreen( sdl_window, 0 );
+SDL_SetWindowSize( sdl_window, w, h );
+SDL_SetWindowFullscreen( sdl_window, SDL_WINDOW_FULLSCREEN );
+SDL_RaiseWindow( sdl_window );
+```
+
+followed by a bounded wait — at most 20 x 10ms, and only spent if the size has not already arrived —
+because the final size reaches SDL by `ConfigureNotify` and reading it immediately can read a stale
+one. If it still does not match, the engine now **says so** (`OpenGL: asked 800x600 fullscreen, got
+1366x768`) instead of rendering at a size nobody asked for. Verified on the cabinet's own display:
+
+```
+VID_SetMode(fullscreen,5)   OpenGL Got 800x600, 24 bpp   vid 800x600
+VID_SetMode(fullscreen,6)   OpenGL Got 640x480, 24 bpp   vid 640x480
+```
+
+### Why a standalone probe did not reproduce it
+
+Three separate SDL2 probes — a bare fullscreen GL window, one that pinned the display mode first, and
+one that replicated the whole sequence (software window with renderer and texture, released, GL
+fullscreen at the desktop size, released, GL fullscreen at 800x600) — **all got the size they asked
+for**, and the display really switched. Only the game reproduced it, because only the game fails to
+get input focus on the new window.
+
+Two lessons worth keeping:
+
+- **A probe that does not reproduce the fault has not exonerated the code.** It took four rounds
+  before the reproducer was accepted as the only reliable one, and the fix was then developed against
+  the game rather than the probe.
+- **`SDL_GetError()` is a red herring here.** The failing run showed `err='Invalid window'` right
+  after a *successful* `SDL_CreateWindow`, which looks damning. The probe that worked perfectly showed
+  the same string: it is stale, left by an earlier call, and SDL does not clear it on success. Check
+  the return value, not the error string.
+
+There is no scaling step in the hardware renderer — `VIDGL_Set_GL_Model_View` just calls
+`glViewport(0, 0, vid.width, vid.height)` — so unlike software, where the frame is drawn into a
+buffer and scaled into the window by SDL, an OpenGL resolution change is *only* a real display mode
+change. If a machine ever turns up where the mode cannot be switched (a Wayland session, for one),
+the warning above will fire and OpenGL will simply render at the desktop resolution; making it do
+otherwise would need rendering to a framebuffer object and blitting it scaled, which is not built.
 
 ## Verifying a change here
 
@@ -250,4 +309,8 @@ resolution actually changing in OpenGL still needs checking on the cabinet.**
 - For a change to the scale arithmetic: build the previous commit, run both with `V_SCALEEXACT`
   removed from its call sites, and compare screenshots byte for byte. They must be identical.
   Establish run-to-run determinism first, and only trust the static pages.
-- For the mode-change path: `grep 'VID_SetMode failed'` in a headless log after a mode change.
+- For the mode-change path: the `offscreen` driver advertises one display mode, so a headless run
+  cannot change resolution and watch it take — this one needs the real display. Run the game on
+  `DISPLAY=:0` with `-v -v`, drive a mode change, and read the `OpenGL Got %ix%i` line: it must be
+  the size that was asked for. `grep 'VID_SetMode failed'` and `grep 'OpenGL: asked'` catch the two
+  known failures.
