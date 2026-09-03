@@ -298,6 +298,18 @@ On Fedora 42 x86_64, from a checkout with no `make_options`:
 - A full build from scratch took **39 seconds** and produced a binary that passes `make smoke` 5/5.
 - Re-running left an existing `make_options` untouched (checked by appending a marker line and
   confirming it survived).
+
+On a Raspberry Pi (ARM), reported by the operator: `./tools/build.sh` with **no alterations**, and
+the result ran. That is the interesting case, because the vendored ZDBSP node builder is the tree's
+only C++:
+
+- The `CXX`/`CXXFLAGS`/`-lstdc++` additions and the `$(SD)nodebuild/%.cpp` rule work on ARM as
+  written; `g++` was already installed, so the missing compiler-probe never came up.
+- `-DDISABLE_SSE` is what makes that portable. ZDBSP otherwise selects an SSE classifier through a
+  runtime selector living in its command-line `main.cpp`, which is not vendored, and the SSE paths
+  do not exist on ARM at all. Do not "restore" the SSE build for speed without solving that.
+- `-march=native`, the script's default, is right here: the Pi is building for itself. It is only
+  wrong for a binary someone else will run (see `ci-releases.md`).
 - With a deliberately broken compiler (`CC=false`), every library probe reported `MISS`, the correct
   `dnf` command was printed, and the script exited 1 **without** starting a build.
 - `--debug` produced `svn1749/debug/bin/doomlegacy`.
