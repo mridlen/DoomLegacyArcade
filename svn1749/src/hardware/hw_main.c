@@ -3188,7 +3188,7 @@ static void HWR_RenderBSPNode(bsp_child_t bspnum)
         bsp = &nodes[bspnum];
 
         // Decide which side the view point is on.
-        side = R_PointOnSide_Render(viewx, viewy, bsp);  // [Arcade]
+        side = R_PointOnSide(viewx, viewy, bsp);
 
         // BP: big hack for a test in lighning ref:1249753487AB
         bsp_bbox = bsp->bbox[side];

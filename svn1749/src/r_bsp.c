@@ -1271,7 +1271,7 @@ void R_RenderBSPNode ( bsp_child_t bspnum )
     bsp = &nodes[bspnum];
 
     // Decide which side the view point is on.
-    side = R_PointOnSide_Render (viewx, viewy, bsp);  // [Arcade]
+    side = R_PointOnSide (viewx, viewy, bsp);
 
     // Recursively divide front space.
     R_RenderBSPNode (bsp->children[side]);
@@ -1303,7 +1303,7 @@ void R_RenderBSPNode ( bsp_child_t bspnum )
     bsp = &nodes[bspnum];
 
     // Decide which side the view point is on.
-    side = R_PointOnSide_Render (viewx, viewy, bsp);  // [Arcade]
+    side = R_PointOnSide (viewx, viewy, bsp);
 
     // Recursively divide front space.
     R_RenderBSPNode (bsp->children[side]);
@@ -1356,7 +1356,7 @@ void R_RenderBSPNode (bsp_child_t bspnum)
             bsp = &nodes[bspnum];
 
             // Decide which side the view point is on.
-            side = R_PointOnSide_Render (viewx, viewy, bsp);  // [Arcade]
+            side = R_PointOnSide (viewx, viewy, bsp);
 
             *bspnum_p++ = bsp;
             *bspnum_p++ = (void*) side;

@@ -841,12 +841,6 @@ typedef struct
     fixed_t     x, y;
     fixed_t     dx, dy;
 
-    // [Arcade] Partition direction re-aligned to the linedef the partition
-    // seg lies on, for the render traversal only (P_Fix_Node_Partitions).
-    // Equal to dx,dy unless the NODES lump rounded the direction.
-    // x,y,dx,dy stay exactly as the WAD has them, so gameplay is unchanged.
-    fixed_t     rdx, rdy;
-
     // Bounding box for each child.
     fixed_t     bbox[2][4];
         // bbox[0]= right child, all segs of right must be within the box

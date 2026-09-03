@@ -615,74 +615,105 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       something to do casually. → `attract.md` for the idle timeout this interacts with (an
       unfocused cabinet still counts as idle; the timeout does not care about focus)
 
-### The E1M1 slime trail is a rounded *node partition*, not a rounded vertex
+### The software renderer's slime trail is a *different* bug, and the vertex fix does not touch it
 
-The classic one, at X 2994 Y -2879 Z -24, ANG 295, sector 49: a thin green stripe running down from
-the nukage pool through the brown floor to the bottom of the screen, in software 24bpp.
+Reported on E1M1 in software 24bpp: a thin green stripe running down from the nukage pool through
+the brown floor to the bottom of the screen, at X 2994 Y -2879 Z -24, ANG 295, sector 49.
+
+**It is not the wall/flat seam family above, and `P_Remove_Slime_Trails` neither causes nor cures
+it.** Proved by A/B in one binary with a temporary `-noslimefix` switch: the two renders differ
+(bbox `(406,274)-(753,455)`, so the switch was working) but the stripe is byte-identical in both.
+Do not re-diagnose this as vertex rounding.
+
+**What it actually is — an occlusion-ordering error, not a geometry error.** Instrumenting the
+visplanes and `R_StoreWallRange` at that viewpoint, at 1024x768:
+
+- The stripe is exactly 4 columns, x=406..409, colour `(23,51,15)` — NUKAGE3, sector 53, floor -48.
+- The nukage plane (`pic=0 h=-48`) has `bot=553` at every neighbouring column but `bot=767` — the
+  bottom of the screen — at 406..409. Nothing clipped it there.
+- The brown floor (`pic=18 h=-24`, FLOOR5_2, sectors 49/56) is drawn by two visplanes, one ending
+  at x=405 and one starting at x=410. Columns 406..409 belong to neither: a 4-column hole, which
+  the nukage behind it fills.
+- The hole's cause: **line 178, the near nukage/brown floor edge (~240 units away), asks
+  `R_ClipPassWallSegment` for `[119..409]` but only stores `[378..405]`.** Columns 406..409 had
+  already been marked solid by line 265 — a one-sided wall in sector 55, **~730 units away**. A far
+  wall clipped a near one, so the step that should bound the pool was never drawn.
+- The BSP traversal log shows why it can happen: the player's own neighbouring subsector (nearest
+  seg **27.5** units) is visited *after* subsector 145 (nearest seg **694** units), which is what
+  marks 406..418 solid. The viewpoint sits essentially on top of linedef 191 and its node-split
+  vertex 441 — i.e. right on a partition, where the traversal's side test is degenerate.
+
+**Not yet fixed.** The remaining question is why that subtree is ordered ahead of the near one.
+Note `r_bsp.c:632` drops any seg narrower than one pixel (`if (x1 >= x2) return;`, with the comment
+"this is where PrBoom fixes gaps in OpenGL, by adding segs") and seg 442 of line 427 is dropped at
+exactly x=406 — suggestive, but it is one column and the hole is four, so it is not on its own the
+explanation.
+
+**Reproducing it.** Use the `setpos` command (below); the artifact is sensitive to where you stand,
+so nothing less than the exact coordinates is a reproduction. Measure it, never eyeball it: scan the
+floor band for a column with a long run of pixels where `g > r+18 and g > b+18`. Beware comparing
+"before" and "after" from *different* viewpoints — moving even 16 units reframes the scene enough
+that a fixed pixel window silently reports zero.
+
+### The E1M1 slime trail is a rounded *node partition* -- and re-aligning it does NOT work
+
+The classic one, at X 2994 Y -2879 Z -24, ANG 295, sector 49: a green stripe running down from the
+nukage pool through the brown floor to the bottom of the screen, in software 24bpp.
 
 **`P_Remove_Slime_Trails` neither causes nor cures it.** Proved by A/B in one binary with a
-temporary `-noslimefix` switch: the two renders differ elsewhere (bbox `(406,274)-(753,455)`, so the
-switch was live) but the stripe is byte-identical in both. Killough's fix snaps *seg vertices*; the
-near wall involved here has both vertices as untouched map endpoints, so the fix has no lever on it.
+temporary `-noslimefix` switch: the renders differ elsewhere (bbox `(406,274)-(753,455)`, so the
+switch was live) but the stripe is byte-identical. Killough's fix snaps *seg vertices*; the near
+wall here has both vertices as untouched map endpoints, so the fix has no lever on it.
 
-**The mechanism.** Measured at 1024x768:
+**The mechanism.** Measured at 1024x768: the stripe is 4 columns, x=406..409, colour `(23,51,15)`
+(NUKAGE3, sector 53, floor -48). The nukage plane has `bot=553` at neighbouring columns and
+`bot=767` at 406..409, so nothing clipped it. Line 178, the near lip of the pool (~240 units), asks
+`R_ClipPassWallSegment` for `[119..409]` but stores only `[378..405]` -- columns 406..409 were
+already marked solid by line 265, a wall **~730 units away**. Both projections are correct; the BSP
+was simply walked out of order, subsector 145 (694 units) before subsector 156 (239).
 
-- The stripe is exactly 4 columns, x=406..409, colour `(23,51,15)` -- NUKAGE3, sector 53, floor -48.
-- The nukage plane (`pic=0 h=-48`) has `bot=553` at every neighbouring column and `bot=767` -- the
-  bottom of the screen -- at 406..409. Nothing clipped it there.
-- The brown floor (`pic=18 h=-24`, sectors 49/56) is drawn by two visplanes, one ending at x=405 and
-  one starting at x=410, so 406..409 belong to neither and the nukage behind fills the hole.
-- **Line 178, the near lip of the pool (~240 units away), asks `R_ClipPassWallSegment` for
-  `[119..409]` but stores only `[378..405]`** -- columns 406..409 had already been marked solid by
-  line 265, a one-sided wall **~730 units away**. A far wall clipped a near one.
-- Both projections are *correct*: the far wall's corner genuinely lands at x=406 and the near lip
-  ends at x=410, a real 4-column overlap the near wall should win. The BSP was simply walked out of
-  order -- subsector 145 (nearest seg 694 units) before subsector 156 (nearest seg 239).
+**The data is at fault.** A partition is recorded as the seg the builder split on, and that seg's
+far endpoint is a node-invented vertex rounded to whole map units. E1M1 node 162 is stored as anchor
+`(3472,-3520)` direction `(40,-54)`; its linedef 427 is `(48,-64)` -- rotated about 0.34 degrees.
+Replaying the traversal offline from the NODES lump reproduces the engine's order exactly, so the
+engine is faithful. At that viewpoint the rotation decides the side test outright: stored gives
+side 0 by a margin of 172 in ~25700 (0.67%), the linedef gives side 1.
 
-**The cause: the NODES lump stores a rounded partition direction.** A partition is recorded as the
-seg the builder split on, and that seg's far endpoint is a node-invented vertex rounded to whole map
-units. E1M1 node 162 is stored as anchor `(3472,-3520)` direction `(40,-54)`; its linedef 427 is
-`(48,-64)` -- the same anchor, rotated about 0.34 degrees. Replaying the traversal offline from the
-NODES lump reproduces the engine's order exactly, so the engine is faithful and the *data* is wrong.
+**The obvious fix does not hold up. Do not re-attempt it without reading this.** Re-aligning each
+partition to its linedef (`node_t.rdx/rdy` plus an `R_PointOnSide_Render`, render-only so demos are
+safe) *does* clear the stripe: 4 columns to 0, and 0 across seven nudged viewpoints. But it is a
+reshuffle, not a fix. At X 3031 Y -2925 ANG 305 -- 60 units away, found within minutes of play -- it
+**introduces** a one-pixel full-height hairline at x=498 that is absent without it:
 
-At this viewpoint that rotation decides the side test outright:
+- line 196 draws `[459..497]` and line 197 should draw `[498..591]`, but with the re-aligned
+  partition line 265 (SOLID, `[459..498]`) is stored *first* and clips 197 to start at 499. Column
+  498 is left with no window seg, the far wall is drawn full height there, and it reads as a dark
+  hairline from ceiling to floor.
+- Line 197 is the *nearer* wall (632 units versus 672), so this is a second ordering inversion --
+  the re-aligned partition causes it. Node 162 is the decider at both viewpoints, and the viewer is
+  0.21 units from the stored plane there against 4.2 units from the linedef, so the "corrected"
+  answer is the confident one and still renders worse.
 
-| partition direction | left | right | side |
-| --- | --- | --- | --- |
-| stored `(40,-54)` | 25812 | 25640 | **0** |
-| true linedef `(48,-64)` | 30592 | 30768 | **1** |
+**Why it cannot work.** The node builder assigned segs to `child[0]`/`child[1]` using its own exact
+partition, and the lump stores a rounded copy. Testing the viewpoint against a *different* plane
+than the one the tree was partitioned with breaks the invariant the traversal depends on: geometry
+near the plane can sit on the side the test does not put it on. Whether that helps or hurts is
+luck, per viewpoint. Reverted in the commit after the one that added it.
 
-The margin is 172 in ~25700 -- 0.67%. The viewer is 2.5 units from the plane, and 0.34 degrees at
-~800 units from the anchor is worth ~4.7 units, so the rounding swamps the real distance.
-
-**The fix: `P_Fix_Node_Partitions` (`p_setup.c`)** recovers each partition's exact direction from
-the linedef its partition seg lies on, into new `node_t.rdx/rdy`. `R_PointOnSide_Render`
-(`r_main.c`) is the side test against those, used by the BSP walk in `r_bsp.c` (3 sites) and
-`hw_main.c` (1).
-
-- **It is render-only, deliberately.** `node_t.x/y/dx/dy` keep exactly what the WAD says, so
-  `R_PointInSubsector` and every gameplay use of the nodes are bit-identical and demos are
-  unaffected. Do not "simplify" this by writing the corrected vector back into `dx/dy`.
-- **It must run before `P_Remove_Slime_Trails`**, which moves the seg vertices it matches partitions
-  against.
-- It reports `Node partitions: N re-aligned to their linedef.` on every level load (`EMSG_all`, not
-  `EMSG_ver` -- `EMSG_ver` is invisible during level setup). Counts are small: E1M1 1, E1M2 3,
-  E1M3 2, E1M4 5, E1M5 2, E1M6 0, E1M7 10, E1M8 7, E1M9 0, MAP01 1, MAP15 12, MAP29 24.
-
-**Measured result**, same binary and viewpoint, stripe columns before to after: **4 to 0**. Across
-seven viewpoints nudged perpendicular to linedef 191 the stripe went 6,5,5,4,4,3,3 to all 0. Both
-renderers are clean at the viewpoint; `make smoke` 5/5.
-
-**This is not what other ports do**, and that is worth knowing before extending it. MBF's answer is
-`P_Remove_Slime_Trails` (vertices only). ZDBSP's is extended nodes, which store vertices in fixed
-point so the precision is never lost -- DoomLegacy can read those (`p_extnodes.c`) but DOOM.WAD ships
-vanilla nodes. ZokumBSP fixes it in the node builder. Correcting the partition at load time is ours.
+**What actually solves this class** is better node data, which is why every other project attacks it
+there: MBF does vertices only (`P_Remove_Slime_Trails`); ZDBSP stores vertices in fixed point as
+extended nodes, which DoomLegacy can already read (`p_extnodes.c`); ZokumBSP fixes the builder
+itself (`s=a`, "avoids seg splits that lead to slime trails"). The route with real mileage for the
+cabinet is to rebuild the IWAD maps' nodes offline and load those, not to patch the side test.
 
 **Reproducing it.** Use `setpos` (below); the artifact is sensitive to where you stand, so nothing
-less than the exact coordinates is a reproduction. Measure it, never eyeball it: scan the floor band
-for a column with a long run of pixels where `g > r+18 and g > b+18`. Beware comparing "before" and
-"after" from *different* viewpoints -- moving even 16 units reframes the scene enough that a fixed
-pixel window silently reports zero, which reads as a fix.
+less than the exact coordinates is a reproduction. Measure it, never eyeball it -- and use two
+detectors, because they find different things: a floor-band scan for a long run of
+`g > r+18 and g > b+18` finds the green stripe, and a full-height scan for a column differing from
+both neighbours (`+/-2` columns) over a long run finds the hairline. The first would have reported
+the hairline viewpoint as clean. Beware comparing "before" and "after" from *different* viewpoints
+-- moving even 16 units reframes the scene enough that a fixed pixel window silently reports zero,
+which reads as a fix.
 
 ### `setpos` places the camera for headless rendering bugs
 
