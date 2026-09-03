@@ -185,6 +185,7 @@ void Command_Save_f(void);
 void Command_ExitGame_f(void);
 
 void Command_Kill(void);
+void Command_SetPos_f(void);  // [Arcade]
 void Command_CfgCheck_f(void);   // [Arcade]
 
 
@@ -346,6 +347,7 @@ void D_Register_ClientCommands(void)
     COM_AddCommand("quit", Command_Quit_f, CC_command);
     COM_AddCommand("screenshot", M_ScreenShot, CC_command);
     COM_AddCommand("kill", Command_Kill, CC_command);
+    COM_AddCommand("setpos", Command_SetPos_f, CC_command);  // [Arcade]
     COM_AddCommand("clearhighscores", Command_ClearHighScores_f, CC_command);  // [Arcade]
 
     COM_AddCommand("chatmacro", Command_Chatmacro_f, CC_chat);   // hu_stuff.c
@@ -1202,4 +1204,61 @@ void Command_CfgCheck_f(void)
 void Command_Kill(void)
 {
     P_KillMobj(players[consoleplayer].mo, NULL, players[consoleplayer].mo);
+}
+
+// [Arcade] Place the camera, for reproducing a reported rendering artifact
+// in a headless run (see docs/arcade/gotchas.md).  Operator-only: this is a
+// development tool, and moving the player at will would void any run.
+//   setpos <x> <y> [angle_degrees] [z]
+void Command_SetPos_f(void)
+{
+    mobj_t * mo;
+    fixed_t  nx, ny;
+
+    if( ! devmode )
+    {
+        CONS_Printf("setpos: -devmode only\n");
+        return;
+    }
+
+    if( COM_Argc() < 3 )
+    {
+        CONS_Printf("setpos <x> <y> [angle] [z]\n");
+        return;
+    }
+    mo = players[consoleplayer].mo;
+    if( mo == NULL )
+    {
+        CONS_Printf("setpos: no player\n");
+        return;
+    }
+
+    nx = atoi(COM_Argv(1)) << FRACBITS;
+    ny = atoi(COM_Argv(2)) << FRACBITS;
+
+    P_UnsetThingPosition( mo );
+    mo->x = nx;
+    mo->y = ny;
+    P_SetThingPosition( mo );
+
+    if( COM_Argc() >= 4 )
+    {
+        // angleturn is absolute (g_game.c), so P_MovePlayer rebuilds
+        // mo->angle from localangle every tic.  Set both, as a teleport does.
+        angle_t na = (angle_t)(ANGLE_1 * (unsigned)atoi(COM_Argv(3)));
+        mo->angle = na;
+        localangle[0] = na;
+    }
+    if( COM_Argc() >= 5 )
+        mo->z = atoi(COM_Argv(4)) << FRACBITS;
+    else
+        mo->z = mo->subsector->sector->floorheight;
+
+    mo->momx = mo->momy = mo->momz = 0;
+    players[consoleplayer].viewz = mo->z + players[consoleplayer].viewheight;
+
+    CONS_Printf("setpos: %d %d ang %d z %d sector %d\n",
+                mo->x >> FRACBITS, mo->y >> FRACBITS,
+                (int)(mo->angle / ANGLE_1), mo->z >> FRACBITS,
+                (int)(mo->subsector->sector - sectors));
 }

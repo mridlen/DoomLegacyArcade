@@ -614,3 +614,56 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       manager, and popping a fullscreen test window over a session someone is using is not
       something to do casually. → `attract.md` for the idle timeout this interacts with (an
       unfocused cabinet still counts as idle; the timeout does not care about focus)
+
+### The software renderer's slime trail is a *different* bug, and the vertex fix does not touch it
+
+Reported on E1M1 in software 24bpp: a thin green stripe running down from the nukage pool through
+the brown floor to the bottom of the screen, at X 2994 Y -2879 Z -24, ANG 295, sector 49.
+
+**It is not the wall/flat seam family above, and `P_Remove_Slime_Trails` neither causes nor cures
+it.** Proved by A/B in one binary with a temporary `-noslimefix` switch: the two renders differ
+(bbox `(406,274)-(753,455)`, so the switch was working) but the stripe is byte-identical in both.
+Do not re-diagnose this as vertex rounding.
+
+**What it actually is — an occlusion-ordering error, not a geometry error.** Instrumenting the
+visplanes and `R_StoreWallRange` at that viewpoint, at 1024x768:
+
+- The stripe is exactly 4 columns, x=406..409, colour `(23,51,15)` — NUKAGE3, sector 53, floor -48.
+- The nukage plane (`pic=0 h=-48`) has `bot=553` at every neighbouring column but `bot=767` — the
+  bottom of the screen — at 406..409. Nothing clipped it there.
+- The brown floor (`pic=18 h=-24`, FLOOR5_2, sectors 49/56) is drawn by two visplanes, one ending
+  at x=405 and one starting at x=410. Columns 406..409 belong to neither: a 4-column hole, which
+  the nukage behind it fills.
+- The hole's cause: **line 178, the near nukage/brown floor edge (~240 units away), asks
+  `R_ClipPassWallSegment` for `[119..409]` but only stores `[378..405]`.** Columns 406..409 had
+  already been marked solid by line 265 — a one-sided wall in sector 55, **~730 units away**. A far
+  wall clipped a near one, so the step that should bound the pool was never drawn.
+- The BSP traversal log shows why it can happen: the player's own neighbouring subsector (nearest
+  seg **27.5** units) is visited *after* subsector 145 (nearest seg **694** units), which is what
+  marks 406..418 solid. The viewpoint sits essentially on top of linedef 191 and its node-split
+  vertex 441 — i.e. right on a partition, where the traversal's side test is degenerate.
+
+**Not yet fixed.** The remaining question is why that subtree is ordered ahead of the near one.
+Note `r_bsp.c:632` drops any seg narrower than one pixel (`if (x1 >= x2) return;`, with the comment
+"this is where PrBoom fixes gaps in OpenGL, by adding segs") and seg 442 of line 427 is dropped at
+exactly x=406 — suggestive, but it is one column and the hole is four, so it is not on its own the
+explanation.
+
+**Reproducing it.** Use the `setpos` command (below); the artifact is sensitive to where you stand,
+so nothing less than the exact coordinates is a reproduction. Measure it, never eyeball it: scan the
+floor band for a column with a long run of pixels where `g > r+18 and g > b+18`. Beware comparing
+"before" and "after" from *different* viewpoints — moving even 16 units reframes the scene enough
+that a fixed pixel window silently reports zero.
+
+### `setpos` places the camera for headless rendering bugs
+
+`setpos <x> <y> [angle] [z]` (`d_netcmd.c`, `-devmode` only) puts the player at map coordinates so a
+screenshot can be taken of a *specific* reported view under `SDL_VIDEODRIVER=offscreen`. It reports
+the position it reached, which should be checked against the reporter's coordinate HUD before
+believing the shot.
+
+**It must set `localangle[0]` as well as `mo->angle`.** `cmd->angleturn` is absolute in this engine
+(`g_game.c`: `cmd->angleturn = localangle[pind] >> 16`), so `P_MovePlayer` rebuilds `mo->angle` from
+`localangle` on the very next tic and an angle written straight to the mobj is silently discarded —
+the player moves, the view keeps pointing the old way, and the screenshot looks like the wrong
+place. `p_telept.c` sets both for the same reason.
