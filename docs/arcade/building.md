@@ -310,6 +310,16 @@ only C++:
   do not exist on ARM at all. Do not "restore" the SSE build for speed without solving that.
 - `-march=native`, the script's default, is right here: the Pi is building for itself. It is only
   wrong for a binary someone else will run (see `ci-releases.md`).
+
+On Windows, reported green in GitHub Actions: the `Windows (x86-64)` job drives `build.ps1` against
+the runners' MSYS2 ucrt64 and builds the tree including the vendored C++, with no change to the
+workflow. That is the third toolchain to take it as written, and the only one that does so with the
+distributable `--arch` baseline rather than `-march=native`.
+
+**"CI is green" means it compiled and its import graph resolves, not that anyone played it.** The
+Windows job's check is `LoadLibraryW` on the exe with MSYS2 off `PATH`; a rendering or gameplay
+fault would sail straight through it. The standing note above still holds: the Windows binary loads
+but has not been played.
 - With a deliberately broken compiler (`CC=false`), every library probe reported `MISS`, the correct
   `dnf` command was printed, and the script exited 1 **without** starting a build.
 - `--debug` produced `svn1749/debug/bin/doomlegacy`.
