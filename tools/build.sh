@@ -498,12 +498,32 @@ step "Done"
 if [ -x "$binary" ]; then
     say "  built: $binary"
     say ""
-    say "  Do not run it from the build tree -- it looks for its data next to"
-    say "  the binary.  Copy everything from $build_root/bin into a run"
-    say "  directory alongside legacy.wad and an IWAD (DOOM.WAD, DOOM2.WAD...):"
-    say ""
-    say "      cp -a $build_root/bin/* ~/games/doom/"
-    say "      cd ~/games/doom && ./doomlegacy"
+    # The engine finds legacyhome next to the binary, so bin/ IS the install
+    # once it has been played from -- which is how this cabinet runs.  Say so,
+    # instead of telling the operator to copy over a directory that already
+    # holds the live config, scores and demos.
+    bin_home="$build_root/bin/legacyhome"
+    if [ -e "$bin_home/highscores.dat" ] || [ -e "$bin_home/runs.dat" ] \
+       || [ -d "$bin_home/demos" ]; then
+        say "  This tree is the install: legacyhome beside the binary holds live"
+        say "  config, scores and demos, so the build has updated it in place."
+        say ""
+        say "      cd $build_root/bin && ./doomlegacy"
+    else
+        say "  The binary looks for legacyhome, and its wads, next to itself -- so"
+        say "  run it from an install directory rather than from src/.  Either use"
+        say "  this one, which the build already staged:"
+        say ""
+        say "      cd $build_root/bin && ./doomlegacy"
+        say ""
+        say "  or put the binary into an install directory of your own:"
+        say ""
+        say "      cp -a $build_root/bin/doomlegacy <install-dir>/"
+        say ""
+        say "  Copy the binary by name, as above.  'cp -a bin/*' would drag"
+        say "  legacyhome along with it and overwrite the config, high scores"
+        say "  and record demos already in the destination."
+    fi
     say ""
     say "  An operator session that can change settings is:  ./doomlegacy -devmode"
 else

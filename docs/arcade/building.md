@@ -96,6 +96,26 @@ which reads as a failed OS detection. It has not failed to detect anything — i
 `make depend` so they act on the right tree. The binary then lands in `svn1749/debug/bin/`, not
 `bin/debug/`.
 
+## The closing "how to install it" message must not say `cp -a bin/*`
+
+It used to, with a hardcoded `~/games/doom/` destination, and that was wrong twice over.
+
+`~/games/doom/` is the **wad** directory — nine wads, no binary. The cabinet actually runs from
+`svn1749/bin/`, whose `legacyhome` holds the live `config.cfg`, `highscores.dat`, `runs.dat`,
+`audit.dat` and `demos/`. So a build already updates the install in place and there is nothing to
+copy; the advice sent the operator to the wrong directory and contradicted the headless-testing
+note in CLAUDE.md, which says in as many words that `svn1749/bin` *is* the live cabinet.
+
+Worse, `cp -a bin/*` copies `bin/legacyhome` too. Onto a populated install that overwrites the
+config, the high scores and the record demos. Any install advice must name the binary —
+`cp -a bin/doomlegacy <install-dir>/` — and never glob `bin/*`.
+
+The script now tells the two cases apart by looking for live data beside the binary
+(`highscores.dat`, `runs.dat` or `demos/`, none of which a fresh build stages — the Makefile only
+`cp -n`s a `config.cfg` from the tracked `cabinet/legacyhome`). With live data it says the install
+was updated in place; without, it offers to run from `bin/` or to copy the binary out, with the
+warning about the glob attached.
+
 ## Windows
 
 DoomLegacy is a GNU Make project written for a Unix-like toolchain; **Visual Studio cannot build

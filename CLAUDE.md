@@ -100,9 +100,14 @@ by `../dep/umapinfo.dep: No such file or directory`. Nothing is wrong with the s
 bites when the dep files are missing or stale, i.e. on a fresh checkout, a new worktree, or after
 `make clean`, which is exactly when someone reaches for `-j`.
 
-Do not run the built binary from inside the build tree — it expects to run from an installed
-directory (see `make install`, `install_user`, `install_sys`, `install_games` targets, or just copy
-everything from `bin/` to a run directory alongside a `legacy.wad`).
+The binary finds `legacyhome`, and its wads, **next to itself**, so it must be run from an install
+directory rather than from `src/`. On this cabinet `svn1749/bin/` *is* that install directory —
+its `legacyhome` holds the live config, high scores, `audit.dat` and record demos — so a build
+updates the cabinet in place and there is nothing to copy. (`~/games/doom/` is only the wad
+directory; there is no binary there.) To install somewhere else, copy the **binary by name**:
+`cp -a svn1749/bin/doomlegacy <install-dir>/`. Never `cp -a svn1749/bin/*` onto an existing
+install — that drags `legacyhome` along and overwrites its config, scores and demos.
+(`make install`, `install_user`, `install_sys` and `install_games` also exist.)
 
 There is no automated test suite; validating a change means building and running the game
 interactively (or asking the user to). **A lot can still be checked without a screen**, though —
