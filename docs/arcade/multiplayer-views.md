@@ -467,6 +467,38 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       compensates for a weapon drawn at the full screen height inside a half height view. Keyed on
       `D_View_Squash() == 1`, replacing `D_NumViews() == 2` in `r_things.c` (`vis->texturemid`) and
       `hw_main.c` (`ty -= 20`).
+    - **A side-by-side view needed the opposite correction, and did not have one.** `pspriteyscale`
+      is derived from the view *width* — `(vid.height * rdraw_viewwidth / vid.width) /
+      BASEVIDHEIGHT` (`r_main.c`) — which is right only while the view's height is proportional to
+      its width. A full screen and a 2x2 cell are; a side-by-side view is **half width and full
+      height**, so the weapon is drawn at half scale while `centerypsp` still sits at half the
+      *full* height, and it floats a quarter of the view above the floor. Software renderer,
+      weapon top..bottom against the bottom of the view:
+
+      | layout | view | before | after |
+      | --- | --- | --- | --- |
+      | single | 320x200 | 138..**200** | unchanged |
+      | 2x2 | 160x100 | 69..**100** | unchanged |
+      | side by side | 160x200 | 119..**150** (50px short) | 169..**200** |
+      | stacked | 320x100 | 68..130 (overhangs) | unchanged |
+
+      Fixed in `R_DrawPlayerSprites` by anchoring `centery` to the bottom of the view rather than
+      its middle — `rdraw_viewheight - BASEYCENTER * pspriteyscale` — which is arithmetically the
+      value `centerypsp` already holds for a full screen and for a 2x2, so it is applied only to
+      `D_View_Squash() == 2` and the working cases are not touched. It is proportional, so it was
+      wrong at **every** resolution, not just the low ones: verified landing exactly on the view
+      bottom at 320x200, 512x384, 640x480, 800x600 and 1024x768.
+    - **The stacked halves are deliberately left on their hand-tuned 120.** They are the opposite
+      error — full scale in a half height view, so the weapon overhangs the bottom by 30px and is
+      clipped. The same anchor would seat them properly (`centery` 0, weapon 38..100 of 100), but
+      it would also show the *whole* weapon in a half height view where a cropped one has been
+      shipping. That is a change to how the cabinet looks rather than a fix, so it needs a decision
+      rather than a commit.
+    - **The hardware renderer is a different mechanism and is believed unaffected.**
+      `HWR_DrawPSprite` builds its quad in 320x200 **base** coordinates (`BASECENTER_Y - ty`) and
+      lets the transform map them onto the view, rather than positioning in pixels against a
+      width-derived scale — which is consistent with it needing the same stacked-only nudge and no
+      side-by-side one. Not measured; confirm on the cabinet before assuming.
   - **The HUD overlay needed its art scale separated from its layout scale.** They had always been
     the same thing: `ST_overlayDrawer` halves the global `vid.dupx/fdupx` for a quarter-screen
     view, and `SCX`/`SCY` read those same globals for positions. That works while every cell is

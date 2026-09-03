@@ -2325,6 +2325,40 @@ void R_DrawPlayerSprites (void)
     //added:06-02-98: quickie fix for psprite pos because of freelook
     kikhak_centery = centery;
     centery = centerypsp;             //for R_DrawColumn
+
+    // [Arcade] Hang the weapon from the bottom of a side-by-side view.
+    //
+    // pspriteyscale is derived from the view *width*
+    // ( (vid.height * rdraw_viewwidth / vid.width) / BASEVIDHEIGHT , r_main.c ),
+    // which is right only while the view's height is proportional to its
+    // width -- a full screen or a 2x2 cell.  A side-by-side view is half
+    // width and *full* height, so the weapon is drawn at half scale while
+    // centerypsp still sits at half the full height, and it ends up floating
+    // a quarter of the screen above the floor.  Measured at 320x200, weapon
+    // top..bottom against the bottom of the view:
+    //
+    //     single        320x200 view   138..200   of 200   correct
+    //     2x2           160x100 view    69..100   of 100   correct
+    //     side by side  160x200 view   119..150   of 200   50px short
+    //
+    // Anchoring it to the view's bottom instead of its middle reproduces the
+    // full screen result exactly: the weapon is designed to hang from
+    // BASEYCENTER, so that is where the bottom of the view has to be.  For a
+    // full screen and a 2x2 cell this is arithmetically the same value
+    // centerypsp already holds, which is why it is applied only where it is
+    // not -- there is no need to risk the cases that are already right.
+    //
+    // The stacked halves are deliberately left alone.  They are the opposite
+    // error -- full scale in a half height view, so the weapon overhangs the
+    // bottom by 30px and is clipped -- and they carry a hand tuned centre of
+    // 120 in R_DrawPSprite.  The same formula would seat them properly too,
+    // but it would also show the whole weapon in a half height view instead of
+    // the cropped one that has been shipping, which is a change to how the
+    // cabinet looks rather than a fix.  See docs/arcade/multiplayer-views.md.
+    if( D_View_Squash() == 2 )
+        centery = rdraw_viewheight
+                  - ( FixedMul( BASEYCENTER<<FRACBITS, pspriteyscale ) >> FRACBITS );
+
     centeryfrac = centery<<FRACBITS;  //for R_DrawVisSprite
 
 #ifdef MONSTER_VARY

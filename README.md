@@ -237,6 +237,12 @@ to anyone else running this port. Each is written up in full in the commit that 
   digits the classic status bar uses for ammo) and drops the icons beside them, and the key icons
   never step by less than they are wide. Full screen play is unchanged at every resolution, and so
   is a four-way split at 640x480 and above.
+- **The weapon floated in mid-air in side-by-side two-player.** The weapon sprite is scaled from
+  the width of the view, which is only correct while the view is as tall as it is wide in
+  proportion — true full screen and in a four-way split, false for the side-by-side halves, which
+  are half width and full height. So it was drawn at half size but still anchored to the middle of
+  the screen, leaving it hanging a quarter of the view above the floor at every resolution. It is
+  anchored to the bottom of the view now.
 - **Deathmatch rankings covered the whole screen when anybody died**, replacing both views in an
   ordinary two-player game rather than just the dead player's. They are drawn per view now.
 - **Time Limit in Net Options did nothing.** The row edited the engine's own limit, which is
