@@ -183,6 +183,23 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the episode: every menu-started campaign does begin at map 1, but that is a property of the
     menus, not of the record.
   - A record whose `startmap` equals its map is captioned with the bare map name — no invented span.
+  - **Whoever starts a demo owns its caption**, and only the attract cycle used to. The label was
+    written solely as a side effect of `HS_NextRecordDemoPath` *choosing* a demo, and cleared solely
+    by `D_DoAdvanceDemo`. So the Single Level page's **Watch** items played the right footage under
+    the last attract demo's name, time and initials — and `hs_demo_multilevel` went stale with it,
+    which put the run total on the HUD of a one-map replay (`HS_Single_Level_Run` reads it during
+    playback).
+    - `HS_Set_DemoLabel_For(mapname, skill, cat, single)` captions a hand-picked replay;
+      `M_SingleLevel_PlayDemo` calls it. It clears first, so a selection with no record behind it
+      shows **no** caption rather than the previous one.
+    - The formatting is shared with the attract path (`HS_Format_Split_Label`, factored out of
+      `HS_Demo_At`) so the two spellings of the same caption cannot drift apart — the same reason
+      `WI_Init_Stats` computes one `all_kills` for both its consumers.
+    - The console `playdemo` and the `-playdemo` command line clear the label instead: nothing names
+      a demo played by hand, and a stale caption is worse than none.
+    - Verified by formatting real records out of the cabinet's own board: `E1M1  ITYTD  SPEED
+      0:12.05  MLR` (422 tics ✓) and `E1M1  ITYTD  TYSON  0:51.80  MLR` (1813 tics ✓), with a map
+      that has no record returning no caption at all.
   - **A campaign record with no stored `startmap` falls back to an inference** (`HS_Infer_StartMap`,
     used through `HS_Format_Range`): the first map of that map's own episode, so `MAP03` reads
     `MAP01-MAP03` and `E2M3` reads `E2M1-E2M3`. Episode-aware, not always `E1M1`.
@@ -979,6 +996,38 @@ Speed is simply the category that never stops being alive, so its endpoint follo
 - **Not in the New Game skill preview either** (`HS_SKR_NUMROWS`). Four rows would fit — 163/172/181/190,
   ending at 197 of 200 — but it buries the skill menu in numbers for two categories almost nobody is
   playing for at the moment they choose a difficulty.
+
+- **The banner reads live flags, so a *replay* has to maintain them too — and for a long time it
+  did not.** `HS_LevelExit` returns early on `demoplayback` (a replay must never write the table),
+  and that return sat **above** the two per-level tests, so `hs_cat_alive[]` was untouched for the
+  whole of a replay. `HS_Demo_Start` did not reset the array either. The flags are only ever
+  *cleared* — by a shot fired, by damage dealt, by a level short of 100% — and only `HS_NewGame` set
+  them true again, so a replay's intermission was captioned with whatever the last live game or the
+  previous attract demo happened to leave behind.
+  - Straight after a game start that is all four true, which is why a **pacifist** record replayed
+    with **24% kills on screen** was captioned `PACIFIST TYSON`. The number is the tell: 7 of 29
+    kills on E1M1 is the run itself, and no tyson run has ever had it.
+  - Two changes, and both are needed. `HS_Demo_Start` now clears `hs_cat_alive[]` back to all-true,
+    the same reset `HS_NewGame` gives a live run; and the `maxed` / `all_kills` tests moved **above**
+    the `demoplayback` guard, into the block that already maintains what the intermission draws
+    (`hs_cumulative_time`, `hs_last_exit_mapname`, `hs_new_record`). Nothing below the guard is
+    reached: `hs_cat_alive` only ever narrows from that point, and both reset paths put it back.
+  - The *run-level* halves need no change. `HS_Player_Damaged_Monster` and `HS_Player_Fired_Weapon`
+    are deliberately **not** guarded on `demoplayback` — a replayed shot is a shot — which is what
+    makes the replayed pacifist verdict honest rather than assumed. (`HS_Player_Died` *is* guarded,
+    because a death in a demo must not void the cabinet's live run; these two cannot void one,
+    because a demo only ever plays with no live run in progress and `HS_NewGame` resets them anyway.)
+  - Verified against the cabinet's own `doomu_ep1_sk3_pacifist.lmp`, replayed headlessly with the
+    flags traced at each exit:
+
+    | | E1M1 | E1M2 |
+    | --- | --- | --- |
+    | kills | 7/29 (24%) | 8/79 |
+    | before | `pacifist=1 tyson=1` | `pacifist=1 tyson=1` |
+    | after | `pacifist=1 tyson=0` | `pacifist=1 tyson=0` |
+
+    A live `-warp` exit at 0/19 kills reports `pacifist=1 tyson=0` before and after, so live play is
+    untouched — as it must be, since live play never took the moved branch conditionally.
 
 - **A side effect written before a rejection is a trap**, and `HS_Demo_At` is where it bit.
   `HS_NextLongDemoPath` calls it on candidate slots and then **rejects** the short ones

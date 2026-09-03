@@ -694,6 +694,11 @@ void Command_Playdemo_f(void)
 
     CONS_Printf("Playing back demo '%s'.\n", name);
 
+    // [Arcade] Whoever starts a demo owns its caption.  The attract cycle
+    // sets one for the record demos it picks; nothing names a demo played by
+    // hand, so clear it rather than let the last attract caption stand over
+    // it.  See HS_Set_DemoLabel_For.
+    HS_Clear_DemoLabel();
     G_DoPlayDemo(name);
 }
 

@@ -4108,6 +4108,9 @@ fatal_error_action:
         else
         {  // playdemo
             singledemo = true;  // quit after one demo
+            // [Arcade] No caption for a demo named on the command line; see
+            // Command_Playdemo_f.
+            HS_Clear_DemoLabel();
             G_DeferedPlayDemo(demo_name);
         }
 

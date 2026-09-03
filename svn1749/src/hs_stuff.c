@@ -1983,6 +1983,19 @@ void HS_Demo_Start( void )
     hs_cumulative_time = 0;
     hs_last_exit_mapname[0] = 0;
     memset( hs_new_record, 0, sizeof(hs_new_record) );
+
+    // [Arcade] The category flags are part of that reset, and leaving them
+    // out is what made the intermission's PACIFIST / TYSON banner meaningless
+    // over a replay.  They are only ever *cleared* -- by a shot fired, by
+    // damage dealt, and per level by HS_LevelExit -- and only HS_NewGame set
+    // them true again, so a replay inherited whatever the last live game or
+    // the previous attract demo happened to leave behind.  Straight after a
+    // game start that is all four true, which is why a pacifist record
+    // replayed with 24% kills on screen was captioned "PACIFIST TYSON".
+    {
+        int c;
+        for( c=0; c<HS_NUMCAT; c++ )  hs_cat_alive[c] = true;
+    }
 }
 
 
@@ -2010,18 +2023,26 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     dl_strncpy( hs_last_exit_mapname, G_BuildMapName(episode, map), 8 );
     hs_last_exit_skill = skill;
 
-    // Never score a replay.  Everything below this writes to the table.
-    if( demoplayback )  return;
-
     // [Arcade] One level short of what a category needs ends that category
     // for the rest of the run; the speed run is unaffected and keeps
     // accumulating.  Pacifist and tyson also have *run-level* conditions,
     // latched as they happen by HS_Player_Damaged_Monster and
     // HS_Player_Fired_Weapon, so only their per-level part is applied here.
+    //
+    // Above the demoplayback guard, with the rest of what the intermission
+    // draws.  These flags are display state as well as scoring state -- the
+    // PACIFIST / TYSON banner reads them live -- so a replay has to apply
+    // them to its own levels or the banner describes some earlier game.
+    // Nothing below is written here: hs_cat_alive only ever gets *narrower*
+    // from this point, HS_Demo_Start puts it back for the next replay, and
+    // HS_NewGame does the same for the next live run.
     if( ! maxed )
         hs_cat_alive[HS_CAT_max] = false;
     if( ! all_kills )
         hs_cat_alive[HS_CAT_tyson] = false;   // tyson is a 100% kills run
+
+    // Never score a replay.  Everything below this writes to the table.
+    if( demoplayback )  return;
 
     // Re-checked per level, not just at HS_NewGame: the Options menu is
     // reachable mid-game, so a run started under the ranked ruleset can be
@@ -3260,6 +3281,46 @@ static boolean  HS_Demo_Slot( int slot, boolean * out_surv, int * out_idx,
     return true;
 }
 
+// [Arcade] The caption for one split-table record: the map (or range), the
+// skill, the category, the time and the holder's initials.
+//
+// Shared by the attract cycle (HS_Demo_At) and by the Single Level menu's
+// replay items (HS_Set_DemoLabel_For) so the two cannot drift apart -- the
+// same reason WI_Init_Stats hands one all_kills to both its callers.
+static void  HS_Format_Split_Label( const hs_maprecord_t * rec, int sk,
+                                    int cat, char * label, size_t labelsz )
+{
+    char  ini[HS_INITIALS_LEN];
+    char  timebuf[16];
+    char  range[24];
+
+    ini[0] = 0;
+
+    // The board is where initials live; the split table is anonymous.
+    HS_Board_Entry( true, rec->mapname, (skill_e)sk, cat, 0,
+                    ini, NULL, NULL );
+
+    // Formatted through HS_Format_Range for the sake of older entries.  In
+    // practice this table now holds only one-map records --
+    // HS_Score_As_Single_Level always stores startmap equal to the map -- so
+    // the range comes out bare; the multi level runs live on the Survival
+    // board and are captioned by HS_Demo_At's other branch.
+    HS_Format_Range( rec->startmap[cat][sk], rec->mapname, true,
+                     range, sizeof(range) );
+
+    // e.g. "E1M1-E1M5  UV  MAX  4:32.17  MLR".  The old "SINGLE LEVEL: "
+    // prefix is gone: it cost 100px that the initials now need, the range
+    // already says whether this was one map or several, and it was never
+    // quite true anyway -- a campaign *first* level scores on this same
+    // table.  Measured: widest is 283px of 320.
+    HS_Format_Time_CS( rec->besttime[cat][sk], timebuf, sizeof(timebuf) );
+    snprintf( label, labelsz, "%s  %s  %s  %s  %s",
+              range, hs_skillnames[sk], hs_catname[cat], timebuf,
+              ini[0] ? ini : "---" );
+    strupr( label );
+}
+
+
 // Resolve one slot: is there a playable demo there, how long does it run, and
 // what should the attract screen caption it with?  label may be NULL when
 // only the length is wanted.
@@ -3329,35 +3390,47 @@ static boolean  HS_Demo_At( int slot, char * path, tic_t * out_tics,
         if( out_tics )  *out_tics = tics;
 
         if( label )
-        {
-            char range[24];
-
-            // The board is where initials live; the split table is anonymous.
-            HS_Board_Entry( true, rec->mapname, (skill_e)sk, cat, 0,
-                            ini, NULL, NULL );
-
-            // Formatted through HS_Format_Range for the sake of older
-            // entries.  In practice this table now holds only one-map
-            // records -- HS_Score_As_Single_Level always stores startmap
-            // equal to the map -- so the range comes out bare; the multi
-            // level runs live on the Survival board and are captioned above.
-            HS_Format_Range( rec->startmap[cat][sk], rec->mapname, true,
-                             range, sizeof(range) );
-
-            // e.g. "E1M1-E1M5  UV  MAX  4:32.17  MLR".  The old
-            // "SINGLE LEVEL: " prefix is gone: it cost 100px that the
-            // initials now need, the range already says whether this was one
-            // map or several, and it was never quite true anyway -- a
-            // campaign *first* level scores on this same table.
-            // Measured: widest is 283px of 320.
-            HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
-            snprintf( label, labelsz, "%s  %s  %s  %s  %s",
-                      range, hs_skillnames[sk], hs_catname[cat], timebuf,
-                      ini[0] ? ini : "---" );
-            strupr( label );
-        }
+            HS_Format_Split_Label( rec, sk, cat, label, labelsz );
         return true;
     }
+}
+
+
+// [Arcade] Caption a record demo the player picked from a menu, the way the
+// attract cycle captions the ones it chooses for itself.
+//
+// The label is otherwise only ever written by HS_Demo_At, as a side effect of
+// the attract screen *choosing* a demo, and HS_Clear_DemoLabel is only called
+// from D_DoAdvanceDemo.  So a demo started from the Single Level page played
+// under whatever caption the last attract demo had left standing -- the right
+// footage over another run's name, time and initials.  hs_demo_multilevel
+// went stale with it, which put the run total on the HUD of a one-map replay.
+//
+// Clears both first, so a selection with no record behind it (the menu item
+// should be disabled, but this does not depend on that) shows no caption at
+// all rather than the previous one.
+void  HS_Set_DemoLabel_For( const char * mapname, skill_e skill, int cat,
+                            boolean single )
+{
+    char gid[HS_GAMEID_LEN];
+    const hs_maprecord_t * rec;
+
+    HS_Clear_DemoLabel();
+
+    if( skill < 0 || skill >= HS_NUMSKILLS )  return;
+    if( cat < 0 || cat >= HS_NUMCAT )  return;
+
+    dl_strncpy( gid, HS_GameId_Mode(single), HS_GAMEID_LEN-1 );
+    rec = HS_Find_Record( gid, mapname );
+    if( ! rec || ! rec->has_record[cat][skill] )  return;
+
+    HS_Format_Split_Label( rec, (int)skill, cat,
+                           hs_demo_label, sizeof(hs_demo_label) );
+
+    // These are the split-table records, which are one map each, so the HUD
+    // must read this replay as a single level run -- HS_Clear_DemoLabel
+    // already left the flag false, and this says so out loud.
+    hs_demo_multilevel = false;
 }
 
 

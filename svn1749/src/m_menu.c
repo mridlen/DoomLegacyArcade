@@ -1955,6 +1955,13 @@ static void  M_SingleLevel_PlayDemo( int cat )
                             cat, true, path ) )
         return;   // item should have been disabled
 
+    // [Arcade] Caption it.  Only the attract cycle used to set the caption,
+    // and only D_DoAdvanceDemo used to clear it, so a demo started from here
+    // played under the name, time and initials of whatever attract had shown
+    // last -- correct footage, wrong title.
+    HS_Set_DemoLabel_For( M_SingleLevel_MapName(), M_SingleLevel_Skill(),
+                          cat, true );
+
     // NOT singledemo: that makes G_CheckDemoStatus call I_Quit() when the
     // demo ends, which quit DoomLegacy the moment the exit switch was hit.
     // single_level_mode instead routes the end of the demo back to this menu,

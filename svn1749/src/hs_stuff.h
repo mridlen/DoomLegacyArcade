@@ -177,5 +177,10 @@ boolean       HS_Run_Is_Tyson(void);
 
 void          HS_Clear_DemoLabel(void);
 const char *  HS_DemoLabel(void);
+// [Arcade] Caption a demo the player started from a menu.  The attract cycle
+// sets the caption as a side effect of choosing a demo; a hand-picked replay
+// has to say so itself, or it inherits the last attract demo's caption.
+void          HS_Set_DemoLabel_For(const char * mapname, skill_e skill,
+                                   int cat, boolean single);
 
 #endif // HS_STUFF_H
