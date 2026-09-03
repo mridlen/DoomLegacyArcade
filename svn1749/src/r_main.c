@@ -400,6 +400,42 @@ int R_PointOnSide ( fixed_t x, fixed_t y, node_t* node )
 }
 
 
+// [Arcade] R_PointOnSide against the re-aligned partition direction
+// (node->rdx/rdy, see P_Fix_Node_Partitions).  Used by the render BSP walk
+// only, so that a viewpoint sitting a unit or two from a partition is put on
+// the side the map geometry actually says, and the tree is walked in true
+// front-to-back order.  Gameplay keeps R_PointOnSide and the WAD's own
+// vectors, so demos are unaffected.
+// Returns side 0 (front) or 1 (back).
+int R_PointOnSide_Render ( fixed_t x, fixed_t y, node_t* node )
+{
+    fixed_t     dx, dy;
+    fixed_t     left, right;
+
+    if (node->rdx == 0)
+    {
+        return ((x <= node->x)? (node->rdy > 0) : (node->rdy < 0))? 1 : 0;
+    }
+    if (node->rdy == 0)
+    {
+        return ((y <= node->y)? (node->rdx < 0) : (node->rdx > 0))? 1 : 0;
+    }
+
+    dx = (x - node->x);
+    dy = (y - node->y);
+
+    if ( (node->rdy ^ node->rdx ^ dx ^ dy) < 0 )
+    {
+        return ((node->rdy ^ dx) < 0 )? 1 : 0;
+    }
+
+    left = FixedMul ( node->rdy>>FRACBITS , dx );
+    right = FixedMul ( dy , node->rdx>>FRACBITS );
+
+    return (right < left) ? 0 : 1;
+}
+
+
 // Returns side 0 (front) or 1 (back).
 int R_PointOnSegSide ( fixed_t x, fixed_t y, seg_t* line )
 {

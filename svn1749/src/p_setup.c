@@ -510,6 +510,125 @@ void P_LoadSegs ( lumpnum_t lumpnum )
 // Nothing in the simulation reads these coordinates: collision, sight checks
 // and the blockmap all work from linedefs, and only the renderers walk seg
 // vertices.  So this cannot move a player, a shot or a monster.
+// [Arcade] Re-align each node's partition direction to its linedef.
+//
+// The NODES lump stores a partition as the seg the builder split on, and
+// that seg's far endpoint is often a node-invented vertex rounded to whole
+// map units.  The stored direction is therefore the *rounded* seg vector,
+// which can sit a fraction of a degree off the linedef it actually lies on
+// -- E1M1 node 162 is stored as (40,-54) where its linedef 427 is (48,-64),
+// a rotation of about 0.34 degrees.
+//
+// That is harmless until a viewpoint lands within a unit or two of the
+// partition, hundreds of units from its anchor, where the rotation is worth
+// more than the viewer's distance from the plane.  R_PointOnSide then
+// answers with the wrong side, the BSP is walked out of order, and a wall
+// far behind the viewer's own floor is drawn -- and marked solid -- before
+// the near wall that should have occluded it.  The near wall loses those
+// columns, its floor visplane is left with a hole, and the sector behind
+// shows through it as a vertical stripe: the E1M1 slime trail.
+//
+// Killough's P_Remove_Slime_Trails snaps the seg vertices but leaves the
+// node vectors that were derived from those same rounded vertices, which is
+// why it does not touch this one.  Recover the exact direction from the
+// linedef instead.
+//
+// Render only.  node_t.x/y/dx/dy are left exactly as the WAD has them, so
+// R_PointInSubsector and every gameplay use of the nodes are bit-identical
+// and demos are unaffected.  Must run BEFORE P_Remove_Slime_Trails, which
+// moves the seg vertices this matches partitions against.
+static inline uint32_t P_Node_Hash( fixed_t x, fixed_t y )
+{
+    return ((uint32_t)x * 0x9E3779B1u) ^ ((uint32_t)y * 0x85EBCA6Bu);
+}
+
+static void P_Fix_Node_Partitions( void )
+{
+    uint32_t   hsize, hmask, i, ni;
+    int32_t  * hash_head = NULL;
+    int32_t  * hash_next = NULL;
+    uint32_t   realign_count = 0;
+
+    if( numnodes < 1 )  return;
+
+    // Default: exactly the partition the WAD gives.
+    for( ni = 0; ni < numnodes; ni++ )
+    {
+        nodes[ni].rdx = nodes[ni].dx;
+        nodes[ni].rdy = nodes[ni].dy;
+    }
+
+    if( numsegs < 1 )  return;
+
+    // Hash the segs by their v1, so each node can find its partition seg.
+    hsize = 16;
+    while( hsize < (numsegs << 1) )  hsize <<= 1;
+    hmask = hsize - 1;
+
+    hash_head = Z_Malloc( hsize * sizeof(int32_t), PU_STATIC, NULL );
+    hash_next = Z_Malloc( numsegs * sizeof(int32_t), PU_STATIC, NULL );
+    for( i = 0; i < hsize; i++ )  hash_head[i] = -1;
+    for( i = 0; i < numsegs; i++ )
+    {
+        uint32_t h;
+        hash_next[i] = -1;
+        if( segs[i].v1 == NULL )  continue;
+        h = P_Node_Hash( segs[i].v1->x, segs[i].v1->y ) & hmask;
+        hash_next[i] = hash_head[h];
+        hash_head[h] = (int32_t) i;
+    }
+
+    for( ni = 0; ni < numnodes; ni++ )
+    {
+        node_t * nd = &nodes[ni];
+        uint32_t h = P_Node_Hash( nd->x, nd->y ) & hmask;
+        int32_t  si;
+
+        for( si = hash_head[h]; si >= 0; si = hash_next[si] )
+        {
+            seg_t * sg = &segs[si];
+            const line_t * ld;
+            int64_t sdx, sdy, ldx, ldy;
+
+            if( sg->v1 == NULL || sg->v2 == NULL )  continue;
+            if( sg->v1->x != nd->x || sg->v1->y != nd->y )  continue;
+
+            // The partition must be along this seg, pointing the same way.
+            sdx = (int64_t)sg->v2->x - (int64_t)sg->v1->x;
+            sdy = (int64_t)sg->v2->y - (int64_t)sg->v1->y;
+            if( (sdx * (int64_t)nd->dy) != (sdy * (int64_t)nd->dx) )  continue;
+            if( (sdx * (int64_t)nd->dx + sdy * (int64_t)nd->dy) <= 0 )  continue;
+
+            ld = sg->linedef;
+            if( ld == NULL )  continue;
+
+            ldx = ld->dx;
+            ldy = ld->dy;
+            if( (ldx * (int64_t)nd->dx + ldy * (int64_t)nd->dy) < 0 )
+            {
+                ldx = -ldx;
+                ldy = -ldy;
+            }
+            // Only interesting when the linedef is not parallel to the
+            // rounded vector the WAD stored.
+            if( (ldx * (int64_t)nd->dy) != (ldy * (int64_t)nd->dx) )
+                realign_count++;
+
+            nd->rdx = (fixed_t) ldx;
+            nd->rdy = (fixed_t) ldy;
+            break;
+        }
+    }
+
+    Z_Free( hash_next );
+    Z_Free( hash_head );
+
+    // EMSG_all, not EMSG_ver: EMSG_ver is invisible during level setup.
+    GenPrintf( EMSG_all, "Node partitions: %u re-aligned to their linedef.\n",
+               realign_count );
+}
+
+
 static void P_Remove_Slime_Trails( void )
 {
     byte *    moved;
@@ -2545,6 +2664,7 @@ boolean P_SetupLevel (int      to_episode,
     // [Arcade] After every node format's loader, before anything derives
     // geometry from the segs (P_GroupLines, and HWR_SetupLevel below, which
     // builds the floor and ceiling polygons these have to agree with).
+    P_Fix_Node_Partitions();  // [Arcade] before the vertices move
     P_Remove_Slime_Trails();
 
     // [WDJ] Limits numsectors to 0xFFFE, or else reject calc will overflow.
