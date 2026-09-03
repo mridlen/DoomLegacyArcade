@@ -675,64 +675,74 @@ the hairline viewpoint as clean. Beware comparing "before" and "after" from *dif
 -- moving even 16 units reframes the scene enough that a fixed pixel window silently reports zero,
 which reads as a fix.
 
-### Rebuilt nodes are the fix, and the engine builds them itself
+### Rebuilt nodes are the fix -- for *rendering only*
 
 ZDBSP is vendored into `svn1749/src/nodebuild/` and run at level load, so the WAD's rounded node
 partitions never reach the renderer. It keeps its vertices and partitions in fixed point, so the
 rounding that causes the whole slime-trail family cannot happen.
 
-`P_Rebuild_Nodes` (`p_setup.c`) is the glue: it hands the loaded VERTEXES/LINEDEFS/SIDEDEFS to
-`NB_Build` (`nodebuild/nb_build.cpp`) and converts the result into `vertex_t`/`seg_t`/
-`subsector_t`/`node_t` in `PU_LEVEL`. It runs after every node-format loader and before
-`P_Remove_Slime_Trails`, `P_GroupLines` and `HWR_SetupLevel`, all of which derive geometry from the
-segs. `-nonodebuild` turns it off, which is the A/B switch every measurement below used.
+**The rebuilt tree must never be the one the simulation walks.** It was, in the first version of
+this, and it desynced a record demo. `p_sight.c` walks the BSP for monster line-of-sight
+(`P_CrossBSPNode` -> `P_CrossSubsector`), and `R_PointInSubsector` is used by ten gameplay files;
+ZDBSP's tree has different segs -- 785 against the WAD's 747 on E1M1 -- so a sight check or a
+subsector assignment can land differently. Rarely, but it only has to happen once.
 
-**Measured**, same binary, `-nonodebuild` versus default:
+So `P_Rebuild_Nodes` publishes into `rbsp_*` (`r_state.h`), and `R_Use_Render_BSP` /
+`R_Use_Play_BSP` swap the globals for the duration of a frame. The swap wraps
+`R_RenderPlayerView`, `HWR_RenderPlayerView` and `HWR_SetupLevel` (whose plane polygons are render
+geometry and must be cut from the tree the renderer walks). Everything else -- `P_GroupLines`,
+`P_Remove_Slime_Trails`, the whole simulation -- sees the WAD's own tree, so gameplay is identical
+to stock **by construction**, not by luck.
 
-| | stock nodes | rebuilt |
-| --- | --- | --- |
-| stripe at X 2994 Y -2879 ANG 295 | 4 columns | **0** |
-| hairline at X 3031 Y -2925 ANG 305 | absent | absent |
-| built-in demos 1/2/3 at tic 900 | -- | **100% identical**, no desync |
-| E1M1 wall/flat corners pulled | 20 | 0 |
-| E1M7 wall/flat corners pulled | 43 | 1 |
-| E1M7 T-joins inserted | 103 | 17 |
-| "still not flush" | 0 | **0** |
-| MAP15 level load | 2798 ms | 2842 ms |
+**Measured**, same binary, on the E1M6 ITYTD speed record demo to tic 3900, 112 samples of the
+player's position, angle and health:
 
-The seam numbers are the interesting corroboration: the arcade's own wall/flat and T-join fixers
-were largely compensating for the same node rounding, and with a properly built tree they have
-almost nothing left to do. "Still not flush" stays 0, which is the number that must not move.
+| | vs stock nodes |
+| --- | --- |
+| rebuilt tree used by gameplay too (the old design) | **diverges at tic 2555** |
+| render-only split | **identical, 112/112** |
 
-**Things worth knowing before touching this.**
+And the artifacts stay fixed: the stripe is 0 columns, the hairline absent, E1M1 wall/flat corners
+pulled 20 -> 0, E1M7 103 T-joins -> 17, "still not flush" 0 throughout.
 
-- **It is a command-line switch, not a cvar, deliberately.** Nodes feed `R_PointInSubsector`, so
-  this is gameplay-affecting, and a gameplay-affecting cvar has to go into the demo header or
-  `G_demo_defaults()` or demos desync. A switch sidesteps that entirely, and the default is on, so
-  an operator never needs it.
-- **Demos do not desync** -- all three of DOOM.WAD's built-in demos are pixel-identical at tic 900
-  with the rebuild on and off, which is what makes replacing the tree outright viable rather than
-  needing a separate render-only tree. Re-check this if the builder is ever updated.
+**Testing demos: `-playdemo` takes an external *file*, and silently proves nothing if you get it
+wrong.** This wasted a whole round of "verification" and let the desync ship. The code says it
+outright -- *"it is NOT possible to play an internal demo using -playdemo"* (`d_main.c`) -- so
+`-playdemo demo1` cannot work for DOOM.WAD's built-in demos; use the console `playdemo demo1`,
+which goes through `W_CheckNumForName`. A record demo needs its path:
+`-playdemo legacyhome/demos/doomu-sl_E1M6_sk0_speed` (the `.lmp` is appended). Get either wrong and
+the engine prints `ERROR: couldn't open lump/file` and sits on the console screen -- **and two runs
+that both failed compare 100% identical**, which reads exactly like a clean pass. Always confirm
+the demo actually started before believing a comparison, and prefer diffing simulation state over
+pixels: a temporary `fprintf(stderr, ...)` of `leveltime`, the player's x/y/z, angle and health from
+`P_PlayerThink` is what finally settled this. `GenPrintf(EMSG_warn, ...)` does *not* reach stdout
+from inside the game loop, so it is useless for this.
+
+**Other things worth knowing.**
+
+- **It is a command-line switch, not a cvar** (`-nonodebuild`), because nodes feed
+  `R_PointInSubsector` and a gameplay-affecting cvar would have to go into the demo header or
+  `G_demo_defaults()`. With the split that reasoning is weaker, but the switch is also what makes
+  the A/B above possible, so it stays.
 - **The tree had never compiled C++.** `r_d3d/*.cpp` has a dep rule but is never built. The
-  Makefile now has a `CXX`, a `CXXFLAGS` (`CFLAGS` minus the C standard, which g++ rejects), a
+  Makefile now has `CXX`, `CXXFLAGS` (`CFLAGS` minus the C standard, which g++ rejects), a
   `$(O)/%.o: $(SD)nodebuild/%.cpp` rule and `-lstdc++`. `-fno-strict-aliasing` matters: the builder
   type-puns.
 - **`-DDISABLE_SSE` is not a performance oversight.** ZDBSP picks an SSE classifier at runtime
   through a selector that lives in its command-line `main.cpp`, which is not vendored; the scalar
-  path is portable and the cost is invisible next to a level load.
-- **Local modifications to the vendored source are marked `[Arcade]`** -- currently only the
-  progress bar, gated behind `NB_QUIET`. `main.cpp` globals it needs (`MaxSegs`, `SplitCost`,
-  `AAPreference`, `PointToAngle`, `Warn`) and three `FLevel` members are reimplemented in
-  `nb_build.cpp` rather than vendoring `processor.cpp`, which is all wad file I/O.
-- **Nothing derived from an IWAD is written to disk**, which is the point of doing it in the engine
-  rather than shipping a re-noded PWAD: a rebuilt map carries id Software's map data verbatim, so
-  it could never have gone into the repo or a release. ZDBSP is GPLv2-or-later (Randy Heit) and
-  DoomLegacy is GPL, so linking it is fine; `COPYING.zdbsp` travels with the source.
+  path is portable -- including to ARM -- and the cost is invisible next to a level load (MAP15
+  2798 -> 2842 ms).
+- **Local modifications to the vendored source are marked `[Arcade]`** -- only the progress bar,
+  behind `NB_QUIET`. `main.cpp` globals it needs (`MaxSegs`, `SplitCost`, `AAPreference`,
+  `PointToAngle`, `Warn`) and three `FLevel` members are reimplemented in `nb_build.cpp` rather than
+  vendoring `processor.cpp`, which is all wad file I/O.
+- **Nothing derived from an IWAD is written to disk**, which is why this is done in the engine
+  rather than by shipping a re-noded PWAD: a rebuilt map carries id Software's map data verbatim.
+  ZDBSP is GPLv2-or-later (Randy Heit); `COPYING.zdbsp` travels with the source.
 - **`P_Rebuild_Nodes` validates before it commits.** The builder de-duplicates vertices and drops
-  any a linedef does not use, so its vertex array is a *different set in a different order* -- it
-  hands back each line's remapped v1/v2, and that is what re-points the linedefs. The checks confirm
-  every index is in range and that no linedef endpoint moved (`dx`/`dy`, the bbox and the blockmap
-  were all derived from them already). Any failure logs and keeps the wad's nodes.
+  any a linedef does not use, so its vertex array is a different set in a different order -- it
+  hands back each line's remapped v1/v2. The checks confirm every index is in range and that no
+  linedef endpoint moved. Any failure logs and keeps the wad's nodes.
 
 ### `setpos` places the camera for headless rendering bugs
 

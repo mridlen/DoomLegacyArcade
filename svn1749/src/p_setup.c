@@ -229,6 +229,55 @@ subsector_t*    subsectors;
 uint32_t        numnodes;
 node_t*         nodes;
 
+// [Arcade] The rendering-only BSP built by P_Rebuild_Nodes.  See r_state.h.
+node_t*         rbsp_nodes = NULL;
+uint32_t        rbsp_numnodes = 0;
+subsector_t*    rbsp_subsectors = NULL;
+uint32_t        rbsp_numsubsectors = 0;
+seg_t*          rbsp_segs = NULL;
+uint32_t        rbsp_numsegs = 0;
+vertex_t*       rbsp_vertexes = NULL;
+uint32_t        rbsp_numvertexes = 0;
+
+// The play tree, saved while the render tree is swapped in.
+static node_t*      play_nodes;
+static uint32_t     play_numnodes;
+static subsector_t* play_subsectors;
+static uint32_t     play_numsubsectors;
+static seg_t*       play_segs;
+static uint32_t     play_numsegs;
+static vertex_t*    play_vertexes;
+static uint32_t     play_numvertexes;
+static boolean      render_bsp_active = false;
+
+// [Arcade] Swap the globals to the rebuilt tree for the duration of a frame.
+// Nothing outside rendering may run in between: the simulation walks these
+// same globals (p_sight.c, R_PointInSubsector) and must always see the wad's
+// own tree, or gameplay and recorded demos change.
+void R_Use_Render_BSP( void )
+{
+    if( rbsp_nodes == NULL || render_bsp_active )  return;
+    play_nodes = nodes;              play_numnodes = numnodes;
+    play_subsectors = subsectors;    play_numsubsectors = numsubsectors;
+    play_segs = segs;                play_numsegs = numsegs;
+    play_vertexes = vertexes;        play_numvertexes = numvertexes;
+    nodes = rbsp_nodes;              numnodes = rbsp_numnodes;
+    subsectors = rbsp_subsectors;    numsubsectors = rbsp_numsubsectors;
+    segs = rbsp_segs;                numsegs = rbsp_numsegs;
+    vertexes = rbsp_vertexes;        numvertexes = rbsp_numvertexes;
+    render_bsp_active = true;
+}
+
+void R_Use_Play_BSP( void )
+{
+    if( ! render_bsp_active )  return;
+    nodes = play_nodes;              numnodes = play_numnodes;
+    subsectors = play_subsectors;    numsubsectors = play_numsubsectors;
+    segs = play_segs;                numsegs = play_numsegs;
+    vertexes = play_vertexes;        numvertexes = play_numvertexes;
+    render_bsp_active = false;
+}
+
 uint32_t        numlines;
 line_t*         lines;
 
@@ -605,24 +654,17 @@ static void P_Rebuild_Nodes( void )
             nv[i].y = nb.out_vertexes[i].y;
         }
 
-        vertexes = nv;
-        numvertexes = nb.num_out_vertexes;
-        // line_t held pointers into the old array, and the builder renumbered
-        // the vertices, so re-point through its mapping rather than by index.
-        for( i = 0; i < numlines; i++ )
-        {
-            lines[i].v1 = &vertexes[ nb.out_line_v1[i] ];
-            lines[i].v2 = &vertexes[ nb.out_line_v2[i] ];
-        }
-
+        // The wad's vertexes and the linedefs that point into them are left
+        // exactly as they are: they are play data, and lines[] is shared.
+        // The rebuilt segs index the new vertex array instead.
         for( i = 0; i < nb.num_out_segs; i++ )
         {
             seg_t *  li = &ns[i];
             line_t * ldef = &lines[ nb.out_segs[i].linedef ];
             int      side = nb.out_segs[i].side ? 1 : 0;
 
-            li->v1 = &vertexes[ nb.out_segs[i].v1 ];
-            li->v2 = &vertexes[ nb.out_segs[i].v2 ];
+            li->v1 = &nv[ nb.out_segs[i].v1 ];
+            li->v2 = &nv[ nb.out_segs[i].v2 ];
             li->angle = ((angle_t) nb.out_segs[i].angle) << 16;
             li->offset = ((fixed_t) nb.out_segs[i].offset) << FRACBITS;
             li->linedef = ldef;
@@ -647,6 +689,11 @@ static void P_Rebuild_Nodes( void )
         {
             nss[i].numlines = nb.out_subsectors[i].numlines;
             nss[i].firstline = nb.out_subsectors[i].firstline;
+            // P_GroupLines fills this in for the play tree; the render tree
+            // is not part of that pass, so do it here from the first seg.
+            nss[i].sector = (nss[i].numlines)
+                ? ns[ nss[i].firstline ].sidedef->sector
+                : &sectors[0];
         }
 
         for( i = 0; i < nb.num_out_nodes; i++ )
@@ -668,9 +715,12 @@ static void P_Rebuild_Nodes( void )
             }
         }
 
-        segs = ns;              numsegs = nb.num_out_segs;
-        subsectors = nss;       numsubsectors = nb.num_out_subsectors;
-        nodes = nn;             numnodes = nb.num_out_nodes;
+        // Publish as the render tree only.  nodes/segs/subsectors/vertexes
+        // keep the wad's own, which is what the simulation walks.
+        rbsp_vertexes = nv;     rbsp_numvertexes = nb.num_out_vertexes;
+        rbsp_segs = ns;         rbsp_numsegs = nb.num_out_segs;
+        rbsp_subsectors = nss;  rbsp_numsubsectors = nb.num_out_subsectors;
+        rbsp_nodes = nn;        rbsp_numnodes = nb.num_out_nodes;
         ok = true;
     }
 
@@ -687,8 +737,9 @@ done:
     if( line_v2 )  free( line_v2 );
 
     if( ok )
-        GenPrintf( EMSG_all, "Nodes rebuilt: %i segs, %i subsectors, %i nodes.\n",
-                   numsegs, numsubsectors, numnodes );
+        GenPrintf( EMSG_all,
+                   "Nodes rebuilt for rendering: %i segs, %i subsectors, %i nodes.\n",
+                   rbsp_numsegs, rbsp_numsubsectors, rbsp_numnodes );
 }
 
 
@@ -2753,7 +2804,13 @@ boolean P_SetupLevel (int      to_episode,
     // [Arcade] After every node format's loader, before anything derives
     // geometry from the segs (P_GroupLines, and HWR_SetupLevel below, which
     // builds the floor and ceiling polygons these have to agree with).
-    // [Arcade] Rebuild the BSP before anything derives geometry from it.
+    // [Arcade] Build the rendering BSP.  Everything below (P_GroupLines,
+    // HWR_SetupLevel) still works from the wad's own tree, which stays in
+    // nodes/segs/subsectors; only the renderer swaps to the rebuilt one.
+    R_Use_Play_BSP();   // in case a previous level left it swapped
+    rbsp_nodes = NULL;  rbsp_subsectors = NULL;
+    rbsp_segs = NULL;   rbsp_vertexes = NULL;
+    rbsp_numnodes = rbsp_numsubsectors = rbsp_numsegs = rbsp_numvertexes = 0;
     if( ! M_CheckParm("-nonodebuild") )
         P_Rebuild_Nodes();
 

@@ -143,6 +143,25 @@ extern subsector_t*     subsectors;
 extern uint32_t         numnodes;
 extern node_t*          nodes;
 
+// [Arcade] A second BSP, built by ZDBSP at level load, used for *rendering
+// only* (P_Rebuild_Nodes, p_setup.c).  The wad's own tree stays in the
+// globals above and remains the one the simulation walks -- p_sight.c's
+// P_CrossBSPNode and every R_PointInSubsector caller -- so gameplay and
+// recorded demos are bit-identical to stock.  R_Use_Render_BSP swaps the
+// globals for the duration of a frame; R_Use_Play_BSP puts them back.
+// Null when the rebuild did not run or was rejected.
+extern node_t*          rbsp_nodes;
+extern uint32_t         rbsp_numnodes;
+extern subsector_t*     rbsp_subsectors;
+extern uint32_t         rbsp_numsubsectors;
+extern seg_t*           rbsp_segs;
+extern uint32_t         rbsp_numsegs;
+extern vertex_t*        rbsp_vertexes;
+extern uint32_t         rbsp_numvertexes;
+
+void R_Use_Render_BSP( void );
+void R_Use_Play_BSP( void );
+
 extern uint32_t         numlines;
 extern line_t*          lines;
 

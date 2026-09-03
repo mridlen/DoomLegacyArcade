@@ -1636,6 +1636,10 @@ extern void R_DrawFloorSplats (void);   //r_plane.c
 //  pind : player index, [0]=main player, [1]=splitscreen player
 void R_RenderPlayerView( byte pind, player_t* player )
 {
+    // [Arcade] Draw from the rebuilt BSP, if there is one.  Swapped back
+    // before returning, so the simulation only ever walks the wad's tree.
+    R_Use_Render_BSP();
+
     // rendermode == render_soft
     R_SetupFrame(pind, player);
 
@@ -1718,6 +1722,8 @@ void R_RenderPlayerView( byte pind, player_t* player )
     // Check for new console commands.
     NetUpdate ();
     player->mo->flags &= ~MF_NOSECTOR; // don't show self (uninit) clientprediction code
+
+    R_Use_Play_BSP();  // [Arcade]
 }
 
 

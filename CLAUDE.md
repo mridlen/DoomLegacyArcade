@@ -335,7 +335,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
-| Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Driven by `P_Rebuild_Nodes` (`p_setup.c`); `-nonodebuild` disables it |
+| Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Built by `P_Rebuild_Nodes` (`p_setup.c`) into `rbsp_*` and used for **rendering only**, via `R_Use_Render_BSP`/`R_Use_Play_BSP`; `-nonodebuild` disables it |
 
 `devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of
 this is gated on.
@@ -373,6 +373,14 @@ written up in full in the doc named beside it.
   clamp — the config, the menu and the cvar are all correct and only the arithmetic downstream is
   wrong. Use `.value` for any cvar that can exceed 255, and note that different readers of the
   same cvar can disagree. → `gotchas.md`
+- **The BSP the renderer walks must not be the one the simulation walks.** `p_sight.c` traverses
+  the nodes for line-of-sight and `R_PointInSubsector` is used across the play code, so swapping in
+  a rebuilt tree changes gameplay and desyncs demos — rarely enough to pass a careless test, which
+  is exactly how it shipped once. The rebuilt tree lives in `rbsp_*` and is swapped in only for the
+  duration of a frame. → `gotchas.md`
+- **`-playdemo` plays an external *file*, never an internal lump, and a failed demo run looks like
+  a passing test.** Two runs that both failed to load compare 100% identical. Confirm the demo
+  started, and diff simulation state rather than pixels. → `gotchas.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
 - **Drawers run once per frame, so they must be idempotent.** Anything a drawer mutates changes 35

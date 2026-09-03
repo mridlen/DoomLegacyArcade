@@ -4509,6 +4509,10 @@ static byte viewsv_need_sky[MAXSPLITSCREENPLAYERS];   // [Arcade] one per view
 //  pind : splitscreen 0=upper, 1=lower, 2=init. Single player is always 0.
 void HWR_RenderPlayerView(byte pind, player_t * player)
 {
+    // [Arcade] Draw from the rebuilt BSP; swapped back before returning so
+    // the simulation only ever walks the wad's own tree.
+    R_Use_Render_BSP();
+
     // viewnumber = pind, because [0] is upper splitscreen
     //static float    distance = BASEVIDWIDTH;
 
@@ -4728,6 +4732,8 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // added by Hurdler for correct splitscreen
     // moved here by hurdler so it works with the new near clipping plane
     HWD.pfnGClipRect(0, 0, vid.width, vid.height, NEAR_CLIP_DIST);
+
+    R_Use_Play_BSP();  // [Arcade]
 }
 
 // ==========================================================================
@@ -4909,12 +4915,18 @@ void HWR_Startup_Render(void)
 // Called after setup level, and when change drawmode to HWR draw.
 void  HWR_SetupLevel( void )
 {
+    // [Arcade] The plane polygons are render geometry and must be cut from
+    // the same tree the renderer walks, so build them with it swapped in.
+    R_Use_Render_BSP();
+
     // Setup structures needed for HWR draw.
     // BP: reset light between levels (we draw preview frame lights on current frame)
     HWR_Reset_Lights();
     // Correct missing sidedefs & deep water trick
     HWR_CorrectSWTricks();
     HWR_Create_PlanePolygons();
+
+    R_Use_Play_BSP();  // [Arcade]
 }
 
 // Called after setup level, and when change drawmode to HWR draw.
