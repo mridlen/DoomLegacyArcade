@@ -715,6 +715,41 @@ the hairline viewpoint as clean. Beware comparing "before" and "after" from *dif
 -- moving even 16 units reframes the scene enough that a fixed pixel window silently reports zero,
 which reads as a fix.
 
+### Rebuilt nodes are the fix: `tools/rebuild-nodes.sh`
+
+ZDBSP rebuilds the BSP with fixed-point vertices, so the partition rounding that causes the stripe
+never happens. Measured with the stock engine, at both reported viewpoints:
+
+| | stock nodes | ZDBSP nodes |
+| --- | --- | --- |
+| X 2994 Y -2879 ANG 295 (stripe) | 4 columns | **0** |
+| X 3031 Y -2925 ANG 305 (hairline) | absent | absent, and one fewer suspect column |
+
+The rest of the frame is 97.6% pixel-identical, so it is the same map, correctly ordered. All nine
+E1 maps load and quit cleanly with the rebuilt set; the whole IWAD rebuilds in under half a second.
+
+`./tools/rebuild-nodes.sh` fetches and builds ZDBSP into a gitignored `tools/.zdbsp/` if it is not
+already on PATH, runs it over each IWAD in `~/games/doom`, and writes `<NAME>-nodes.wad` beside it
+carrying only the maps (3.4 MB for DOOM, 2.9 MB for DOOM2). Load it with `-file`.
+
+**Three things to know before relying on this.**
+
+- **The output must never be committed or released.** A rebuilt map carries id Software's
+  LINEDEFS/SIDEDEFS/VERTEXES/SECTORS verbatim, and its nodes are a derivative of them. Generating it
+  locally from an IWAD you own is ordinary personal use; putting it in the repo or in a GitHub
+  release is redistributing id's map data. `*-nodes.wad` and `tools/.zdbsp/` are gitignored -- do
+  not force-add them. ZDBSP itself is GPLv2-or-later (Randy Heit); used as an external tool it puts
+  no obligation on DoomLegacy or its output, and linking it in later would be permitted (DoomLegacy
+  is GPL) provided its notices travel with it and source is offered.
+- **Nodes are gameplay state, not just rendering.** `R_PointInSubsector` decides which sector a
+  thing is in, so a rebuilt tree can in principle change simulation on a boundary case, and
+  **existing record demos for a rebuilt map may desync** -- including the ones the attract screen
+  plays back. Not tested here, because the scratch home had no recorded demos. Watch the attract
+  cycle after adopting this, and be ready to clear the affected records.
+- **The engine has no autoload.** It only picks up a nodes wad from `-file` on the command line,
+  and the cabinet launches `./doomlegacy` bare, so adopting this needs either a launcher wrapper or
+  a small engine change to add `<iwad>-nodes.wad` automatically when it sits next to the binary.
+
 ### `setpos` places the camera for headless rendering bugs
 
 `setpos <x> <y> [angle] [z]` (`d_netcmd.c`, `-devmode` only) puts the player at map coordinates so a
