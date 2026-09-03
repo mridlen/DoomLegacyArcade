@@ -308,6 +308,7 @@ are kept below, in this file.
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
 | `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
 | `docs/arcade/software-fullscreen.md` | The SDL2 present path: texture pitch versus the window surface, why software fullscreen skewed, the fullscreen mode list and GPU scaling | `VID_SetMode_vid`, `I_FinishUpdate`, `sdl_texture`/`vidSurface`/`vid.direct*` |
+| `docs/arcade/screen-fill.md` | Why 2D pages letterboxed in software and fill now (`V_SCALEEXACT`, the fixed-point draw scale), and why the OpenGL resolution could not be changed | `V_SetupDraw`, `drawinfo` scaling in `v_video.c`, `V_SCALEEXACT` call sites, `VID_SetMode`, `OglSdl_SetMode` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
 | `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
 | `docs/arcade/building.md` | The build scripts: capability probing, the traps they encode, Windows | `tools/build.sh`, `tools/build.ps1`, `build.bat` |
@@ -335,6 +336,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+| Whole-screen 2D page scale | `v_video.c`: `V_SetupDraw` (`x_scale`/`y_scale`, `x0_scale`/`y0_scale`) and the `V_scale_x`/`V_scale_y` macros in `v_video.h`. Flag set by `D_PageDrawer`, `HS_Draw_AttractTable`, `WI_Drawer`, `F_Drawer` |
 | Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Built by `P_Rebuild_Nodes` (`p_setup.c`) into `rbsp_*` and used for **rendering only**, via `R_Use_Render_BSP`/`R_Use_Play_BSP`; `-nonodebuild` disables it |
 
 `devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of
@@ -414,6 +416,22 @@ written up in full in the doc named beside it.
   has, is 24 to the macro and 32 to an `SDL_PixelFormat`. `vid.bitpp` picks the software drawer, so
   the macro drew 4-byte pixels with the 3-byte drawer and mangled every texture on screen — in the
   software and native drawmodes only, and with `make smoke` passing throughout. → `gotchas.md`
+- **The software renderer scales 2D by a whole number; the hardware renderer scales by the exact
+  ratio.** `vid.dupx` is `vid.width / 320` truncated, so a 320x200 page drew 1280x600 of a 1366x768
+  screen and `D_PageDrawer` tiled a flat into what was left — which is what "the slides don't fill
+  the screen" was. Whole-screen pages now pass `V_SCALEEXACT`; menus, HUD and status bar keep the
+  whole number on purpose. Scale through `V_scale_x`/`V_scale_y`, never by multiplying out by hand:
+  they round, and the rounding is what stops adjacent runs leaving a seam. → `screen-fill.md`
+- **Under SDL2, `sdl_texture` belongs to the software renderer alone.** `VID_SetMode` required it in
+  both, so every OpenGL mode change failed, left `vid.modenum` describing the old mode, and the video
+  menu went on highlighting the resolution you had just changed away from. Likewise
+  `SDL_GetWindowDisplayMode` is the *fullscreen* mode, not the window: use
+  `SDL_GL_GetDrawableSize` for what GL actually draws on. → `screen-fill.md`
+- **A mechanical text-match edit in this tree can land in a commented-out copy of the line.**
+  Several drawers in `v_video.c` keep `//    destend = ...` next to the live statement, and the
+  indented live text is a substring of the commented one — so the replacement silently hits the
+  comment and the real line survives. Check the match count and check where it landed.
+  → `screen-fill.md`
 - **A drawmode's config file can ask for a screen depth that drawmode cannot do, and the failure looks like a frozen cabinet.** `legacyhome` has one config per drawmode; its `scr_depth` overwrites the validated one, the graphics change then fails *after* the rendermode teardown, and the engine keeps running with a dead display. Also: the console `drawmode` command does not actually switch drawmode — only the menu does. → `drawmode-switching.md`
 - **Node-builder rounding shows up as hairline seams in the GL renderer, in two separate
   families, and each needed its own fix.** A diagonal linedef split by a BSP partition gets its

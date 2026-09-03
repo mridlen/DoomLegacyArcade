@@ -2689,6 +2689,7 @@ void M_DrawSetupMultiPlayerMenu(void)
         byte   sv_dupx  = drawinfo.dupx,  sv_dupy  = drawinfo.dupy;
         unsigned int  sv_xbytes = drawinfo.xbytes, sv_ybytes = drawinfo.ybytes;
         fixed_t  sv_xuf = drawinfo.x_unitfrac, sv_yuf = drawinfo.y_unitfrac;
+        fixed_t  sv_xs = drawinfo.x_scale, sv_ys = drawinfo.y_scale;
 
         drawinfo.fdupx = sv_fdupx / 2.0f;
         drawinfo.fdupy = sv_fdupy / 2.0f;
@@ -2700,8 +2701,12 @@ void M_DrawSetupMultiPlayerMenu(void)
         if( drawinfo.dupy < 1 )  drawinfo.dupy = 1;
         drawinfo.xbytes = drawinfo.dupx * vid.bytepp;
         drawinfo.ybytes = drawinfo.dupy * vid.ybytes;
-        drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupx << FRACBITS);
-        drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupy << FRACBITS);
+        // [Arcade] The software drawers step by x_scale/y_scale now, so the
+        // halving has to reach those too or the sprite draws at full size.
+        drawinfo.x_scale = drawinfo.dupx << FRACBITS;
+        drawinfo.y_scale = drawinfo.dupy << FRACBITS;
+        drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.x_scale);
+        drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.y_scale);
 
     if( itemOn>0 )  // Edit skin or color
     {
@@ -2719,6 +2724,7 @@ void M_DrawSetupMultiPlayerMenu(void)
         drawinfo.fdupx = sv_fdupx;   drawinfo.fdupy = sv_fdupy;
         drawinfo.dupx  = sv_dupx;    drawinfo.dupy  = sv_dupy;
         drawinfo.xbytes = sv_xbytes; drawinfo.ybytes = sv_ybytes;
+        drawinfo.x_scale = sv_xs;     drawinfo.y_scale = sv_ys;
         drawinfo.x_unitfrac = sv_xuf; drawinfo.y_unitfrac = sv_yuf;
     }
 }

@@ -1419,7 +1419,19 @@ void D_PageDrawer(const char *lumpname)
     byte *dest;  // within screen buffer
 
     // [WDJ] Draw patch for all bpp, bytepp, and padded lines.
-    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    // [Arcade] V_SCALEEXACT: the page covers the whole screen.
+    //
+    // Stock scaled an attract page to a whole multiple of 320x200 and tiled a
+    // flat around what was left, on the 1998 reasoning that a low-resolution
+    // software screen looks worse stretched than bordered.  At the cabinet's
+    // 1366x768 that reasoning inverts: the page came out 1280x600 with a green
+    // flat band 43px down each side and 168px across the bottom, while the
+    // same page under OpenGL filled the screen, because the hardware path has
+    // always scaled by the exact ratio.  Now both do.
+    //
+    // The flat fill below is kept: it still runs when a page patch is smaller
+    // than the screen for some other reason, and it costs one pass.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT );
 
     // software mode which uses generally lower resolutions doesn't look
     // good when the pic is scaled, so it fills space around with a pattern,

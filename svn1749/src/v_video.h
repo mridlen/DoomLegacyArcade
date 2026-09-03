@@ -152,6 +152,11 @@ typedef enum {
     // hu ranking, hu FS overlay
     // menu
   V_CENTERMENU =         0x000200,   // menu centering, vert and horz.
+  V_SCALEEXACT =         0x000400,   // [Arcade] exact fractional scale
+    // With V_SCALEPATCH, scale the 320x200 layout onto the whole screen
+    // instead of rounding down to a whole multiple of it.  This is what the
+    // hardware renderer has always done; the software renderer letterboxed.
+    // For whole-screen 2D pages only -- see docs/arcade/screen-fill.md.
   V_NOSCALE =            0x004000,   // dont scale x,y, start coords
     // console, patch, chat font
     // status bar, overlay
@@ -193,6 +198,13 @@ typedef struct {
     int  xbytes;   // dupx * bytepp, bytes per source pixel
     int  y0bytes;   // bytes per source line per SCALESTART
     int  x0bytes;   // bytes per source pixel per SCALESTART
+    // [Arcade] Software draw scale, as destination pixels per source pixel,
+    // in 16.16 fixed point.  Without V_SCALEEXACT these hold whole numbers
+    // and are exactly dupx/dupy, so every drawer using them is unchanged.
+    // Apply with V_scale_x/V_scale_y, never by shifting by hand: the rounding
+    // is what keeps adjacent runs from leaving a seam.
+    fixed_t  x_scale, y_scale;    // per SCALEPATCH
+    fixed_t  x0_scale, y0_scale;  // per SCALESTART
     // Some software draw is using fdupx.
     float  fdupx, fdupy; // dup pixels per SCALEPATCH
 #ifdef HWRENDER
@@ -213,6 +225,7 @@ typedef struct {
         // can restore by V_SetupDrawinfo( prev_screenflags );
 
     unsigned int  x0bytes_saved, y0bytes_saved;   // saved copy
+    fixed_t  x0_scale_saved, y0_scale_saved;  // [Arcade] saved copy
 #ifdef HWRENDER
     float  fdupx0_saved, fdupy0_saved;  // per SCALESTART
 #endif
@@ -220,6 +233,17 @@ typedef struct {
 
 // current draw info
 extern drawinfo_t  drawinfo;
+
+// [Arcade] Source-space distance to destination pixels, per the current
+// drawinfo scale.  Rounded, not truncated: a run that starts at V_scale_y(t)
+// and ends at V_scale_y(t+len) meets the next run exactly, with no seam and
+// no overlap, whatever the scale.  With a whole-number scale these are plain
+// multiplication, which is what the software drawers did before.
+#define V_scale_x(v)   ((((v) * drawinfo.x_scale) + (FRACUNIT/2)) >> FRACBITS)
+#define V_scale_y(v)   ((((v) * drawinfo.y_scale) + (FRACUNIT/2)) >> FRACBITS)
+// The same, for a start coordinate (V_SCALESTART).
+#define V_start_x(v)   ((((v) * drawinfo.x0_scale) + (FRACUNIT/2)) >> FRACBITS)
+#define V_start_y(v)   ((((v) * drawinfo.y0_scale) + (FRACUNIT/2)) >> FRACBITS)
 
 // Setup drawinfo for draw screen, scaled, and centering
 // Can use saved V_drawinfo.screenflags or use V_drawinfo.prev_screenflags

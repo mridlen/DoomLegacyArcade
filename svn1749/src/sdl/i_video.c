@@ -1249,7 +1249,18 @@ int VID_SetMode(modenum_t modenum)
 
 #ifdef SDL2
     // sdl_window is shared and required for both sw and hw.
-    if( (sdl_window == NULL) || (sdl_texture == NULL) )  goto fail;
+    // [Arcade] The texture is the SOFTWARE present path only.  OpenGL draws
+    // through a GL context and never creates one -- OglSdl_SetMode destroys
+    // whatever the previous software mode left behind -- so testing it here
+    // failed every OpenGL mode change, however well it had just gone.  The
+    // failure is not fatal -- I_SoftError only prints -- but the two lines
+    // after this test are the ones that never ran, so vid.modenum and
+    // vid.fullscreen went on describing the mode the engine used to be in.
+    // M_DrawVideoMode picks its highlight by comparing against vid.modenum,
+    // so the video menu kept pointing at the old resolution next to a console
+    // line saying the change had failed.
+    if( sdl_window == NULL )  goto fail;
+    if( (rendermode == render_soft) && (sdl_texture == NULL) )  goto fail;
 #else
     // vidSurface is shared and required for both sw and hw.
     if( vidSurface == NULL )  goto fail;

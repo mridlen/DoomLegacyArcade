@@ -970,7 +970,9 @@ void F_Draw_interpic_Name( const char * name )
 void F_Drawer (void)
 {
     // Draw to screen0, scaled
-    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    // [Arcade] V_SCALEEXACT: the ending screens are whole-screen 320x200 pages
+    // like the attract ones, and letterboxed the same way without it.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT );
 
     if( finalestage == 2 )
     {

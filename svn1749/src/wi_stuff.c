@@ -503,7 +503,10 @@ static void WI_Prepare_Background(void)
         memset(screens[1], 0, vid.screen_size);
 
         // Draw background on screen1
-        V_SetupDraw(1 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ); // screen 1
+        // [Arcade] V_SCALEEXACT: cover the screen, as the attract pages do.
+        // Same 320x200-into-a-whole-multiple letterbox otherwise -- see
+        // docs/arcade/screen-fill.md.
+        V_SetupDraw(1 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT); // screen 1
         V_DrawScaledPatch(0, 0, W_CachePatchName(bgname, PU_CACHE));
         V_SetupDraw(drawinfo.prev_screenflags);  // restore
     }
@@ -2438,7 +2441,10 @@ void WI_Load_Data(void)
         memset(screens[1], 0, vid.screen_size);
   
         // Draw background on screen1
-        V_SetupDraw( 1 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ ); // screen 1
+        // [Arcade] V_SCALEEXACT: cover the screen, as the attract pages do.
+        // Same 320x200-into-a-whole-multiple letterbox otherwise -- see
+        // docs/arcade/screen-fill.md.
+        V_SetupDraw( 1 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT ); // screen 1
         V_DrawScaledPatch(0, 0, W_CachePatchName(bgname, PU_CACHE));
         V_SetupDraw( drawinfo.prev_screenflags );  // restore
     }
@@ -2583,7 +2589,11 @@ void WI_Release_Data(void)
 void WI_Drawer (void)
 {
     // all WI is draw screen0, scale
-    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    // [Arcade] V_SCALEEXACT, matching the background above and the attract
+    // pages: the whole intermission -- the level name, the Time/TOTAL rows and
+    // the arcade record tables on it -- is one 320x200 page, and stock drew it
+    // into a whole multiple of that with the rest of the screen left black.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT );
 
     switch (state)
     {

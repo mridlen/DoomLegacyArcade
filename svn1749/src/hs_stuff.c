@@ -3144,7 +3144,14 @@ void HS_Draw_AttractTable( void )
     // Without this it painted over whatever the previous page or demo had
     // left in the buffer -- and with page flipping, over two different stale
     // frames alternately, which looked like flickering garbage.
-    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    //
+    // [Arcade] V_SCALEEXACT, as D_PageDrawer uses: without it the whole board
+    // -- black background and every row of it -- was laid out in a 320x200 box
+    // scaled down to a whole multiple, so on the cabinet's 1366x768 screen it
+    // covered 1280x600 and the 86px and 168px outside it kept whatever the
+    // previous page or demo had left there.  "The high scores table does not
+    // fill the screen" was this.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT );
     V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
 
     total = HS_Build_Pages( pages, HS_MAX_PAGES );

@@ -1335,8 +1335,33 @@ void V_SetupDraw( uint32_t screenflags )
     }
     drawinfo.ybytes = drawinfo.dupy * vid.ybytes;  // bytes per source line
     drawinfo.xbytes = drawinfo.dupx * vid.bytepp;  // bytes per source pixel
-    drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupx << FRACBITS);
-    drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.dupy << FRACBITS);
+
+    // [Arcade] The scale the software drawers actually step by.
+    //
+    // Stock only ever had the whole number dupx/dupy, so a 320x200 layout came
+    // out (320*dupx) x (200*dupy) and the rest of the screen was left over --
+    // 1280x600 of a 1366x768 cabinet screen, with a flat-tiled band down two
+    // sides and across the bottom.  The hardware renderer never had this,
+    // because it scales by the exact fdupx/fdupy.
+    //
+    // V_SCALEEXACT asks for the same exact scale in software.  Without it the
+    // scale is the whole number as before, so this is arithmetically identical
+    // to what stock did for every screen that does not ask.
+    if( screenflags & V_SCALEEXACT )
+    {
+        drawinfo.x_scale = (fixed_t)( drawinfo.fdupx * FRACUNIT );
+        drawinfo.y_scale = (fixed_t)( drawinfo.fdupy * FRACUNIT );
+    }
+    else
+    {
+        drawinfo.x_scale = drawinfo.dupx << FRACBITS;
+        drawinfo.y_scale = drawinfo.dupy << FRACBITS;
+    }
+    if( drawinfo.x_scale < 1 )  drawinfo.x_scale = FRACUNIT;
+    if( drawinfo.y_scale < 1 )  drawinfo.y_scale = FRACUNIT;
+
+    drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.x_scale);
+    drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.y_scale);
 
 
     if (screenflags & V_SCALESTART)
@@ -1359,6 +1384,27 @@ void V_SetupDraw( uint32_t screenflags )
     }
     drawinfo.x0bytes_saved = drawinfo.x0bytes = drawinfo.dupx0 * vid.bytepp;
     drawinfo.y0bytes_saved = drawinfo.y0bytes = drawinfo.dupy0 * vid.ybytes;
+
+    // [Arcade] Start coords scale by dupx0/dupy0, which is not always the
+    // patch scale: V_SCALESTART without V_SCALEPATCH positions by vid.dupx
+    // while drawing at 1:1.  Mirror dupx0/dupy0 exactly, so this is the same
+    // arithmetic as before wherever V_SCALEEXACT is not asked for.
+    if( screenflags & V_SCALESTART )
+    {
+        drawinfo.x0_scale = ( screenflags & V_SCALEEXACT )?
+              (fixed_t)( vid.fdupx * FRACUNIT ) : (drawinfo.dupx0 << FRACBITS);
+        drawinfo.y0_scale = ( screenflags & V_SCALEEXACT )?
+              (fixed_t)( vid.fdupy * FRACUNIT ) : (drawinfo.dupy0 << FRACBITS);
+    }
+    else
+    {
+        drawinfo.x0_scale = FRACUNIT;
+        drawinfo.y0_scale = FRACUNIT;
+    }
+    if( drawinfo.x0_scale < 1 )  drawinfo.x0_scale = FRACUNIT;
+    if( drawinfo.y0_scale < 1 )  drawinfo.y0_scale = FRACUNIT;
+    drawinfo.x0_scale_saved = drawinfo.x0_scale;
+    drawinfo.y0_scale_saved = drawinfo.y0_scale;
 #ifdef HWRENDER
     drawinfo.fdupx0_saved = drawinfo.fdupx0;
     drawinfo.fdupy0_saved = drawinfo.fdupy0;
@@ -1369,7 +1415,9 @@ void V_SetupDraw( uint32_t screenflags )
     if (screenflags & V_CENTERHORZ)
     {
         // Center horizontally the finale, and other screens in the fullscreen.
-        drawinfo.start_offset += (vid.widthbytes - (BASEVIDWIDTH * drawinfo.xbytes)) / 2;
+        // [Arcade] Against the width actually drawn.  With V_SCALEEXACT the
+        // 320 columns already span the screen and this is zero.
+        drawinfo.start_offset += (vid.widthbytes - (V_scale_x(BASEVIDWIDTH) * vid.bytepp)) / 2;
     }
     if (screenflags & V_CENTERMENU)
     {
@@ -1403,6 +1451,8 @@ void  V_SetupDraw_NO_SCALESTART( void )
 {
     drawinfo.x0bytes = vid.bytepp;
     drawinfo.y0bytes = vid.ybytes;
+    drawinfo.x0_scale = FRACUNIT;  // [Arcade]
+    drawinfo.y0_scale = FRACUNIT;
 #ifdef HWRENDER
     drawinfo.fdupx0  = 1.0f;
     drawinfo.fdupy0  = 1.0f;
@@ -1414,6 +1464,8 @@ void  V_SetupDraw_Restore_SCALESTART( void )
 {
     drawinfo.x0bytes = drawinfo.x0bytes_saved;
     drawinfo.y0bytes = drawinfo.y0bytes_saved;
+    drawinfo.x0_scale = drawinfo.x0_scale_saved;  // [Arcade]
+    drawinfo.y0_scale = drawinfo.y0_scale_saved;
 #ifdef HWRENDER
     drawinfo.fdupx0 = drawinfo.fdupx0_saved;
     drawinfo.fdupy0 = drawinfo.fdupy0_saved;
@@ -1444,6 +1496,7 @@ void V_DrawMappedPatch(int x, int y, patch_t * patch, byte * colormap)
     // [MB] [WDJ]  Support for DeePsea tall patches.
     int cur_topdelta;
 #endif
+    int post_top;  // [Arcade] source row this post starts at
     fixed_t col, wf, ofs;
 
     // draw a hardware converted patch
@@ -1457,14 +1510,14 @@ void V_DrawMappedPatch(int x, int y, patch_t * patch, byte * colormap)
 #endif
 
     // [WDJ] Draw to screens, by line, padded, 8bpp .. 32bpp
-    desttop = drawinfo.drawp + (y * drawinfo.y0bytes) + (x * drawinfo.x0bytes);
+    desttop = drawinfo.drawp + (V_start_y(y) * vid.ybytes) + (V_start_x(x) * vid.bytepp);
     // [WDJ] offsets are subject to DRAWSCALE dup.
-    desttop -= (patch->topoffset * drawinfo.ybytes) + (patch->leftoffset * drawinfo.xbytes);
-//    destend = desttop + (patch->width * drawinfo.xbytes);  // test against desttop
+    desttop -= (V_scale_y(patch->topoffset) * vid.ybytes) + (V_scale_x(patch->leftoffset) * vid.bytepp);
+//    destend = desttop + (V_scale_x(patch->width) * vid.bytepp);  // test against desttop
 
 #ifdef DIRTY_RECT
     if (drawinfo.screen == 0)
-        V_MarkRect(x, y, patch->width * drawinfo.dupx, patch->height * drawinfo.dupy);
+        V_MarkRect(x, y, V_scale_x(patch->width), V_scale_y(patch->height));
 #endif
 
     wf = patch->width << FRACBITS;
@@ -1494,11 +1547,14 @@ void V_DrawMappedPatch(int x, int y, patch_t * patch, byte * colormap)
             {
                 cur_topdelta = column->topdelta;  // Normal Doom patch
             }
-            dest = desttop + (cur_topdelta * drawinfo.ybytes);
+            post_top = cur_topdelta;
 #else
-            dest = desttop + (column->topdelta * drawinfo.ybytes);
+            post_top = column->topdelta;
 #endif
-            count = column->length * drawinfo.dupy;
+            // [Arcade] Both ends rounded through the same scale, so this post
+            // ends exactly where the next one starts: no seam, no overlap.
+            dest = desttop + (V_scale_y(post_top) * vid.ybytes);
+            count = V_scale_y(post_top + column->length) - V_scale_y(post_top);
 
             ofs = 0;
 #ifdef ENABLE_DRAWEXT
@@ -1547,6 +1603,7 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
     // [MB] [WDJ]  Support for DeePsea tall patches.
     int cur_topdelta;
 #endif
+    int post_top;  // [Arcade] source row this post starts at
     fixed_t col, wf, ofs;
 
     // draw a hardware converted patch
@@ -1561,16 +1618,16 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
 
     // [WDJ] Draw to screens, by line, padded, 8bpp .. 32bpp
     // Offsets are subject to DRAWSCALE dup.
-    draw_y1 = (y * drawinfo.y0bytes) - (patch->topoffset * drawinfo.ybytes);
-    draw_x = (x * drawinfo.x0bytes) - (patch->leftoffset * drawinfo.xbytes);
-    by1 = (box_y * drawinfo.y0bytes);
-    by2 = by1 + (box_h * drawinfo.ybytes);
-    bx1 = (box_x * drawinfo.x0bytes);
-    bx2 = bx1 + (box_w * drawinfo.xbytes);
+    draw_y1 = (V_start_y(y) * vid.ybytes) - (V_scale_y(patch->topoffset) * vid.ybytes);
+    draw_x = (V_start_x(x) * vid.bytepp) - (V_scale_x(patch->leftoffset) * vid.bytepp);
+    by1 = (V_start_y(box_y) * vid.ybytes);
+    by2 = by1 + (V_scale_y(box_h) * vid.ybytes);
+    bx1 = (V_start_x(box_x) * vid.bytepp);
+    bx2 = bx1 + (V_scale_x(box_w) * vid.bytepp);
 
 #ifdef DIRTY_RECT
     if (drawinfo.screen == 0)
-        V_MarkRect(box_x, box_y, box_w * drawinfo.dupx, box_h * drawinfo.dupy);
+        V_MarkRect(box_x, box_y, V_scale_x(box_w), V_scale_y(box_h));
 #endif
 
     col = 0;
@@ -1608,11 +1665,13 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
             {
                 cur_topdelta = column->topdelta;  // Normal Doom patch
             }
-            draw_y = draw_y1 + (cur_topdelta * drawinfo.ybytes);
+            post_top = cur_topdelta;
 #else
-            draw_y = draw_y1 + (column->topdelta * drawinfo.ybytes);
+            post_top = column->topdelta;
 #endif
-            count = column->length * drawinfo.dupy;
+            // [Arcade] Rounded run bounds; see V_DrawMappedPatch.
+            draw_y = draw_y1 + (V_scale_y(post_top) * vid.ybytes);
+            count = V_scale_y(post_top + column->length) - V_scale_y(post_top);
             column = (column_t *) ((byte *) column + column->length + 4);  // next column in patch
             ofs = 0;
 
@@ -1691,6 +1750,7 @@ void V_DrawScaledPatch(int x, int y, patch_t * patch)
     // [MB] [WDJ]  Support for DeePsea tall patches.
     int cur_topdelta;
 #endif
+    int post_top;  // [Arcade] source row this post starts at
     fixed_t col = 0;
     column_t *column;
     byte *source;  // within column
@@ -1712,10 +1772,10 @@ void V_DrawScaledPatch(int x, int y, patch_t * patch)
     colfrac = drawinfo.x_unitfrac;
    
     // [WDJ] Draw to screens, by line, padded, 8bpp .. 32bpp
-    desttop = drawinfo.drawp + (y * drawinfo.y0bytes) + (x * drawinfo.x0bytes);
+    desttop = drawinfo.drawp + (V_start_y(y) * vid.ybytes) + (V_start_x(x) * vid.bytepp);
     // [WDJ] offsets are subject to DRAWSCALE dup.
-    desttop -= (patch->topoffset * drawinfo.ybytes) + (patch->leftoffset * drawinfo.xbytes);
-    destend = desttop + (patch->width * drawinfo.xbytes);  // test against desttop
+    desttop -= (V_scale_y(patch->topoffset) * vid.ybytes) + (V_scale_x(patch->leftoffset) * vid.bytepp);
+    destend = desttop + (V_scale_x(patch->width) * vid.bytepp);  // test against desttop
 
 #ifndef ENABLE_CLIP_DRAWSCALED
     if( desttop < drawinfo.screen_start )
@@ -1724,10 +1784,10 @@ void V_DrawScaledPatch(int x, int y, patch_t * patch)
         if( y < 0 )
         {
             // Clip y
-            desttop = drawinfo.drawp + (x * drawinfo.x0bytes);
+            desttop = drawinfo.drawp + (V_start_x(x) * vid.bytepp);
         }
         // Compensate for the change in y.
-        destend = desttop + (patch->width * drawinfo.xbytes);
+        destend = desttop + (V_scale_x(patch->width) * vid.bytepp);
         if( desttop < drawinfo.screen_start )
         {
             // Clip x too.
@@ -1784,11 +1844,14 @@ void V_DrawScaledPatch(int x, int y, patch_t * patch)
             {
                 cur_topdelta = column->topdelta;  // Normal Doom patch
             }
-            dest = desttop + (cur_topdelta * drawinfo.ybytes);
+            post_top = cur_topdelta;
 #else
-            dest = desttop + (column->topdelta * drawinfo.ybytes);
+            post_top = column->topdelta;
 #endif
-            count = column->length * drawinfo.dupy;
+            // [Arcade] Both ends rounded through the same scale, so this post
+            // ends exactly where the next one starts: no seam, no overlap.
+            dest = desttop + (V_scale_y(post_top) * vid.ybytes);
+            count = V_scale_y(post_top + column->length) - V_scale_y(post_top);
 
             ofs = 0;
 #ifdef ENABLE_DRAWEXT
@@ -1892,7 +1955,7 @@ void V_DrawSmallScaledPatch(int x, int y, int scrn, patch_t * patch, byte * colo
 
     desttop = screens[scrn & 0xFF] + (y * vid.ybytes) + (x * vid.bytepp);
     // [WDJ] offsets are subject to DRAWSCALE dup.
-    desttop -= (patch->topoffset * drawinfo.ybytes) + (patch->leftoffset * drawinfo.xbytes);
+    desttop -= (V_scale_y(patch->topoffset) * vid.ybytes) + (V_scale_x(patch->leftoffset) * vid.bytepp);
     destend = desttop;
 
     if (vid.dupx > 1 && vid.dupy > 1)
@@ -1949,6 +2012,7 @@ void V_DrawTranslucentPatch(int x, int y, patch_t * patch)
     // [MB] [WDJ]  Support for DeePsea tall patches.
     int cur_topdelta;
 #endif
+    int post_top;  // [Arcade] source row this post starts at
     column_t *column;
     byte *source;  // within column
     byte *desttop, *dest;  // within video buffer
@@ -1971,14 +2035,14 @@ void V_DrawTranslucentPatch(int x, int y, patch_t * patch)
     if (!(scrn & 0xff))
 //    y -= patch->topoffset * drawinfo.dupy;
 //    x -= patch->leftoffset * drawinfo.dupx;
-        V_MarkRect(x, y, patch->width * drawinfo.dupx, patch->height * drawinfo.dupy);
+        V_MarkRect(x, y, V_scale_x(patch->width), V_scale_y(patch->height));
 #endif
 
     // [WDJ] Draw to screens, by line, padded, 8bpp .. 32bpp
-    desttop = drawinfo.drawp + (y * drawinfo.y0bytes) + (x * drawinfo.x0bytes);
+    desttop = drawinfo.drawp + (V_start_y(y) * vid.ybytes) + (V_start_x(x) * vid.bytepp);
     // [WDJ] offsets are subject to DRAWSCALE dup.
-    desttop -= (patch->topoffset * drawinfo.ybytes) + (patch->leftoffset * drawinfo.xbytes);
-//    destend = desttop + (patch->width * drawinfo.xbytes);  // test against desttop
+    desttop -= (V_scale_y(patch->topoffset) * vid.ybytes) + (V_scale_x(patch->leftoffset) * vid.bytepp);
+//    destend = desttop + (V_scale_x(patch->width) * vid.bytepp);  // test against desttop
 
     wf = patch->width << FRACBITS;
 
@@ -2007,11 +2071,14 @@ void V_DrawTranslucentPatch(int x, int y, patch_t * patch)
             {
                 cur_topdelta = column->topdelta;  // Normal Doom patch
             }
-            dest = desttop + (cur_topdelta * drawinfo.ybytes);
+            post_top = cur_topdelta;
 #else
-            dest = desttop + (column->topdelta * drawinfo.ybytes);
+            post_top = column->topdelta;
 #endif
-            count = column->length * drawinfo.dupy;
+            // [Arcade] Both ends rounded through the same scale, so this post
+            // ends exactly where the next one starts: no seam, no overlap.
+            dest = desttop + (V_scale_y(post_top) * vid.ybytes);
+            count = V_scale_y(post_top + column->length) - V_scale_y(post_top);
 
             ofs = 0;
 #ifdef ENABLE_DRAWEXT
@@ -2274,22 +2341,36 @@ static void V_BlitScalePic(int x1, int y1, pic_t * pic)
         return;
     }
 
+    // [Arcade] Through the drawinfo scale rather than vid.dupx/vid.dupy, so a
+    // raw 320x200 screen (the Heretic attract pages) fills the display when
+    // V_SCALEEXACT asks it to.  Without the flag the scale is the same whole
+    // number vid.dupx/vid.dupy this always used.
+    //
+    // Rows and columns are emitted from rounded run bounds, the same way the
+    // patch drawers do it, so neither leaves a seam at a fractional scale.
+
     // scaled, with x centering
     dest = drawinfo.drawp + (max(0, y1) * vid.ybytes) + (max(0, x1) * vid.bytepp);
     // y clipping to the screen
-    if (y1 + (pic_height * vid.dupy) >= vid.height)
-        pic_height = ((vid.height - y1) / vid.dupy) - 1;
+    if (y1 + V_scale_y(pic_height) >= vid.height)
+    {
+        // Largest source height that still fits below y1.
+        while( pic_height > 0 && (y1 + V_scale_y(pic_height)) >= vid.height )
+            pic_height--;
+    }
     // WARNING no x clipping (not needed for the moment)
 
-    for (y = max(0, -y1 / vid.dupy); y < pic_height; y++)
+    for (y = max(0, -y1 / (int)max(1, V_scale_y(1))); y < pic_height; y++)
     {
-        for (dupy = vid.dupy; dupy; dupy--)
+        int rows = V_scale_y(y + 1) - V_scale_y(y);
+        for (dupy = rows; dupy; dupy--)
         {
             int xb = 0;
             src = pic->data + (y * pic_width);
             for (x = 0; x < pic_width; x++)
             {
-                for (dupx = vid.dupx; dupx; dupx--)
+                int cols = V_scale_x(x + 1) - V_scale_x(x);
+                for (dupx = cols; dupx; dupx--)
                     V_DrawPixel(dest, xb++, *src);
                 src++;
             }
@@ -2407,9 +2488,9 @@ void V_DrawScaledFill(int x, int y, int w, int h, byte color)
 #endif
 
     // [WDJ] Draw to screens, by line, padded, 8bpp .. 32bpp
-    dest = drawinfo.drawp + (y * drawinfo.y0bytes) + (x * drawinfo.x0bytes);
-    w *= drawinfo.dupx;
-    h *= drawinfo.dupy;
+    dest = drawinfo.drawp + (V_start_y(y) * vid.ybytes) + (V_start_x(x) * vid.bytepp);
+    w = V_scale_x(x + w) - V_scale_x(x);   // [Arcade] rounded, meets the next fill
+    h = V_scale_y(y + h) - V_scale_y(y);
 
     for (v = 0; v < h; v++, dest += vid.ybytes)
     {
@@ -2528,9 +2609,9 @@ void V_DrawFlatFill(int x, int y, int w, int h, int scale, lumpnum_t flatnum)
     else
     {
         // Draw per drawinfo
-        dest = drawinfo.drawp + (y * drawinfo.y0bytes) + (x * drawinfo.x0bytes);
-        w *= drawinfo.dupx;
-        h *= drawinfo.dupy;
+        dest = drawinfo.drawp + (V_start_y(y) * vid.ybytes) + (V_start_x(x) * vid.bytepp);
+        w = V_scale_x(x + w) - V_scale_x(x);   // [Arcade] rounded
+        h = V_scale_y(y + h) - V_scale_y(y);
     }
 
     // Scale flat proportional, 0..15 => 1..vid.dup
@@ -3066,8 +3147,8 @@ void  V_SetupFont( int font_size, fontinfo_t * fip, uint32_t option )
 #ifdef HWRENDER
     if( rendermode == render_soft )
     {
-        drawfont.xinc = fip->xinc * drawinfo.dupx;
-        drawfont.yinc = fip->yinc * drawinfo.dupy;
+        drawfont.xinc = V_scale_x( fip->xinc );  // [Arcade] exact when asked
+        drawfont.yinc = V_scale_y( fip->yinc );
     }
     else
     {
@@ -3075,8 +3156,8 @@ void  V_SetupFont( int font_size, fontinfo_t * fip, uint32_t option )
         drawfont.yinc = (int) fip->yinc * drawinfo.fdupy;
     }
 #else
-    drawfont.xinc = fip->xinc * drawinfo.dupx;
-    drawfont.yinc = fip->yinc * drawinfo.dupy;
+    drawfont.xinc = V_scale_x( fip->xinc );  // [Arcade] exact when asked
+    drawfont.yinc = V_scale_y( fip->yinc );
 #endif
 
     // SCALESTART for font drawing, separate from drawinfo.
@@ -3117,11 +3198,13 @@ int V_DrawCharacter(int x, int y, byte c)
     // hufont only has uppercase
     c = toupper(c) - HU_FONTSTART;
     if (c >= HU_FONTSIZE)
-        return  4 * drawinfo.dupx;  // space and non-printing chars
+        return  V_scale_x(4);  // space and non-printing chars
 
     // Hardware or software render, access patch fields.
-    w = V_patch( hu_font[c] )->width * drawinfo.dupx;  // proportional width
-    if (((x * drawfont.dupx0) + w) > vid.width)
+    w = V_scale_x( V_patch( hu_font[c] )->width );  // proportional width
+    // [Arcade] Through the drawinfo start scale, so the test matches where
+    // the glyph is actually going to land.
+    if ((V_start_x(x) + w) > vid.width)
         return 0;
 
     if (white)
@@ -3194,12 +3277,16 @@ void V_DrawString(int x, int y, int option, const char *string)
 #endif
     {
         // Character spacing must be scaled here.
-        dupx = drawinfo.dupx;
-        dupy = drawinfo.dupy;
-   
+        // [Arcade] From the drawinfo scale, which is the whole number dupx/dupy
+        // unless V_SCALEEXACT asked for the exact one.  Stepping by the whole
+        // number while the glyphs themselves were scaled exactly would drift a
+        // pixel per character and pull a line apart across a wide screen.
+        dupx = FIXED_TO_FLOAT( drawinfo.x_scale );
+        dupy = FIXED_TO_FLOAT( drawinfo.y_scale );
+
         // V_SCALESTART to DrawString must be handled here.
-        cx = x * drawfont.dupx0;
-        cy = y * drawfont.dupy0;
+        cx = x * FIXED_TO_FLOAT( drawinfo.x0_scale );
+        cy = y * FIXED_TO_FLOAT( drawinfo.y0_scale );
     }
 
     // Change draw to NO SCALESTART, for positioning of characters.

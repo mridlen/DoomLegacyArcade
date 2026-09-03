@@ -331,12 +331,35 @@ boolean OglSdl_SetMode(int w, int h, byte req_fullscreen)
 
     SDL_DisplayMode sdl_displaymode;
     SDL_GetWindowDisplayMode( sdl_window, /*OUT*/ & sdl_displaymode );
-   
+
     // Not used in OpenGL drawmode
     vid.bitpp = SDL_BITSPERPIXEL( sdl_displaymode.format );
     vid.bytepp = (vid.bitpp + 7) >> 3;
-    vid.width = sdl_displaymode.w;
-    vid.height = sdl_displaymode.h;
+
+    // [Arcade] The size of the GL drawable, not the size of the display mode.
+    //
+    // SDL_GetWindowDisplayMode reports the mode the window would use if it
+    // were fullscreen, which for a *windowed* GL window is simply the desktop
+    // mode -- so every windowed OpenGL mode came up claiming the desktop's
+    // size no matter what was asked for, and the GL viewport was then set to
+    // a rectangle larger than the window it was drawing into.
+    //
+    // SDL_GL_GetDrawableSize is the actual pixel size of the thing GL draws
+    // on, in both window and fullscreen, and on a HiDPI display it is the
+    // backing-store size rather than the logical one, which is what the
+    // viewport wants.
+    {
+        int drawable_w = 0, drawable_h = 0;
+        SDL_GL_GetDrawableSize( sdl_window, &drawable_w, &drawable_h );
+        if( drawable_w <= 0 || drawable_h <= 0 )
+        {
+            // Should not happen; fall back to what stock used.
+            drawable_w = sdl_displaymode.w;
+            drawable_h = sdl_displaymode.h;
+        }
+        vid.width = drawable_w;
+        vid.height = drawable_h;
+    }
     vid.ybytes = vid.width * vid.bytepp;
    
     if( verbose )
