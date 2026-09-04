@@ -379,6 +379,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     valid key codes in the `CK_pair_b` slots -- so nothing breaks; the panel simply keeps the old
     layout until the assignment page is run again.
 
+- **`gc_devmode` is appended at the very end of `gamecontrols_e`**, after `gc_automap` and
+  immediately before `num_gamecontrols`, and must stay there. It is the operator key that restarts
+  the cabinet into `-devmode` and back out (design note in `menus.md`); it appears on the last Setup
+  Controls page as *Devmode Restart* and defaults to Scroll Lock on panel 1 via `G_Controldefault`.
+  The end of the enum is the only safe place to add a control, for the reason the next entry
+  explains: `config.cfg` stores control *names* resolved through `gamecontrolname[]`, so an entry
+  inserted mid-enum renames everything after it. Appending was verified by re-saving the cabinet's
+  own config through the new build and diffing the `setcontrol` block — identical apart from the one
+  new `setcontrol "devmode" "scroll lock"` line, so no config needed migrating.
 - **`gamecontrolname[]` was one entry out of step with `gamecontrols_e`** (`g_input.c`), and had
   been for as long as `ENABLE_COME_HERE` has been defined (it is, `doomdef.h:307`). The enum puts
   `gc_comehere` between `gc_screenshot` and `gc_menuesc`; the name table put `"comehere"` last,

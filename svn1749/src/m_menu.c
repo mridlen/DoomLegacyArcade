@@ -4116,14 +4116,20 @@ static void M_Draw_Restart_Splash( const char * msg )
 //   keep_packs : re-add the currently loaded level packs with -file.
 //                false discards them, which is how a pack is unloaded --
 //                the engine cannot remove a wad's lumps once loaded.
-void M_Restart_Program( const char * game_idstr, boolean keep_packs )
+//   want_devmode : whether the new session gets -devmode.  Pass the current
+//                devmode to leave the session as it is; the operator hotkey
+//                passes its opposite, which is how the cabinet is unlocked
+//                and locked again.
+void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean want_devmode )
 {
     char ** newargv;
+    const char * splash;
     int  i, n = 0;
     boolean in_file_list = false;
 
-    // +3 for "-game" and its name and the NULL terminator, +2 per pack.
-    newargv = (char**) malloc( (myargc + 3 + (2*MAX_LEVELPACK)) * sizeof(char*) );
+    // +4 for "-game" and its name, "-devmode", and the NULL terminator,
+    // +2 per pack.
+    newargv = (char**) malloc( (myargc + 4 + (2*MAX_LEVELPACK)) * sizeof(char*) );
     if( ! newargv )  return;
 
     newargv[n++] = myargv[0];
@@ -4136,6 +4142,15 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs )
               || strcasecmp(myargv[i], "-iwad") == 0 ) )
         {
             if( (i+1) < myargc )  i++;   // skip its parameter too
+            in_file_list = false;
+            continue;
+        }
+
+        // [Arcade] Always drop -devmode; it is re-added below if the new
+        // session wants it.  Dropping it unconditionally is what lets the
+        // operator hotkey work in both directions from one code path.
+        if( strcasecmp(myargv[i], "-devmode") == 0 )
+        {
             in_file_list = false;
             continue;
         }
@@ -4170,12 +4185,19 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs )
             newargv[n++] = levelpack_path[i];
         }
     }
+    if( want_devmode )
+        newargv[n++] = "-devmode";
     newargv[n] = NULL;
 
     // [Arcade] Tell the player what the black screen is, while the video
-    // device is still up.  A game switch and a pack unload both land here and
-    // are not the same thing to the person watching.
-    M_Draw_Restart_Splash( game_idstr ? "SWITCHING GAME..." : "RESTARTING..." );
+    // device is still up.  A game switch, a pack unload and a devmode toggle
+    // all land here and are not the same thing to the person watching.
+    splash = "RESTARTING...";
+    if( game_idstr )
+        splash = "SWITCHING GAME...";
+    else if( want_devmode != (devmode != 0) )
+        splash = want_devmode ? "ENTERING DEVMODE..." : "LEAVING DEVMODE...";
+    M_Draw_Restart_Splash( splash );
 
     // Flush config (devmode only), high scores, demos, and shut down the
     // video/sound devices, but do not exit -- exec replaces us instead.
@@ -4190,6 +4212,77 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs )
     // Only reached if exec failed; the devices are already down, so there
     // is nothing sensible left to return to.
     I_Error("Could not restart DoomLegacy\n");
+}
+
+
+// [Arcade] Operator hotkey: restart the cabinet into -devmode, or back out.
+//
+// Plug a keyboard in, press the key, the cabinet comes back up unlocked;
+// press it again and it comes back locked.  It is a restart rather than a
+// live toggle because devmode cannot be flipped in a running session: all
+// three of its jobs are applied once at startup, and the menu lockdown is
+// one way -- M_Init overwrites each locked item's .status with IT_HIDDEN and
+// keeps no record of what it was, so there is nothing to restore.  The
+// ranked ruleset is likewise applied once (d_main.c), over networked cvars.
+// Re-execing is what the game selector already does, and it re-runs the
+// whole startup, so the new session is indistinguishable from one launched
+// with or without the flag by hand.
+//
+// The config lands in the right place by itself, with no separate Quit:
+// restarting *into* devmode saves nothing (a player session never writes
+// config.cfg), and restarting *out* of it goes through D_Quit_Save while
+// still in devmode, which is exactly the devmode config write.  So the
+// operator's changes are saved on the way back to the locked cabinet.
+//
+// The key is the gc_devmode game control, assigned on the Setup Controls
+// pages beside Screenshot like any other, and so per panel: any of the four
+// panels' bindings works, because which page the operator happened to set it
+// on says nothing about who is pressing it.  It defaults to Scroll Lock on
+// panel 1 (G_Controldefault) -- a key no panel can produce.
+//
+// Honoured only on the attract screen.  A restart throws away whatever is
+// running, so a stray press during a game would take a paying player's run
+// away from them -- or, during initials entry, the record they have earned
+// but not yet committed.  GS_DEMOSCREEN is the title screen and the attract
+// cycle; every other state means a game, an intermission or a finale is up.
+// Being assignable, this key *can* be put on a panel button, so the gate is
+// what keeps that from being a way to lose a run.
+//
+// When it declines it does **not** consume the event, so the key keeps
+// whatever other job it has everywhere except the attract screen.  The note
+// is EMSG_dev rather than CONS_Printf because a console message can reach
+// the HUD: a player must not be shown that the key exists, nor get a line
+// per press if it is bound to something they use.
+//
+// Returns true if the event was consumed, which only ever happens on the
+// path that does not return.
+boolean  M_Devmode_Hotkey( event_t * ev )
+{
+    int  key;
+    byte pind;
+
+    if( ev->type != ev_keydown )  return false;
+
+    key = ev->data1;
+    if( key == KEY_NULL )  return false;   // an unbound control reads as 0
+
+    for( pind = 0; ; pind++ )
+    {
+        if( pind >= MAXSPLITSCREENPLAYERS )  return false;   // not our key
+        if( key == gamecontrol_pl[pind][gc_devmode][0]
+         || key == gamecontrol_pl[pind][gc_devmode][1] )  break;
+    }
+
+    if( gamestate != GS_DEMOSCREEN || M_Initials_Active() )
+    {
+        GenPrintf( EMSG_dev, "devmode key: attract screen only.\n" );
+        return false;   // let the key do its ordinary job
+    }
+
+    // Keep any loaded level pack across the restart: the operator is
+    // changing mode, not changing what is installed.
+    M_Restart_Program( NULL, true, ! devmode );   // no return
+    return true;
 }
 
 
@@ -4243,7 +4336,7 @@ void M_SelectGame(int choice)
             // so this restarts with no pack at all.
             levelpack_isloaded[lp] = false;
             CONS_Printf( "\2Unloading %s, restarting.\n", levelpack_name[lp] );
-            M_Restart_Program( NULL, false );   // no return
+            M_Restart_Program( NULL, false, devmode );   // no return
             return;
         }
 
@@ -4255,7 +4348,7 @@ void M_SelectGame(int choice)
             for( i = 0; i < num_levelpack; i++ )
                 levelpack_isloaded[i] = (i == lp);
             CONS_Printf( "\2Switching to %s, restarting.\n", levelpack_name[lp] );
-            M_Restart_Program( NULL, true );   // no return
+            M_Restart_Program( NULL, true, devmode );   // no return
             return;
         }
 
@@ -4274,7 +4367,7 @@ void M_SelectGame(int choice)
 
     // Switching IWAD needs the startup sequence to run again, which is only
     // reachable by restarting the program.
-    M_Restart_Program( gameselect_arg[choice], false );   // no return
+    M_Restart_Program( gameselect_arg[choice], false, devmode );   // no return
 }
 
 //
@@ -5574,6 +5667,9 @@ menuitem_t ControlMenu3[]=
   {IT_CONTROL, 0,"Rankings/Scores",M_ChangeControl,gc_scores },
   {IT_CONTROL, 0,"Console"        ,M_ChangeControl,gc_console},
   {IT_CONTROL, 0,"Screenshot"     ,M_ChangeControl,gc_screenshot},
+  // [Arcade] Above the joystick-only heading with the other utility keys, not
+  // below it: this is a keyboard key by nature and by default.
+  {IT_CONTROL, 0,"Devmode Restart",M_ChangeControl,gc_devmode},
   {IT_WHITESTRING | IT_SPACE, 0, "Joystick and Mouse Only" ,0},
   {IT_CONTROL, 0,"Main menu"      ,M_ChangeControl,gc_menuesc},
   {IT_CONTROL, 0,"Pause"          ,M_ChangeControl,gc_pause},
@@ -7570,7 +7666,7 @@ void M_EndGameResponse(int ch)
     // built-in demos would play back against the wrong levels.  Restart for
     // a clean attract screen, as the idle timeout does.
     if( M_LevelPack_Loaded() )
-        M_Restart_Program( NULL, false );   // no return
+        M_Restart_Program( NULL, false, devmode );   // no return
 
     COM_BufAddText("exitgame\n");
 }

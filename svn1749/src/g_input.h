@@ -107,6 +107,15 @@ typedef enum
     gc_pause,
     gc_automap,
 
+    // [Arcade] Operator key: restarts the program into -devmode and back out.
+    // MUST STAY LAST, immediately before num_gamecontrols.  gamecontrolname[]
+    // is indexed by this enum and config.cfg stores control *names*, so an
+    // entry inserted anywhere else renames every control after it and shifts
+    // the bindings in an existing config -- which is exactly what the
+    // gc_comehere bug did (see gamecontrolname[] in g_input.c).  Appended
+    // here, no existing name moves and no config needs migrating.
+    gc_devmode,
+
     num_gamecontrols
 } gamecontrols_e;
 

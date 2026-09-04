@@ -70,7 +70,14 @@ void M_Configure (void);
 // [Arcade] Restart the program; does not return.
 //   game_idstr : -game short name, or NULL to keep the current game
 //   keep_packs : re-add the loaded level packs with -file, else drop them
-void M_Restart_Program( const char * game_idstr, boolean keep_packs );
+//   want_devmode : whether the new session gets -devmode; pass the current
+//                  devmode to leave the session's mode alone
+void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean want_devmode );
+// [Arcade] Operator hotkey (the gc_devmode control): restarts into or out of
+// -devmode.  Attract screen only; a refused press is left for the other
+// responders.  Call it after M_Responder and CON_Responder, so that the menu
+// can still capture the key when the operator is re-assigning it.
+boolean  M_Devmode_Hotkey( event_t * ev );
 // [Arcade] True once a level pack has been loaded, after which the attract
 // screen demos play against the wrong maps.
 boolean  M_LevelPack_Loaded( void );

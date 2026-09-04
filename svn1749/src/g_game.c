@@ -2030,7 +2030,7 @@ static void G_Idle_Timeout_Check( boolean in_menu )
         // splitscreen state would persist.  Restart for a clean attract
         // screen instead of returning to title.
         if( M_LevelPack_Loaded() )
-            M_Restart_Program( NULL, false );   // no return
+            M_Restart_Program( NULL, false, devmode );   // no return
 
         Command_ExitGame_f();
     }

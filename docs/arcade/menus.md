@@ -39,6 +39,84 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **The devmode hotkey** (`gc_devmode`, `M_Devmode_Hotkey` in `m_menu.c`, hooked into
+  `D_Process_Events` in `d_main.c`). An operator key that restarts the cabinet into `-devmode`, and
+  another press restarts it back out.
+
+  **It is an assignable game control, not a cvar.** It appears on `ControlMenu3` as *Devmode
+  Restart*, beside Screenshot and above the "Joystick and Mouse Only" heading — above it on purpose,
+  since it is a keyboard key by nature and by default. That makes it per panel, and
+  `M_Devmode_Hotkey` accepts **any** of the four panels' bindings: which page an operator happened
+  to set it on says nothing about who is pressing it. `G_Controldefault` gives panel 1 **Scroll
+  Lock** (no panel can produce it, and nothing else in the engine wants it); panels 2-4 start
+  unbound.
+  - **`gc_devmode` must stay last in `gamecontrols_e`**, immediately before `num_gamecontrols`.
+    `gamecontrolname[]` is indexed by that enum and `config.cfg` stores control *names*, so an entry
+    inserted anywhere else renames every control after it and shifts the bindings in an existing
+    config — which is exactly the `gc_comehere` bug written up in `input.md`. Appended at the end,
+    nothing moves: verified by re-saving the cabinet's own `config.cfg` through the new build and
+    diffing the `setcontrol` block, which came back identical apart from the one added
+    `setcontrol "devmode" "scroll lock"` line. No config migration is needed, and an existing config
+    with no such line simply keeps the default.
+  - Being assignable, it **can** be put on a panel button. Nothing prevents that and nothing should
+    — but it makes the attract-screen gate below the only thing standing between a cabinet button
+    and a restart, which is worth saying out loud in the operator docs.
+
+  **It is a restart and not a live toggle, because `devmode` cannot be flipped in a running
+  session.** All three of its jobs are applied once at startup and none of them is reversible in
+  place:
+
+  - the **menu lockdown** above is one way. `M_Init` overwrites each locked item's `.status` with
+    `IT_HIDDEN` and keeps no record of what it was, and `M_Configure` adds a second batch. Undoing
+    it would mean restoring roughly forty statuses nobody saved, in the arrays that are addressed by
+    hardcoded position — the exact place this file warns about.
+  - the **ranked ruleset** (`HS_Apply_Ranked_Ruleset`, called from `D_DoomMain` when `! devmode`)
+    has already overwritten a set of `CV_NETVAR`s.
+  - **config writing** is the one job that does read `devmode` live, in `M_Save_Config`.
+
+  Re-execing sidesteps all of it: the new session runs the whole startup and is indistinguishable
+  from one launched with or without the flag by hand. `M_Restart_Program` already existed for the
+  game selector, so the hotkey only added a `want_devmode` argument — it strips `-devmode` from the
+  copied argv unconditionally and re-adds it if the new session wants it, which is what makes one
+  code path work in both directions. Its two existing callers pass the current `devmode` to leave
+  the mode alone.
+
+  **The config save falls out for free, and that is the point of the round trip.** Restarting *into*
+  devmode writes nothing, because a player session never saves. Restarting *out* of it runs
+  `D_Quit_Save` while still in devmode, which is exactly the devmode config write — so an operator's
+  changes are saved on the way back to the locked cabinet, with no separate Quit. Verified by
+  restarting out of devmode headlessly and watching `config.cfg`'s mtime move and
+  `setcontrol "devmode" "scroll lock"` appear in it.
+
+  **Attract screen only** (`gamestate == GS_DEMOSCREEN` and `! M_Initials_Active()`). A restart
+  throws away whatever is running, so a stray press during a game would take a paying player's run —
+  or, during initials entry, a record earned but not yet committed.
+
+  **A refused press is not consumed**, and that is not a detail. This runs ahead of every other
+  responder, so returning true on the refusal path would have swallowed the key for the whole
+  session everywhere but the attract screen — and the stock cabinet binds **screenshot to both F12
+  and Print**, two of the five settings offered. Returning false leaves the key its ordinary job and
+  costs nothing. For the same reason the note is `GenPrintf(EMSG_dev, ...)` and not `CONS_Printf`: a
+  console line can reach the HUD, and a player must neither be shown that the key exists nor get a
+  line per press on a key they use.
+
+  **The hook goes in `D_Process_Events` after `M_Responder` and `CON_Responder`, and that ordering is
+  load-bearing.** It ran first at one point, which reads as the obvious choice — but `gc_devmode` is
+  an assignable control, and the menu's "press a key" capture never sees a key this consumes, so the
+  operator could not re-assign it (and could not type it into the console). Behind those two and
+  ahead of `G_Responder`, which is what pops the menu up on any key at the attract screen, it still
+  wins in the one state where it acts. Cost is a keydown-only loop over four panels.
+  - The consequence is that a key the menu already claims cannot be used: the screenshot handler in
+    `M_Responder` consumes F12 and Print, and the `!menuactive` switch consumes F1-F11. Those keys
+    can be *bound* to `gc_devmode` and will simply keep doing their old job. Scroll Lock and Pause
+    are clear.
+
+  Verified headlessly with a temporary console command that fires a synthetic keydown, built from
+  the live `gamecontrol_pl[0][gc_devmode][0]`, through `M_Devmode_Hotkey`: from the attract screen
+  the process re-execs and comes back with `devmode` set (and back again with it clear, rewriting
+  `config.cfg` on that leg), while the same command at tic 105 of a loaded level produces no second
+  startup at all. That the synthetic key worked at all is also the proof that the default binding
+  is applied — an unbound control reads as `KEY_NULL` and is rejected before the gate.
 - **Menu naming**: the New Game page offers **Single Player** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
   only) and uses the **`M_MULTI`** graphic, which reads "MULTIPLAYER". `M_2PLAYR` literally reads

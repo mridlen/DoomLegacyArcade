@@ -745,6 +745,14 @@ void D_Process_Events(void)
           ;   // menu ate the event
         else if (CON_Responder(ev)) // console input
           ;
+        // [Arcade] The operator's devmode restart key.  It goes *after* the
+        // menu and the console on purpose: gc_devmode is an assignable
+        // control, and if this ran first the menu could never capture the
+        // key to re-assign it, nor could it be typed into the console.
+        // Ahead of G_Responder, which pops the menu up on any key at the
+        // attract screen -- the one place this key does act.
+        else if (M_Devmode_Hotkey(ev))
+          ;   // never actually returns true: it re-execs, or declines
         else
           G_Responder(ev);
 
