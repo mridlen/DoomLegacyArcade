@@ -232,25 +232,54 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     playback run the same build — anything that differs is gated on `demoplayback` or came out of
     the header.
 
-- **Two more record/playback asymmetries are still open** — both found by the cvar/flag diff above,
-  both *proved* to be inert for the E1M3 run (its trace is byte-identical with them corrected), both
-  left alone because fixing either changes how every existing demo replays and that is a decision
-  with a wide blast radius:
-  - **Eight `EN_` engine flags are set from Boom's demo numbering on playback and from the live
-    baseline while recording.** `G_demo_defaults()` computes `boom_200 = EN_boom && (demoversion >=
-    200)` and `boom_201 = ... >= 201`, but a DoomLegacy demo's `demoversion` is **148**, which is not
-    comparable with Boom's 200..214 scale — so every Boom behaviour is switched *off* on playback
-    while recording had it *on*. Measured, playback vs a normal game: `EN_boom_physics`,
+- **A DoomLegacy demo was replayed with vanilla physics because its version was compared against
+  Boom's numbering (fixed).** `G_demo_defaults()` computed `boom_200 = EN_boom && (demoversion >=
+  200)` and `boom_201 = ... >= 201`. A **Boom** demo carries demoversion 200..214; a **DoomLegacy**
+  demo carries 111..148. They are separate numbering schemes and are not comparable, so those tests
+  were never true for a Legacy demo -- every Boom behavior was switched *off* on playback even
+  though `EN_boom` (`demoversion >= 129`) was on. Nothing switches them off while **recording**:
+  `G_demo_defaults` is playback-only, and recording keeps the baseline near `G_Downgrade` where
+  `EN_boom_physics` and friends are simply `EN_boom`. So every Legacy demo replayed under different
+  rules than it was recorded under.
+  - **Measured**, playback vs a normal game, at the end of `P_SetupLevel`: `EN_boom_physics`,
     `EN_boom_floor`, `EN_doorlight`, `EN_invul_god`, `EN_skull_bounce_fix`, `EN_catch_respawn_0` all
-    0 vs 1, and `EN_blazing_double_sound`, `EN_vile_revive_bug` 1 vs 0. `EN_boom_physics` is
-    `!comp[comp_model]`, the movement model. The header already carries `zerotags=1`,
-    `invul_skymap=1` and `doorstuck=2` — Boom 2.01/2.02 values — so the demo says Boom while the
-    flags say vanilla.
-  - **`cv_fragsweaponfalling` is forced to 0 on playback and left at the user's value while
-    recording.** `G_demo_defaults()` zeroes it (correctly, for stock IWAD demos) but nothing pins it
-    while recording and it is not in the header. It only matters when a **player** dies — for a
-    monster drop `drop_ammo_count` is already 0 — so it is harmless for a clean run and a live
-    hazard for the cabinet's **death demos**.
+    **0 vs 1**, and `EN_blazing_double_sound`, `EN_vile_revive_bug` **1 vs 0**. `EN_boom_physics` is
+    `!comp[comp_model]`, the movement model -- which is what a speed run is made of.
+  - **The header itself proves the intent.** It already stores `zerotags=1`, `invul_skymap=1` and
+    `doorstuck=2` -- Boom 2.01/2.02 values, faithfully restored on playback. The same header said
+    "Boom" in the fields that are written down and "pre-Boom" in the flags that were inferred.
+  - **Fixed** by deriving the Boom level from `EN_boom` for a Legacy demo (`legacy_boom`), leaving
+    the Boom version test in place for actual Boom demos; and by keying `EN_skull_bounce_fix` /
+    `EN_catch_respawn_0` off `EV_legacy >= 147`, which is exactly what their own comment
+    ("Vanilla and DoomLegacy < 1.47") always said they should be.
+  - **It changes the rules without changing any stored demo.** Every demo in the cabinet's library
+    was replayed twice, before and after, and the per-tic player trace (position, angle, health)
+    compared: **no demo changed at all**, and every single-level demo still exits at its recorded
+    board time. The control that makes that meaningful is checking the flags really moved -- with
+    the fix in, the eight flags read identically in playback and a live game, where before they
+    disagreed. **A "nothing changed" result is worthless without that control**: it is
+    indistinguishable from the change not having taken effect.
+  - This is **upstream** code, unchanged since the r1749 import -- worth reporting on rather than
+    carrying forever as a local patch.
+
+- **`cv_fragsweaponfalling` is forced to 0 on playback and left at the user's value while
+  recording (still open).** `G_demo_defaults()` zeroes it (correctly, for stock IWAD demos) but
+  nothing pins it while recording and it is not in the header. It only matters when a **player**
+  dies -- for a monster drop `drop_ammo_count` is already 0 -- so it is harmless for a clean run
+  and a live hazard for the cabinet's **death demos**. The fix is to carry it in the header's spare
+  option area, where there is still room.
+
+- **The SDL audio callback races the game thread, and it segfaults the whole process (open).**
+  `I_UpdateSound_sdl` (`sdl/i_sound.c`) reads `chanp->data_ptr` into a local, null-checks it, then
+  dereferences `chanp->leftvol_lookup[sample]` -- but `leftvol_lookup` is a **pointer** the game
+  thread reassigns (`&vol_lookup[leftvol * 256]`, ~line 404) with no lock held against the mixer.
+  Caught once in ~110 headless demo replays: `SIGSEGV` at `i_sound.c:587` on the SDL audio thread,
+  with the game thread nowhere in the backtrace. It is **not** demo-specific -- the same demo
+  re-runs clean -- and it happens even under `SDL_AUDIODRIVER=dummy`, because the dummy driver still
+  runs the callback. On an unattended cabinet this kills the game mid-play, so it is worth fixing
+  properly with `SDL_LockAudio` around the `mix_channel[]` updates rather than hoping. Read it with
+  `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`; the giveaway is a
+  backtrace whose only frames are SDL's audio thread.
 
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that

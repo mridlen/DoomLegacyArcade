@@ -3945,19 +3945,36 @@ void G_demo_defaults( void )
     cv_monstergravity.EV = 0;
     cv_monbehavior.EV = 0;  // Vanilla
     cv_monsterfriction.EV = 0; // Vanilla
-    EN_skull_bounce_fix = 0;  // Vanilla and DoomLegacy < 1.47
-    EN_catch_respawn_0 = 0;
+    // [Arcade] EV_legacy is the DoomLegacy demoversion (0 for a non-Legacy
+    // demo), so this is "vanilla, and DoomLegacy before 1.47" exactly as the
+    // comment says -- a 1.47+ Legacy demo was recorded with these fixed, and
+    // nothing turns them off while recording.
+    EN_skull_bounce_fix = (EV_legacy >= 147);  // Vanilla and DoomLegacy < 1.47
+    EN_catch_respawn_0 = (EV_legacy >= 147);
 
     // Boom
     cv_rndsoundpitch.EV = EN_boom;  // normal in Boom, calls M_Random
     EN_pushers = EN_boom;
     // introduced Boom 2.00 without demo flag
     EN_doom_movestep_bug = EN_doom_etc && ! EN_boom;
-    byte boom_200 = EN_boom && (demoversion >= 200);  // 0=Vanilla, 1=Boom
+    // [Arcade] A DoomLegacy demo carries a DoomLegacy demoversion (111..148);
+    // a Boom demo carries 200..214.  The two are separate numbering schemes and
+    // are not comparable, so "demoversion >= 200" is never true for a Legacy
+    // demo -- and every Boom behavior below was switched off on playback even
+    // though EN_boom (demoversion >= 129) was on.  Nothing switches them off
+    // while *recording*: G_demo_defaults is playback-only, and the recording
+    // side keeps the baseline set near G_Downgrade, where EN_boom_physics and
+    // friends are simply EN_boom.  So a Legacy demo replayed with different
+    // physics than it was recorded with.  The demo header proves the intent --
+    // it already stores zerotags=1, invul_skymap=1 and doorstuck=2, which are
+    // the Boom 2.01/2.02 values.  Derive the Boom level from EN_boom for a
+    // Legacy demo, and keep the Boom version test for actual Boom demos.
+    byte legacy_boom = EN_boom && (demoversion < 200);  // DoomLegacy, Boom-capable
+    byte boom_200 = EN_boom && ((demoversion >= 200) || legacy_boom);
     EN_variable_friction = boom_200;
     EN_boom_floor = boom_200;
     // introduced Boom 2.01 without demo flag
-    byte boom_201 = EN_boom && (demoversion >= 201);  // 0=Vanilla, 1=Boom
+    byte boom_201 = EN_boom && ((demoversion >= 201) || legacy_boom);
     EN_boom_physics = boom_201;
     EN_doorlight = boom_201;
     EN_invul_god = boom_201;
