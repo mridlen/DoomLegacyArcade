@@ -998,11 +998,6 @@ std_fit:
     }
 #endif   
 
-#ifdef FIT_RATIO
-#ifdef DEBUG_FIT_RATIO
-    unsigned int base_ratio = ((BASEVIDWIDTH << 16) / BASEVIDHEIGHT) + 1;  // will be rounded
-    GenPrintf(EMSG_debug, " base_ratio %i\n", base_ratio );
-#endif
     // [Arcade] The projection width.  A cell that is half the screen wide
     // *and* half its height is a scaled down screen: it keeps the screen's
     // aspect ratio, so halving both axes shows the same field of view,
@@ -1016,6 +1011,12 @@ std_fit:
     // single view at a reduced cv_viewsize is untouched.
     int  fit_ref_width = (soft_columns && (view_rows < 2))
                          ? (rdraw_viewwidth * 2) : rdraw_viewwidth;
+
+#ifdef FIT_RATIO
+#ifdef DEBUG_FIT_RATIO
+    unsigned int base_ratio = ((BASEVIDWIDTH << 16) / BASEVIDHEIGHT) + 1;  // will be rounded
+    GenPrintf(EMSG_debug, " base_ratio %i\n", base_ratio );
+#endif
 
     vid.fit_width = fit_ref_width;
     // not rdraw_viewheight because of splitwindow: the stacked halves keep
@@ -1098,10 +1099,22 @@ std_fit:
 #endif
 #else
     // Scale weapon, so it always fits the screen boundaries.
-    pspritescale  = (rdraw_viewwidth<<FRACBITS)/BASEVIDWIDTH;
-    pspriteiscale = (BASEVIDWIDTH<<FRACBITS)/rdraw_viewwidth;   // x axis scale
+    // [Arcade] fit_ref_width, not rdraw_viewwidth: the weapon has to be drawn
+    // at the scale of the projection, and a side-by-side view is projected at
+    // the full screen width and cropped left and right (see fit_ref_width
+    // above).  Scaling by the halved draw window instead put a half size
+    // weapon in a full size world -- the tiny gun in side by side, next to
+    // the correctly large one in top and bottom.  The stacked halves already
+    // work this way, drawing a full screen sized weapon inside a half height
+    // window and cropping it; side by side is the mirror of that, cropping it
+    // left and right.  A 2x2 cell halves both axes and is proportional, so it
+    // keeps rdraw_viewwidth, which fit_ref_width already gives it.
+    pspritescale  = (fit_ref_width<<FRACBITS)/BASEVIDWIDTH;
+    pspriteiscale = (BASEVIDWIDTH<<FRACBITS)/fit_ref_width;   // x axis scale
     //added:02-02-98:now aspect ratio correct for psprites
-    pspriteyscale = (((vid.height*rdraw_viewwidth)/vid.width)<<FRACBITS)/BASEVIDHEIGHT;
+    // The sky scale follows this too (R_Set_Sky_Scale), and wants the same
+    // full height projection in a side-by-side view for the same reason.
+    pspriteyscale = (((vid.height*fit_ref_width)/vid.width)<<FRACBITS)/BASEVIDHEIGHT;
 #endif
 
     // thing clipping

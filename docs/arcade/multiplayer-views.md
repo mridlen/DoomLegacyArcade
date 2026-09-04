@@ -467,38 +467,53 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       compensates for a weapon drawn at the full screen height inside a half height view. Keyed on
       `D_View_Squash() == 1`, replacing `D_NumViews() == 2` in `r_things.c` (`vis->texturemid`) and
       `hw_main.c` (`ty -= 20`).
-    - **A side-by-side view needed the opposite correction, and did not have one.** `pspriteyscale`
-      is derived from the view *width* — `(vid.height * rdraw_viewwidth / vid.width) /
-      BASEVIDHEIGHT` (`r_main.c`) — which is right only while the view's height is proportional to
-      its width. A full screen and a 2x2 cell are; a side-by-side view is **half width and full
-      height**, so the weapon is drawn at half scale while `centerypsp` still sits at half the
-      *full* height, and it floats a quarter of the view above the floor. Software renderer,
-      weapon top..bottom against the bottom of the view:
+    - **The weapon has to be scaled by the projection width, not by the draw window.**
+      `pspritescale` and `pspriteyscale` came from `rdraw_viewwidth` (`r_main.c`), which is the
+      *cell*, so a side-by-side view — the one layout whose cell width is not proportional to its
+      height — drew a **half size weapon in a full size world**. On the cabinet it read exactly as
+      it was: a big gun in top and bottom, a tiny one side by side. They now come from
+      `fit_ref_width`, the same width the projection uses, and that changes side by side alone:
 
-      | layout | view | before | after |
+      | layout | cell | weapon x scale, before → after | y scale |
       | --- | --- | --- | --- |
-      | single | 320x200 | 138..**200** | unchanged |
-      | 2x2 | 160x100 | 69..**100** | unchanged |
-      | side by side | 160x200 | 119..**150** (50px short) | 169..**200** |
-      | stacked | 320x100 | 68..130 (overhangs) | unchanged |
+      | single | 1024x768 | 3.20 → 3.20 | 3.84 → 3.84 |
+      | stacked | 1024x384 | 3.20 → 3.20 | 3.84 → 3.84 |
+      | side by side | 512x768 | **1.60 → 3.20** | **1.92 → 3.84** |
+      | 2x2 | 512x384 | 1.60 → 1.60 | 1.92 → 1.92 |
 
-      Fixed in `R_DrawPlayerSprites` by anchoring `centery` to the bottom of the view rather than
-      its middle — `rdraw_viewheight - BASEYCENTER * pspriteyscale` — which is arithmetically the
-      value `centerypsp` already holds for a full screen and for a 2x2, so it is applied only to
-      `D_View_Squash() == 2` and the working cases are not touched. It is proportional, so it was
-      wrong at **every** resolution, not just the low ones: verified landing exactly on the view
-      bottom at 320x200, 512x384, 640x480, 800x600 and 1024x768.
+      A full scale weapon in a half width cell is **cropped left and right**, which is the point:
+      it is the mirror of the stacked halves, which crop the same weapon top and bottom and always
+      have. Measured against the real sprite lumps, the visible window is 160 of the 320 base units
+      and every ready frame survives it whole except the fist (78%, the far knuckles) and the super
+      shotgun's reload swing (60%); the BFG keeps 93%.
+    - **Which retired the anchor that used to compensate for it.** The half scale weapon also sat a
+      quarter of the view above the floor, and that was fixed downstream first, in
+      `R_DrawPlayerSprites`, by anchoring `centery` to the bottom of the view
+      (`rdraw_viewheight - BASEYCENTER * pspriteyscale`) for `D_View_Squash() == 2`. With the scale
+      right that expression is arithmetically `centerypsp`, so the anchor is gone: at 1024x768 both
+      give 385 and the screenshots are **pixel identical** with it removed. Removing it also puts
+      back the one pixel `EN_doom_etc` nudge in `centerypsp`, which the anchor discarded. The
+      lesson is the ordinary one — the wrong *size* and the wrong *position* were one bug, and
+      seating a mis-scaled weapon looked like a fix because only the position had been measured.
     - **The stacked halves are deliberately left on their hand-tuned 120.** They are the opposite
       error — full scale in a half height view, so the weapon overhangs the bottom by 30px and is
-      clipped. The same anchor would seat them properly (`centery` 0, weapon 38..100 of 100), but
-      it would also show the *whole* weapon in a half height view where a cropped one has been
-      shipping. That is a change to how the cabinet looks rather than a fix, so it needs a decision
-      rather than a commit.
-    - **The hardware renderer is a different mechanism and is believed unaffected.**
-      `HWR_DrawPSprite` builds its quad in 320x200 **base** coordinates (`BASECENTER_Y - ty`) and
-      lets the transform map them onto the view, rather than positioning in pixels against a
-      width-derived scale — which is consistent with it needing the same stacked-only nudge and no
-      side-by-side one. Not measured; confirm on the cabinet before assuming.
+      clipped. Anchoring them to the view bottom would seat them properly (`centery` 0, weapon
+      38..100 of 100), but it would also show the *whole* weapon in a half height view where a
+      cropped one has been shipping. That is a change to how the cabinet looks rather than a fix,
+      so it needs a decision rather than a commit.
+    - **The sky scale rides on `pspriteyscale`** (`R_Set_Sky_Scale`, `r_sky.c`), so a side-by-side
+      view's sky was drawn at half the vertical scale too, and is corrected by the same change.
+    - **The hardware renderer is a different mechanism and is unaffected — it gets this right by
+      construction.** `HWR_DrawPSprite` builds its quad in 320x200 **base** coordinates
+      (`BASECENTER_Y - ty`, then `/40` and `/25` at `z = 4`) and lets the projection map it onto
+      the view, rather than positioning in pixels against a width-derived scale. It is drawn after
+      `SetTransform(NULL)`, which keeps the same `gluPerspective` the world used, so the weapon
+      lands at whatever size that projection implies: side by side halves the aspect *and* the
+      viewport, and the two cancel, leaving the weapon exactly the size it is full screen. Working
+      the NDC through by hand: full screen is `x/160, y/100`, stacked `x/160, y/50` in a half
+      height viewport, side by side `x/80, y/100` in a half width one — the same pixels in all
+      three. `gr_pspritescale_x/_y` (`hw_main.c`) are computed and **never read**; do not reach for
+      them thinking they scale the weapon.
   - **The HUD overlay needed its art scale separated from its layout scale.** They had always been
     the same thing: `ST_overlayDrawer` halves the global `vid.dupx/fdupx` for a quarter-screen
     view, and `SCX`/`SCY` read those same globals for positions. That works while every cell is
