@@ -283,6 +283,10 @@ instead of forcing vanilla, and is the only mode that writes `config.cfg`. That 
 operator-versus-player split), but it means the three cannot be chosen independently: an operator
 session is `./doomlegacy -devmode`, change settings, quit; a player session is plain `./doomlegacy`.
 
+On a cabinet with no command line, **`cv_devmodekey` (default Scroll Lock) restarts the program into
+`-devmode` and back out again** — the flag cannot be toggled live, because the menu lockdown is
+irreversible in place. Attract screen only. → `menus.md`
+
 **`-devmode` must be parsed before `M_Init()`** (`d_main.c`, just above the `M_Init()` call), because
 `M_Init` is what applies the menu lockdown. It was originally parsed later alongside `-devparm`, which
 silently made the flag do nothing at all.

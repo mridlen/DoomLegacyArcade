@@ -741,7 +741,12 @@ void D_Process_Events(void)
     {
         ev = &events[eventtail];
 
-        if (M_Responder(ev)) // Menu input
+        // [Arcade] The operator's devmode restart key, ahead of everything
+        // else so it works with the menu or the console open.  Every key it
+        // can be bound to is non-printable, so it cannot shadow text entry.
+        if (M_Devmode_Hotkey(ev))
+          ;   // never actually returns true: it re-execs, or declines
+        else if (M_Responder(ev)) // Menu input
           ;   // menu ate the event
         else if (CON_Responder(ev)) // console input
           ;

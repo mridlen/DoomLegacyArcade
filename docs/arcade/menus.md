@@ -39,6 +39,61 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   so those are suppressed separately. Each affected menu's `lastOn` is moved to the first item still
   shown, or the cursor starts on an invisible row (`M_SetupMenu` only walks *down* past hidden
   items, so it cannot recover when index 0 is hidden).
+- **The devmode hotkey** (`cv_devmodekey`, `M_Devmode_Hotkey` in `m_menu.c`, hooked into
+  `D_Process_Events` in `d_main.c`). An operator key that restarts the cabinet into `-devmode`, and
+  another press restarts it back out. Default **Scroll Lock**; the alternatives are Pause, Print
+  Screen, F12 and Off.
+
+  **It is a restart and not a live toggle, because `devmode` cannot be flipped in a running
+  session.** All three of its jobs are applied once at startup and none of them is reversible in
+  place:
+
+  - the **menu lockdown** above is one way. `M_Init` overwrites each locked item's `.status` with
+    `IT_HIDDEN` and keeps no record of what it was, and `M_Configure` adds a second batch. Undoing
+    it would mean restoring roughly forty statuses nobody saved, in the arrays that are addressed by
+    hardcoded position — the exact place this file warns about.
+  - the **ranked ruleset** (`HS_Apply_Ranked_Ruleset`, called from `D_DoomMain` when `! devmode`)
+    has already overwritten a set of `CV_NETVAR`s.
+  - **config writing** is the one job that does read `devmode` live, in `M_Save_Config`.
+
+  Re-execing sidesteps all of it: the new session runs the whole startup and is indistinguishable
+  from one launched with or without the flag by hand. `M_Restart_Program` already existed for the
+  game selector, so the hotkey only added a `want_devmode` argument — it strips `-devmode` from the
+  copied argv unconditionally and re-adds it if the new session wants it, which is what makes one
+  code path work in both directions. Its two existing callers pass the current `devmode` to leave
+  the mode alone.
+
+  **The config save falls out for free, and that is the point of the round trip.** Restarting *into*
+  devmode writes nothing, because a player session never saves. Restarting *out* of it runs
+  `D_Quit_Save` while still in devmode, which is exactly the devmode config write — so an operator's
+  changes are saved on the way back to the locked cabinet, with no separate Quit. Verified by
+  restarting out of devmode headlessly and watching `config.cfg`'s mtime move and `devmodekey`
+  appear in it.
+
+  **Attract screen only** (`gamestate == GS_DEMOSCREEN` and `! M_Initials_Active()`). A restart
+  throws away whatever is running, so a stray press during a game would take a paying player's run —
+  or, during initials entry, a record earned but not yet committed.
+
+  **A refused press is not consumed**, and that is not a detail. This runs ahead of every other
+  responder, so returning true on the refusal path would have swallowed the key for the whole
+  session everywhere but the attract screen — and the stock cabinet binds **screenshot to both F12
+  and Print**, two of the five settings offered. Returning false leaves the key its ordinary job and
+  costs nothing. For the same reason the note is `GenPrintf(EMSG_dev, ...)` and not `CONS_Printf`: a
+  console line can reach the HUD, and a player must neither be shown that the key exists nor get a
+  line per press on a key they use.
+
+  **The key list is fixed rather than a free key name** so that every possible value is a key no
+  control panel can produce. That is what keeps it from colliding with a player's buttons, with
+  initials entry (all four are non-printable) or with a `setcontrol` binding. Read it through
+  `.value`, not `.EV` — the keynums are well over 255.
+
+  The hook goes in `D_Process_Events` **ahead of `M_Responder`**, so it works with the menu or the
+  console open. Cost is one integer compare per keydown.
+
+  Verified headlessly with a temporary console command that fires a synthetic keydown through
+  `M_Devmode_Hotkey`: from the attract screen the process re-execs and comes back with `devmode`
+  set (and back again with it clear), while the same command at tic 105 of a loaded level produces
+  no second startup at all.
 - **Menu naming**: the New Game page offers **Single Player** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
   only) and uses the **`M_MULTI`** graphic, which reads "MULTIPLAYER". `M_2PLAYR` literally reads

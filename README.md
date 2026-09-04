@@ -114,6 +114,10 @@ Discord is likely to get you banned.
   **Options → Arcade Options → Audit**, or type `audit` at the console.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
+- **A key that unlocks the cabinet**, so operator settings can be reached on a built cabinet with no
+  command line. Plug a keyboard in, press it at the attract screen, and the cabinet relaunches
+  itself in operator mode; press it again and it saves your changes and comes back locked. It is
+  ignored during a game, so nobody can lose a run to it.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
   weapons — nobody can be left stuck in a stalemate on an unattended machine.
 - **Config safety.** Every save keeps a backup, and lines that fail to apply are reported at startup
@@ -620,6 +624,45 @@ That gives you the full stock menus, disables the competitive ruleset, and is th
 that saves settings. The workflow is: launch with `-devmode`, change what you want, quit. Player
 sessions then start from that baseline every time.
 
+### Unlocking the cabinet without a command line
+
+A built cabinet has no terminal to type that into, so there is a key for it instead. Plug a keyboard
+in and press **Scroll Lock** at the attract screen. The cabinet shows `ENTERING DEVMODE...` and
+relaunches itself unlocked — same as `-devmode`, because that is literally what it does: it restarts
+the program with the flag added.
+
+Change what you want, then press **Scroll Lock** again. It shows `LEAVING DEVMODE...`, **writes the
+config on the way out**, and comes back up locked. There is no separate save step and no quitting to
+a desktop; the settings are saved by the same code that saves them when a `-devmode` session quits
+normally.
+
+**The key only works at the attract screen.** During a game, an intermission, a finale or an
+initials entry it does nothing at all. That is deliberate — the restart throws away whatever is
+running, so without the rule a stray press could take a player's run, or a record they had earned
+but not yet put their initials on. If you want to unlock mid-game, end the game first.
+
+**Options → Arcade Options → Devmode Key** chooses the key:
+
+| Setting | |
+| --- | --- |
+| `Scroll Lock` | the default |
+| `Pause` | |
+| `Print Screen` | also the stock **screenshot** key |
+| `F12` | also the stock **screenshot** key |
+| `Off` | no hotkey; `-devmode` on the command line is then the only way in |
+
+Every choice is a key no control panel can produce, so the hotkey can never collide with a player's
+buttons, with initials entry, or with anything `setcontrol` has bound. There is no free-text option
+for that reason.
+
+Sharing a key with screenshot is workable but not recommended: the two stock screenshot bindings are
+F12 and Print Screen, and while the hotkey never steals a press anywhere except the attract screen,
+on the attract screen it wins and you get a restart instead of a screenshot. `Scroll Lock` and
+`Pause` have no other job.
+
+Because the setting is itself only saved from an operator session, changing it is a two-step job the
+first time: unlock, set the key, lock again — the lock step is what writes it to `config.cfg`.
+
 ### Setting up a control panel
 
 **Options → Setup Controls → Guided setup P1** (devmode only). It shows the recommended layout,
@@ -810,7 +853,7 @@ like any other, so they only stick from a `-devmode` session.
 
 | Flag | Effect |
 | --- | --- |
-| `-devmode` | Unlock menus, save settings, disable the ruleset |
+| `-devmode` | Unlock menus, save settings, disable the ruleset (or press Scroll Lock at the attract screen) |
 | `-clearhighscores` | Wipe scores and record demos at startup |
 | `-clearaudit` | Reset the operator audit counters at startup |
 | `-game <name>` | Start a specific game (`doomu`, `doom2`, `plutonia`, `tnt`) |
