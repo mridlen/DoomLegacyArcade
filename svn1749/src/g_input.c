@@ -620,6 +620,7 @@ char * gamecontrolname[num_gamecontrols] =
     "menuesc",  // joystick enter menu, and menu escape key
     "pause",
     "automap",
+    "devmode",  // [Arcade] last, matching gamecontrols_e
 };
 
 // Catches a length mismatch between the enum and the table above at compile
@@ -1069,6 +1070,12 @@ void G_Controldefault(void)
     gamecontrol[gc_menuesc    ][0]=KEY_JOY0BUT7; // Start button on Xbox360 controllers
     gamecontrol[gc_pause      ][0]=KEY_JOY0BUT6; // Back button on Xbox360 controllers
     gamecontrol[gc_automap    ][0]=KEY_JOY0BUT8;
+
+    // [Arcade] The operator unlock key.  Scroll Lock because no control panel
+    // can produce it and nothing else in the engine wants it, so the cabinet
+    // ships with a working way in that a player cannot reach by accident.
+    // Panel 1 only, like every other default here; panels 2-4 start unbound.
+    gamecontrol[gc_devmode    ][0]=KEY_SCROLLLOCK;
 }
 
 void G_SaveKeySetting(FILE *f)

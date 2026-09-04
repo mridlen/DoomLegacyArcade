@@ -115,9 +115,10 @@ Discord is likely to get you banned.
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **A key that unlocks the cabinet**, so operator settings can be reached on a built cabinet with no
-  command line. Plug a keyboard in, press it at the attract screen, and the cabinet relaunches
-  itself in operator mode; press it again and it saves your changes and comes back locked. It is
-  ignored during a game, so nobody can lose a run to it.
+  command line. Plug a keyboard in, press Scroll Lock at the attract screen, and the cabinet
+  relaunches itself in operator mode; press it again and it saves your changes and comes back
+  locked. It is an assignable control like any other (**Devmode Restart**, on the Setup Controls
+  pages), and it is ignored during a game, so nobody can lose a run to it.
 - **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
   weapons — nobody can be left stuck in a stalemate on an unattended machine.
 - **Config safety.** Every save keeps a backup, and lines that fail to apply are reported at startup
@@ -641,27 +642,28 @@ initials entry it does nothing at all. That is deliberate — the restart throws
 running, so without the rule a stray press could take a player's run, or a record they had earned
 but not yet put their initials on. If you want to unlock mid-game, end the game first.
 
-**Options → Arcade Options → Devmode Key** chooses the key:
+**Changing the key.** It is an ordinary assignable control, not a special setting.
+**Options → Setup Controls → `Player1 Controls >>`**, then **next** twice to reach the third page.
+It is there as **Devmode Restart**, just under Screenshot and above the "Joystick and Mouse Only"
+heading. Select it and press the key you want, the same as rebinding anything else.
 
-| Setting | |
-| --- | --- |
-| `Scroll Lock` | the default |
-| `Pause` | |
-| `Print Screen` | also the stock **screenshot** key |
-| `F12` | also the stock **screenshot** key |
-| `Off` | no hotkey; `-devmode` on the command line is then the only way in |
+There is one per panel — `Player1 Controls` through `Player4 Controls` — and **any of the four
+works**, since which page you set it on doesn't decide who gets to press it. Only Player 1 has a
+default (Scroll Lock); panels 2 to 4 start unbound, which is how you leave them unless you have a
+reason not to.
 
-Every choice is a key no control panel can produce, so the hotkey can never collide with a player's
-buttons, with initials entry, or with anything `setcontrol` has bound. There is no free-text option
-for that reason.
+**Think before binding it to a panel button.** Because it is a normal control, nothing stops you —
+but a cabinet button is a button players press, and at the attract screen this key restarts the
+machine. The attract-screen rule is the only thing standing between that and a player pressing it
+mid-game, so keep it on the keyboard unless you have a good reason. Scroll Lock and Pause are the
+obvious choices; F12 and Print Screen are already the screenshot bindings, and the screenshot
+handler sees the key first, so those two will take a picture instead of unlocking.
 
-Sharing a key with screenshot is workable but not recommended: the two stock screenshot bindings are
-F12 and Print Screen, and while the hotkey never steals a press anywhere except the attract screen,
-on the attract screen it wins and you get a restart instead of a screenshot. `Scroll Lock` and
-`Pause` have no other job.
+To clear it entirely, bind it to nothing — then `-devmode` on the command line is the only way in.
 
-Because the setting is itself only saved from an operator session, changing it is a two-step job the
-first time: unlock, set the key, lock again — the lock step is what writes it to `config.cfg`.
+Because controls are only saved from an operator session, changing it is a two-step job the first
+time: unlock, rebind, lock again — the lock step is what writes it to `config.cfg`, as
+`setcontrol "devmode" "scroll lock"`.
 
 ### Setting up a control panel
 

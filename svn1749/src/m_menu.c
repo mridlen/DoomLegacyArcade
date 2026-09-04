@@ -586,25 +586,6 @@ consvar_t cv_chasecamdemo = {"chasecamdemo", "1", CV_SAVE, CV_OnOff };
 // is never locked in.
 consvar_t cv_quitmenu = {"quitmenu", "0", CV_SAVE, CV_OnOff };
 
-// [Arcade] Key that restarts the cabinet into -devmode, and back out of it
-// again.  Operator setting like the rest of this group.
-//
-// A fixed list rather than a free key name on purpose: every entry is a key
-// no control panel can produce, so the hotkey cannot collide with a player's
-// buttons, with initials entry, or with anything setcontrol has bound.  Off
-// disables it, which is the right setting for a cabinet that will never have
-// a keyboard plugged into it.
-//
-// Read through .value, not .EV -- these keynums are well over 255.
-CV_PossibleValue_t devmodekey_cons_t[] = {
-  {0,              "Off"},
-  {KEY_SCROLLLOCK, "Scroll Lock"},
-  {KEY_PAUSE,      "Pause"},
-  {KEY_PRINT,      "Print Screen"},
-  {KEY_F12,        "F12"},
-  {0, NULL} };
-consvar_t cv_devmodekey = {"devmodekey", "Scroll Lock", CV_SAVE, devmodekey_cons_t };
-
 static
 void CV_menusound_OnChange(void)
 {
@@ -4253,34 +4234,48 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean wan
 // still in devmode, which is exactly the devmode config write.  So the
 // operator's changes are saved on the way back to the locked cabinet.
 //
+// The key is the gc_devmode game control, assigned on the Setup Controls
+// pages beside Screenshot like any other, and so per panel: any of the four
+// panels' bindings works, because which page the operator happened to set it
+// on says nothing about who is pressing it.  It defaults to Scroll Lock on
+// panel 1 (G_Controldefault) -- a key no panel can produce.
+//
 // Honoured only on the attract screen.  A restart throws away whatever is
 // running, so a stray press during a game would take a paying player's run
 // away from them -- or, during initials entry, the record they have earned
 // but not yet committed.  GS_DEMOSCREEN is the title screen and the attract
 // cycle; every other state means a game, an intermission or a finale is up.
+// Being assignable, this key *can* be put on a panel button, so the gate is
+// what keeps that from being a way to lose a run.
 //
 // When it declines it does **not** consume the event, so the key keeps
-// whatever other job it has everywhere except the attract screen.  That
-// matters: the stock cabinet binds screenshot to both F12 and Print, and
-// this runs ahead of every other responder, so consuming a refused press
-// would have swallowed screenshots for the life of the session.  The note
-// is EMSG_dev rather than CONS_Printf for the same reason -- a console
-// message can reach the HUD, and a player must not be shown that the key
-// exists (nor see a line per press if it is bound to something they use).
+// whatever other job it has everywhere except the attract screen.  The note
+// is EMSG_dev rather than CONS_Printf because a console message can reach
+// the HUD: a player must not be shown that the key exists, nor get a line
+// per press if it is bound to something they use.
 //
 // Returns true if the event was consumed, which only ever happens on the
 // path that does not return.
 boolean  M_Devmode_Hotkey( event_t * ev )
 {
-    int keynum = cv_devmodekey.value;
+    int  key;
+    byte pind;
 
-    if( keynum == 0 )  return false;   // Off
     if( ev->type != ev_keydown )  return false;
-    if( ev->data1 != keynum )  return false;
+
+    key = ev->data1;
+    if( key == KEY_NULL )  return false;   // an unbound control reads as 0
+
+    for( pind = 0; ; pind++ )
+    {
+        if( pind >= MAXSPLITSCREENPLAYERS )  return false;   // not our key
+        if( key == gamecontrol_pl[pind][gc_devmode][0]
+         || key == gamecontrol_pl[pind][gc_devmode][1] )  break;
+    }
 
     if( gamestate != GS_DEMOSCREEN || M_Initials_Active() )
     {
-        GenPrintf( EMSG_dev, "devmodekey: attract screen only.\n" );
+        GenPrintf( EMSG_dev, "devmode key: attract screen only.\n" );
         return false;   // let the key do its ordinary job
     }
 
@@ -4428,8 +4423,6 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Idle Warning"    , &cv_idlewarntime  , 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
-    // [Arcade] The operator hotkey.  Appended with the rest, not inserted.
-    {IT_STRING | IT_CVAR,0, "Devmode Key"     , &cv_devmodekey    , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
 };
 
@@ -5674,6 +5667,9 @@ menuitem_t ControlMenu3[]=
   {IT_CONTROL, 0,"Rankings/Scores",M_ChangeControl,gc_scores },
   {IT_CONTROL, 0,"Console"        ,M_ChangeControl,gc_console},
   {IT_CONTROL, 0,"Screenshot"     ,M_ChangeControl,gc_screenshot},
+  // [Arcade] Above the joystick-only heading with the other utility keys, not
+  // below it: this is a keyboard key by nature and by default.
+  {IT_CONTROL, 0,"Devmode Restart",M_ChangeControl,gc_devmode},
   {IT_WHITESTRING | IT_SPACE, 0, "Joystick and Mouse Only" ,0},
   {IT_CONTROL, 0,"Main menu"      ,M_ChangeControl,gc_menuesc},
   {IT_CONTROL, 0,"Pause"          ,M_ChangeControl,gc_pause},
@@ -10196,7 +10192,6 @@ consvar_t * menu_command_cvar_list[] =
   &cv_cheatsmenu,       // [Arcade]
   &cv_chasecamdemo,     // [Arcade]
   &cv_initialstimeout,  // [Arcade]
-  &cv_devmodekey,       // [Arcade]
 
     // p_mobj.c
   &cv_itemrespawntime,

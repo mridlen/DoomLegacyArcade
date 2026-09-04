@@ -73,8 +73,10 @@ void M_Configure (void);
 //   want_devmode : whether the new session gets -devmode; pass the current
 //                  devmode to leave the session's mode alone
 void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean want_devmode );
-// [Arcade] Operator hotkey (cv_devmodekey): restarts into or out of -devmode.
-// Attract screen only; a refused press is left for the other responders.
+// [Arcade] Operator hotkey (the gc_devmode control): restarts into or out of
+// -devmode.  Attract screen only; a refused press is left for the other
+// responders.  Call it after M_Responder and CON_Responder, so that the menu
+// can still capture the key when the operator is re-assigning it.
 boolean  M_Devmode_Hotkey( event_t * ev );
 // [Arcade] True once a level pack has been loaded, after which the attract
 // screen demos play against the wrong maps.
@@ -125,7 +127,6 @@ void M_Register_Menu_Controls( void );
 // d_clisrv.c to decide how many players join on this machine.  See
 // D_NumLocalPlayers(), which clamps it to MAXSPLITSCREENPLAYERS.
 extern consvar_t cv_localplayers;
-extern consvar_t cv_devmodekey;   // [Arcade]
 // [Arcade] Two players side by side instead of stacked.  Read by d_clisrv.c
 // (D_View_Grid), which is where every placement decision comes from.
 extern consvar_t cv_splitvertical;
