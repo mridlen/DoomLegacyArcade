@@ -12,6 +12,8 @@
 #   ./tools/build.sh --install-deps  run the install command (asks for sudo)
 #   ./tools/build.sh --reconfigure   rewrite make_options even if one exists
 #   ./tools/build.sh --clean         clean first
+#                                   (a clean is also forced automatically when a
+#                                    header is newer than the existing objects)
 #   ./tools/build.sh --debug         debug build, into svn1749/debug/bin
 #   ./tools/build.sh --jobs N        parallel compile jobs (default: all cores)
 #   ./tools/build.sh --arch FLAG     override the -march flag ('none' for no flag)
@@ -454,6 +456,49 @@ if [ "$do_debug" = 1 ]; then
     # anything, it simply never read a make_options at all.
     mkdir -p "$build_root/debug"
     cp "$build_root/make_options" "$build_root/debug/make_options"
+fi
+
+# --------------------------------------------------------------------------
+# Stale objects after a header change.
+#
+# This tree has no per-object dependency files.  ../dep holds a dozen coarse
+# group files and most objects appear in none of them, so `make` does not
+# rebuild anything merely because a header changed: edit a header, and only the
+# .c files you happened to touch as well are recompiled.  Everything else keeps
+# the layout the old header described.
+#
+# When the header changed a struct, the resulting binary holds two disagreeing
+# views of it, and it segfaults wherever the mismatch is first dereferenced --
+# a long way from anything you edited.  It also reads as an intermittent fault,
+# because it disappears the moment anything forces a full rebuild.  That is not
+# hypothetical: adding four fields to drawinfo_t in v_video.h crashed the Pi
+# exactly this way, and looked like a heisenbug until the next clean build.
+#
+# So if any header is newer than the oldest object already sitting in the
+# output directory, that object predates the header and cannot be trusted.
+# A needless clean costs one build; a missed one costs an afternoon.
+#
+# Timestamps are the right test here even though the tree lives in a synced
+# folder -- in fact especially then, since a header arriving from another
+# machine is precisely the case where the local objects are stale.
+# --------------------------------------------------------------------------
+objs_dir="$build_root/objs"
+[ "$do_debug" = 0 ] || objs_dir="$build_root/debug/objs"
+
+if [ "$do_clean" = 0 ] && [ -d "$objs_dir" ]; then
+    # ls -t is newest first, so the last line is the oldest object.
+    oldest_obj=$(ls -t "$objs_dir"/*.o 2>/dev/null | tail -n 1)
+    if [ -n "$oldest_obj" ]; then
+        newer_hdr=$(find "$src_dir" -name '*.h' -newer "$oldest_obj" 2>/dev/null \
+                    | head -n 1)
+        if [ -n "$newer_hdr" ]; then
+            say "  $(basename "$newer_hdr") is newer than the oldest object in"
+            say "  $(basename "$objs_dir")/ -- a header change does not trigger a rebuild"
+            say "  in this tree, so those objects may describe a different struct"
+            say "  layout than the sources do.  Forcing a clean."
+            do_clean=1
+        fi
+    fi
 fi
 
 step "Building (${jobs} jobs)"

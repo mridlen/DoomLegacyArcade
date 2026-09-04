@@ -62,6 +62,42 @@ These are the same traps documented in `CLAUDE.md`, encoded so nobody has to kno
   breaks this codebase's own `typedef enum {false,true} boolean`). `-g` is added with it so a crash
   on an unattended cabinet gives a backtrace with file and line.
 
+## It forces a clean when a header changed
+
+This tree has **no per-object dependency files**. `../dep` holds a dozen coarse group files and most
+objects appear in none of them, so `make` does not rebuild anything merely because a header changed.
+Edit a header and only the `.c` files you happened to touch as well are recompiled; every other
+object keeps the layout the old header described.
+
+When the header changed a *struct*, the binary then holds two disagreeing views of it and segfaults
+wherever the mismatch is first dereferenced — a long way from anything that was edited, and with a
+backtrace that points at innocent code. Worse, it presents as an **intermittent** fault, because it
+vanishes the moment anything forces a full rebuild and comes back the next time the same partial
+build is reproduced.
+
+So before building, the script compares every `*.h` under `src/` against the **oldest** object in the
+output directory. If any header is newer, those objects predate it and cannot be trusted:
+
+```
+  v_video.h is newer than the oldest object in
+  objs/ -- a header change does not trigger a rebuild
+  in this tree, so those objects may describe a different struct
+  layout than the sources do.  Forcing a clean.
+```
+
+The oldest object is the right one to compare against: it is the one most likely to predate the
+change, and using it means a partially-rebuilt tree is caught even when some objects are current.
+
+Timestamps are the right test here *especially* because the tree lives in a synced folder — a header
+arriving from another machine is precisely the case where the local objects are stale and nothing
+else would notice.
+
+A needless clean costs one build. A missed one costs an afternoon: this was added after adding four
+fields to `drawinfo_t` in `v_video.h` and then chasing a crash that looked like a heisenbug.
+
+**Verified** by running the script three times: untouched (no clean), after `touch v_video.h` (the
+message above, one clean), and immediately again (no clean — it does not loop).
+
 ## It never overwrites an existing make_options
 
 `make_options` is machine-local and gitignored, and an operator may have tuned it. If one exists the

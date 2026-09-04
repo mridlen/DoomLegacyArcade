@@ -459,7 +459,11 @@ written up in full in the doc named beside it.
   warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
   symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
 - **There are no dep files for most objects, so editing a header does not trigger a rebuild.**
-  After changing any header, `make clean && make`. → `multiplayer-views.md`
+  After changing any header, `make clean && make`. `tools/build.sh` now does this for you — it
+  forces a clean when any header is newer than the oldest object — but plain `make` still will not.
+  A header that changed a struct leaves the binary holding two disagreeing views of it, and it
+  segfaults far from the edit and *intermittently*, since it clears up the moment anything rebuilds
+  in full. → `multiplayer-views.md`, `building.md`
 - **Returning to the title screen resets very little.** State leaks from the finished game into the
   attract screen. Fix leftover state in `Command_ExitGame_f`, which is the single funnel every
   route back to the title passes through. → `gotchas.md`
