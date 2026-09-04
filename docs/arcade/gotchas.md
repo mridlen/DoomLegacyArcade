@@ -195,6 +195,63 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `doomu_ep1_sk0_speed.lmp` is off by one and cannot be repaired; it has to be re-run, or
     deleted so the next record replaces it. Only demos where a rocket or lost soul actually fired
     are affected, so most of the single-level table is fine.
+- **A stale `multiplayer` byte in the demo header desynced a single-player run, and the header is
+  the only thing that carries it (fixed).** `G_BeginRecording` runs *before* `G_DeferedInitNew`, so
+  the header records whatever the globals held from the **previous** game — the same staleness
+  `G_Update_Demo_Header` was written to correct for skill/episode/map. Those were harmless.
+  `multiplayer` is not: `G_DoPlayDemo` restores it from header byte 16, and `G_DoLoadLevel` then
+  runs `P_SetupLevel` with it, because nothing sets `multiplayer` between `G_InitNew` and the level
+  load. So a solo run recorded in a session that had earlier been multiplayer replays with
+  `multiplayer = 1` for the whole level: weapons and keys persist on pickup (`p_inter.c` ~602,
+  ~1629), kill accounting changes (~2295), and the player-damage gate takes a different branch
+  (~3385, the `(! multiplayer)` term).
+  - **The symptom is not a crash and not a visible glitch — the replay simply never finishes the
+    level.** On the E1M3 ITYTD speed run that found this, playback matched the recording *exactly*
+    for 901 tics, then the recorded run took 7 damage the replay did not, and from there the player
+    drifted off route, spent the last 600 tics stuck against geometry at (-2068,-1808) riding a lift
+    up and down, and never reached the exit. The demo's own last ticcmd is `forwardmove=50,
+    buttons=2` — the player running into the exit switch and pressing use — so the recording plainly
+    *did* finish.
+  - **Fixed by having `G_Update_Demo_Header` rewrite byte 16 too**, alongside the fields it already
+    corrects. It is correct by construction: the call sits 11 lines above `G_DoLoadLevel` in
+    `G_InitNew` and nothing in between touches `multiplayer`, so the byte written is exactly the
+    value `P_SetupLevel` will use.
+  - **`playeringame[]` (bytes 17..48) is stale in the same way and must be left alone.** Every demo
+    ever recorded has it all-zero and replays correctly, because the recorded add-player netxcmd
+    creates the players. Writing the real flags would make `P_SetupLevel` spawn a player body before
+    that command runs and change the mobj count — a new desync in place of the old one.
+  - **Unlike the smoke-trail phase error, this one is repairable in place**: the correct value is
+    known, so patching byte 16 of an affected `.lmp` from 1 to 0 makes it replay exactly. That
+    byte-flip is also what *proved* the diagnosis — same binary, one byte, `TRACE_SIMEXIT` at tic
+    2149 instead of no exit at all. Only demos recorded after a multiplayer session are affected;
+    of the cabinet's ~90 stored demos this was the only one.
+  - **How it was found, which is the reusable part:** dump *every* registered cvar (walk
+    `CV_IteratorFirst`/`CV_Iterator`), every `EN_` engine flag and the spawn state at the end of
+    `P_SetupLevel`, then diff a demo playback against a plain `-warp` game of the same map. Comparing
+    engine state at level start is far faster than hunting a divergence tic, because record and
+    playback run the same build — anything that differs is gated on `demoplayback` or came out of
+    the header.
+
+- **Two more record/playback asymmetries are still open** — both found by the cvar/flag diff above,
+  both *proved* to be inert for the E1M3 run (its trace is byte-identical with them corrected), both
+  left alone because fixing either changes how every existing demo replays and that is a decision
+  with a wide blast radius:
+  - **Eight `EN_` engine flags are set from Boom's demo numbering on playback and from the live
+    baseline while recording.** `G_demo_defaults()` computes `boom_200 = EN_boom && (demoversion >=
+    200)` and `boom_201 = ... >= 201`, but a DoomLegacy demo's `demoversion` is **148**, which is not
+    comparable with Boom's 200..214 scale — so every Boom behaviour is switched *off* on playback
+    while recording had it *on*. Measured, playback vs a normal game: `EN_boom_physics`,
+    `EN_boom_floor`, `EN_doorlight`, `EN_invul_god`, `EN_skull_bounce_fix`, `EN_catch_respawn_0` all
+    0 vs 1, and `EN_blazing_double_sound`, `EN_vile_revive_bug` 1 vs 0. `EN_boom_physics` is
+    `!comp[comp_model]`, the movement model. The header already carries `zerotags=1`,
+    `invul_skymap=1` and `doorstuck=2` — Boom 2.01/2.02 values — so the demo says Boom while the
+    flags say vanilla.
+  - **`cv_fragsweaponfalling` is forced to 0 on playback and left at the user's value while
+    recording.** `G_demo_defaults()` zeroes it (correctly, for stock IWAD demos) but nothing pins it
+    while recording and it is not in the header. It only matters when a **player** dies — for a
+    monster drop `drop_ammo_count` is already 0 — so it is harmless for a clean run and a live
+    hazard for the cabinet's **death demos**.
+
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that
   demo back with it, and diff: the first differing line is the divergence tic. Inert without the

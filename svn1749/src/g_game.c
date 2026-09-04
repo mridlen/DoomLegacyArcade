@@ -3663,6 +3663,7 @@ enum {
     DEMOHDR_respawn      = 11,
     DEMOHDR_fastmonsters = 12,
     DEMOHDR_nomonsters   = 13,
+    DEMOHDR_multiplayer  = 16,
     DEMOHDR_playeringame = 17,   // first playeringame[] byte, ends the fixed part
 };
 
@@ -3709,6 +3710,21 @@ void  G_Update_Demo_Header( void )
     demobuffer[DEMOHDR_respawn]      = cv_respawnmonsters.EV;
     demobuffer[DEMOHDR_fastmonsters] = cv_fastmonsters.EV;
     demobuffer[DEMOHDR_nomonsters]   = nomonsters;
+
+    // [Arcade] multiplayer and playeringame[] are stale here for the same
+    // reason the fields above were, and unlike them they are *not* harmless:
+    // G_DoPlayDemo restores multiplayer from this byte, and G_DoLoadLevel
+    // then runs P_SetupLevel with it -- so a demo that recorded a stale 1
+    // replays the whole level in multiplayer mode, where weapons and keys
+    // persist on pickup and player-vs-player damage is gated differently.
+    // That desynced an E1M3 speed run at tic 901: identical up to there,
+    // then the recorded run took damage the replay did not, and the player
+    // never reached the exit.  Correcting the byte here replays it exactly.
+    demobuffer[DEMOHDR_multiplayer]  = multiplayer;
+    // playeringame[] is stale here too, but leave it: every demo ever recorded
+    // has it all-zero and replays correctly, because the recorded add-player
+    // netxcmd creates the players.  Writing the real flags would spawn a player
+    // body in P_SetupLevel before that command runs, changing the mobj count.
 }
 
 
