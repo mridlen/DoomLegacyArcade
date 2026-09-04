@@ -1816,8 +1816,8 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     float  sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy ;
 
     // [Arcade] This view's cell of the screen, matching the viewport grid in
-    // hw_main.c: two views stack or sit side by side, four are a 2x2 read
-    // left-to-right then top-to-bottom.  D_View_Cell_Pos takes the panel's
+    // hw_main.c: two views stack or sit side by side, three or four are a 2x2
+    // filled the way cv_panelorder says.  D_View_Cell_Pos takes the panel's
     // cell, not the join order, and clamps a single view to the first cell.
     byte  cols, rows, col, row;
     // [Arcade] Screen pixels per base unit across and down this cell, so the

@@ -532,7 +532,8 @@ byte  D_NumViews( void )
 // overlay, the rankings, the crosshair, the black fill of an unused cell --
 // asks here rather than testing the view count, because "2 views" no longer
 // says which way they are cut.  A cell is (vid.width / cols) by
-// (vid.height / rows), and D_Cell_Pos says which one a cell is.
+// (vid.height / rows), and D_Cell_Pos says which one a cell is -- including
+// which way the 2x2 is filled, which is an operator setting (cv_panelorder).
 //
 // Three or four players stay a 2x2 whatever the split setting says: the
 // setting is about the *two* player shape, and a 2x2 has no other
@@ -560,20 +561,35 @@ void  D_View_Grid( byte * out_cols, byte * out_rows )
 }
 
 
-// [Arcade] Where a cell of the view grid sits, as a column and a row.
-// Takes the cell rather than the view, because the callers get it from
-// different places -- a player's view from D_View_Cell, an empty cell from
-// whichever one no player claimed.
-void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row )
+// [Arcade] Where a cell of the view grid sits, as a column and a row, against
+// a grid the caller names rather than the one D_View_Grid reports.
+//
+// Split out from D_Cell_Pos for the join screen, which lays its boxes out
+// before anyone has joined, when D_View_Grid still describes the *previous*
+// game -- so it has to say which grid it means.  It must place the boxes
+// exactly where the views will be, or the screen whose whole job is telling a
+// player which part of the screen is theirs points at the wrong one, which is
+// why it shares this rule instead of keeping the copy it used to have.
+void  D_Grid_Cell_Pos( byte cell, byte cols, byte rows,
+                       byte * out_col, byte * out_row )
 {
-    byte cols, rows;
-
-    D_View_Grid( &cols, &rows );
-
     if( (cols >= 2) && (rows >= 2) )
     {
-        *out_col = cell & 1;    // left to right, then top to bottom
-        *out_row = cell >> 1;
+        // Column major unless the operator asked for reading order: panels 1
+        // and 2 own the left column, 3 and 4 the right, so each player's view
+        // is on the side of the screen they are standing at.  See
+        // cv_panelorder (m_menu.c) for why this is not simply the obvious
+        // left-to-right fill.
+        if( cv_panelorder.EV )
+        {
+            *out_col = cell & 1;    // 1 2 / 3 4, left to right then top to bottom
+            *out_row = cell >> 1;
+        }
+        else
+        {
+            *out_col = cell >> 1;   // 1 3 / 2 4, top to bottom then left to right
+            *out_row = cell & 1;
+        }
     }
     else if( cols >= 2 )
     {
@@ -585,6 +601,18 @@ void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row )
         *out_col = 0;           // stacked, and the single view
         *out_row = cell;
     }
+}
+
+// [Arcade] Where a cell of the view grid sits, in the grid being drawn now.
+// Takes the cell rather than the view, because the callers get it from
+// different places -- a player's view from D_View_Cell, an empty cell from
+// whichever one no player claimed.
+void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row )
+{
+    byte cols, rows;
+
+    D_View_Grid( &cols, &rows );
+    D_Grid_Cell_Pos( cell, cols, rows, out_col, out_row );
 }
 
 

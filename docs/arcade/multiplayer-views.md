@@ -436,6 +436,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     | `D_Cell_Pos(cell, &col, &row)` | where a given cell sits in that grid |
     | `D_View_Cell_Pos(vind, &col, &row)` | where a *view* is drawn — the panel's cell, not the join order, clamped to 0,0 for a single view |
     | `D_View_Squash()` | 0 none, 1 half height, 2 half width |
+    | `D_Grid_Cell_Pos(cell, cols, rows, &col, &row)` | the same as `D_Cell_Pos`, against a grid the caller names |
 
     A cell is `vid.width / cols` by `vid.height / rows`, and that is the only sizing rule left.
     The callers are both renderers' viewports, the software draw tables (`R_Set_View_Window`), the
@@ -443,6 +444,42 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `D_Display`, and the join screen's boxes. **Add a layout and you change `D_View_Grid`, not
     nine call sites** — which is the reason to do it this way even though only one new layout
     exists.
+  - **The 2x2 is filled by columns, because the panels are in a row.** The four control panels
+    stand side by side across the front of the cabinet, so the player at panel 2 is standing
+    *beside* the player at panel 1, not behind them. Filling the grid in reading order — which is
+    what it did — put panel 2's view in the top right and panel 3's in the bottom left, so two of
+    the four were watching a quadrant on the far side of the screen from where they were standing,
+    and had to look across their neighbour to play. Filling it by columns puts each player's view
+    on their own side:
+
+    ```
+      1  3        1  2
+      2  4        3  4
+     columns      rows
+    ```
+
+    One line in `D_Grid_Cell_Pos`: `col = cell >> 1; row = cell & 1` instead of the other way
+    round. Nothing else changed, because every placement already came through it — which is the
+    payoff for the helpers above, and the reason a layout change is a one-line change.
+    - **The order is an operator setting** (`cv_panelorder`, "Screen Order" on the Arcade Options
+      page, `menus.md`), defaulting to columns. A cabinet is not the only way this gets played:
+      four people on gamepads sit wherever they like, and 1-2-3-4 reading order is what they will
+      expect, so the old layout stays available rather than being deleted. `CV_CALL` on to
+      `R_SetViewSize`, like `cv_splitvertical` — the viewport sizes are only recomputed on request.
+    - **Three players are unaffected in the only way that matters**: they still leave the *fourth*
+      quadrant empty either way, because the empty cell is the highest-numbered one in both fills.
+      Two players are the stacked halves or side by side and one has the whole screen, so neither
+      touches this branch.
+    - **The join screen had its own copy of the arithmetic** — `col = panel & 1; row = panel >> 1`,
+      inline in `M_Join_Drawer` — and it is exactly the duplication that would have sent every
+      player to the wrong quadrant while the screen that tells them where to stand said otherwise.
+      It could not simply call `D_Cell_Pos`, because at join time nobody has joined and
+      `D_View_Grid` still describes the *previous* game; hence `D_Grid_Cell_Pos`, which takes the
+      grid as an argument. The join screen names its own `cols`/`rows` and shares the fill rule.
+    - Verified by instrumenting `D_View_Cell_Pos` for all four panels under both settings:
+      columns gives (0,0) (0,1) (1,0) (1,1) for panels 1..4 and rows gives (0,0) (1,0) (0,1) (1,1),
+      with 1x2 and 1x1 grids unchanged; and by screenshots of a four view game, where the two
+      settings differ by exactly the top-right and bottom-left quadrants swapping.
   - **The projection is the part that is not just geometry, and getting it wrong is not subtle.**
     A 2x2 cell keeps the screen's own aspect ratio, so halving both axes leaves the field of view
     unchanged and simply draws it smaller. **A side-by-side cell is not that case**: it is full

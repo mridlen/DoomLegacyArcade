@@ -522,6 +522,40 @@ static void CV_Splitvertical_OnChange( void )
     R_SetViewSize();
 }
 
+// [Arcade] Which quadrant of the 2x2 grid each control panel drives.
+//
+// The panels stand in a row across the front of the cabinet, so the player at
+// panel 2 is standing beside the player at panel 1, not behind them.  Filling
+// the grid the obvious way -- left to right, then top to bottom -- puts panel
+// 2's view in the *top right* and panel 3's in the bottom left, so both of
+// them are watching a quadrant on the far side of the screen from where they
+// are standing.  Filling it by columns instead (panels 1 and 2 own the left
+// column, 3 and 4 the right) puts every player's view on their own side:
+//
+//     1 3        1 2
+//     2 4        3 4
+//   columns      rows
+//
+// Rows is kept as a setting rather than deleted because a cabinet is not the
+// only way this gets played -- four people on gamepads sit wherever they like,
+// and 1-2-3-4 reading order is what they will expect.
+//
+// Three players use the same grid, leaving the fourth quadrant empty either
+// way.  Two players are the stacked halves or side by side (cv_splitvertical)
+// and one has the whole screen, so neither is affected.
+//
+// CV_CALL for the same reason cv_splitvertical has it: the viewport sizes are
+// only recomputed on request, and R_SetViewSize just sets a flag, so it is
+// safe from config.cfg long before the renderer exists.
+static void CV_Panelorder_OnChange( void );
+CV_PossibleValue_t panelorder_cons_t[] = {{0,"1 3 / 2 4"},{1,"1 2 / 3 4"},{0,NULL}};
+consvar_t cv_panelorder = {"panelorder", "1 3 / 2 4", CV_SAVE | CV_CALL, panelorder_cons_t, CV_Panelorder_OnChange };
+
+static void CV_Panelorder_OnChange( void )
+{
+    R_SetViewSize();
+}
+
 // [Arcade] Seconds the join screen waits before starting with whoever has
 // pressed in.  Operator setting like the two above.  0 skips the wait, which
 // starts the game with panel 1 alone -- useful on a single panel cabinet that
@@ -3337,13 +3371,23 @@ static void  M_Join_Drawer( void )
     // D_View_Grid.  Two panels side by side put the boxes in two columns
     // here as well, so the join screen says which half is yours before the
     // game starts.
+    //
+    // The grid is named here rather than read from D_View_Grid because nobody
+    // has joined yet -- D_NumViews would still be describing the last game --
+    // but the cell *within* it comes from D_Grid_Cell_Pos, so the boxes follow
+    // cv_panelorder without this page knowing the rule.  It used to carry its
+    // own copy of the arithmetic, which is exactly the duplication that would
+    // have left the join screen pointing each player at the wrong quadrant.
     byte  vsplit = (panels == 2) && cv_splitvertical.EV;
+    byte  gcols  = ((panels >= 3) || vsplit) ? 2 : 1;
+    byte  grows  = (panels >= 3) ? 2 : (vsplit ? 1 : panels);
 
     for( panel=0; panel < panels; panel++ )
     {
-        byte col = (panels >= 3) ? (panel & 1) : (vsplit ? panel : 0);
-        byte row = (panels >= 3) ? (panel >> 1) : (vsplit ? 0 : panel);
+        byte col, row;
         int  cw  = ((panels >= 3) || vsplit) ? (BASEVIDWIDTH/2) : BASEVIDWIDTH;
+
+        D_Grid_Cell_Pos( panel, gcols, grows, &col, &row );
         int  cx  = col * cw;
         int  cy  = 60 + row * 50;
         const char * state = join_pressed[panel] ? "READY" : "PRESS FIRE";
@@ -4409,6 +4453,7 @@ menuitem_t MenuOptionsMenu[]=
     // -- the lockdown addresses menu items by hardcoded index.
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
     {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
+    {IT_STRING | IT_CVAR,0, "Screen Order"    , &cv_panelorder    , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
@@ -10186,6 +10231,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_screenslink,
   &cv_localplayers,     // [Arcade]
   &cv_splitvertical,    // [Arcade]
+  &cv_panelorder,       // [Arcade]
   &cv_quitmenu,         // [Arcade]
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]

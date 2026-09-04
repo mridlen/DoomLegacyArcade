@@ -130,6 +130,10 @@ extern consvar_t cv_localplayers;
 // [Arcade] Two players side by side instead of stacked.  Read by d_clisrv.c
 // (D_View_Grid), which is where every placement decision comes from.
 extern consvar_t cv_splitvertical;
+// [Arcade] Which quadrant of the 2x2 grid each panel drives: 0 puts panels 1
+// and 2 in the left column (1 3 / 2 4), 1 fills the grid in reading order
+// (1 2 / 3 4).  Read by d_clisrv.c (D_Grid_Cell_Pos), like cv_splitvertical.
+extern consvar_t cv_panelorder;
 extern consvar_t cv_jointime;       // [Arcade] join screen countdown, seconds
 extern consvar_t cv_initialstimeout;// [Arcade] initials entry timeout, seconds
 

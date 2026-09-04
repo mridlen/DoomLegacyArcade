@@ -4551,10 +4551,11 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // set window position
     // [Arcade] Place the view in its cell of the grid.  With 2 views that is
     // the old upper/lower split, or two columns when the cabinet is set to
-    // split side by side; with 4 it is a 2x2, reading left-to-right then
-    // top-to-bottom, so panel order matches screen order.  D_View_Cell_Pos
-    // takes the panel's cell rather than the join order, and clamps a single
-    // view to the first cell.
+    // split side by side; with 3 or 4 it is a 2x2, filled by columns so that
+    // each panel's view is on the side of the screen its player stands at, or
+    // in reading order if the operator set cv_panelorder that way.
+    // D_View_Cell_Pos takes the panel's cell rather than the join order, and
+    // clamps a single view to the first cell.
     {
         byte col, row;
 

@@ -181,6 +181,24 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     "Top/Bottom", is 80 and so starts at 180. That is a **4px** end-to-start gap, the tightest row
     on a page where the next tightest has 66. "2 Player Split" is 99 wide and leaves 21.
 
+- **Screen Order** — `cv_panelorder`, inserted directly after "2 Player Split" for the same reason
+  that one follows "Control Panels": it qualifies the row above it. Which quadrant of the 2x2 each
+  panel drives; written up in `multiplayer-views.md`, noted here for the geometry and the insert.
+  - Inserting mid-array was safe for the reason above — nothing indexes `MenuOptionsMenu` by
+    position, and `numitems` is `sizeof(...)/sizeof(menuitem_t)`. Re-checked with
+    `grep -n "MenuOptionsMenu" m_menu.c`: the array, the `menu_t`, and nothing else.
+  - **The values are the layout, not a word for it.** `1 3 / 2 4` and `1 2 / 3 4` draw the grid
+    itself, which reads correctly whichever way round the operator is thinking about it; "Columns"
+    and "Rows" both need a moment's translation and one of them is always ambiguous.
+  - Geometry, measured against the real `STCFN` lumps: "Screen Order" is 91 wide, so the label runs
+    60..151, and either value is 51 wide, so it starts at `260 - 51` = 209. A **58px** end-to-start
+    gap — comfortable on a page whose tightest row ("2 Player Split") has 4. The measurement
+    reproduces this file's published widths for "2 Player Split" (99) and "Top/Bottom" (80), which
+    is how the script was checked before its new numbers were believed.
+  - Fifteen rows now: `MenuOptionsDef.y` is 40 and `IT_CVAR` rows advance by `STRINGHEIGHT` 10, so
+    the last one ("Audit >>") sits at 180 and the page ends at 187 of 200. Still room, but that is
+    the row after which this page needs a second column or a submenu.
+
 - **Boot game** — `cv_defaultgame` ("defaultgame", default `None`, `CV_SAVE`), under
   **Options → Arcade Options** as "Boot Game" beside the other operator rows, so it is
   operator-only. Picks

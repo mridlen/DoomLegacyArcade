@@ -616,6 +616,11 @@ void  D_Reset_View_Cells( void );
 // [Arcade] The view grid: columns and rows, and where a cell sits in it.
 void  D_View_Grid( byte * out_cols, byte * out_rows );
 void  D_Cell_Pos( byte cell, byte * out_col, byte * out_row );
+// [Arcade] The same, against a grid the caller names rather than the one
+// D_View_Grid reports.  For the join screen, which draws the layout of a game
+// nobody has joined yet.
+void  D_Grid_Cell_Pos( byte cell, byte cols, byte rows,
+                       byte * out_col, byte * out_row );
 void  D_View_Cell_Pos( byte vind, byte * out_col, byte * out_row );
 byte  D_View_Squash( void );   // 0 none, 1 half height, 2 half width
 
