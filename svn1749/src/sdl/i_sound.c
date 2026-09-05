@@ -336,11 +336,13 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     byte * header = S_sfx[sfxid].data;
     // Okay, in the less recent channel,
     //  we will handle the new SFX.
-    // Set pointer to raw data, skipping header.
-    chanp->data_ptr = (unsigned char *) S_sfx[sfxid].data + 8;
-//    chanp->data_ptr = & header[8];
+    // [Arcade] Set pointer to raw data, skipping header -- but keep it local.
+    // data_ptr is what the mixer thread tests to decide this channel is
+    // playable, so it is published last, once every field the mixer reads
+    // alongside it holds a valid value.  See the note at the store below.
+    byte * sfx_data = (unsigned char *) S_sfx[sfxid].data + 8;
     // Set pointer to end of raw data.
-    chanp->data_end = chanp->data_ptr + S_sfx[sfxid].length;
+    chanp->data_end = sfx_data + S_sfx[sfxid].length;
    
     // Get samplerate from the sfx header, 16 bit, big endian
     chanp->samplerate = (header[3] << 8) + header[2];
@@ -403,6 +405,34 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     //  for this volume level
     chanp->leftvol_lookup = &vol_lookup[leftvol * 256];
     chanp->rightvol_lookup = &vol_lookup[rightvol * 256];
+
+    // [Arcade] Publish the channel to the mixer thread, last.
+    //
+    // I_UpdateSound_sdl runs on SDL's audio thread and decides a channel is
+    // playable from data_ptr alone; it then dereferences leftvol_lookup, set
+    // sixty-odd lines above this in the original ordering.  mix_channel[] is
+    // static, so leftvol_lookup is NULL until a slot's first use -- and a
+    // callback landing in that window read NULL[sample] and killed the whole
+    // process from the audio thread, with the game thread nowhere in the
+    // backtrace.  It only crashes on a slot's first use (16 chances per boot,
+    // all in the first burst of sound), because vol_lookup is a static array,
+    // so afterwards a stale pointer is merely stale -- which is why it is rare
+    // and why the fault looked random.
+    //
+    // The lock that would have covered this is compiled out here: the
+    // SDL_LockAudio/SDL_UnlockAudio pair in this function is guarded by
+    // "#ifndef HAVE_MIXER", and the cabinet builds with HAVE_MIXER=1.  (Do not
+    // simply re-enable them: the SFX_single branch above returns early without
+    // unlocking, so the non-mixer build would deadlock.)  Ordering the stores
+    // needs no lock and costs nothing -- the mixer's own "if(chan_data_ptr)"
+    // test already assumes exactly this discipline.
+    //
+    // The barrier stops the compiler sinking this store above the ones the
+    // mixer reads; x86 does not reorder stores, so that is sufficient here.
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ __volatile__ ("" ::: "memory");
+#endif
+    chanp->data_ptr = sfx_data;
 
     // Assign current handle number.
     // Preserved so sounds could be stopped.
