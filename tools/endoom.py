@@ -365,7 +365,17 @@ def cmd_replace(args):
                 sys.exit("%s: ENDOOM is %d bytes, refusing to write %d in place"
                          % (args.wad, sz, len(lump)))
             if not args.no_backup:
+                # Never overwrite an existing backup.  A .bak beside a wad is
+                # very often someone else's, made by hand and long forgotten,
+                # and clobbering it destroys the only copy of whatever it held.
                 bak = args.wad + '.bak'
+                if os.path.exists(bak):
+                    n = 1
+                    while os.path.exists("%s.%d" % (bak, n)):
+                        n += 1
+                    bak = "%s.%d" % (bak, n)
+                    print("note: %s.bak already exists and was left alone"
+                          % args.wad)
                 shutil.copy2(args.wad, bak)
                 print("backed up to %s" % bak)
             data[fo:fo + sz] = lump
