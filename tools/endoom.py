@@ -102,10 +102,31 @@ def xbin_unrle(data, ncell):
     return bytes(out)
 
 
+def strip_sauce(data):
+    """Drop trailing SAUCE metadata records that ANSI editors append.
+
+    SAUCE is 128 bytes at the end of the file, preceded by an EOF (0x1A) byte
+    and optionally a COMNT block of 5 + n*64 bytes.  Some editors append a
+    fresh record without removing the one already there, so loop.  This only
+    matters for the sizes we compute from; the cell data is ahead of it.
+    """
+    while len(data) >= 128 and data[-128:-123] == b'SAUCE':
+        ncom = data[-128 + 104]                      # comment line count
+        end = len(data) - 128
+        if ncom and end >= 5 + ncom * 64 and \
+                data[end - (5 + ncom * 64):end - ncom * 64] == b'COMNT':
+            end -= 5 + ncom * 64
+        if end and data[end - 1] == 0x1A:            # the EOF byte before it
+            end -= 1
+        data = data[:end]
+    return data
+
+
 def xbin_read(data, path):
     """Strip an XBIN header (and any palette/font/RLE) -> 4000 bytes of cells."""
     if len(data) < 11:
         sys.exit("%s: truncated XBIN header (%d bytes)" % (path, len(data)))
+    data = strip_sauce(data)
     w, h, fontsize, flags = struct.unpack('<HHBB', data[5:11])
     if w != COLS:
         sys.exit("%s: XBIN is %d columns wide, ENDOOM must be %d.\n"
@@ -180,8 +201,13 @@ def read_lump(path):
                     sys.exit("%s: ENDOOM is %d bytes, expected %d" % (path, sz, LUMPSZ))
                 return data[fo:fo + sz]
         sys.exit("%s: no ENDOOM lump in this wad" % path)
+    # a .bin exported from an ANSI editor may carry SAUCE metadata too
+    data = strip_sauce(data)
     if len(data) != LUMPSZ:
-        sys.exit("%s: %d bytes, expected a %d-byte lump (or a wad)"
+        sys.exit("%s: %d bytes, expected a %d-byte lump (or a wad).\n"
+                 "  A raw .bin must be exactly 80x25 cells.  If your editor saved "
+                 "a different\n  canvas size, set it to 80x25 -- or save as XBin "
+                 "(.xb), which records the size."
                  % (path, len(data), LUMPSZ))
     return data
 

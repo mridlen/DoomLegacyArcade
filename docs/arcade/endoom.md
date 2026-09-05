@@ -90,6 +90,20 @@ A canvas that is not 80 columns is refused with a message saying so.
 
 ## Gotchas
 
+- **ANSI editors append a SAUCE record, and some append a second without
+  removing the first.** SAUCE is 128 bytes of metadata (title, author, canvas
+  size) at the end of the file, after an EOF `0x1A` byte and an optional COMNT
+  block. It made the first real edited file 8413 bytes where the header
+  arithmetic said 8155. `strip_sauce()` removes any number of them, from `.xb`
+  and from raw `.bin` alike. Do not "simplify" it away on the grounds that
+  truncating to 4000 bytes already skips it — that only works because the
+  metadata trails the cell data, and it would stop working the moment anything
+  needed the real file length.
+- **A custom palette or font in the `.xb` is discarded, and that is correct.**
+  ENDOOM is printed to a terminal as ANSI colour escapes; there is nowhere for a
+  palette or a font to go. Draw with the standard 16 DOS colours and expect the
+  terminal's own font. Characters outside plain ASCII will depend on the
+  terminal's encoding — `endtxt.c` converts to UTF-8 only when `cv_textout` is 2.
 - **`replace` writes in place and the size never changes.** The lump is a fixed
   4000 bytes, so no directory entry moves and no other lump is touched. It backs
   up to `<wad>.bak` unless `--no-backup`. A rebuilt lump that is not exactly 4000
