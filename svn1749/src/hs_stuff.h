@@ -112,6 +112,15 @@ boolean  HS_Initials_Pending(void);
 void     HS_Set_Initials(const char * ini);
 // Best place the finished run took, 1-based, or 0.  For the prompt's header.
 int      HS_Run_Place(void);
+// [Arcade] Which board that place was taken on, worded the way the attract
+// captions word it ("SURVIVAL  ITYTD  SPEED  E1M8", "E1M1  ITYTD  PACIFIST"),
+// or NULL when nothing placed.  The place alone is not enough to identify it:
+// a campaign run's first level also competes on that map's single level
+// board, so a full episode that placed nowhere on the run board can still
+// have taken first somewhere.  Points into a static buffer.
+const char * HS_Run_Place_Board(void);
+// How many boards the finished run placed on; the initials go on all of them.
+int      HS_Run_Place_Count(void);
 
 int      HS_Board_Depth(boolean single);
 // One line of a board, place 0-based.  mapname selects the map for a single

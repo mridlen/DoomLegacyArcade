@@ -607,7 +607,51 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   board place has ended, and stamped onto every entry that run placed.
   - **Once per run, not per record.** A campaign run sets a split record on every level it passes,
     so prompting per record would ask eight times for one run. Both categories can place at once —
-    same run, same player — and `hs_run_placed[]` records which, so one entry covers them.
+    same run, same player — and `hs_placed[]` records which, so one entry covers them.
+  - **The page names the board the place was taken on**, under the big `YOU PLACED 1ST`
+    (`HS_Run_Place_Board`, drawn at y=68). Without it the number is unverifiable, and a truthful
+    one reads as a lie: a campaign run's *first* level also competes on that map's single level
+    board (`HS_Score_As_Single_Level`), so **a full episode that placed nowhere on the Survival
+    board is still told it placed 1st** — for a single level record set eight levels and eight
+    minutes earlier, on a category the player was not playing for. That is exactly what happened
+    on the cabinet: a complete Episode 1 was told `YOU PLACED 1ST` and took the initials, while
+    the run board showed the player nowhere. The place was real. `doomu-sl E1M1 E1M1 0 pacifist
+    429` — first of three on the single level **pacifist** board for the map the episode opened
+    with, set by simply running past everything to the exit.
+    - Worded exactly as the attract captions word the same record, so one board reads the same
+      wherever it is shown: `SURVIVAL  ITYTD  SPEED  E1M8` for the run board (the prefix, then
+      skill, category, end map — `HS_Demo_At`'s order), `E1M1  ITYTD  PACIFIST` for a single level
+      one (the range, then skill and category — `HS_Format_Split_Label`'s order). Shared code,
+      `HS_Format_Board`.
+    - **Both a place *and* a board are needed to identify it**, which is why `hs_placement_t` now
+      carries `startmap` and `place`: the run's own start map is not the placement's, and the best
+      place can belong to a board the run only incidentally competed on.
+    - **Ties go to the run's own board.** A campaign run that took first on both says `SURVIVAL`,
+      not the single level board it happened to also top; `HS_Headline_Placement` breaks the tie on
+      the placement's game id against `hs_run_gameid`. Best place is still the primary key — that
+      is the number already printed in large letters above it.
+    - The other boards are not hidden: `+N MORE` is appended when the run placed on more than one,
+      so a player can see their initials are going on all of them. On one line, because the gap
+      below belongs to the letter cells.
+    - **The run-end log had the same defect and is fixed with it.** `Run placed %d on the board
+      (%s %s-%s)` printed the *run's* game and map range beside a place that might belong to a
+      different board — it was that line, read backwards, that made this take longer to pin down
+      than it should have. It now prints one line per placement, each naming its own board.
+    - Measured against the real `STCFN` lumps, per the rule about never eyeballing this font:
+      `SURVIVAL  ITYTD  PACIFIST  MAP01` is 210px of `BASEVIDWIDTH` 320 and 268px with the widest
+      `+7 MORE` suffix; the single level form is 134px. y=68 sits between `YOU PLACED` (56) and the
+      cells (86).
+    - Verified headlessly by driving a real campaign E1M1 exit (`-warp 1 1`, autoexec
+      `wait 600 / exitlevel / wait 250 / exitgame`) against a copy of the cabinet's own
+      `runs.dat`, at a skill whose single level **speed** board is full of faster times and whose
+      pacifist board is empty — so an idle 600-tic run places on the pacifist board and nothing
+      else, which is the reported case exactly. It reported `place=1 board='E1M1  UV  PACIFIST'
+      count=1` and wrote `doomu-sl E1M1 E1M1 3 pacifist 601`. Seeding a further-progressing
+      campaign pacifist entry is what makes that the *only* placement; with the campaign board
+      left open the same run placed on both and reported
+      `place=1 board='SURVIVAL  UV  PACIFIST  E1M1' count=2`, which is the tie-break. Both drawn
+      forms were then captured with `screenshot` under `SDL_VIDEODRIVER=offscreen` (black under
+      `dummy`) with an in-level control shot in the same run.
   - **`cv_initialstimeout`** ("initialstimeout", default **60s**, `CV_SAVE`), under
     **Options → Arcade Options** with the other operator settings. Generous on purpose: nothing is
     waiting on it (the cabinet is already back on the attract screen behind the page), and a player

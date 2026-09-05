@@ -3704,7 +3704,7 @@ static const char *  M_Ordinal( int n )
 // row does not shift as characters change width ("I" is 5px, "W" is 8).
 static void  M_Initials_Drawer( void )
 {
-    char  buf[48];
+    char  buf[64];   // holds the board line, which is longer than the header
     int   i, secs;
     int   cx = BASEVIDWIDTH/2 - INITIALS_PITCH;   // centre of the first cell
 
@@ -3713,6 +3713,32 @@ static void  M_Initials_Drawer( void )
 
     snprintf( buf, sizeof(buf), "YOU PLACED %s", M_Ordinal(HS_Run_Place()) );
     V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 56, 0, buf );
+
+    // [Arcade] Say which board, or the place means nothing.  A campaign run's
+    // first level also competes on that map's single level board, so a full
+    // episode that placed nowhere on the run board is still told "YOU PLACED
+    // 1ST" -- truthfully, for a single level record set eight levels ago.
+    // Without this line that reads as the machine making it up.
+    {
+        const char * board = HS_Run_Place_Board();
+        int          more  = HS_Run_Place_Count() - 1;
+
+        if( board )
+        {
+            // The count goes on the same line: the gap below is the cells'
+            // and a second line would crowd them.  Measured against the real
+            // STCFN lumps, the widest form this can produce --
+            // "SURVIVAL  ITYTD  PACIFIST  MAP01  +7 MORE" -- is 268px of
+            // BASEVIDWIDTH 320, and the plain single level form is 134px.
+            if( more > 0 )
+                snprintf( buf, sizeof(buf), "%s  +%d MORE", board, more );
+            else
+                dl_strncpy( buf, board, sizeof(buf) );
+
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
+                          68, V_WHITEMAP, buf );
+        }
+    }
 
     for( i=0; i<INITIALS_CELLS; i++ )
     {

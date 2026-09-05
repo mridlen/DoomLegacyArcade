@@ -199,12 +199,18 @@ static boolean hs_initials_pending = false;
 // first level also competes on that map's single level board (see
 // HS_Score_As_Single_Level), so it may hold a campaign entry and a single
 // level entry at once, under different game ids and different maps.
+// [Arcade] startmap and place are carried for the *prompt*, not for the
+// stamping: the page has to be able to say which board the place was taken
+// on, and the run's own start map is not it -- a campaign run's single level
+// placement is one map of a run that spans eight.
 typedef struct
 {
     char   game[HS_GAMEID_LEN];
+    char   startmap[9];
     char   endmap[9];
     byte   skill;
     byte   cat;
+    byte   place;                // 1-based, on that board
     tic_t  tics;
 } hs_placement_t;
 
@@ -1351,9 +1357,11 @@ static void  HS_Record_Placement( const hs_run_t * run )
     {
         hs_placement_t * p = &hs_placed[ hs_placed_n++ ];
         dl_strncpy( p->game, run->game, HS_GAMEID_LEN-1 );
+        dl_strncpy( p->startmap, run->startmap, 8 );
         dl_strncpy( p->endmap, run->endmap, 8 );
         p->skill = run->skill;
         p->cat   = run->cat;
+        p->place = (byte) place;
         p->tics  = run->tics;
     }
 
@@ -1434,6 +1442,12 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
 }
 
 
+// Defined with the prompt's accessors below; used by the log line in
+// HS_Run_Finished, which names every board the run placed on.
+static void  HS_Format_Board( const hs_placement_t * p,
+                              char * out, size_t outsize );
+
+
 // [Arcade] Called from every route back to the title (Command_ExitGame_f),
 // which is the point a run is definitively over: the player finished the
 // episode, died and gave up, chose End Game, or walked away and let the idle
@@ -1512,9 +1526,22 @@ void  HS_Run_Finished( void )
         // the intermission of a game still in progress.
         hs_initials_pending = true;
         AU_Board_Placement();   // [Arcade] audit
-        GenPrintf( EMSG_info, "Run placed %d on the board (%s %s-%s).\n",
-                   hs_run_best_place, hs_run_gameid,
-                   hs_run_startmap, hs_run_endmap );
+        {
+            // [Arcade] Name every board, not the run.  The best place can
+            // belong to a board the run only *incidentally* competed on --
+            // its first level's single level board -- so logging the run's
+            // own map range beside that number described the wrong thing,
+            // and it was this line that had to be read backwards to work out
+            // what a full episode had actually placed on.
+            int  i;
+            for( i=0; i<hs_placed_n; i++ )
+            {
+                char  board[64];
+                HS_Format_Board( &hs_placed[i], board, sizeof(board) );
+                GenPrintf( EMSG_info, "Run placed %d: %s.\n",
+                           hs_placed[i].place, board );
+            }
+        }
     }
 
     // Consumed: the run's own state is done with, but the placement is left
@@ -1532,6 +1559,94 @@ boolean  HS_Initials_Pending( void )
 int  HS_Run_Place( void )
 {
     return hs_run_best_place;
+}
+
+
+// [Arcade] Which of this run's placements the prompt should name.
+//
+// Best place first, because that is the number the page has already put in
+// large letters.  Ties go to the run's *own* board -- the one the player
+// thinks they are playing -- so a campaign run that took first on both
+// Survival and the single level board says Survival.
+static const hs_placement_t *  HS_Headline_Placement( void )
+{
+    const hs_placement_t * best = NULL;
+    int  i;
+
+    for( i=0; i<hs_placed_n; i++ )
+    {
+        const hs_placement_t * p = &hs_placed[i];
+        boolean  own, best_own;
+
+        if( best == NULL )  { best = p;  continue; }
+        if( p->place != best->place )
+        {
+            if( p->place < best->place )  best = p;
+            continue;
+        }
+
+        own      = (strncmp(p->game, hs_run_gameid, HS_GAMEID_LEN-1) == 0);
+        best_own = (strncmp(best->game, hs_run_gameid, HS_GAMEID_LEN-1) == 0);
+        if( own && ! best_own )  best = p;
+    }
+
+    return best;
+}
+
+
+// [Arcade] Name a board in the wording the attract captions already use:
+// "SURVIVAL  ITYTD  SPEED  E1M8" for the run board, "E1M1  ITYTD  PACIFIST"
+// for a single level one.  Same field order as HS_Demo_At's captions, so the
+// same record reads the same way wherever it is shown.
+static void  HS_Format_Board( const hs_placement_t * p,
+                              char * out, size_t outsize )
+{
+    boolean  single = HS_Id_Is_Single( p->game );
+
+    if( single )
+    {
+        char range[24];
+        HS_Format_Range( p->startmap, p->endmap, true, range, sizeof(range) );
+        snprintf( out, outsize, "%s  %s  %s",
+                  range, hs_skillnames[p->skill], hs_catname[p->cat] );
+    }
+    else
+    {
+        snprintf( out, outsize, "Survival  %s  %s  %s",
+                  hs_skillnames[p->skill], hs_catname[p->cat], p->endmap );
+    }
+    strupr( out );
+}
+
+
+// [Arcade] What the finished run placed *on*, for the initials prompt.
+//
+// "YOU PLACED 1ST" on its own is what made a genuine place read as a bug: a
+// campaign run's first level competes on that map's single level board (see
+// HS_Score_As_Single_Level), so a full episode that placed nowhere on the
+// Survival board can still take first on the single level PACIFIST board of
+// the map it opened with -- which is exactly what happened, and the page
+// gave the player no way to tell which.  NULL when nothing placed.
+//
+// Measured against the real STCFN lumps: the widest realistic form,
+// "SURVIVAL  MAP01-MAP32  ITYTD  PACIFIST", is 257px of BASEVIDWIDTH 320.
+const char *  HS_Run_Place_Board( void )
+{
+    static char  board[64];
+    const hs_placement_t * p = HS_Headline_Placement();
+
+    if( p == NULL )  return NULL;
+
+    HS_Format_Board( p, board, sizeof(board) );
+    return board;
+}
+
+
+// How many boards this run placed on, so the prompt can say that the
+// initials are going on more than the one it names.
+int  HS_Run_Place_Count( void )
+{
+    return hs_placed_n;
 }
 
 
