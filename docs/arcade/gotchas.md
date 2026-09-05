@@ -278,17 +278,39 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   and a live hazard for the cabinet's **death demos**. The fix is to carry it in the header's spare
   option area, where there is still room.
 
-- **The SDL audio callback races the game thread, and it segfaults the whole process (open).**
-  `I_UpdateSound_sdl` (`sdl/i_sound.c`) reads `chanp->data_ptr` into a local, null-checks it, then
-  dereferences `chanp->leftvol_lookup[sample]` -- but `leftvol_lookup` is a **pointer** the game
-  thread reassigns (`&vol_lookup[leftvol * 256]`, ~line 404) with no lock held against the mixer.
-  Caught once in ~110 headless demo replays: `SIGSEGV` at `i_sound.c:587` on the SDL audio thread,
-  with the game thread nowhere in the backtrace. It is **not** demo-specific -- the same demo
-  re-runs clean -- and it happens even under `SDL_AUDIODRIVER=dummy`, because the dummy driver still
-  runs the callback. On an unattended cabinet this kills the game mid-play, so it is worth fixing
-  properly with `SDL_LockAudio` around the `mix_channel[]` updates rather than hoping. Read it with
-  `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`; the giveaway is a
-  backtrace whose only frames are SDL's audio thread.
+- **The audio thread killed the process because a channel was published before it was filled in
+  (fixed).** `I_StartSound` (`sdl/i_sound.c`) set `chanp->data_ptr` -- the field the mixer thread
+  tests to decide a channel is playable -- and only ~64 lines later set `chanp->leftvol_lookup`, the
+  pointer the mixer immediately dereferences. `mix_channel[]` is `static`, so `leftvol_lookup` is
+  **NULL until a slot's first use**; a callback landing in that window read `NULL[sample]` and took
+  the whole process down from SDL's audio thread.
+  - **It looks random, and it is not.** `vol_lookup` is a static array that is never freed, so after
+    a slot's first use a stale `leftvol_lookup` is merely stale -- a fraction of a buffer mixed at
+    the previous sound's volume, inaudible. Only the **first** use of each of the 16 channels can
+    crash, all of them in the first burst of sound after a level starts. That is why it showed up
+    once in ~110 headless demo replays.
+  - **The lock that would have covered it is compiled out.** The `SDL_LockAudio` /
+    `SDL_UnlockAudio` pair in `I_StartSound` is guarded by `#ifndef HAVE_MIXER`, and the cabinet
+    builds with `HAVE_MIXER=1`. **Do not simply re-enable them**: the `SFX_single` branch near the
+    top of the function `return`s while holding the lock, so the non-mixer build would deadlock.
+  - **Fixed by ordering the stores instead**: everything the mixer reads is filled in first, and
+    `data_ptr` is published last behind a compiler barrier. No lock, no cost, and it is the
+    discipline the mixer's own `if( chan_data_ptr )` test already assumes. The barrier stops the
+    compiler sinking that store; x86 does not reorder stores, so that is enough here.
+  - **Proved in both directions, which is the only way to trust a fix for something this rare.**
+    Inserting `SDL_Delay(20)` between the two stores, *keeping the original order*, turned a
+    1-in-110 fault into **6 of 6 runs segfaulting**, at the same `i_sound.c` line and the same
+    backtrace. With the stores reordered and the same 20ms window still in place: **0 of 6**. A rare
+    race that "stops happening" after a change has proved nothing -- widen the window until it is
+    reliable, then show the fix closes it.
+  - `I_UpdateSoundParams` rewrites `leftvol_lookup` on a live channel with no lock either, but that
+    one cannot crash: the pointer it stores is always valid, an aligned pointer store does not tear
+    on x86, and the worst case is one buffer at the wrong volume. `I_StopSound` only ever clears
+    `data_ptr`, which is always safe.
+  - Read a crash like this with
+    `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`; the giveaway is a
+    backtrace whose only frames are SDL's audio thread, with the game thread nowhere in it. It
+    happens under `SDL_AUDIODRIVER=dummy` too -- the dummy driver still runs the callback.
 
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that
