@@ -252,13 +252,22 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the Boom version test in place for actual Boom demos; and by keying `EN_skull_bounce_fix` /
     `EN_catch_respawn_0` off `EV_legacy >= 147`, which is exactly what their own comment
     ("Vanilla and DoomLegacy < 1.47") always said they should be.
-  - **It changes the rules without changing any stored demo.** Every demo in the cabinet's library
-    was replayed twice, before and after, and the per-tic player trace (position, angle, health)
-    compared: **no demo changed at all**, and every single-level demo still exits at its recorded
-    board time. The control that makes that meaningful is checking the flags really moved -- with
-    the fix in, the eight flags read identically in playback and a live game, where before they
-    disagreed. **A "nothing changed" result is worthless without that control**: it is
-    indistinguishable from the change not having taken effect.
+  - **It changes the rules without changing any stored demo.** All **89** demos in the cabinet's
+    library were replayed twice, before and after, and the per-tic player trace (position, angle,
+    health) compared: **0 changed**, and every single-level demo still exits at its recorded board
+    time. Five of the 89 never reach an exit in the harness -- two `+dwango5`, one `+mapsofchaos`
+    (the pwad is not loaded in the scratch dir) and two whose runs are longer than the 260s cap --
+    but those are identical on both sides over the portion that does run, and the reason is the
+    harness, not the change.
+  - **The control is what makes that meaningful, and it has to come first.** With the fix in, the
+    eight flags read identically in playback and a live game, where before they disagreed -- so the
+    change demonstrably took effect. **A "nothing changed" result is worthless without that
+    control**: it is indistinguishable from the patch not having compiled in.
+  - **A crashed run diffs as a behavior change.** One demo came back `CHANGED -- no longer exits`,
+    which reads as a regression; its "after" trace was **empty**, because that was the run the SDL
+    audio thread segfaulted under (see below). Re-run cleanly it was identical. Treat a missing or
+    truncated trace as a *missing measurement* to re-run, never as a result -- the mirror of the
+    `-playdemo` trap where two runs that both failed to load compare 100% identical.
   - This is **upstream** code, unchanged since the r1749 import -- worth reporting on rather than
     carrying forever as a local patch.
 
