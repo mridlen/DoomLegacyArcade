@@ -198,7 +198,7 @@ devmode-only, so this is left alone.
 
 ## Verifying a change here
 
-`./doomlegacy -v` prints one line per mode set:
+`./doomlegacyarcade -v` prints one line per mode set:
 
 ```
   Draw 1024x768, 32 bpp, 4 bytes (SDL_PIXELFORMAT_RGB888), window 1024x768

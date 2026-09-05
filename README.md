@@ -389,7 +389,7 @@ configuration you have already tuned; pass `--reconfigure` if you want it rewrit
 Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
 it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
 empty — which is how it arrives — it lists the packages to install and can install them for you.
-Confirmed on Windows 11: the script builds `doomlegacy.exe` end to end and stages the twelve
+Confirmed on Windows 11: the script builds `doomlegacyarcade.exe` end to end and stages the twelve
 runtime DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a
 longer list than anyone guesses. **The resulting binary has not been played**, only started, so
 treat the first real session as the shakedown.
@@ -428,7 +428,7 @@ temporary file, so parallel dep generation clobbers itself and fails with
 `mv: cannot stat '../dep/sed.dep'`, which points nowhere near the cause. The compile phase
 parallelises fine. Plain `make` on its own also works.
 
-The binary lands in `svn1749/bin/doomlegacy`, together with a `legacyhome/` folder holding the
+The binary lands in `svn1749/bin/doomlegacyarcade`, together with a `legacyhome/` folder holding the
 cabinet's configuration.
 
 On a different CPU — a Raspberry Pi or other ARM board — replace `-march=native` with the
@@ -472,7 +472,7 @@ that would need an entry adding to `gameselect_arg[]` in `m_menu.c`.
 
 ```sh
 cd ../bin
-./doomlegacy
+./doomlegacyarcade
 ```
 
 No arguments needed. The game finds its configuration in the `legacyhome/` folder beside the
@@ -618,7 +618,7 @@ so Brutal Doom and similar cannot run, and `.pk3` files are not supported at all
 Run with `-devmode` to unlock everything:
 
 ```sh
-./doomlegacy -devmode
+./doomlegacyarcade -devmode
 ```
 
 That gives you the full stock menus, disables the competitive ruleset, and is the **only** mode
@@ -715,7 +715,7 @@ someone to a desktop.
 #!/bin/bash
 cd /path/to/bin || exit 1
 while :; do
-    ./doomlegacy
+    ./doomlegacyarcade
     # Escape hatch. Press this key during the pause to stop the loop.
     # Choose something no cabinet button is bound to.
     read -r -t 3 -n 1 key && [ "$key" = "q" ] && break
@@ -819,7 +819,7 @@ a composed loop point, which is only noticeable on long levels.
 From the console, or at launch:
 
 ```sh
-./doomlegacy -clearhighscores
+./doomlegacyarcade -clearhighscores
 ```
 
 This clears both tables — `highscores.dat` and the `runs.dat` leaderboard with its initials — *and*

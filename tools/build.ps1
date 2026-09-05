@@ -529,7 +529,7 @@ the build failed. The compiler output above says why.
 # only names that exist under the mingw prefix.  Anything not there is a
 # Windows system DLL (KERNEL32, OPENGL32, GLU32, the api-ms-win-crt-* stubs)
 # which is already present on the machine and must NOT be shipped.
-$binary = Join-Path $BuildRoot 'bin\doomlegacy.exe'
+$binary = Join-Path $BuildRoot 'bin\doomlegacyarcade.exe'
 if (Test-Path $binary) {
     Step "Staging runtime DLLs"
     $msysBin = ConvertTo-MsysPath $binary
@@ -594,7 +594,7 @@ if (Test-Path $binary) {
     Say "  the binary. Copy everything from svn1749\bin (the DLLs included)"
     Say "  into a run directory alongside legacy.wad and an IWAD."
     Say ""
-    Say "  An operator session that can change settings is:  doomlegacy.exe -devmode"
+    Say "  An operator session that can change settings is:  doomlegacyarcade.exe -devmode"
 } else {
     Die "the build reported success but $binary is missing."
 }

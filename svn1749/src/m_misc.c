@@ -735,7 +735,7 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
     }
 
     // header message
-    fprintf (fw, "// Doom Legacy configuration file.\n");
+    fprintf (fw, "// Doom Legacy Arcade configuration file.\n");  // [Arcade]
 
     //FIXME: save key aliases if ever implemented..
 

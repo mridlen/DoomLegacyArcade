@@ -7,7 +7,7 @@ falls back to `~/.doomlegacy` (`d_main.c`), so a built tree runs from this
 config with no command line arguments:
 
     cd svn1749/src && make        # stages legacyhome/ into ../bin/
-    cd ../bin && ./doomlegacy
+    cd ../bin && ./doomlegacyarcade
 
 `make` copies this config to `svn1749/bin/legacyhome/` only if none is there,
 so rebuilding never resets a cabinet's live settings.

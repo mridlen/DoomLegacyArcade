@@ -2473,7 +2473,7 @@ void seq_init_setup_ALSA(int sel_dvt, int dev_type, int port_num)
 # endif
 
     // Our program name.
-    err = snd_seq_set_client_name( seq_handle_ALSA, "DoomLegacy" );
+    err = snd_seq_set_client_name( seq_handle_ALSA, "DoomLegacyArcade" );  // [Arcade]
     // ignore any err, not important
 
     self_client_id = snd_seq_client_id( seq_handle_ALSA );
@@ -2483,7 +2483,7 @@ void seq_init_setup_ALSA(int sel_dvt, int dev_type, int port_num)
 # endif
    
     msg = "simple_port";
-    self_port_id = snd_seq_create_simple_port( seq_handle_ALSA, "DoomLegacy_MIDI",
+    self_port_id = snd_seq_create_simple_port( seq_handle_ALSA, "DoomLegacyArcade_MIDI",  // [Arcade]
         SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
 //        SND_SEQ_PORT_TYPE_MIDI_GENERIC );
         SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION );
@@ -2495,7 +2495,7 @@ void seq_init_setup_ALSA(int sel_dvt, int dev_type, int port_num)
 # endif
 
     msg = "create queue";
-    self_queue_id = snd_seq_alloc_named_queue( seq_handle_ALSA, "DoomLegacy" );
+    self_queue_id = snd_seq_alloc_named_queue( seq_handle_ALSA, "DoomLegacyArcade" );  // [Arcade]
     if( self_queue_id < 0 )
        goto handle_err;
 

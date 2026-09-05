@@ -42,6 +42,19 @@
 #define SVN_REV "1749"
 #endif
 
+// [Arcade] The cabinet fork's own version, distinct from the DL_VER_* numbers
+// above -- those are upstream's and go into demo headers and savegames, so
+// they must not be touched.  This one is display only.
+//
+// Normally baked in by the Makefile from `git describe --tags`, which yields
+// exactly the tag on a release build (e.g. "v1.0.1") and tag-commits-hash on
+// anything later.  The CI overrides it with the tag typed into the release
+// button.  This fallback is what a build with no git and no override gets.
+// See docs/arcade/branding.md.
+#ifndef DLA_VERSION
+#define DLA_VERSION "unknown"
+#endif
+
 // =========================================================================
 // Compile settings, configuration, tuning, and options
 

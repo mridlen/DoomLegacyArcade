@@ -189,8 +189,8 @@ set(SRC
   d_netcmd.c d_clisrv.c d_net.c d_netfil.c i_tcp.c
   d_items.c d_main.c)
 
-add_executable(doomlegacy ${SRC})
-target_link_libraries(doomlegacy
+add_executable(doomlegacyarcade ${SRC})
+target_link_libraries(doomlegacyarcade
   media_sdl
   hardware_renderer
   ${LIBS})

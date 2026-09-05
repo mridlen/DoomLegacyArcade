@@ -965,10 +965,10 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
 
 #ifdef DEBUG_WINDOWED
 //    sdl_window = SDL_CreateWindow( "Doom Legacy", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    sdl_window = SDL_CreateWindow( "Doom Legacy", 0, 0,
+    sdl_window = SDL_CreateWindow( VERSION_BANNER, 0, 0,  // [Arcade]
                                    req_width, req_height, sdl_reqflags );
 #else
-    sdl_window = SDL_CreateWindow( "Doom Legacy", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    sdl_window = SDL_CreateWindow( VERSION_BANNER, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,  // [Arcade]
                                    req_width, req_height, sdl_reqflags );
 #endif
     if( sdl_window == NULL)

@@ -144,7 +144,7 @@ note in CLAUDE.md, which says in as many words that `svn1749/bin` *is* the live 
 
 Worse, `cp -a bin/*` copies `bin/legacyhome` too. Onto a populated install that overwrites the
 config, the high scores and the record demos. Any install advice must name the binary —
-`cp -a bin/doomlegacy <install-dir>/` — and never glob `bin/*`.
+`cp -a bin/doomlegacyarcade <install-dir>/` — and never glob `bin/*`.
 
 The script now tells the two cases apart by looking for live data beside the binary
 (`highscores.dat`, `runs.dat` or `demos/`, none of which a fresh build stages — the Makefile only
@@ -358,7 +358,7 @@ fault would sail straight through it. The standing note above still holds: the W
 but has not been played.
 - With a deliberately broken compiler (`CC=false`), every library probe reported `MISS`, the correct
   `dnf` command was printed, and the script exited 1 **without** starting a build.
-- `--debug` produced `svn1749/debug/bin/doomlegacy`.
+- `--debug` produced `svn1749/debug/bin/doomlegacyarcade`.
 
 On Windows 11 Pro x86_64, MSYS2 `ucrt64`, gcc 15.2.0, from a tree whose `make_options` and `objs/`
 had been synced in from the Linux cabinet:
@@ -367,7 +367,7 @@ had been synced in from the Linux cabinet:
   every package up to date).
 - `build.bat` from that Linux-contaminated state runs the whole recovery unattended — detects
   `OS=LINUX`, keeps it as `make_options.foreign`, regenerates for Windows, forces the clean, and
-  links `svn1749\bin\doomlegacy.exe` (11.5 MB).
+  links `svn1749\bin\doomlegacyarcade.exe` (11.5 MB).
 - The recovery path was re-tested by restoring the Linux `make_options` and running again, so it is
   confirmed from the actual failing state rather than inferred.
 - The 12 runtime DLLs are staged into `svn1749\bin` automatically, and a copy of that directory
@@ -381,18 +381,18 @@ On a GitHub Actions `windows-latest` runner, from a clean checkout — which is 
 script has run on a machine nobody prepared for it:
 
 - `-InstallDeps` brought up the whole ucrt64 toolchain from the runner's stock MSYS2 unattended, and
-  the build then linked `doomlegacy.exe` (11.5 MB) and staged all 12 DLLs. Every earlier Windows run
+  the build then linked `doomlegacyarcade.exe` (11.5 MB) and staged all 12 DLLs. Every earlier Windows run
   was on a machine that already had MSYS2 set up by hand.
 - That run is also what exposed the `ARCH=` hole above: it had been silently dropping the flag on
   Windows since the script was written, and only a check that read `make_options` back could see it.
 
 ### Launching it from `svn1749\bin` crashes silently — it is missing its data, not broken
 
-Double-clicking `doomlegacy.exe` in the build tree "does nothing at all": no window, no dialog, no
+Double-clicking `doomlegacyarcade.exe` in the build tree "does nothing at all": no window, no dialog, no
 log file. It is not doing nothing — it exits with **`0xC0000374`, `STATUS_HEAP_CORRUPTION`**, and
 because the exe is linked `-mwindows` there is no console for the message to reach.
 
-Redirecting output is what makes it visible (`./doomlegacy.exe > out.txt 2>&1` from an MSYS2 shell —
+Redirecting output is what makes it visible (`./doomlegacyarcade.exe > out.txt 2>&1` from an MSYS2 shell —
 stdout redirection still works with no console attached). The log stops here:
 
 ```
