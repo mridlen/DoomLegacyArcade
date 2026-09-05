@@ -20,7 +20,7 @@
 # The lump is a fixed 4000 bytes, so `replace` rewrites it without moving any
 # directory entry -- no other lump in the wad is touched.
 
-import argparse, shutil, struct, sys
+import argparse, os, shutil, struct, sys
 
 # CP437 -> Unicode, matching the engine's own cp437_to_utf[] table in
 # svn1749/src/sdl/endtxt.c so the two cannot disagree.  Note it differs from
@@ -130,9 +130,40 @@ def xbin_read(data, path):
     return body + struct.pack('<H', 0x0020) * ((ROWS - h) * COLS)
 
 
+def read_file(path, mode='rb'):
+    """open().read(), but a missing or unreadable file is a message, not a trace."""
+    try:
+        if mode == 'rb':
+            return open(path, 'rb').read()
+        return open(path, encoding='utf-8').read()
+    except FileNotFoundError:
+        sys.exit("%s: no such file.\n"
+                 "  Paths are relative to where you are now (%s)."
+                 % (path, os.getcwd()))
+    except IsADirectoryError:
+        sys.exit("%s: that is a directory, not a file" % path)
+    except PermissionError:
+        sys.exit("%s: permission denied" % path)
+    except UnicodeDecodeError:
+        sys.exit("%s: not UTF-8 text.  If this is a lump or an XBIN, name it "
+                 ".lmp/.bin/.xb so it is read as binary." % path)
+
+
+def write_file(path, data):
+    """Likewise for output, so a bad -o does not traceback."""
+    try:
+        with open(path, 'wb' if isinstance(data, bytes) else 'w',
+                  **({} if isinstance(data, bytes) else {'encoding': 'utf-8'})) as f:
+            f.write(data)
+    except (IsADirectoryError, FileNotFoundError):
+        sys.exit("%s: cannot write there -- check the directory exists" % path)
+    except PermissionError:
+        sys.exit("%s: permission denied" % path)
+
+
 def read_lump(path):
     """Return the 4000-byte ENDOOM from a wad, an .xb, or a raw lump file."""
-    data = open(path, 'rb').read()
+    data = read_file(path)
     if data[:5] == XBIN_MAGIC:
         return xbin_read(data, path)
     if data[:4] in (b'PWAD', b'IWAD'):
@@ -217,7 +248,7 @@ def cmd_dump(args):
             lines.append("B " + ''.join("%X" % ((c >> 12) & 0x0F) for c in row))
     text = '\n'.join(lines) + '\n'
     if args.output:
-        open(args.output, 'w', encoding='utf-8').write(text)
+        write_file(args.output, text)
         print("wrote %s" % args.output)
     else:
         sys.stdout.write(text)
@@ -226,7 +257,7 @@ def cmd_dump(args):
 def parse_text(path):
     """Editable text form -> list of 2000 cells.  Exits with a located message."""
     rows = {'T': [], 'F': [], 'B': []}
-    for lineno, raw in enumerate(open(path, encoding='utf-8'), 1):
+    for lineno, raw in enumerate(read_file(path, 'r').splitlines(), 1):
         line = raw.rstrip('\n').rstrip('\r')
         if not line.strip() or line.lstrip().startswith('#'):
             continue
@@ -273,14 +304,14 @@ def build_lump(path):
 def cmd_build(args):
     lump = build_lump(args.source)
     out = args.output or 'ENDOOM.lmp'
-    open(out, 'wb').write(lump)
+    write_file(out, lump)
     print("wrote %s (%d bytes)" % (out, len(lump)))
 
 
 def cmd_extract(args):
     lump = read_lump(args.source)
     out = args.output or 'ENDOOM.lmp'
-    open(out, 'wb').write(lump)
+    write_file(out, lump)
     print("wrote %s (%d bytes) -- raw cell data, no header.  If an ANSI editor "
           "will not\nopen it, use 'xbin' instead." % (out, len(lump)))
 
@@ -289,7 +320,7 @@ def cmd_xbin(args):
     lump = build_lump(args.source) if args.source.lower().endswith('.txt') \
         else read_lump(args.source)
     out = args.output or 'ENDOOM.xb'
-    open(out, 'wb').write(xbin_wrap(lump))
+    write_file(out, xbin_wrap(lump))
     print("wrote %s (%d bytes) -- open this in Moebius, PabloDraw or icy_draw.\n"
           "Save it back as XBin and feed it straight to 'build' or 'replace'."
           % (out, len(lump) + 11))
@@ -297,7 +328,7 @@ def cmd_xbin(args):
 
 def cmd_replace(args):
     lump = build_lump(args.source)
-    data = bytearray(open(args.wad, 'rb').read())
+    data = bytearray(read_file(args.wad))
     if bytes(data[:4]) not in (b'PWAD', b'IWAD'):
         sys.exit("%s: not a wad" % args.wad)
     _, n, off = struct.unpack('<4sii', bytes(data[:12]))
@@ -312,7 +343,7 @@ def cmd_replace(args):
                 shutil.copy2(args.wad, bak)
                 print("backed up to %s" % bak)
             data[fo:fo + sz] = lump
-            open(args.wad, 'wb').write(bytes(data))
+            write_file(args.wad, bytes(data))
             print("replaced ENDOOM in %s (%d bytes at offset %d)" % (args.wad, sz, fo))
             return
     sys.exit("%s: no ENDOOM lump to replace" % args.wad)
