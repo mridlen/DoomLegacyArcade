@@ -1457,7 +1457,7 @@ void I_SysInit(void)
 #else
   // SDL 1.2
   // Window title
-  SDL_WM_SetCaption(VERSION_BANNER, "Doom Legacy");
+  SDL_WM_SetCaption(VERSION_BANNER, "Doom Legacy Arcade");  // [Arcade]
 
   // Enable unicode key conversion
   SDL_EnableUNICODE(1);

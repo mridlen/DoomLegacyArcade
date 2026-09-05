@@ -536,8 +536,8 @@ fi
 # --------------------------------------------------------------------------
 # Done
 # --------------------------------------------------------------------------
-binary="$build_root/bin/doomlegacy"
-[ "$do_debug" = 0 ] || binary="$build_root/debug/bin/doomlegacy"
+binary="$build_root/bin/doomlegacyarcade"
+[ "$do_debug" = 0 ] || binary="$build_root/debug/bin/doomlegacyarcade"
 
 step "Done"
 if [ -x "$binary" ]; then
@@ -553,24 +553,24 @@ if [ -x "$binary" ]; then
         say "  This tree is the install: legacyhome beside the binary holds live"
         say "  config, scores and demos, so the build has updated it in place."
         say ""
-        say "      cd $build_root/bin && ./doomlegacy"
+        say "      cd $build_root/bin && ./doomlegacyarcade"
     else
         say "  The binary looks for legacyhome, and its wads, next to itself -- so"
         say "  run it from an install directory rather than from src/.  Either use"
         say "  this one, which the build already staged:"
         say ""
-        say "      cd $build_root/bin && ./doomlegacy"
+        say "      cd $build_root/bin && ./doomlegacyarcade"
         say ""
         say "  or put the binary into an install directory of your own:"
         say ""
-        say "      cp -a $build_root/bin/doomlegacy <install-dir>/"
+        say "      cp -a $build_root/bin/doomlegacyarcade <install-dir>/"
         say ""
         say "  Copy the binary by name, as above.  'cp -a bin/*' would drag"
         say "  legacyhome along with it and overwrite the config, high scores"
         say "  and record demos already in the destination."
     fi
     say ""
-    say "  An operator session that can change settings is:  ./doomlegacy -devmode"
+    say "  An operator session that can change settings is:  ./doomlegacyarcade -devmode"
 else
     die "the build reported success but $binary is missing."
 fi

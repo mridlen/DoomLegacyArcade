@@ -293,7 +293,25 @@ const int  REVISION = DL_VER_REV;  // for bugfix releases, should not affect com
 //static const char VERSIONSTRING[] = "(rev " SVN_REV ")";
 //static const char VERSIONSTRING[] = "beta (rev " SVN_REV ")";
 
-const char VERSION_BANNER[] = "Doom Legacy " VERSION_CAT(DL_VER_MAJ,DL_VER_MIN,DL_VER_REV) " (rev " SVN_REV ")";
+// [Arcade] This names the fork, not upstream.  It goes in the startup title
+// box, the window title, the `version` command, --version, the debug file and
+// the crash log, so it is the string that decides whether someone can tell
+// this apart from stock Doom Legacy.  DLA_VERSION comes from the git tag the
+// GitHub release is built from -- see docs/arcade/branding.md.
+//
+// Keep it short: D_Make_legacytitle centres it in an 80 column line that also
+// carries the build date at columns 1-11 and the time at 71-78, so anything
+// past ~56 characters gets overwritten by those.  The upstream credit is on
+// FORK_NOTICE below rather than crammed in here.
+const char VERSION_BANNER[] = "Doom Legacy Arcade " DLA_VERSION;
+
+// [Arcade] Printed under the title box, and by --version and --help.  Upstream
+// attribution is required to stay (GPLv2 section 2a) and is wanted anyway: it
+// tells a bug reporter which engine and revision this actually derives from.
+const char FORK_NOTICE[] =
+  // 79 columns, so it does not wrap on an 80 column terminal.
+  "Fork of Doom Legacy " VERSION_CAT(DL_VER_MAJ,DL_VER_MIN,DL_VER_REV)
+  " (rev " SVN_REV "), unaffiliated with the Doom Legacy team.";
 //char VERSION_BANNER[80];
 
 // [WDJ] change this if legacy.wad is changed
@@ -2771,10 +2789,19 @@ static void D_Make_legacytitle(void)
 {
   const char *s = VERSION_BANNER;
   int i;
+  size_t slen = strlen(s);
 
   memset(legacytitle, ' ', sizeof(legacytitle));
 
-  for (i = (MAX_TITLE_LEN - strlen(s)) / 2; *s; )  // center
+  // [Arcade] VERSION_BANNER used to be a compile-time constant of known
+  // length; it now ends in DLA_VERSION, which comes from `git describe` and
+  // can be long ("v1.0.1-12-gdeadbee-dirty").  strlen is size_t, so a banner
+  // wider than the line made (MAX_TITLE_LEN - slen) wrap to a huge unsigned
+  // and the write ran off the end of the buffer.  Clamp instead.
+  if( slen > MAX_TITLE_LEN )
+    slen = MAX_TITLE_LEN;
+
+  for (i = (MAX_TITLE_LEN - slen) / 2; slen--; )  // center
     legacytitle[i++] = *s++;
 
   const char *u = __DATE__;
@@ -2891,6 +2918,7 @@ void D_DoomMain()
     if (M_CheckParm("--version"))
     {
       printf("%s\n", legacytitle);
+      printf("%s\n", FORK_NOTICE);  // [Arcade]
       printf("%s\n", DL_OPTS_STR );
       exit(0);
     }
@@ -2907,11 +2935,13 @@ void D_DoomMain()
     if (M_CheckParm("--help") || M_CheckParm("-h"))
     {
       printf("%s\n", legacytitle);
+      printf("%s\n", FORK_NOTICE);  // [Arcade]
       Help();
       exit(0);
     }
 
     GenPrintf( EMSG_info|EMSG_all, "%s\n", legacytitle);
+    GenPrintf( EMSG_info|EMSG_all, "%s\n", FORK_NOTICE);  // [Arcade]
 
     // Find or make a default dir that is not root dir
     // get the current directory (possible problem on NT with "." as current dir)
@@ -4360,7 +4390,7 @@ static void Help( void )
   {
     printf
        ("Usage: doomlegacy [-opengl] [-iwad xxx.wad] [-file pwad.wad ...]\n"
-        "--version   Print Doom Legacy version\n"
+        "--version   Print Doom Legacy Arcade version\n"
         "-h     Help\n"
         "-h g   Help game and wads\n"
         "-h m   Help multiplayer\n"

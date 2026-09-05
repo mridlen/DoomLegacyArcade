@@ -17,7 +17,7 @@
 #
 # It never touches the live cabinet.  Since the portable install landed,
 # legacyhome is found *next to the binary* and $HOME is not consulted, so
-# running svn1749/bin/doomlegacy directly would read and write the cabinet's
+# running svn1749/bin/doomlegacyarcade directly would read and write the cabinet's
 # real scores, demos and config.  Everything below happens in a scratch copy.
 #
 # See CLAUDE.md, "Headless verification", for why each of these is shaped the
@@ -32,7 +32,7 @@ set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
-binary="$root/svn1749/bin/doomlegacy"
+binary="$root/svn1749/bin/doomlegacyarcade"
 staged_home="$root/svn1749/bin/legacyhome"
 tracked_home="$root/cabinet/legacyhome"
 
@@ -88,7 +88,19 @@ clean() { sed 's/\x1b\[[0-9;]*m//g' "$1"; }
 # a quit through I_Quit hangs in shutdown instead of exiting, so timeout kills
 # it and reports 124 exactly as it does for a healthy run.  ENDOOM is only
 # printed on a real quit.
-quit_cleanly() { [ "$(clean "$1" | grep -c 'READ THE DOCS')" -gt 0 ]; }
+#
+# Detect it structurally, by the colour escapes, NOT by the words on the screen.
+# This used to grep for 'READ THE DOCS' -- a phrase from the stock ENDOOM art.
+# The moment that art was replaced, three checks here went red while the engine
+# was quitting perfectly cleanly, and the failure text sent the reader off after
+# a missing SDL_NO_SIGNAL_HANDLERS=1 that was never missing.  ENDOOM is editable
+# art; do not tie a pass/fail to what it happens to say.
+#
+# endtxt.c emits "\033[0m" once per cell before setting that cell's colours, so
+# a printed screen is 80*25 = 2000 resets.  Measured: 2026 on a clean quit
+# (ENDOOM plus a couple of dozen from ordinary console output), 0 on a run the
+# timeout killed.  Half of one screen is a wide margin between those.
+quit_cleanly() { [ "$(grep -oaP '\x1b\[0m' "$1" | wc -l)" -ge 1000 ]; }
 
 crashed() { clean "$1" | grep -qiE 'segmentation fault|I_Error|signal 11'; }
 
@@ -104,7 +116,7 @@ run_game() {
       SDL_AUDIODRIVER=dummy \
       SDL_NO_SIGNAL_HANDLERS=1 \
       DISPLAY= \
-      timeout "${SMOKE_TIMEOUT:-60}" ./doomlegacy "$@" ) > "$log" 2>&1
+      timeout "${SMOKE_TIMEOUT:-60}" ./doomlegacyarcade "$@" ) > "$log" 2>&1
     echo "$log"
 }
 

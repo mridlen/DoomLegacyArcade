@@ -30,7 +30,7 @@ expected lumps differ before committing.
 dependencies by test-compiling, writes `make_options`, orders `make depend` before the parallel
 build). Use it unless there is a reason not to; `docs/arcade/building.md` explains its design and
 what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents (MSYS2 ucrt64); they now build
-`doomlegacy.exe` end to end and stage its 12 runtime DLLs into `svn1749\bin` (derived by walking the
+`doomlegacyarcade.exe` end to end and stage its 12 runtime DLLs into `svn1749\bin` (derived by walking the
 import tables — SDL2_mixer's codec DLLs make the list longer than anyone guesses, and it is not
 stable enough to hardcode). The binary loads but has not been played.
 
@@ -105,7 +105,7 @@ directory rather than from `src/`. On this cabinet `svn1749/bin/` *is* that inst
 its `legacyhome` holds the live config, high scores, `audit.dat` and record demos — so a build
 updates the cabinet in place and there is nothing to copy. (`~/games/doom/` is only the wad
 directory; there is no binary there.) To install somewhere else, copy the **binary by name**:
-`cp -a svn1749/bin/doomlegacy <install-dir>/`. Never `cp -a svn1749/bin/*` onto an existing
+`cp -a svn1749/bin/doomlegacyarcade <install-dir>/`. Never `cp -a svn1749/bin/*` onto an existing
 install — that drags `legacyhome` along and overwrites its config, scores and demos.
 (`make install`, `install_user`, `install_sys` and `install_games` also exist.)
 
@@ -132,11 +132,11 @@ needed a play session:
 
 ```
 RD=/tmp/rundir            # NOT svn1749/bin -- that is the live cabinet now
-mkdir -p "$RD" && cp svn1749/bin/doomlegacy "$RD"/
+mkdir -p "$RD" && cp svn1749/bin/doomlegacyarcade "$RD"/
 cp -a svn1749/bin/legacyhome "$RD"/               # a COPY of the live home
 ln -sf /home/mridlen/games/doom/* "$RD"/          # DOOM.WAD, DOOM2.WAD, legacy.wad, ...
 cd "$RD" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_NO_SIGNAL_HANDLERS=1 \
-    timeout 40 ./doomlegacy -game doom2 -skill 5 -warp 1 > out.txt 2>&1
+    timeout 40 ./doomlegacyarcade -game doom2 -skill 5 -warp 1 > out.txt 2>&1
 sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color escapes
 ```
 
@@ -152,7 +152,7 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `Solving T-joins` and looks like an OpenGL failure; with `drawmode` forced to software it stops
   after the config check and looks like the video mode; with nothing at all it stops after
   `HU_Init`. It was misread for a while as "`-warp` no longer works", which it never was — plain
-  `./doomlegacy -game doomu` with no other argument dies exactly the same way.
+  `./doomlegacyarcade -game doomu` with no other argument dies exactly the same way.
 
   What identifies it: `SDL_NO_SIGNAL_HANDLERS=1` makes it stop happening, and so does running
   under gdb, which intercepts signals before SDL sees them. **A headless run that quits early with
@@ -161,7 +161,7 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
 
 - **Isolating `HOME` is no longer enough, and running from `svn1749/bin` is now dangerous.** Since
   the portable install landed, `legacyhome` is found *next to the binary* and `$HOME` is never
-  consulted — so `HOME=/tmp/fakehome` protects nothing, and running `svn1749/bin/doomlegacy` reads
+  consulted — so `HOME=/tmp/fakehome` protects nothing, and running `svn1749/bin/doomlegacyarcade` reads
   and writes the **cabinet's live scores, demos and config**. Always copy the binary *and*
   `legacyhome/` into a scratch directory, as above. (The cabinet's old `~/.doomlegacy` has been
   renamed to `~/.doomlegacy-backup` and is no longer read by anything.)
@@ -186,7 +186,7 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
     "still running". That mistake is what kept the `SDL_QUIT` diagnosis pointing at `-warp`.
   - The other positive signal is per-tic output from temporary instrumentation: if it is still
     printing when the timeout hits, the loop was genuinely running.
-  - `coredumpctl debug doomlegacy --debugger=gdb --debugger-arguments="-batch -ex bt"`
+  - `coredumpctl debug doomlegacyarcade --debugger=gdb --debugger-arguments="-batch -ex bt"`
     gets a backtrace.
 - **The OpenGL renderer can be tested headlessly too, on the real GPU — use
   `SDL_VIDEODRIVER=offscreen`, not `dummy`.** This file used to say the hardware path needed a play
@@ -197,7 +197,7 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   so it does not disturb the live X session:
   ```
   cd "$RD" && DISPLAY= SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy \
-      SDL_NO_SIGNAL_HANDLERS=1 timeout 40 ./doomlegacy -game doom2 -skill 3 -warp 1 > gl.txt 2>&1
+      SDL_NO_SIGNAL_HANDLERS=1 timeout 40 ./doomlegacyarcade -game doom2 -skill 3 -warp 1 > gl.txt 2>&1
   ```
   Set `drawmode "OpenGL"` in the scratch config, and blank `DISPLAY` so it cannot fall back to the
   real screen. The drawmode string must be one of the exact values in `drawmode_sel_t`
@@ -281,7 +281,7 @@ Local additions on top of upstream r1749, all aimed at an unattended cabinet. Mo
 `-devmode` now carries three separate jobs — it unlocks the menus, keeps the Legacy gameplay extras
 instead of forcing vanilla, and is the only mode that writes `config.cfg`. That is deliberate (an
 operator-versus-player split), but it means the three cannot be chosen independently: an operator
-session is `./doomlegacy -devmode`, change settings, quit; a player session is plain `./doomlegacy`.
+session is `./doomlegacyarcade -devmode`, change settings, quit; a player session is plain `./doomlegacyarcade`.
 
 On a cabinet with no command line, the **`gc_devmode` control (*Devmode Restart* on the Setup
 Controls page, default Scroll Lock on panel 1) restarts the program into `-devmode` and back out
@@ -319,6 +319,8 @@ are kept below, in this file.
 | `docs/arcade/audit.md` | Operator bookkeeping counters, the Audit page, `audit.dat` | `au_stuff.c`, `AU_*` call sites, the Audit page in `m_menu.c` |
 | `docs/arcade/building.md` | The build scripts: capability probing, the traps they encode, Windows | `tools/build.sh`, `tools/build.ps1`, `build.bat` |
 | `docs/arcade/ci-releases.md` | GitHub Actions: the build-on-push workflow, the release button, the `-march` baseline | `.github/workflows/`, the `--arch`/`-Arch` options |
+| `docs/arcade/branding.md` | Fork identity, `VERSION_BANNER`, `DLA_VERSION` from tags, the executable name, what must NOT be renamed | any string that names the program, the version, `EXENAME` |
+| `docs/arcade/endoom.md` | The exit text screen: lump format, why SLADE will not edit it, `tools/endoom.py` | the `ENDOOM` lump, `endtxt.c`, `I_Show_EndText` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -353,6 +355,13 @@ this is gated on.
 These bite across the whole tree, usually while working on something else entirely. Each is
 written up in full in the doc named beside it.
 
+- **The fork names itself; upstream keeps its credit.** `VERSION_BANNER` is
+  `Doom Legacy Arcade <DLA_VERSION>` and must stay under ~56 characters — `D_Make_legacytitle`
+  centres it in a line that also carries the build date and time, which overwrite anything
+  longer. `DLA_VERSION` is derived from the release tags; the CI overrides it, its checkout
+  being shallow. **Never touch `DL_VER_*`/`VERSION`/`REVISION` to rebrand** — those go into
+  demo headers and savegames, and changing them rejects every record demo on the cabinet.
+  → `branding.md`
 - **Menus are addressed by hardcoded position.** Several arrays in `m_menu.c` are indexed by
   number, so inserting or removing a row shifts indices elsewhere. Keep each `*_menu`/`mcontrol_*`
   enum in step with its array, and grep the **handlers** too — an `IT_CALL` handler's `choice`

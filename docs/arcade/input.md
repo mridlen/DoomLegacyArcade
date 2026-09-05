@@ -454,7 +454,7 @@ rejected". Read that before reaching for the same idea.*
 
 Everything goes to **`EMSG_errlog`** — stderr and the log file, never the console — so a trace
 cannot spam the screen of the session being diagnosed. Capture with
-`./doomlegacy -inputlog 2> input.log`.
+`./doomlegacyarcade -inputlog 2> input.log`.
 
 - **`-inputlog`** traces every key event: tic, `sym`, scancode, **`repeat`**, and the translated
   key. This is the line that answers "is it key repeat?".

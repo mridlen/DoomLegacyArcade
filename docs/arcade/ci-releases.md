@@ -93,7 +93,7 @@ disassembling the result — `objdump -d` finds zero AVX or SSE4 instructions, w
 
 ### The check earned its keep on the first Windows run
 
-That `make_options` grep is not ceremony. The first Windows CI run built `doomlegacy.exe` and staged
+That `make_options` grep is not ceremony. The first Windows CI run built `doomlegacyarcade.exe` and staged
 all twelve DLLs — the first end-to-end Windows build this tree has ever completed — and then failed
 on the arch check, correctly.
 
@@ -143,7 +143,7 @@ runnable directory. The package is that, plus the wads beside the binary:
 
 ```
 doomlegacy-arcade-<version>-linux-x86_64/
-    doomlegacy               (or doomlegacy.exe + 12 DLLs on Windows)
+    doomlegacyarcade               (or doomlegacyarcade.exe + 12 DLLs on Windows)
     legacyhome/config.cfg
     legacy.wad  dogs.wad
     LICENSE  README.md  README_install.txt

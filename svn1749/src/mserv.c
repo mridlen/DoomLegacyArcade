@@ -243,7 +243,7 @@ static void Command_Listserv_f(void);
 #define MS_DEFAULT_PORT "28910"
 consvar_t cv_internetserver= {"sv_public", "No", CV_SAVE, CV_YesNo };
 consvar_t cv_masterserver  = {"masterserver", "doomlegacy.dyndns.org:28910", CV_SAVE, NULL };
-consvar_t cv_servername    = {"sv_name", "Doom Legacy server", CV_SAVE, NULL };
+consvar_t cv_servername    = {"sv_name", "Doom Legacy Arcade server", CV_SAVE, NULL };  // [Arcade]
 
 typedef enum{
     MSCS_NONE,

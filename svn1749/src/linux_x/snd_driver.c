@@ -2079,7 +2079,7 @@ static byte LXD_init_JACK( void )
 #endif
    
     msg = "open";
-    jack_client = jack_client_open( "DoomLegacy", JackNullOption, &jack_status, NULL );
+    jack_client = jack_client_open( "DoomLegacyArcade", JackNullOption, &jack_status, NULL );  // [Arcade]
     if( jack_client == NULL )  goto report_msg;
 
 #ifdef JACK_CALLBACK
@@ -2471,7 +2471,7 @@ static byte LXD_init_PULSE( void )
    
     msg = "open context";
     // with caption "DoomLegacy"
-    pa_ctxt = pa_context_new( pa_mlapi, "DoomLegacy" );
+    pa_ctxt = pa_context_new( pa_mlapi, "DoomLegacyArcade" );  // [Arcade]
     if( pa_ctxt == NULL )
         goto report_msg;
    
@@ -2524,9 +2524,9 @@ static byte LXD_init_PULSE( void )
         paspec.channels = audio_channels;
         paspec.format = pulse_format_table[ am ];
 #ifdef CHANNEL_MAP
-        pa_strm = pa_stream_new( pa_ctxt, "DoomLegacy", &paspec, &pachmap ); // specific channel map
+        pa_strm = pa_stream_new( pa_ctxt, "DoomLegacyArcade", &paspec, &pachmap ); // specific channel map  // [Arcade]
 #else
-        pa_strm = pa_stream_new( pa_ctxt, "DoomLegacy", &paspec, NULL ); // default channel map
+        pa_strm = pa_stream_new( pa_ctxt, "DoomLegacyArcade", &paspec, NULL ); // default channel map  // [Arcade]
 #endif
         if( pa_strm )  break;
     }

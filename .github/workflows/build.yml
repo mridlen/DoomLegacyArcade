@@ -116,6 +116,11 @@ jobs:
         run: ./tools/build.sh --install-deps --arch "$ARCH_FLAGS"
 
       - name: Build
+        env:
+          # The Makefile derives DLA_VERSION from the git tags, but this
+          # checkout is shallow and has none -- so hand it the version
+          # already settled above.  Make's `?=` lets the environment win.
+          DLA_VERSION: ${{ needs.check-inputs.outputs.version }}
         run: ./tools/build.sh --arch "$ARCH_FLAGS"
 
       # There is no test suite, and tools/smoke.sh needs a commercial IWAD that
@@ -124,8 +129,8 @@ jobs:
       - name: Check the binary
         run: |
           set -eu
-          test -x svn1749/bin/doomlegacy
-          file svn1749/bin/doomlegacy
+          test -x svn1749/bin/doomlegacyarcade
+          file svn1749/bin/doomlegacyarcade
           # A binary built for the wrong baseline still links, so confirm the
           # flag actually reached the compiler rather than trusting that it did.
           grep -q -- '-march=x86-64' svn1749/make_options
@@ -167,13 +172,15 @@ jobs:
 
       - name: Build
         shell: pwsh
+        env:
+          DLA_VERSION: ${{ needs.check-inputs.outputs.version }}
         run: .\tools\build.ps1 -Arch "$env:ARCH_FLAGS"
 
       - name: Check the binary
         shell: pwsh
         run: |
-          if (-not (Test-Path 'svn1749\bin\doomlegacy.exe')) { throw 'doomlegacy.exe was not built' }
-          Get-Item 'svn1749\bin\doomlegacy.exe' | Format-List Name, Length
+          if (-not (Test-Path 'svn1749\bin\doomlegacyarcade.exe')) { throw 'doomlegacyarcade.exe was not built' }
+          Get-Item 'svn1749\bin\doomlegacyarcade.exe' | Format-List Name, Length
           # build.ps1 derives the runtime DLL closure by walking the import
           # tables.  If that silently found nothing the package would look
           # complete and fail before main() with a bare "SDL2.dll was not found".

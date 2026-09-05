@@ -800,16 +800,16 @@ ifeq ($(SMIF), SDL)
 # platform
   ifdef WIN32
     # Windows (MinGW)
-    EXENAME:=doomlegacy.exe
+    EXENAME:=doomlegacyarcade.exe
     LIBS:=-lopengl32 -lglu32 -lwsock32 -lm
   endif
   ifdef MAC
-    EXENAME:=doomlegacy
+    EXENAME:=doomlegacyarcade
     LDFLAGS+=-framework OpenGL
   endif
   ifndef EXENAME
     # default is Linux, for all unix SDL
-    EXENAME:=doomlegacy
+    EXENAME:=doomlegacyarcade
     LDFLAGS+=-L/usr/X11R6/lib
     LIBS+=-lGL -lGLU -lm
     # -L/usr/X11R6/lib is needed by Linux 2.4 and others that still have
@@ -1370,6 +1370,20 @@ endif
 CFLAGS+=-ffast-math -fno-strict-aliasing
 # WIN98 linking needs LCFLAGS without -D flags and does not need includes
 LCFLAGS:=$(CFLAGS)
+# [Arcade] The fork's own version string, shown in the startup banner and by
+# the `version` command.  Derived from git tags, which is what GitHub builds a
+# release from, so a build of tag v1.0.1 says exactly "v1.0.1" and a build
+# three commits later says "v1.0.1-3-gabc1234" (plus "-dirty" if the tree has
+# uncommitted changes).  Override from the environment or the command line --
+# `make DLA_VERSION=v1.0.2` -- which is how the CI passes the tag typed into
+# the release button, since its checkout may not have the tags.
+# Falls back to the #define in doomdef.h when there is no git and no override.
+# See docs/arcade/branding.md.
+DLA_VERSION?=$(shell git -C $(CURDIR) describe --tags --always --dirty 2>/dev/null)
+ifneq ($(DLA_VERSION),)
+  OPTS+=-DDLA_VERSION='"$(DLA_VERSION)"'
+endif
+
 CFLAGS+=$(OPTS) $(OPTINC)
 
 # [Arcade] Flags for the vendored ZDBSP node builder (the only C++ here).
@@ -1561,7 +1575,7 @@ endif
 
 # Make a disasm of the exe
 disasm: $(BIN)/$(EXENAME)
-	objdump -d $(BIN)/$(EXENAME) --no-show-raw-insn > $(BIN)/doomlegacy.s
+	objdump -d $(BIN)/$(EXENAME) --no-show-raw-insn > $(BIN)/doomlegacyarcade.s
 
 # To dump draw functions to assembly
 objdump_draw: $(O)/r_draw.o
@@ -1624,6 +1638,20 @@ vpath %.o $(O)
 #$(O)/*.o : doomdef.h
 
 $(O)/r_draw.o : $(SD)r_draw.c $(SD)r_draw8.c $(SD)r_draw16.c $(SD)r_draw24.c $(SD)r_draw32.c
+
+# [Arcade] d_main.c bakes DLA_VERSION into the startup banner, and nothing
+# would otherwise notice the version had changed: d_main.c itself is untouched
+# by tagging a release, and this tree has no dep files for most objects, so the
+# old string would survive until something forced a full rebuild.  The stamp is
+# rewritten only when the derived version actually differs, so this costs one
+# recompile when it matters and nothing when it does not.
+.PHONY: FORCE_VERSION
+$(O)/version.stamp: FORCE_VERSION
+	@echo '$(DLA_VERSION)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+
+$(O)/d_main.o: $(O)/version.stamp
 
 
 # common obj rules

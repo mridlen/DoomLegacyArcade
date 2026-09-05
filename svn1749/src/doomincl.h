@@ -132,6 +132,7 @@ extern  uint16_t  demoversion_rev;  // VERREV(demoversion, revision)
 extern const int  VERSION;
 extern const int  REVISION;
 extern const char VERSION_BANNER[];
+extern const char FORK_NOTICE[];   // [Arcade] upstream credit, see d_main.c
 
 // =======================
 // Log and Debug stuff
