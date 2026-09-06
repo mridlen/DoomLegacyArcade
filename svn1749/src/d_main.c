@@ -864,20 +864,6 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
     band_main_x1 = 0;
     band_main_x2 = width;
 
-    // [Arcade] UNFINISHED -- opt in with DL_RENDER_BANDS=1.
-    //
-    // The banded picture is not yet identical to the serial one: it differs
-    // deterministically, and differently for each band count, so the band
-    // clipping is systematically wrong rather than racing.  Localised with
-    // per-stripe checksums to *inside the main thread's own band* -- with two
-    // bands of a 1024 wide view the split is at x=512, but the picture starts
-    // differing at x=256 -- so it is not a seam or an off-by-one at the band
-    // edge.  Left in the tree, off, for a session that can chase it properly.
-    //
-    // render_threads on its own is unaffected: without this it does exactly
-    // what it did before, one view per worker, which is verified.
-    if( ! getenv("DL_RENDER_BANDS") )  return 0;
-
     if( workers == 0 || width < 64 )  return 0;
 
     // One band per thread, main thread included.
@@ -900,6 +886,17 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
     {
         int x1 = (width * b) / nbands;
         int x2 = (width * (b + 1)) / nbands;
+
+        // ##BANDSERIAL## bisection: draw every band on this thread, one after
+        // another, so "is the band clipping right?" can be told apart from
+        // "do the band threads race?".
+        if( getenv("DL_BAND_SERIAL") )
+        {
+            R_Set_View_Window( 0 );
+            R_Set_Render_Band( x1, x2 );
+            R_RenderPlayerView( 0, vpl );
+            continue;
+        }
 
         if( R_Thread_Submit_Band( 0, vpl, x1, x2 ) )
         {
@@ -1287,6 +1284,19 @@ void D_Display(void)
                 // else touches the screen buffer -- the cell blanking just
                 // below writes into it, and so do the HUD and status bar.
                 D_Threaded_Views_Wait();
+
+                // [Arcade] Moved out of R_RenderPlayerView: it is a
+                // read-modify-write on a shared mobj, and R_DrawPSprite reads
+                // the same flags, so it has to wait until nothing is drawing.
+                {
+                    byte vi, nv = D_NumViews();
+                    for( vi = 0; vi < nv; vi++ )
+                    {
+                        byte pn = localplayer[vi];
+                        if( pn < MAXPLAYERS && players[pn].mo )
+                            players[pn].mo->flags &= ~MF_NOSECTOR;
+                    }
+                }
 
                 // [Arcade] Put the wad's own tree back before anything but
                 // rendering runs again.  The simulation walks these globals.

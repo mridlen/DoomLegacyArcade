@@ -62,42 +62,82 @@ Measured gain, same scene, four views: **9.6 ms serial → 2.8 ms with four thre
 Worst frame 14.3 ms → 4-8 ms. The serial path is unchanged (see `R_TLS` below), and measures
 the same as it did before the feature existed.
 
-## Column bands: started, not working, off by default
+## Column bands: one view across every core
 
 Per-view threading does nothing for a single player, which on a four-panel
 cabinet is the common case: `D_NumViews()` may be 4, but the dispatch skips
-panels nobody joined on, so one player is one view is one thread. That is a
-real limit of the per-view split, not a setting.
+panels nobody joined on, so one player is one view is one thread. Bands are the
+answer — cut the one view into vertical slices, one per core.
 
-The answer is to cut the one view into vertical column bands, one per core.
-The machinery is in the tree and **it is off**: opt in with `DL_RENDER_BANDS=1`.
+**Measured, single player, 1024x768 software:**
+
+| map | serial | 4 bands |
+| --- | --- | --- |
+| MAP07 | 10.56 ms | **2.79 ms** |
+| MAP11 | 9.66 ms | **2.45 ms** |
+
+About 3.8x, slightly better than per-view's 3.4x, because the duplicated BSP
+walk is cheap next to the drawing. Per-view is still used whenever there is
+more than one view: each thread then walks the tree once for its own view
+instead of every thread walking all of it.
 
 It rests on `R_Clear_ClipSegs`, which already marks everything outside the view
 as solid so the BSP walk clips itself to the screen; a band thread marks
 everything outside its *band* instead, and walls, floors and ceilings clip
-themselves with no other change. Only the sprites need telling, because they
-clamp their x range against the view width directly -- `rdraw_band_x1/x2`
-(`r_draw.c`), reset to the whole view by `R_Set_View_Window` so a thread cannot
-inherit a stale band, and narrowed afterwards by `R_Set_Render_Band`.
+themselves with no other change. Only the sprites needed telling, because they
+clamp their x range against the view width directly — `rdraw_band_x1/x2`
+(`r_draw.c`), reset to the whole view by `R_Set_View_Window` so nothing can
+inherit a stale band, narrowed after it by `R_Set_Render_Band`.
 
-**It does not yet produce the serial picture, and here is what is known:**
+### Bands are NOT bit-identical to serial, and cannot be
 
-- The difference is **deterministic**, and **different for each band count** --
-  so the band clipping is systematically wrong, not racing.
-- Per-stripe checksums put the divergence **inside the main thread's own band**:
-  with two bands of a 1024-wide view the split is at x=512, but the picture
-  starts differing at x=256. So it is not a seam, an off-by-one at the band
-  edge, or a column drawn twice.
-- Both the left and right sprite rejections were fixed to test against the band
-  rather than 0 (a sprite entirely left of a band was being projected and then
-  clamped into a backwards column range). That was a real bug; it was not this
-  one.
-- MAP07 passes, which is the scene with least in it.
+This is the important thing to know before testing them, and it cost a long
+detour to work out.
 
-Whoever picks this up: the per-stripe checksum is the tool -- checksum the
-screen in vertical stripes rather than as a whole, and compare band counts
-against each other as well as against serial. `render_threads` on its own is
-unaffected by any of this and stays verified.
+The span and wall drawers step incrementally — `ds_xfrac += ds_xstep` along a
+span, `rw_scale += rw_scalestep` along a wall. A span split at a band edge
+recomputes its texture coordinate *exactly* at the split, where an unsplit span
+would have accumulated hundreds of fixed-point steps to reach the same column.
+The two differ by the accumulated truncation, so about **1% of pixels sample an
+adjacent texel**. GZDoom's banded software renderer has the same property.
+
+Measured, MAP01, against the serial frame:
+
+| | pixels differing | at a band edge |
+| --- | --- | --- |
+| 2 bands | 1.34% | 0.6% of the differences |
+| 4 bands | 2.41% | 1.8% of the differences |
+
+**The differences are diffuse, not at the seams** — which is exactly what
+distinguishes rounding from a coverage bug. A real coverage bug would pile up
+at the band edges or delete whole objects.
+
+So the acceptance test for bands is **not** the bit-for-bit comparison used for
+per-view threading. It is:
+
+1. no crash,
+2. ThreadSanitizer clean of worker-involved races,
+3. the pixel difference small *and diffuse* — if it concentrates at the band
+   edges, that is a seam and a real bug.
+
+The way to check 3 is to dump the frame and diff it, not to checksum it. A
+checksum only says "different", which is what sent this down a blind alley:
+the bands were working the whole time and the test was wrong.
+
+### Two races bands introduced that per-view never had
+
+Both were caught by ThreadSanitizer, and both come from the same thing: with
+bands **every thread is drawing view 0**, so anything keyed on the view index
+is suddenly shared.
+
+- `last_viewmobj[pind]` (`R_SetupFrame`). Indexed by `pind`, which made it safe
+  per view — a comment in the code even said so — but with bands every thread
+  has `pind == 0`. The whole check is main-thread-only now.
+- `player->mo->flags &= ~MF_NOSECTOR` at the end of `R_RenderPlayerView`: a
+  read-modify-write on a shared mobj, and `R_DrawPSprite` *reads* those same
+  flags for the invisibility check. Guarding it to the main thread was not
+  enough, because the main thread runs it while the workers are still drawing.
+  It has moved to `D_Display`, after the join.
 
 ## How it works
 
