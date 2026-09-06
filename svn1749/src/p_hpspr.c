@@ -575,6 +575,9 @@ void A_FireBlasterPL1(player_t *player, pspdef_t *psp)
 
 void P_BlasterMobjThinker(mobj_t *mobj)
 {
+#ifdef THINKER_INTERPOLATIONS
+    R_Interp_Capture_Mobj( mobj );   // [Arcade] before anything moves it
+#endif
     int i;
     fixed_t mfx, mfy, mfz;  // move by mom fraction
     fixed_t z;

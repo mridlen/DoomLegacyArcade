@@ -51,6 +51,8 @@
 #include "hardware/r_opengl/r_opengl.h"
   // OpenGL, gl.h, glu.h
 //#include "v_video.h"
+#include "i_video.h"
+  // [Arcade] cv_vidwait, applied to the GL swap interval below.
 
 
 #ifdef MAC_SDL
@@ -388,6 +390,27 @@ boolean OglSdl_SetMode(int w, int h, byte req_fullscreen)
     sdl_gl_context = SDL_GL_CreateContext( sdl_window );
     if( sdl_gl_context == NULL)
         return false;
+
+    // [Arcade] Honour "Wait Retrace" in OpenGL too.  The software path has
+    // always passed cv_vidwait to SDL_CreateRenderer as PRESENTVSYNC, but
+    // nothing ever set the GL swap interval, so in OpenGL the setting did
+    // nothing at all and the frame rate was whatever the driver happened to
+    // default to.  That did not matter while the game drew exactly one frame
+    // per tic; with the uncapped framerate it is the only thing stopping the
+    // main loop spinning as fast as the GPU will go.
+    //
+    // Late swap tearing (-1) first, falling back to plain vsync: it avoids
+    // the hard halving to 30fps when a frame misses the refresh, which on a
+    // twitch cabinet is far more noticeable than the tear it permits.
+    if( cv_vidwait.value )
+    {
+        if( SDL_GL_SetSwapInterval( -1 ) < 0 )
+            SDL_GL_SetSwapInterval( 1 );
+    }
+    else
+    {
+        SDL_GL_SetSwapInterval( 0 );
+    }
 
     SDL_DisplayMode sdl_displaymode;
     SDL_GetWindowDisplayMode( sdl_window, /*OUT*/ & sdl_displaymode );

@@ -144,6 +144,15 @@ typedef struct player_s
     //  including viewpoint bobbing during movement.
     // Focal origin above r.z
     fixed_t             viewz;
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: viewz at the start of the current tic.
+    // It needs its own history rather than following mo->z, because
+    // P_CalcHeight derives it from the bob and the view height as well --
+    // interpolating the two independently is what makes walking smooth
+    // rather than merely making the floor smooth.
+    fixed_t             prev_viewz;
+    angle_t             prev_aiming;
+#endif
     // Base height above floor for viewz.
     fixed_t             viewheight;
     // Bob/squat speed.

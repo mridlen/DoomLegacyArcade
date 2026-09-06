@@ -586,6 +586,21 @@ typedef struct mobj_s
     uint16_t thing_id;          // Thing id
 #endif
 
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate.  Where this thing was at the start of the
+    // current tic, so the renderer can draw it part way along the step it has
+    // already taken.  Render-only: nothing in the simulation reads these, and
+    // they are deliberately not saved (a loaded game simply draws its first
+    // frame un-interpolated, which nobody can see).
+    fixed_t   PrevX, PrevY, PrevZ;
+    angle_t   PrevAngle;      // for a view taken from this thing
+    // Which tic's capture this is.  P_Interp_Capture flips a global each tic
+    // and compares; that way whichever code touches the thing first this tic
+    // takes the snapshot, and a lift that moves a player before the player
+    // thinks cannot capture the position it has already changed.
+    byte      interp_parity;
+#endif
+
     // WARNING : new field are not automaticely added to save game 
 } mobj_t;
 

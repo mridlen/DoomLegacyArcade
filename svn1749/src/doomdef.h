@@ -92,6 +92,13 @@
 //#define TILTVIEW              // not finished
 //#define PERSPCORRECT          // not finished
 #define SPLITSCREEN
+
+// [Arcade] Uncapped framerate: render-time interpolation (r_fps.c).  The
+// three hook sites in p_tick.c predate this and were left dormant by
+// upstream -- they name PrBoom's functions, which is what r_fps.c now
+// provides.  Turning this off takes the whole feature out at compile time;
+// the cv_uncapped cvar turns it off at runtime.
+#define THINKER_INTERPOLATIONS
 //#define CLIENTPREDICTION2     // differant methode
 #define NEWLIGHT                // compute lighting with bsp (in construction)
 #define FRAGGLESCRIPT           // SoM: Activate FraggleScript

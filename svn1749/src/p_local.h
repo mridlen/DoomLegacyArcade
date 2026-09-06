@@ -190,6 +190,12 @@ typedef struct camera_s
     //SoM: Things used by FS cameras.
     fixed_t     viewheight;
     angle_t     startangle;
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: the chase camera's pitch at the start of
+    // the tic.  Its position and yaw ride on camera.mo and interpolate with
+    // any other mobj; only aiming is the camera's own.
+    angle_t     prev_aiming;
+#endif
 } camera_t;
 
 extern camera_t camera;

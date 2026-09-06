@@ -185,6 +185,16 @@ uint64_t I_GetFreeMem(uint64_t *total)
 /*==========================================================================*/
 // I_GetTime ()
 /*==========================================================================*/
+// [Arcade] Uncapped framerate: this backend has no sub-tic clock wired up,
+// so interpolation simply never engages here.  FRACUNIT means "all the way
+// through the tic", which is the un-interpolated, stock picture.  The
+// declaration is in the shared i_system.h, so every backend must define it
+// or it stops linking.
+fixed_t I_GetTimeFrac (void)
+{
+    return FRACUNIT;
+}
+
 tic_t inline I_GetTime (void)
 {
     return ticcount;

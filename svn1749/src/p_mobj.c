@@ -149,6 +149,9 @@
 
 #include "b_game.h"     //added by AC for acbot
 #include "p_spec.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
     // mbf21
 
 
@@ -1849,6 +1852,10 @@ void P_MobjThinker(mobj_t * mobj)
     boolean checkedpos = false; //added:22-02-98:
     player_t * player = mobj->player;
 
+#ifdef THINKER_INTERPOLATIONS
+    R_Interp_Capture_Mobj( mobj );   // [Arcade] before anything moves it
+#endif
+
     // check mobj against possible water content, before movement code
     P_MobjCheckWater(mobj);
 
@@ -2349,6 +2356,13 @@ mobj_t * P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
     if (mobj->spawnpoint)
         mobj->spawnpoint->z = mobj->z >> FRACBITS;
 
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] A thing that has just appeared has not travelled anywhere.
+    // Without this its Prev fields are the zeroes from Z_Malloc and its
+    // first frame draws it streaking in from the map origin.
+    R_Interp_Reset_Mobj( mobj );
+#endif
+
     return mobj;
 }
 
@@ -2784,11 +2798,21 @@ void P_SpawnPlayer( mapthing_t * mthing, int playernum )
     {
         localangle[0] = mobj->angle;
         localaiming[0] = 0;
+#ifdef THINKER_INTERPOLATIONS
+        // [Arcade] Spawning into a level or respawning after death places
+        // the view rather than turning it.
+        prev_localangle[0] = mobj->angle;
+        prev_localaiming[0] = 0;
+#endif
     }
     else if (playernum == displayplayer2)  // player 2
     {
         localangle[1] = mobj->angle;
         localaiming[1] = 0;
+#ifdef THINKER_INTERPOLATIONS
+        prev_localangle[1] = mobj->angle;
+        prev_localaiming[1] = 0;
+#endif
     }
     else if (p->bot)    //added by AC for acbot
     {

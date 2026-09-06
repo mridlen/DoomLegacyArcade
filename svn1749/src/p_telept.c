@@ -118,9 +118,23 @@ byte P_Teleport_with_effects(mobj_t * thing, fixed_t x, fixed_t y, angle_t angle
             thing->reactiontime = 18;
         // added : absolute angle position
         if(thing== consoleplayer_ptr->mo)
+        {
             localangle[0] = angle;
+#ifdef THINKER_INTERPOLATIONS
+            // [Arcade] A teleport can turn the player to face the exit.  The
+            // view is not turning, it is being placed -- interpolating it
+            // spins the camera through however much of a circle lies between
+            // the two headings.
+            prev_localangle[0] = angle;
+#endif
+        }
         if(displayplayer2_ptr && thing== displayplayer2_ptr->mo) // NULL when unused
+        {
             localangle[1] = angle;
+#ifdef THINKER_INTERPOLATIONS
+            prev_localangle[1] = angle;
+#endif
+        }
 
 #ifdef CLIENTPREDICTION2
         if(thing== consoleplayer_ptr->mo)
@@ -171,6 +185,9 @@ byte P_Teleport_with_effects(mobj_t * thing, fixed_t x, fixed_t y, angle_t angle
 uint16_t teleport_delay = 0;
 
 #include "m_random.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 
 // Will teleport to new location.

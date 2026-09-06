@@ -2035,18 +2035,37 @@ ticcmd_t*       I_BaseTiccmd(void)
 // I_GetTime
 // returns time in 1/TICRATE second tics
 //
+// [Arcade] Shared with I_GetTimeFrac, which must agree with I_GetTime about
+// where the current tic began; it was a static local here.
+static Uint32 tick_basetime = 0;
+
 tic_t I_GetTime(void)
 {
     Uint32        ticks;
-    static Uint32 basetime=0;
 
     // milliseconds since SDL initialization
     ticks = SDL_GetTicks();
 
-    if (!basetime)
-        basetime = ticks;
+    if (!tick_basetime)
+        tick_basetime = ticks;
 
-    return (ticks - basetime)*TICRATE/1000;
+    return (ticks - tick_basetime)*TICRATE/1000;
+}
+
+// [Arcade] How far through the current tic we are, 0..FRACUNIT, for the
+// uncapped framerate's interpolation.  Derived from the same clock and the
+// same basetime as I_GetTime, so the two can never disagree about which tic
+// this is -- a frac taken from an independent timer drifts, and the picture
+// jitters by a tic wherever the two round differently.
+fixed_t I_GetTimeFrac(void)
+{
+    uint64_t  millitics;
+
+    // 64-bit: (elapsed ms * 35) overflows 32 bits after about 34 hours, and
+    // this cabinet is left switched on.
+    millitics = (uint64_t)(SDL_GetTicks() - tick_basetime) * TICRATE;
+
+    return (fixed_t)(((millitics % 1000) * FRACUNIT) / 1000);
 }
 
 // sleeps for a while, giving CPU time to other processes

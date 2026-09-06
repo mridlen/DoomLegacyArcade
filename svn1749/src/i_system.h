@@ -41,6 +41,8 @@
 #define I_SYSTEM_H
 
 #include "doomtype.h"
+#include "m_fixed.h"
+  // fixed_t, for I_GetTimeFrac
 #include "d_ticcmd.h"
   // ticcmd_t
 #include "d_event.h"
@@ -67,6 +69,10 @@ uint64_t I_GetFreeMem(uint64_t *total);
 // Called by D_DoomLoop,
 // returns current time in tics.
 tic_t I_GetTime (void);
+// [Arcade] Position within the current tic, 0..FRACUNIT, for the uncapped
+// framerate's interpolation (r_fps.c).  A backend with no sub-tic clock
+// returns FRACUNIT, which leaves the game running exactly as it always did.
+fixed_t I_GetTimeFrac (void);
 
 // replace getchar() once the keyboard has been appropriated
 int I_GetKey (void);

@@ -1410,7 +1410,7 @@ endif
 MOBJS:=\
 screen.o v_video.o \
 r_draw.o r_plane.o r_segs.o r_sky.o r_things.o r_splats.o \
-r_bsp.o r_data.o r_main.o \
+r_bsp.o r_data.o r_main.o r_fps.o \
 z_zone.o \
 p_sight.o p_mobj.o p_enemy.o p_user.o p_inter.o p_pspr.o \
 p_lights.o p_ceilng.o p_doors.o p_plats.o p_floor.o p_spec.o \

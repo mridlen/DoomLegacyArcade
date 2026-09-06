@@ -65,6 +65,10 @@
 #endif
 
 #include "hardware/hw3sound.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+  // p_hpspr.c, included below, captures mobj positions
+#endif
 
 #define LOWERSPEED              FRACUNIT*6
 #define RAISESPEED              FRACUNIT*6

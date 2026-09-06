@@ -319,6 +319,9 @@
 #include "r_splats.h"
 #include "t_func.h"
 #include "st_stuff.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 
 // #define DEBUG_FIT_RATIO  1
@@ -3758,10 +3761,23 @@ static void HWR_ProjectSprite(mobj_t * thing)
     unsigned int rot, fr;
     angle_t ang;
 
+    // [Arcade] Uncapped framerate: where this thing is drawn.  Same rule as
+    // the software renderer's R_ProjectSprite -- everything in this function
+    // reads these, and nothing in the simulation does.
+#ifdef THINKER_INTERPOLATIONS
+    fixed_t  thing_ix = R_Interp_Fixed( thing->PrevX, thing->x );
+    fixed_t  thing_iy = R_Interp_Fixed( thing->PrevY, thing->y );
+    fixed_t  thing_iz = R_Interp_Fixed( thing->PrevZ, thing->z );
+#else
+    fixed_t  thing_ix = thing->x;
+    fixed_t  thing_iy = thing->y;
+    fixed_t  thing_iz = thing->z;
+#endif
+
     // Calculate view of sprite, relative to player, in world dimensions.
     // transform the origin point
-    tr_x = FIXED_TO_FLOAT( thing->x ) - gr_viewx;  // relative position
-    tr_y = FIXED_TO_FLOAT( thing->y ) - gr_viewy;
+    tr_x = FIXED_TO_FLOAT( thing_ix ) - gr_viewx;  // relative position
+    tr_y = FIXED_TO_FLOAT( thing_iy ) - gr_viewy;
 
     // rotation around vertical axis
     tz = (tr_x * gr_viewcos) + (tr_y * gr_viewsin);  // view depth
@@ -3806,7 +3822,7 @@ static void HWR_ProjectSprite(mobj_t * thing)
     else
     {
         // choose a different rotation based on player view
-        ang = R_PointToAngle(thing->x, thing->y);       // uses viewx,viewy
+        ang = R_PointToAngle(thing_ix, thing_iy);       // uses viewx,viewy
 
         if( sprframe->rotation_pattern == SRP_8)
         {
@@ -3888,10 +3904,10 @@ static void HWR_ProjectSprite(mobj_t * thing)
     int                 thingmodelsec;
     boolean	        thing_has_model;  // has a model, such as water
 #ifdef FEET_IN_GROUND_TOPOFFSET_FIX
-    fixed_t  gz_top = thing->z + fig_topoffset;  // Adjusted topoffset.
+    fixed_t  gz_top = thing_iz + fig_topoffset;  // Adjusted topoffset.
 #else
     // Has feet-in-ground problem, due to z-buffer.
-    fixed_t  gz_top = thing->z + sprlump->topoffset;
+    fixed_t  gz_top = thing_iz + sprlump->topoffset;
 #endif
     thingsector = thing->subsector->sector;	 // [WDJ] 11/14/2009
     if(thingsector->numlights)
@@ -3921,13 +3937,13 @@ static void HWR_ProjectSprite(mobj_t * thing)
       if (viewer_has_model)
       {
           if( viewer_underwater ?
-              (thing->z >= thingmodsecp->floorheight)
+              (thing_iz >= thingmodsecp->floorheight)
               : (gz_top < thingmodsecp->floorheight)
               )
               return;
           if( viewer_overceiling ?
               ((gz_top < thingmodsecp->ceilingheight) && (viewz > thingmodsecp->ceilingheight))
-              : (thing->z >= thingmodsecp->ceilingheight)
+              : (thing_iz >= thingmodsecp->ceilingheight)
               )
               return;
       }
@@ -3962,9 +3978,9 @@ static void HWR_ProjectSprite(mobj_t * thing)
 
     // set top/bottom coords
 #ifdef FEET_IN_GROUND_TOPOFFSET_FIX
-    vis->ty = FIXED_TO_FLOAT( thing->z + fig_topoffset ) - gr_viewz;
+    vis->ty = FIXED_TO_FLOAT( thing_iz + fig_topoffset ) - gr_viewz;
 #else
-    vis->ty = FIXED_TO_FLOAT( thing->z + sprlump->topoffset ) - gr_viewz;
+    vis->ty = FIXED_TO_FLOAT( thing_iz + sprlump->topoffset ) - gr_viewz;
 #endif
 
     //CONS_Printf("------------------\nH: sprite  : %d\nH: frame   : %x\nH: type    : %d\nH: sname   : %s\n\n",

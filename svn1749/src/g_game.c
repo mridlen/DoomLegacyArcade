@@ -201,6 +201,9 @@
 #include "t_script.h"
 
 #include "b_game.h"	//added by AC for acbot
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 
 
@@ -1030,6 +1033,11 @@ angle_t G_ClipAimingPitch(angle_t aiming)
 //  [0]=main player, [1]=splitscreen player
 angle_t localaiming[MAXSPLITSCREENPLAYERS];
 angle_t localangle[MAXSPLITSCREENPLAYERS];
+#ifdef THINKER_INTERPOLATIONS
+// [Arcade] Uncapped framerate: the values above as the tic began.
+angle_t prev_localangle[MAXSPLITSCREENPLAYERS];
+angle_t prev_localaiming[MAXSPLITSCREENPLAYERS];
+#endif
 
 //added:06-02-98: mouseaiming (looking up/down with the mouse or keyboard)
 #define KB_LOOKSPEED    (1<<25)
@@ -1480,6 +1488,15 @@ void G_BuildTiccmd(ticcmd_t* cmd, int realtics, byte pind)
 
     pitch = G_ClipAimingPitch(pitch); // clip pitch to a reasonable sector
     cmd->aiming = pitch >> 16; // to short
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: the view angle this tic started at.
+    // R_SetupFrame takes a live player's view from localangle rather than
+    // from the mobj, and this is the one place localangle advances -- once
+    // per tic, per panel, which is exactly the history the renderer needs.
+    prev_localangle[pind] = localangle[pind];
+    prev_localaiming[pind] = localaiming[pind];
+#endif
 
     // Generated cmd are absolute angles
     localangle[pind] += (cmd->angleturn<<16);

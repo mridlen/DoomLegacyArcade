@@ -95,6 +95,9 @@
 #include "r_local.h"
 #include "r_splats.h"   //faB(21jan):testing
 #include "r_sky.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 #include "st_stuff.h"
 #include "p_local.h"
 #include "keys.h"
@@ -1342,9 +1345,16 @@ void R_SetupFrame( byte pind, player_t* player )
         if (!viewmobj)
             I_Error("no mobj for the camera");
 #endif
+#ifdef THINKER_INTERPOLATIONS
+        viewz = R_Interp_Fixed( viewmobj->PrevZ, viewmobj->z );
+        viewangle = R_Interp_View_Angle( viewmobj->PrevAngle, viewmobj->angle );
+#else
         viewz = viewmobj->z;
-        aimingangle=script_camera.aiming;
         viewangle = viewmobj->angle;
+#endif
+        // script_camera.aiming is set by FraggleScript, not per tic, so it
+        // has no history to interpolate from.
+        aimingangle=script_camera.aiming;
         ST_Palette0();  // Doom and Heretic
         fixedcolormap_num = camera.fixedcolormap;
     }
@@ -1357,9 +1367,16 @@ void R_SetupFrame( byte pind, player_t* player )
         if (!camera.mo)  // because LoadLevel removes camera
             P_ResetCamera(player);  // reset the camera
         viewmobj = camera.mo;
+#ifdef THINKER_INTERPOLATIONS
+        viewz = R_Interp_Fixed( viewmobj->PrevZ, viewmobj->z )
+                + (viewmobj->height>>1);
+        aimingangle = R_Interp_View_Angle( camera.prev_aiming, camera.aiming );
+        viewangle = R_Interp_View_Angle( viewmobj->PrevAngle, viewmobj->angle );
+#else
         viewz = viewmobj->z + (viewmobj->height>>1);
         aimingangle=camera.aiming;
         viewangle = viewmobj->angle;
+#endif
 #if 1
         // Player cam does not see player status palette.
         ST_Palette0();   // Doom and Heretic
@@ -1377,7 +1394,13 @@ void R_SetupFrame( byte pind, player_t* player )
     {
         // player as viewer
         // use the player's eyes view
+#ifdef THINKER_INTERPOLATIONS
+        // player->viewz carries the head bob and the crouch/step easing as
+        // well as the floor height, all of which move every tic.
+        viewz = R_Interp_Fixed( player->prev_viewz, player->viewz );
+#else
         viewz = player->viewz;
+#endif
 #ifdef CLIENTPREDICTION2
         if( demoplayback || !player->spirit)
         {
@@ -1397,13 +1420,27 @@ void R_SetupFrame( byte pind, player_t* player )
             ST_doPaletteStuff( player );
         fixedcolormap_num = player->fixedcolormap;
 
+#ifdef THINKER_INTERPOLATIONS
+        aimingangle = R_Interp_View_Angle( player->prev_aiming, player->aiming );
+        viewangle = R_Interp_View_Angle( viewmobj->PrevAngle, viewmobj->angle )
+                    + viewangleoffset;
+#else
         aimingangle=player->aiming;
         viewangle = viewmobj->angle+viewangleoffset;
+#endif
 
         if(!demoplayback && player->playerstate!=PST_DEAD && !cl_drone)
         {
+#ifdef THINKER_INTERPOLATIONS
+            // WARNING : camera use this
+            viewangle = R_Interp_View_Angle( prev_localangle[pind],
+                                             localangle[pind] );
+            aimingangle = R_Interp_View_Angle( prev_localaiming[pind],
+                                               localaiming[pind] );
+#else
             viewangle = localangle[pind]; // WARNING : camera use this
             aimingangle=localaiming[pind];
+#endif
         }
 
 #ifdef ENABLE_TIRED_RUN
@@ -1427,8 +1464,33 @@ void R_SetupFrame( byte pind, player_t* player )
     if (!viewmobj)
          I_Error("R_Setupframe : viewmobj null (player %d)",player-players);
 #endif
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] The view is now taken from a *different* thing than it was
+    // last frame: the player respawned, the chase camera came on or off, or
+    // a spectator switched who they are watching.  There is no step between
+    // the old thing's position and the new one -- interpolating it flings
+    // the camera across the level -- so draw this frame whole.
+    {
+        static mobj_t * last_viewmobj[MAXSPLITSCREENPLAYERS];
+
+        if( (pind < MAXSPLITSCREENPLAYERS) && (last_viewmobj[pind] != viewmobj) )
+        {
+            last_viewmobj[pind] = viewmobj;
+            R_Interp_Reset_View();
+        }
+    }
+#endif
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Whichever of the three branches above chose viewmobj -- the
+    // player, the chase camera's own mobj, or a FraggleScript camera -- it
+    // is a mobj and carries its own history.
+    viewx = R_Interp_Fixed( viewmobj->PrevX, viewmobj->x );
+    viewy = R_Interp_Fixed( viewmobj->PrevY, viewmobj->y );
+#else
     viewx = viewmobj->x;
     viewy = viewmobj->y;
+#endif
 
     viewsin = sine_ANG(viewangle);
     viewcos = cosine_ANG(viewangle);
@@ -1782,6 +1844,9 @@ static
 consvar_t * engine_client_cvar_list[] =
 {
    &cv_chasecam,
+#ifdef THINKER_INTERPOLATIONS
+   &cv_uncapped,
+#endif
    &cv_cam_dist,
    &cv_cam_height,
    &cv_cam_speed,

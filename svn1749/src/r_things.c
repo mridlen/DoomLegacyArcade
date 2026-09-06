@@ -144,6 +144,9 @@
 #include "m_swap.h"
 #include "m_random.h"
 #include "infoext.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
   // remap_sprite
 
 
@@ -1666,9 +1669,28 @@ static void R_ProjectSprite (mobj_t* thing)
     boolean	        thing_has_model;  // has a model, such as water
 
 
+    // [Arcade] Uncapped framerate: where this thing is *drawn*, which
+    // between tics is part way along the step it has already taken.  The
+    // whole of this function works from these rather than from thing->x/y/z
+    // -- the projection, the angle it is seen from, the top and bottom used
+    // for clipping and the water checks all have to agree, or a sprite is
+    // drawn at one position and clipped at another.
+    //
+    // The simulation is never read through these: the sector the thing is
+    // in, and everything the play code does, still uses thing->x/y/z.
+#ifdef THINKER_INTERPOLATIONS
+    fixed_t  thing_ix = R_Interp_Fixed( thing->PrevX, thing->x );
+    fixed_t  thing_iy = R_Interp_Fixed( thing->PrevY, thing->y );
+    fixed_t  thing_iz = R_Interp_Fixed( thing->PrevZ, thing->z );
+#else
+    fixed_t  thing_ix = thing->x;
+    fixed_t  thing_iy = thing->y;
+    fixed_t  thing_iz = thing->z;
+#endif
+
     // transform the origin point
-    tr_x = thing->x - viewx;
-    tr_y = thing->y - viewy;
+    tr_x = thing_ix - viewx;
+    tr_y = thing_iy - viewy;
 
     tz = FixedMul(tr_x,viewcos) + FixedMul(tr_y,viewsin);
 
@@ -1730,7 +1752,7 @@ static void R_ProjectSprite (mobj_t* thing)
     else
     {
         // choose a different rotation based on player view
-        ang = R_PointToAngle(thing->x, thing->y);       // uses viewx,viewy
+        ang = R_PointToAngle(thing_ix, thing_iy);       // uses viewx,viewy
 
         if( sprframe->rotation_pattern == SRP_8)
         {
@@ -1808,18 +1830,18 @@ static void R_ProjectSprite (mobj_t* thing)
         // world coord of sprite (feet or cut), may be higher or lower
         fixed_t gz_topoffset = height_varied( thing, sprlump->topoffset );
         fixed_t gz_height = height_varied( thing, sprlump->height );
-        gz_top = thing->z + gz_topoffset;
+        gz_top = thing_iz + gz_topoffset;
         gz_bot = gz_top - gz_height;
         draw_yscale = height_varied( thing, yscale );
     }
     else
     {
-        gz_top = thing->z + sprlump->topoffset;  // world coord of sprite top (head or cut)
+        gz_top = thing_iz + sprlump->topoffset;  // world coord of sprite top (head or cut)
         gz_bot = gz_top - sprlump->height;  // world coord of sprite bot (feet or cut)
     }
     fixed_t texturemid = gz_top - viewz;
 #else
-    gz_top = thing->z + sprlump->topoffset;  // world coord of sprite top (head or cut)
+    gz_top = thing_iz + sprlump->topoffset;  // world coord of sprite top (head or cut)
 #endif
 
     thingsector = thing->subsector->sector;	 // [WDJ] 11/14/2009
@@ -1858,7 +1880,7 @@ static void R_ProjectSprite (mobj_t* thing)
           // They both should be the same or else things do not
           // appear when just underwater.
           if( viewer_underwater ?
-              (thing->z >= thingmodsecp->floorheight)
+              (thing_iz >= thingmodsecp->floorheight)
               : (gz_top < thingmodsecp->floorheight)
               )
               return;
@@ -1867,7 +1889,7 @@ static void R_ProjectSprite (mobj_t* thing)
           // appear when just over ceiling.
           if( viewer_overceiling ?
               ((gz_top < thingmodsecp->ceilingheight) && (viewz > thingmodsecp->ceilingheight))
-              : (thing->z >= thingmodsecp->ceilingheight)
+              : (thing_iz >= thingmodsecp->ceilingheight)
               )
               return;
       }
@@ -1897,11 +1919,11 @@ static void R_ProjectSprite (mobj_t* thing)
     vis->mobj_flags = (thing->flags & MF_SHADOW) | (thing->tflags & MFT_TRANSLATION6);
     vis->mobj = thing;
     // world coord
-    vis->mobj_x = thing->x;
-    vis->mobj_y = thing->y;
+    vis->mobj_x = thing_ix;
+    vis->mobj_y = thing_iy;
  //   vis->mobj_height = thing->height;  // unused
-    vis->mobj_bot_z = thing->z;  // world coord of thing bot (feet or cut)
-    vis->mobj_top_z = thing->z + thing->height;  // world coord of thing top (head or cut)
+    vis->mobj_bot_z = thing_iz;  // world coord of thing bot (feet or cut)
+    vis->mobj_top_z = thing_iz + thing->height;  // world coord of thing top (head or cut)
     vis->gz_top = gz_top;  // word coord of sprite top (head or cut)
 #ifdef MONSTER_VARY
     vis->gz_bot = gz_bot;  // world coord of sprite bot (feet or cut)
@@ -1912,7 +1934,7 @@ static void R_ProjectSprite (mobj_t* thing)
 #endif
     // foot clipping
     if(thing->flags2&MF2_FEETARECLIPPED
-       && thing->z <= thingsector->floorheight)
+       && thing_iz <= thingsector->floorheight)
     { 
          vis->texturemid -= 10*FRACUNIT;
     }

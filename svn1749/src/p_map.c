@@ -100,6 +100,9 @@
   //faB: testing
 
 #include "z_zone.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
   //SoM: 3/15/2000
 
 
@@ -510,6 +513,12 @@ boolean P_TeleportMove( mobj_t* thing, fixed_t x, fixed_t y, byte stomp )
     thing->y = y;
 
     P_SetThingPosition (thing);
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] A teleport is not a movement.  Interpolating it draws the
+    // thing sliding across the whole level between the two pads.
+    R_Interp_Reset_Mobj( thing );
+#endif
 
     return true;
 }
@@ -2275,7 +2284,16 @@ boolean P_ThingHeightClip (mobj_t* thing)
 {
     // [WDJ] 10/12/2010 Floating monsters were not crushable because of added checks.
     // Check for crush first, and then modify if needed.
-    boolean onfloor = (thing->z <= thing->floorz);
+    boolean onfloor;
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] A lift or a crusher moves the things it carries from its own
+    // thinker, which can run before theirs.  Capture here or the thing's own
+    // think finds the position already changed and it does not interpolate.
+    R_Interp_Capture_Mobj( thing );
+#endif
+
+    onfloor = (thing->z <= thing->floorz);
     boolean noncrush = 1;
 
     P_CheckPosition (thing, thing->x, thing->y);

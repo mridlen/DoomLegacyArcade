@@ -71,6 +71,9 @@
 #include "m_random.h"
 
 #include "hardware/hw3sound.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 
 // Index of the special effects (INVUL inverse) map.
@@ -953,6 +956,11 @@ void P_MoveChaseCamera (player_t *player)
 
     angle = G_ClipAimingPitch(angle);
     dist = camera.aiming - angle;
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: the chase camera eases towards the aim
+    // point, so its pitch changes every tic and needs its own history.
+    camera.prev_aiming = camera.aiming;
+#endif
     camera.aiming -= (dist>>3);
 }
 
@@ -1165,6 +1173,23 @@ void P_PlayerThink (player_t* player)
 
 #ifdef PARANOIA
     if(!pmo) I_Error("p_playerthink : players[%d].mo == NULL",player-players);
+#endif
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: where this tic's view starts from.  Taken
+    // before anything in this function moves the player, so it is the view
+    // as the previous tic left it.
+    player->prev_viewz = player->viewz;
+    player->prev_aiming = player->aiming;
+
+    // And the mobj, for the same reason.  P_PlayerThink runs *before*
+    // P_RunThinkers and sets pmo->angle from the ticcmd, so by the time
+    // P_MobjThinker's own capture runs the turn has already happened and
+    // PrevAngle would equal angle -- the view position interpolated but the
+    // view direction still snapped 35 times a second, which is the more
+    // visible half.  Capture is idempotent within a tic, so the later call
+    // in P_MobjThinker becomes a no-op rather than a conflict.
+    R_Interp_Capture_Mobj( pmo );
 #endif
 
     // fixme: do this in the cheat code

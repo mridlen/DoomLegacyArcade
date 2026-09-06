@@ -223,6 +223,11 @@ angle_t G_ClipAimingPitch(angle_t aiming);
 
 // [0]=main player [1]=splitscreen player
 extern angle_t localangle[MAXSPLITSCREENPLAYERS];
+#ifdef THINKER_INTERPOLATIONS
+// [Arcade] Uncapped framerate: localangle/localaiming as the tic began.
+extern angle_t prev_localangle[MAXSPLITSCREENPLAYERS];
+extern angle_t prev_localaiming[MAXSPLITSCREENPLAYERS];
+#endif
 extern angle_t localaiming[MAXSPLITSCREENPLAYERS]; // should be a angle_t but signed
 
 extern int extramovefactor;		// Extra speed to move at

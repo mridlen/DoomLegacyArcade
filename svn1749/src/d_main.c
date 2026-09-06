@@ -220,6 +220,9 @@
 #include "dstrings.h"
 
 #include "f_wipe.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 #include "f_finale.h"
 
 #include "g_game.h"
@@ -841,6 +844,16 @@ void D_Display(void)
     if (nodrawers)
         return; // for comparative timing / profiling
 
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: how far through the current tic this
+    // frame falls.  Decided once, here, so that every view drawn this frame
+    // -- all four of them in a full cabinet -- agrees, and so that the
+    // sectors interpolated by R_Interp_Frame_Begin below match the sprites
+    // and the camera.  Comes back as FRACUNIT (i.e. no interpolation at all)
+    // whenever the feature is off or the world is not running.
+    R_Interp_Set_Frac( I_GetTimeFrac() );
+#endif
+
     wipe = false;
     redrawsbar = false;
     wipe_done = false;
@@ -968,6 +981,15 @@ void D_Display(void)
 
         // Level map play display
         // draw the view directly
+#ifdef THINKER_INTERPOLATIONS
+        // [Arcade] Uncapped framerate.  Between these two calls the moving
+        // sectors and scrolling sides hold *interpolated* values rather than
+        // the simulation's, so that the plane and wall drawers need to know
+        // nothing about it.  Nothing but rendering may happen in here, and
+        // the two must always pair -- leaving interpolated heights in place
+        // would corrupt the next tic's collision and sight checks.
+        R_Interp_Frame_Begin();
+#endif
         if (!automapactive)
         {
             // see if the border needs to be updated to the screen
@@ -1102,6 +1124,9 @@ void D_Display(void)
                     R_Set_View_Window( 0 );
             }
         }
+#ifdef THINKER_INTERPOLATIONS
+        R_Interp_Frame_End();   // pairs with R_Interp_Frame_Begin above
+#endif
 
         HU_Drawer();
 
@@ -1358,19 +1383,43 @@ void D_DoomLoop(void)
 
         // process tics (but maybe not if realtic==0)
         TryRunTics(realtics);
+        {
 #ifdef CLIENTPREDICTION2
-        if (singletics || spirit_update)
+        boolean  tic_advanced = (singletics || spirit_update);
 #else
-        if (singletics || gametic > rendergametic)
+        boolean  tic_advanced = (singletics || gametic > rendergametic);
 #endif
+        boolean  draw_now = tic_advanced;
+
+#ifdef THINKER_INTERPOLATIONS
+        // [Arcade] Uncapped framerate: also draw on the passes that did NOT
+        // advance a tic.  Such a frame redraws the same simulation state
+        // interpolated further through the tic, so this buys smoothness with
+        // render time and nothing else -- TryRunTics above is untouched and
+        // is still the only thing that advances the game.
+        //
+        // Not under singletics (which is one tic per frame by definition) and
+        // not for a dedicated server, which has nothing to draw.
+        if( cv_uncapped.value && !singletics && !dedicated )
+            draw_now = true;
+#endif
+
+        if( tic_advanced )
         {
             rendergametic = gametic;
             rendertimeout = entertic + TICRATE / 17;
+        }
 
+        if( draw_now )
+        {
             if( ! dedicated )
             {
                 //added:16-01-98:consoleplayer -> displayplayer (hear sounds from viewpoint)
-                S_UpdateSounds();   // move positional sounds
+                // [Arcade] Only when a tic actually ran.  The positional
+                // sound update is tic-paced work, and calling it several
+                // times per tic is repeated effort, not finer sound.
+                if( tic_advanced )
+                    S_UpdateSounds();   // move positional sounds
                 // Update display, next frame, with current state.
                 D_Display();
             }
@@ -1384,6 +1433,7 @@ void D_DoomLoop(void)
             {
                 D_Display();
             }
+        }
         }
 
         if( ! dedicated )

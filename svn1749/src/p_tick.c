@@ -45,6 +45,9 @@
 #include "p_local.h"
 #include "z_zone.h"
 #include "t_script.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 extern uint16_t teleport_delay;  // teleport tick
 
@@ -123,6 +126,13 @@ void P_AddThinker (thinker_t* thinker)
 //
 void P_RemoveThinker (thinker_t* thinker)
 {
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Before the function is overwritten below -- once it reads
+    // TFI_RemoveThinker there is no way left to tell what this thinker was
+    // moving, and the registry would keep a slot pointing at a dead mover.
+    R_StopInterpolationIfNeeded( thinker );
+#endif
+
     // Setup an action function that does removal.
     thinker->function = TFI_RemoveThinker;
 
@@ -410,6 +420,7 @@ void P_Ticker (void)
 #ifdef THINKER_INTERPOLATIONS
     R_UpdateInterpolations();
 #endif
+
 
     // From PrBoom, EternityEngine, may affect demo sync.
     // Not if this is an intermission screen.

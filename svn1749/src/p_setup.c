@@ -172,6 +172,9 @@
 #include "r_data.h"
 #include "r_things.h"
 #include "r_sky.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+#endif
 
 #include "s_sound.h"
 #include "st_stuff.h"
@@ -2850,6 +2853,14 @@ boolean P_SetupLevel (int      to_episode,
     // set up world state
     P_SpawnSpecials ();
     P_Init_BrainTarget();
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] The interpolation registry points at the *previous* level's
+    // sectors and sides, which have just been freed.  Clear it and re-scan.
+    // After P_SpawnSpecials, so a level that starts with a door already
+    // moving or a scroller running is picked up straight away.
+    R_Interp_Level_Init();
+#endif
 
     //BP: spawnplayers after all structures are inititialized
     for (i=0 ; i<MAXPLAYERS ; i++)

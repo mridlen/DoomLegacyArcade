@@ -395,6 +395,11 @@ typedef struct sector_s
     //SoM: 3/6/2000: Start boom extra stuff
     // thinker_t for reversable actions
     // make thinkers on floors, ceilings, lighting, independent of one another
+    // [Arcade] Uncapped framerate: which slot of the interpolation registry
+    // covers this sector's floor, ceiling, floor panning and ceiling panning.
+    // Index+1, 0 = not moving.  See r_fps.c.
+    int    interp_slot[4];
+
     void * floordata;
                      // ZMalloc PU_LEVSPEC, in EV_DoFloor
     void * ceilingdata;
@@ -505,6 +510,10 @@ typedef struct
 
     // Sector the SideDef is facing.
     sector_t  * sector;
+
+    // [Arcade] Uncapped framerate: interpolation registry slot for this
+    // side's texture panning.  Index+1, 0 = not scrolling.  See r_fps.c.
+    int         interp_slot;
 } side_t;
 
 
