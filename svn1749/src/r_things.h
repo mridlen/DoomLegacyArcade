@@ -88,9 +88,9 @@ extern R_TLS int16_t       *  dm_ceilingclip;
 
 extern R_TLS fixed_t          dm_yscale;  // world to fixed_t screen coord
 // drawn patch, in fixed_t screen coord
-extern fixed_t          dm_top_patch, dm_bottom_patch;
+extern R_TLS fixed_t          dm_top_patch, dm_bottom_patch;
 // draw window clipping, in fixed_t screen coord
-extern fixed_t          dm_windowtop, dm_windowbottom;
+extern R_TLS fixed_t          dm_windowtop, dm_windowbottom;
 extern R_TLS fixed_t          dm_texturemid;
 
 extern fixed_t          pspritescale;

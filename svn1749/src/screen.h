@@ -224,7 +224,7 @@ extern byte     shift_r, shift_g, shift_b;
 // color mode dependent drawer function pointers
 // ---------------------------------------------
 
-extern R_TLS void     (*skycolfunc) (void);
+extern void     (*skycolfunc) (void);   // [Arcade] setup value, NOT R_TLS
 extern R_TLS void     (*colfunc) (void);
 #ifdef HORIZONTALDRAW
 extern void     (*hcolfunc) (void);    //Fab 17-06-98

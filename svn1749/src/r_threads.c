@@ -84,14 +84,19 @@ static SDL_mutex *  cache_mutex = NULL;
 volatile boolean  r_threads_active = false;
 
 
+// Relaxed atomics: the ordering that matters comes from the semaphores, but
+// the flag itself is read by the workers while the main thread sets it, so it
+// has to be a defined access rather than a plain one.
 void  R_Cache_Lock( void )
 {
-    if( r_threads_active )  SDL_LockMutex( cache_mutex );
+    if( __atomic_load_n( &r_threads_active, __ATOMIC_RELAXED ) )
+        SDL_LockMutex( cache_mutex );
 }
 
 void  R_Cache_Unlock( void )
 {
-    if( r_threads_active )  SDL_UnlockMutex( cache_mutex );
+    if( __atomic_load_n( &r_threads_active, __ATOMIC_RELAXED ) )
+        SDL_UnlockMutex( cache_mutex );
 }
 
 // Which thread we are on.  0 is the main thread, which is what every
@@ -238,7 +243,7 @@ boolean  R_Thread_Submit_View( byte vind, player_t * vpl )
         worker[i].vpl  = vpl;
         worker[i].busy = true;
         num_submitted++;
-        r_threads_active = true;   // before the post, so the worker sees it
+        __atomic_store_n( &r_threads_active, true, __ATOMIC_RELAXED );
         SDL_SemPost( worker[i].go );
         return true;
     }
@@ -257,7 +262,7 @@ void  R_Threads_Wait( void )
     }
     for( i = 0; i < num_workers; i++ )
         worker[i].busy = false;
-    r_threads_active = false;   // after the join: no worker is running now
+    __atomic_store_n( &r_threads_active, false, __ATOMIC_RELAXED );
 }
 
 #endif  // RENDER_THREADS

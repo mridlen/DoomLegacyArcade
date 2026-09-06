@@ -15,6 +15,9 @@
 #                                   (a clean is also forced automatically when a
 #                                    header is newer than the existing objects)
 #   ./tools/build.sh --debug         debug build, into svn1749/debug/bin
+#   ./tools/build.sh --tsan          ThreadSanitizer build, into svn1749/tsan/bin
+#                                   (needs libtsan; only for chasing render-thread
+#                                    races -- see docs/arcade/render-threads.md)
 #   ./tools/build.sh --jobs N        parallel compile jobs (default: all cores)
 #   ./tools/build.sh --arch FLAG     override the -march flag ('none' for no flag)
 #
@@ -47,6 +50,7 @@ do_install_deps=0
 do_reconfigure=0
 do_clean=0
 do_debug=0
+do_tsan=0
 jobs=""
 arch_override=""      # set by --arch; empty means "detect from this CPU"
 
@@ -57,6 +61,7 @@ while [ $# -gt 0 ]; do
       --reconfigure)   do_reconfigure=1 ;;
       --clean)         do_clean=1 ;;
       --debug)         do_debug=1 ;;
+      --tsan)          do_tsan=1 ;;
       --jobs)          shift; jobs="${1:-}" ;;
       --jobs=*)        jobs="${1#--jobs=}" ;;
       --arch)          shift; arch_override="${1:-}"; do_reconfigure=1 ;;
@@ -446,7 +451,29 @@ MAKE=make
 have_cmd gmake && [ "$os_family" = freebsd ] && MAKE=gmake
 
 build_args=""
-if [ "$do_debug" = 1 ]; then
+if [ "$do_tsan" = 1 ]; then
+    # ThreadSanitizer build, in its own tree so it never replaces the real
+    # binary.  Not a normal build and not a dependency of one: libtsan is
+    # wanted only by whoever is chasing a render-thread race, which is why it
+    # is not in the dependency check above.  The Pi never needs it.
+    build_args="BUILD=tsan"
+
+    mkdir -p "$build_root/tsan"
+    sed 's/^ENV_CFLAGS=.*/ENV_CFLAGS=-std=gnu17 -g -fsanitize=thread -fno-omit-frame-pointer/' \
+        "$build_root/make_options" > "$build_root/tsan/make_options"
+
+    if ! probe_link "ThreadSanitizer (libtsan)" \
+            "int main(void){return 0;}" "-fsanitize=thread"; then
+        say ""
+        case "$os_family" in
+          fedora)  say "  install it with:  sudo dnf install libtsan" ;;
+          debian)  say "  install it with:  sudo apt install libtsan0" ;;
+          arch)    say "  libtsan ships with gcc on Arch" ;;
+          *)       say "  install your toolchain's ThreadSanitizer runtime (libtsan)" ;;
+        esac
+        die "--tsan needs the ThreadSanitizer runtime, which is not installed."
+    fi
+elif [ "$do_debug" = 1 ]; then
     build_args="DEBUG=1 BUILD=debug"
 
     # BUILD=<dir> looks for make_options *inside that directory*
@@ -484,6 +511,7 @@ fi
 # --------------------------------------------------------------------------
 objs_dir="$build_root/objs"
 [ "$do_debug" = 0 ] || objs_dir="$build_root/debug/objs"
+[ "$do_tsan" = 0 ]  || objs_dir="$build_root/tsan/objs"
 
 if [ "$do_clean" = 0 ] && [ -d "$objs_dir" ]; then
     # ls -t is newest first, so the last line is the oldest object.
@@ -512,7 +540,8 @@ step "Building (${jobs} jobs)"
 
 if [ "$do_clean" = 1 ]; then
     say "  cleaning"
-    ( cd "$src_dir" && $MAKE clean ) >/dev/null 2>&1 || true
+    # shellcheck disable=SC2086
+    ( cd "$src_dir" && $MAKE clean $build_args ) >/dev/null 2>&1 || true
 fi
 
 # `make depend` must run serially before any parallel build.  Every ../dep/*.dep
@@ -538,6 +567,7 @@ fi
 # --------------------------------------------------------------------------
 binary="$build_root/bin/doomlegacyarcade"
 [ "$do_debug" = 0 ] || binary="$build_root/debug/bin/doomlegacyarcade"
+[ "$do_tsan" = 0 ]  || binary="$build_root/tsan/bin/doomlegacyarcade"
 
 step "Done"
 if [ -x "$binary" ]; then

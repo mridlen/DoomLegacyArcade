@@ -1068,6 +1068,13 @@ void D_Display(void)
                 }
             }
 
+            // [Arcade] Both of these are whole-screen state that every view
+            // reads or draws through, so they must settle before any view
+            // starts.  Inside R_SetupFrame, where they used to live, they ran
+            // once per view -- on four threads at once.
+            R_Update_Chase_Camera( displayplayer_ptr );
+            R_Update_View_Palette( displayplayer_ptr );
+
             // [Arcade] Swap in the rebuilt BSP for the whole frame, on this
             // thread only.  Was done per view inside R_RenderPlayerView; it
             // cannot be, once views are drawn on several threads, because the
@@ -1170,6 +1177,12 @@ void D_Display(void)
                 // rendering runs again.  The simulation walks these globals.
                 if( rendermode == render_soft )
                     R_Use_Play_BSP();
+
+                // [Arcade] The network was not serviced while the workers were
+                // drawing (see R_NetUpdate_Main), so do it now that they are
+                // joined and it is safe for G_BuildTiccmd to write the view
+                // state again.
+                NetUpdate ();
 
                 // [Arcade] Black out every cell no player claimed.
                 //

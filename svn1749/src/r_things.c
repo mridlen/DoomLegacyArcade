@@ -1263,10 +1263,10 @@ R_TLS int16_t      *  dm_ceilingclip;
 
 R_TLS fixed_t         dm_yscale;  // world to fixed_t screen coord
 // draw masked column top and bottom, in fixed_t screen coord.
-fixed_t         dm_top_patch, dm_bottom_patch;
+R_TLS fixed_t   dm_top_patch, dm_bottom_patch;
 // window clipping in fixed_t screen coord., set to FIXED_MAX to disable
 // to draw, require dm_windowtop < dm_windowbottom
-fixed_t         dm_windowtop, dm_windowbottom;
+R_TLS fixed_t   dm_windowtop, dm_windowbottom;
 // for masked draw of patch, to form dc_texturemid
 R_TLS fixed_t         dm_texturemid;
 
@@ -1990,7 +1990,7 @@ static void R_ProjectSprite (mobj_t* thing)
     vis->sector = thingsector;
     vis->extra_colormap = (ff_light)?
         ff_light->extra_colormap
-        : thingsector->extra_colormap;
+        : R_SECTOR_COLORMAP( thingsector );
 
 //
 // determine the colormap (lightlevel & special effects)
@@ -2358,7 +2358,7 @@ void R_DrawPSprite (pspdef_t* psp)
       vis->colormap = spritelights[MAXLIGHTSCALE-1];
     }
     else
-      vis->extra_colormap = viewer_sector->extra_colormap;
+      vis->extra_colormap = R_SECTOR_COLORMAP(viewer_sector);
 
     R_DrawVisSprite (vis, vis->x1, vis->x2);
 }
@@ -2660,8 +2660,12 @@ void R_Release_Corona( void )
 
 // corona state
 R_TLS spr_light_t  * corona_lsp = NULL;
-fixed_t   corona_x0, corona_x1, corona_x2;
-fixed_t   corona_xscale, corona_yscale;
+// [Arcade] Per-sprite corona geometry -- thread-local.  Shared, a second
+// view overwrote these between one view computing them and drawing with
+// them, which put texturecolumn out of range and crashed in
+// R_DrawMaskedColumn on a column pointer built from garbage.
+R_TLS fixed_t   corona_x0, corona_x1, corona_x2;
+R_TLS fixed_t   corona_xscale, corona_yscale;
 R_TLS float     corona_size;
 R_TLS byte      corona_alpha;
 R_TLS byte      corona_bright; // used by software draw to brighten active light sources

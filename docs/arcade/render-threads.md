@@ -8,38 +8,34 @@ The cabinet draws one viewport per panel — up to four a frame — and each wri
 cell of the screen. They share nothing but read-only level data, so they can be drawn at the
 same time on different cores. Cvar **`render_threads`**, values `Auto`, `1`, `2`, `3`, `4`.
 
-## STATUS: NOT FINISHED. Do not raise `render_threads` above 1.
+## STATUS: still opt-in. Do not raise `render_threads` above 1 yet.
 
-**Default `1`, which is the stock serial renderer, and it must stay there for now.**
+**Default `1`, the stock serial renderer, and it must stay there for now.**
 
-The machinery works and is fast — 3.4x on four views, numbers below — and the thread-local
-split is correct, which is *proven*, not assumed (see the one-at-a-time bisection below: every
-view drawn on a worker, one at a time, reproduces the serial screen exactly, bit for bit).
+Where it stands after a ThreadSanitizer pass:
 
-But with the views actually running **concurrently**, the rendered screen still diverges from
-the serial one on maps with movement in view, and three of seven test maps still crash. Six
-separate races were found and fixed getting this far, and each fix uncovered another; every one
-so far has been the same shape — **a cache filled lazily the first time something is drawn**.
-There is at least one more.
-
-The next step is not more guessing. It is ThreadSanitizer, which is not installed on the
-development machine — `sudo dnf install libtsan`, then build with
-`ENV_CFLAGS=-std=gnu17 -g -fsanitize=thread -fno-omit-frame-pointer` into a separate `BUILD=`
-directory and run headless with `render_threads 4`. That names the racing variable and both
-stacks directly, instead of one crash per afternoon.
-
-State of the seven-map sweep as of writing (serial vs threaded, screen checksums at fixed
-gametics):
-
-| map | result |
+| | |
 | --- | --- |
-| doom2 MAP07 | identical, repeatedly (static scene) |
-| doom2 MAP01, doomu E1M1, doomu E2M4 | diverges |
-| doom2 MAP11, MAP15, MAP29 | threaded run crashes |
+| Crashes | **none.** Every map that used to crash is clean, coronas included. |
+| doom2 MAP01, MAP07 | threaded output is **bit identical** to serial, repeatedly |
+| doom2 MAP11, MAP15, MAP29 | no crash, but the picture still differs from serial, and differs run to run |
+| ThreadSanitizer | **0 races involving a render worker** on MAP01 and on MAP11 |
+| Serial path | unchanged, and measures the same as before the feature existed |
+| `make smoke` | 5/5 with the default |
 
-Because the cvar defaults to 1 and nothing reads the worker path until it is raised, this is
-safe to have in the tree. It is not safe to turn on.
+The remaining fault is on maps with sky and open space, it is timing-dependent
+(two threaded runs of MAP11 differ from each other while two serial runs are
+identical), and **ThreadSanitizer does not see it**. That is not a
+contradiction: TSan only reports interleavings it actually observes, and a
+sanitised run covers a small fraction of the frames an optimised one does. The
+next step is more TSan time on MAP11/15/29 specifically -- repeated runs, and
+longer ones -- rather than more reasoning.
 
+**`./tools/build.sh --tsan`** builds the sanitizer tree (needs `libtsan`; on
+Fedora `sudo dnf install libtsan`). It is deliberately *not* a build
+dependency -- the cabinet and the Pi never need it. It writes its own
+make_options, builds into `svn1749/tsan/bin`, leaves the real binary alone, and
+runs `make depend` serially first so the parallel-dep trap cannot bite.
 
 ## Why the software renderer only
 
@@ -214,7 +210,36 @@ on a worker but **one at a time** (submit, wait, submit, wait):
 That one experiment separated the two bugs in this feature in a single run, and it is the first
 thing to do next time.
 
-### ThreadSanitizer
+### ThreadSanitizer, and the one thing it cannot find
+
+`./tools/build.sh --tsan`, then run headless with `render_threads 4`. It named
+every race in this feature directly -- the variable and both stacks -- and took
+the count from 275 to 0 in three passes. Summarise a log by grouping on
+`Location is global '...'` plus the first in-tree frame of each *access* stack;
+do not include the thread-creation stacks or every report looks like `D_Display`.
+
+**But TSan cannot see the other half of this feature's failure mode.** Reading
+your own zeroed thread-local is not a race, so a variable that is wrongly
+`R_TLS` -- set once at setup, read by a worker as zero -- is invisible to it.
+That is what `skycolfunc` was: `R_Setup_SkyDraw` sets it at level load and on a
+video mode change, never per view, so every worker held NULL and `R_Draw_Planes`
+**jumped to address 0** the first time a view could see sky. MAP01 and MAP07
+start indoors, which is the only reason they passed while MAP11, MAP15 and
+MAP29 died.
+
+So the two tools are complements, not alternatives:
+
+- **ThreadSanitizer** finds "not marked when it should be" -- the races.
+- **The bit-for-bit screen comparison, and a crash** find "marked when it
+  should not be" -- the zeroed reads. Nothing else will.
+
+The audit worth re-running after any change: for every `R_TLS` name, does a
+*setup* function assign it? If yes and `R_SetupFrame` does not also assign it,
+the mark is wrong. **Scan `screen.c` and `r_sky.c` too** -- the renderer's state
+is not only in the six `r_*` files, and scanning only those is exactly how
+`skycolfunc` and `colfunc` were missed the first time.
+
+### ThreadSanitizer, verbatim recipe
 
 **Not yet run — `libtsan` is not installed on the development machine.** `sudo dnf install
 libtsan`, then build with `ENV_CFLAGS=-std=gnu17 -g -fsanitize=thread -fno-omit-frame-pointer`

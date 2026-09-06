@@ -120,15 +120,26 @@ angle_t  R_Interp_Angle( angle_t prev, angle_t now, fixed_t frac );
 // what lets the call sites read as plain assignments with no "is it on?"
 // branch around each one, and it is why turning the cvar off restores the
 // stock picture bit for bit rather than approximately.
+// [Arcade] rendertic_frac is read by every render thread and can be written
+// mid-frame by R_Interp_Reset_View, so the access is a relaxed atomic.  See
+// docs/arcade/render-threads.md.
+#ifdef RENDER_THREADS
+# define R_INTERP_FRAC()      __atomic_load_n( &rendertic_frac, __ATOMIC_RELAXED )
+# define R_SET_INTERP_FRAC(v) __atomic_store_n( &rendertic_frac, (v), __ATOMIC_RELAXED )
+#else
+# define R_INTERP_FRAC()      (rendertic_frac)
+# define R_SET_INTERP_FRAC(v) (rendertic_frac = (v))
+#endif
+
 static inline fixed_t  R_Interp_Fixed( fixed_t prev, fixed_t now )
 {
-    return prev + FixedMul( rendertic_frac, now - prev );
+    return prev + FixedMul( R_INTERP_FRAC(), now - prev );
 }
 
 // The same for an angle.  R_Interp_Angle( p, n, FRACUNIT ) == n likewise.
 static inline angle_t  R_Interp_View_Angle( angle_t prev, angle_t now )
 {
-    return R_Interp_Angle( prev, now, rendertic_frac );
+    return R_Interp_Angle( prev, now, R_INTERP_FRAC() );
 }
 
 #endif // R_FPS_H

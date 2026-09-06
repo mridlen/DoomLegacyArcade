@@ -767,8 +767,8 @@ static void R_DrawWallSplats (void)
         ro_colormap = fixedcolormap;
     else if( view_colormap )
         ro_colormap = view_colormap;
-    else if( frontsector->extra_colormap )  // over the whole line
-        ro_colormap = frontsector->extra_colormap->colormap;
+    else if( R_SECTOR_COLORMAP(frontsector) )  // over the whole line
+        ro_colormap = R_SECTOR_COLORMAP(frontsector)->colormap;
 
     // draw all splats from the line that touches the range of the seg
     for ( ; splat ; splat=splat->next)
@@ -1444,7 +1444,7 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
       // frontsector->numlights == 0
       if(colfunc == fogcolfunc) // Legacy Fog sheet
         vlight = frontsector->lightlevel + extralight_fog;
-      else if(frontsector->extra_colormap && frontsector->extra_colormap->fog)
+      else if(R_SECTOR_COLORMAP(frontsector) && R_SECTOR_COLORMAP(frontsector)->fog)
         vlight = frontsector->lightlevel + extralight_cm;
       else if(colfunc == transcolfunc)  // Translucent 
         vlight = 255 + orient_light;
@@ -1462,8 +1462,8 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
         ro_colormap = fixedcolormap;
       else if( view_colormap )
         ro_colormap = view_colormap;
-      else if( frontsector->extra_colormap )
-        ro_colormap = frontsector->extra_colormap->colormap;
+      else if( R_SECTOR_COLORMAP(frontsector) )
+        ro_colormap = R_SECTOR_COLORMAP(frontsector)->colormap;
     }
 
     maskedtexturecol = ds->maskedtexturecol;
@@ -1471,7 +1471,7 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
     dm_floorclip = ds->spr_bottomclip;
     dm_ceilingclip = ds->spr_topclip;
 
-    if (curline->linedef->flags & ML_DONTPEGBOTTOM)
+    if (R_LINE_FLAGS(curline->linedef) & ML_DONTPEGBOTTOM)
     {
         // highest floor
         dm_texturemid =
@@ -1825,7 +1825,7 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
       //SoM: Get correct light level!
       if(ffloor->flags & FF_FOG)
         vlight = ffloor->master->frontsector->lightlevel + extralight_fog;
-      else if(frontsector->extra_colormap && frontsector->extra_colormap->fog)
+      else if(R_SECTOR_COLORMAP(frontsector) && R_SECTOR_COLORMAP(frontsector)->fog)
         vlight = frontsector->lightlevel + extralight_cm;
       else if(colfunc == transcolfunc)
         vlight = 255 + orient_light;
@@ -1842,10 +1842,10 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
          : scalelight[vlight>>LIGHTSEGSHIFT];
 
       // colormap precedence:
-      //  fixedcolormap, ffloor FF_FOG colormap, frontsector->extra_colormap
+      //  fixedcolormap, ffloor FF_FOG colormap, R_SECTOR_COLORMAP(frontsector)
       if( !ro_extracolormap )
       {
-        ro_extracolormap = frontsector->extra_colormap;
+        ro_extracolormap = R_SECTOR_COLORMAP(frontsector);
       }
 
       if( ro_extracolormap )
@@ -1860,7 +1860,7 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
     dm_texturemid = *ffloor->topheight - viewz;
 
     offsetvalue = sides[ffloor->master->sidenum[0]].rowoffset;
-    if(curline->linedef->flags & ML_DONTPEGBOTTOM)
+    if (R_LINE_FLAGS(curline->linedef) & ML_DONTPEGBOTTOM)
       offsetvalue -= *ffloor->topheight - *ffloor->bottomheight;
 
     dm_texturemid += offsetvalue;  // R_DrawMaskedColumn sets dc_texturemid
@@ -2194,8 +2194,8 @@ void R_RenderFog( ffloor_t* fff, sector_t * intosec, lightlev_t foglight,
         ro_colormap = fixedcolormap;
     else if( view_colormap )
         ro_colormap = view_colormap;
-    else if( modelsec->extra_colormap )
-        ro_colormap = modelsec->extra_colormap->colormap;;
+    else if( R_SECTOR_COLORMAP(modelsec) )
+        ro_colormap = R_SECTOR_COLORMAP(modelsec)->colormap;;
 
     if( !fixedcolormap )
     {
@@ -2360,7 +2360,7 @@ void R_RenderSegLoop (void)
         else if( view_extracolormap )
             ro_extracolormap = view_extracolormap;
         else  // over the whole line
-            ro_extracolormap = frontsector->extra_colormap;
+            ro_extracolormap = R_SECTOR_COLORMAP( frontsector );
 
         if( ro_extracolormap )
             ro_colormap = ro_extracolormap->colormap;
@@ -2789,7 +2789,8 @@ void R_StoreWallRange( int   start, int   stop)
     linedef = curline->linedef;
 
     // mark the segment as visible for auto map
-    linedef->flags |= ML_MAPPED;
+    // [Arcade] Shared level data, written by every render thread.
+    R_LINE_SET_MAPPED( linedef );
 
     // calculate rw_distance for scale calculation
     rw_normalangle = curline->angle + ANG90;
@@ -2889,7 +2890,7 @@ void R_StoreWallRange( int   start, int   stop)
         // a single sided line is terminal, so it must mark ends
         markfloor = markceiling = true;
 
-        if (linedef->flags & ML_DONTPEGBOTTOM)
+        if (R_LINE_FLAGS(linedef) & ML_DONTPEGBOTTOM)
         {
             // tile using original texture size
             vtop = frontsector->floorheight +
@@ -3008,7 +3009,7 @@ void R_StoreWallRange( int   start, int   stop)
             || backsector->modelsec != frontsector->modelsec
             || backsector->floorlightsec != frontsector->floorlightsec
             //SoM: 4/3/2000: Check for colormaps
-            || frontsector->extra_colormap != backsector->extra_colormap
+            || R_SECTOR_COLORMAP(frontsector) != R_SECTOR_COLORMAP(backsector)
             || (frontsector->ffloors != backsector->ffloors && frontsector->tag != backsector->tag))
         {
             markfloor = true;  // backsector and frontsector floor are different
@@ -3033,7 +3034,7 @@ void R_StoreWallRange( int   start, int   stop)
             || backsector->modelsec != frontsector->modelsec
             || backsector->floorlightsec != frontsector->floorlightsec
             //SoM: 4/3/2000: Check for colormaps
-            || frontsector->extra_colormap != backsector->extra_colormap
+            || R_SECTOR_COLORMAP(frontsector) != R_SECTOR_COLORMAP(backsector)
             || (frontsector->ffloors != backsector->ffloors && frontsector->tag != backsector->tag))
         {
             markceiling = true;  // backsector and frontsector ceilings are different
@@ -3058,7 +3059,7 @@ void R_StoreWallRange( int   start, int   stop)
             toptexture = texturetranslation[sidedef->toptexture];
             top_texren = R_WallTexture_setup( toptexture );
 
-            if (linedef->flags & ML_DONTPEGTOP)
+            if (R_LINE_FLAGS(linedef) & ML_DONTPEGTOP)
             {
                 // top of texture at top
                 rw_toptexturemid = worldtop;
@@ -3081,7 +3082,7 @@ void R_StoreWallRange( int   start, int   stop)
             bottomtexture = texturetranslation[sidedef->bottomtexture];
             bottom_texren = R_WallTexture_setup( bottomtexture );
 
-            if (linedef->flags & ML_DONTPEGBOTTOM )
+            if (R_LINE_FLAGS(linedef) & ML_DONTPEGBOTTOM)
             {
                 // bottom of texture at bottom
                 // top of texture at top

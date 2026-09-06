@@ -225,6 +225,8 @@ void  R_SetupFrame( byte pind, player_t* player );
 // Called by G_Drawer.
 //  pind : player index, [0]=main player, [1]=splitscreen player
 void  R_RenderPlayerView( byte pind, player_t *player );
+void  R_Update_Chase_Camera( player_t * player );   // [Arcade]
+void  R_Update_View_Palette( player_t * player );   // [Arcade]
 
 // add commands related to engine, at game startup
 void   R_Register_EngineStuff (void);

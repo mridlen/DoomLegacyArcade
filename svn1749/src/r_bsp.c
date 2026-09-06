@@ -541,10 +541,13 @@ sector_t* R_FakeFlat(sector_t *sec, sector_t *tempsec, boolean back,
   }
 
   // colormap that this sector uses for this frame, from colormapnum.
-  if(colormapnum >= 0 && colormapnum < num_extra_colormaps)
-    sec->extra_colormap = &extra_colormaps[colormapnum];
-  else
-    sec->extra_colormap = NULL;
+  // [Arcade] Relaxed atomic stores: this caches a renderer-derived value
+  // into shared level data, and every render thread computes the same value
+  // for a given sector, so the store is benign -- but it still has to be a
+  // defined one rather than a plain race.
+  R_SET_SECTOR_COLORMAP( sec,
+      (colormapnum >= 0 && colormapnum < num_extra_colormaps)
+      ? &extra_colormaps[colormapnum] : NULL );
 
   // [WDJ] return light parameters in one place
   if (floor_lightlevel) {
@@ -682,7 +685,7 @@ void R_AddLine (seg_t*  lineseg)
         && backsector->floorlightsec == frontsector->floorlightsec
         && backsector->ceilinglightsec == frontsector->ceilinglightsec
         //SoM: 4/3/2000: Consider colormaps
-        && backsector->extra_colormap == frontsector->extra_colormap
+        && R_SECTOR_COLORMAP(backsector) == R_SECTOR_COLORMAP(frontsector)
         && ((!frontsector->ffloors && !backsector->ffloors) ||
            (frontsector->tag == backsector->tag)))
     {
@@ -872,7 +875,7 @@ void R_Subsector ( uint32_t num )
     // [WDJ] vsector is the visible sector.
     // It may be ssector, or may be a modified copy of ssector (tempsec).
 
-    floor_colormap = ceiling_colormap = vsector->extra_colormap;
+    floor_colormap = ceiling_colormap = R_SECTOR_COLORMAP( vsector );
 
     // SoM: Check and prep all 3D floors. Set the sector floor/ceiling light
     // levels and colormaps.
@@ -910,7 +913,7 @@ void R_Subsector ( uint32_t num )
       ceiling_colormap = ff_light->extra_colormap;
     }
 
-    ssector->extra_colormap = vsector->extra_colormap;
+    R_SET_SECTOR_COLORMAP( ssector, R_SECTOR_COLORMAP( vsector ) );
 
     if ((vsector->floorheight < viewz)
         || (vsector->model > SM_fluid
@@ -1150,9 +1153,9 @@ static void R_Prep3DFloors_locked(sector_t*  sector)
     modelsec = &sectors[best->model_secnum];
     mapnum = modelsec->midmap;
     if(mapnum >= 0 && mapnum < num_extra_colormaps)
-      modelsec->extra_colormap = &extra_colormaps[mapnum];
+      R_SET_SECTOR_COLORMAP( modelsec, &extra_colormaps[mapnum] );
     else
-      modelsec->extra_colormap = NULL;
+      R_SET_SECTOR_COLORMAP( modelsec, NULL );
 
     // best is highest floor less than maxheight
     if(best->flags & FF_NOSHADE)
@@ -1165,7 +1168,7 @@ static void R_Prep3DFloors_locked(sector_t*  sector)
     {
       // usual light
       ff_light->lightlevel = best->toplightlevel;
-      ff_light->extra_colormap = modelsec->extra_colormap;
+      ff_light->extra_colormap = R_SECTOR_COLORMAP(modelsec);
     }
 
     if(best->flags & FF_SLAB_SHADOW)

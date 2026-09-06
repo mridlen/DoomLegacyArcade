@@ -1315,6 +1315,52 @@ subsector_t* R_IsPointInSubsector ( fixed_t x, fixed_t y )
 // Called by R_RenderPlayerView.
 // Called by HWR_RenderPlayerView.
 //  pind : player index, [0]=main player, [1]=splitscreen player
+// [Arcade] Maintain the chase camera, once per frame, before any view is
+// drawn.  Was inside R_SetupFrame, which runs per view and now runs on four
+// threads; camera.chase is one shared struct that every view reads.  Only the
+// first player ever gets the chase camera, so doing it once for the console
+// player is what the old code meant anyway.
+//
+// Called by D_Display, before the views are dispatched.
+// [Arcade] The screen palette flash (damage red, bonus gold, radsuit
+// green), once per frame, before any view is drawn.
+//
+// Was inside R_SetupFrame, so every view set it and the last one to finish
+// won -- and with render threads it was also a race, because V_SetPalette
+// rebuilds the shared color8 translation tables that R_DrawColumn_32 and the
+// other drawers read.  One screen means one palette, so it is the console
+// player's, decided before anything draws.
+//
+// Called by D_Display, before the views are dispatched.
+void R_Update_View_Palette( player_t * player )
+{
+    if( !player || !player->mo )  return;
+
+#ifndef NO_PALETTE_FLASH
+    if( EN_heretic )
+        H_PaletteFlash( player );
+    else
+        ST_doPaletteStuff( player );
+#endif
+}
+
+
+void R_Update_Chase_Camera( player_t * player )
+{
+    if( ! player )  return;
+
+    // Chase camera setting must be maintained even with script camera running
+    if( cv_chasecam.EV )
+    {
+        // with splitplayer, only the first player will get the chase camera
+        if( !camera.chase )
+            P_ResetCamera(player);  // set chase = player
+    }
+    else
+        camera.chase = NULL;
+}
+
+
 void R_SetupFrame( byte pind, player_t* player )
 {
     int  i;
@@ -1326,15 +1372,11 @@ void R_SetupFrame( byte pind, player_t* player )
     extralight_fog = extralight >> 1;  // 1/2 for FF_FOG
     extralight_cm = extralight - (extralight>>2);  // 3/4 for colormap->fog
 
-    // Chase camera setting must be maintained even with script camera running
-    if( cv_chasecam.EV )
-    {
-        // with splitplayer, only the first player will get the chase camera
-        if( !camera.chase )
-             P_ResetCamera(player);  // set chase = player
-    }
-    else
-        camera.chase = NULL;
+    // [Arcade] The chase camera used to be maintained here, per view.  It is
+    // one shared struct and every view reads camera.chase below, so writing it
+    // from inside the render meant the main thread rewriting it while the
+    // workers read it.  R_Update_Chase_Camera() does it once, before any view
+    // starts -- see D_Display.
 
 #ifdef FRAGGLESCRIPT
     // Script camera overrides chase camera
@@ -1384,10 +1426,11 @@ void R_SetupFrame( byte pind, player_t* player )
 #else
         // Player cam sees player status palette.
         // Can now handle splitplayer flashes.
-        if( EN_heretic )
-            H_PaletteFlash( player );
-        else
-            ST_doPaletteStuff( player );
+        // [Arcade] The palette flash used to be done here, per view.  It
+        // is one global, screen-wide effect -- V_SetPalette rebuilds the
+        // color8 tables every drawer reads -- so it cannot happen while
+        // any view is being drawn.  R_Update_View_Palette() does it once,
+        // before the views are dispatched; see D_Display.
 #endif
         fixedcolormap_num = camera.fixedcolormap;
     }
@@ -1415,10 +1458,11 @@ void R_SetupFrame( byte pind, player_t* player )
 #endif
         
         // Can now handle splitplayer flashes.
-        if( EN_heretic )
-            H_PaletteFlash( player );
-        else
-            ST_doPaletteStuff( player );
+        // [Arcade] The palette flash used to be done here, per view.  It
+        // is one global, screen-wide effect -- V_SetPalette rebuilds the
+        // color8 tables every drawer reads -- so it cannot happen while
+        // any view is being drawn.  R_Update_View_Palette() does it once,
+        // before the views are dispatched; see D_Display.
         fixedcolormap_num = player->fixedcolormap;
 
 #ifdef THINKER_INTERPOLATIONS
@@ -1475,10 +1519,16 @@ void R_SetupFrame( byte pind, player_t* player )
     {
         static mobj_t * last_viewmobj[MAXSPLITSCREENPLAYERS];
 
+        // [Arcade] Main thread only.  R_Interp_Reset_View writes reset_view
+        // and rendertic_frac, which are whole-frame state every view is
+        // already drawing with -- a worker resetting them mid-frame would
+        // move the frac under the other threads.  last_viewmobj[] is indexed
+        // by pind, so it stays correct per view either way.
         if( (pind < MAXSPLITSCREENPLAYERS) && (last_viewmobj[pind] != viewmobj) )
         {
             last_viewmobj[pind] = viewmobj;
-            R_Interp_Reset_View();
+            if( ! R_On_Render_Worker() )
+                R_Interp_Reset_View();
         }
     }
 #endif
@@ -1519,9 +1569,10 @@ void R_SetupFrame( byte pind, player_t* player )
     view_fogfloor = NULL;
 
     // [WDJ] fog flag on colormap colors everything (but not very good fog)
-    if( viewer_sector->extra_colormap && viewer_sector->extra_colormap->fog )
     {
-        view_extracolormap = viewer_sector->extra_colormap;
+        extracolormap_t * vs_cm = R_SECTOR_COLORMAP( viewer_sector );
+        if( vs_cm && vs_cm->fog )
+            view_extracolormap = vs_cm;
     }
 
     // [WDJ] Because of interactions with extra colormaps, precedence must
@@ -1720,6 +1771,16 @@ extern void R_DrawFloorSplats (void);   //r_plane.c
 static void  R_NetUpdate_Main( void )
 {
     if( R_On_Render_Worker() )  return;
+#ifdef RENDER_THREADS
+    // [Arcade] ...and not while the workers are drawing either.  NetUpdate
+    // runs Local_Maketic -> G_BuildTiccmd, which WRITES localangle,
+    // localaiming, prev_localangle, prev_localaiming and rendergametic --
+    // every one of which R_SetupFrame reads on the worker threads.  Servicing
+    // the network here is only an optimisation for a slow frame; the frame is
+    // not slow when it is spread over four cores, and D_Display calls
+    // NetUpdate once the views are joined.
+    if( r_threads_active )  return;
+#endif
     NetUpdate ();
 }
 

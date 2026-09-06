@@ -120,8 +120,12 @@ static R_TLS visplane_t * vispl_free_head = NULL;
 // head on first use instead.
 static R_TLS visplane_t ** vispl_free_tail = NULL;  // addr of head or next ptr
 #ifdef DYNAMIC_VISPLANE_COVER
-static uint16_t visplane_width = 0;  // vid width of all visplanes
-static unsigned int  visplane_cover_size = 0; // sizeof cover array
+// [Arcade] Per thread, because the visplane free list it guards is per
+// thread.  Shared, the first thread to notice a width change frees its
+// own list and sets this, and every other thread then skips the check and
+// keeps visplanes of the wrong width.
+static R_TLS uint16_t visplane_width = 0;  // vid width of all visplanes
+static R_TLS unsigned int  visplane_cover_size = 0; // sizeof cover array
 #endif
 
 // [WDJ] visplane_t global parameters  vsp_
