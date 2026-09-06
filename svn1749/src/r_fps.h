@@ -59,10 +59,11 @@
   // angle_t
 #include "command.h"
 
-// "uncapped": draw more frames than there are tics.  Render only, so it is
-// deliberately NOT a netvar and NOT in the demo header -- two machines with
-// different settings still simulate identically.
-extern consvar_t  cv_uncapped;
+// Frames per second to draw: 0 = as many as possible, 35 = one per tic (the
+// stock engine), anything else is a limit the main loop paces itself to.
+// Render only, so it is deliberately NOT a netvar and NOT in the demo header
+// -- two machines with different settings still simulate identically.
+extern consvar_t  cv_framerate_cap;
 
 // How far through the current tic this frame falls, 0..FRACUNIT.
 // FRACUNIT exactly whenever interpolation is off, so every consumer can

@@ -6,6 +6,22 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 ---
 
+- **A menu can silently run off the bottom of the screen, and nothing tells you.** The screen is
+  200 lines; `M_DrawGenericMenu` starts at `menu_t.y` and advances `STRINGHEIGHT` (10) per ordinary
+  row. A row placed past y=200 is simply not drawn — no clipping mark, no scroll, no warning — so
+  the page looks complete and the cursor moves onto items nobody can see.
+
+  Video Options had been in that state for some time: 17 rows from y=40 put the last one at exactly
+  y=200 and the OpenGL link was invisible. It now starts at **y=24** (the `M_OPTTTL` title patch is
+  15 tall drawn at y=2, so that clears it by 7) and has room for **one more row**.
+
+  **Measure before adding a row to a long page.** The trap when measuring by hand: `IT_CV_SLIDER`
+  rows advance by `STRINGHEIGHT` like any other — the `y+=16` in that drawer belongs to the
+  `IT_CV_STRING` text-entry branch, not the slider. Reading it the other way makes a page with four
+  sliders come out 24 px taller than it is. → `uncapped-framerate.md`
+
+---
+
 - **Menu lockdown** (`m_menu.c`, in `M_Init` under `if( ! devmode )`). What a player can reach:
 
   ```

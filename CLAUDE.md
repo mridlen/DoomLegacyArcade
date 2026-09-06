@@ -316,7 +316,7 @@ are kept below, in this file.
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
 | `docs/arcade/attract.md` | Attract cycle, menu-over-attract backdrop, idle timeout, arcade death | `D_AdvanceDemo`, `G_Idle_Timeout_Check`, `G_Arcade_Death_Check` |
-| `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `uncapped` cvar, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
+| `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `framerate_cap` cvar, the frame limiter, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |

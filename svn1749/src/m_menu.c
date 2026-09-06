@@ -4601,7 +4601,7 @@ menuitem_t VideoOptionsMenu[]=
     // limiter spins the main loop as fast as the card will go, and Retrace
     // is what limits it.  Safe to insert here -- the only positional
     // dependencies on this array (VO_gamma and the two after it) are above.
-    {IT_STRING | IT_CVAR,0,    "Uncapped Frames"  , &cv_uncapped      , 0},
+    {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
 #endif
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Screen Size"      , &cv_viewsize      , 0},
@@ -4627,7 +4627,15 @@ menu_t  VideoOptionsDef =
     M_DrawGenericMenu,
     NULL,
     sizeof(VideoOptionsMenu)/sizeof(menuitem_t),
-    60,40,
+    // [Arcade] Starts at 24, not the usual 40.  This page has 17 rows at
+    // STRINGHEIGHT, which is 170 tall: from y=40 the last row began at
+    // exactly y=200 and was off the bottom of the 200-line screen entirely.
+    // It had been overflowing since before the framerate row was added --
+    // the OpenGL link was simply invisible and there was no way to tell it
+    // was there.  The title patch (M_OPTTTL, 15 tall, drawn at y=2) ends at
+    // y=17, so 24 clears it by 7 and leaves the last row ending at y=194.
+    // Measure before adding another row; there is only room for one more.
+    60,24,
     0
 };
 

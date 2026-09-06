@@ -6,7 +6,17 @@
 
 The cabinet has always drawn exactly one frame per tic — 35 fps, with no interpolation anywhere.
 This makes it draw as many frames as the display can take, without changing the simulation at all.
-Cvar **`uncapped`**, on the Video Options page as *Uncapped Frames*, **off by default**.
+
+Cvar **`framerate_cap`**, on the Video Options page as *Framerate Cap*. Values are `Uncapped`, then
+`35`, `60`, `75`, `100`, `120`, `144`, `165`, `240`. **Default 60**, the commonest panel refresh.
+
+**`35` means the stock engine**: one frame per tic, and interpolation switched off entirely rather
+than interpolated to a whole tic — that would buy a tic of display lag for a picture identical to
+not interpolating. It is the setting to compare against, and the one to fall back to.
+
+**`Uncapped` is rarely what you want on a cabinet.** It measured ~600fps on a 60Hz panel: ten times
+the work for frames the display cannot show, which on a machine left switched on is heat and
+electricity and nothing else. It is there for measuring what the hardware can do.
 
 ## The one thing to understand
 
@@ -130,6 +140,39 @@ across the level. These draw whole:
 - **Pause and menus** — `R_Interp_Set_Frac`. Nothing is moving, so interpolating would creep the
   world for one tic and then sit still.
 
+## The frame limiter
+
+`D_DoomLoop` paces itself to the cap. Two things about it were got wrong first and are easy to get
+wrong again:
+
+- **The limiter must override a tic having advanced, not be OR'd with it.** `draw_now` starts as
+  "did a tic run", and leaving it set when the limiter says "too soon" adds the tic rate *on top*
+  of the cap: a setting of 60 measured **69 fps**. Every offered cap is at or above `TICRATE`, so
+  the tics still get their frames.
+- **Advance the deadline by one interval; do not restart it from now.** `I_Sleep` has 1 ms
+  granularity, so a frame half a millisecond early sleeps a whole one and lands late. Measuring the
+  next deadline from "now" bakes that overshoot into every frame and a cap of 60 delivers **58**.
+  Accumulating cancels the error — measured 60.1 and an exact 75.0. There is a resync if we fall
+  more than four intervals behind, so a machine that cannot keep up (or a spell in a menu) does not
+  produce a burst of catch-up frames.
+
+The clock is the tic counter with the sub-tic fraction below it (`I_GetTime() << FRACBITS |
+I_GetTimeFrac()`), which gives ~0.4 µs resolution without needing another platform function. Its
+two halves come from separate reads and can very occasionally appear to step backwards across a tic
+boundary; that is treated as "due now" rather than waiting out a whole tic.
+
+When the limiter holds a frame back it calls `I_Sleep(1)` rather than spinning. That is the whole
+point — without it the loop still burns a core at 100% while drawing 60 frames.
+
+Measured, headless, software renderer:
+
+| setting | measured |
+| --- | --- |
+| 35 | 35.0 fps, no variation |
+| 60 | 60.1 fps (59–62) |
+| 75 | 75.0 fps, no variation |
+| Uncapped | 125 fps (machine limit) |
+
 ## Vsync, and why it matters now
 
 **OpenGL now honours "Wait Retrace".** The software path has always passed `cv_vidwait` to
@@ -144,7 +187,9 @@ take effect — the same as the software path, where it is a renderer creation f
 tearing (`-1`) is tried first and falls back to plain vsync (`1`): it avoids the hard halving to
 30 fps when a frame misses the refresh, which on a twitch cabinet is worse than the tear it allows.
 
-**If uncapped is on, leave Wait Retrace on.**
+Since the frame limiter landed this is belt and braces rather than the only defence, but leave
+Wait Retrace on anyway: vsync is what stops *tearing*, which the limiter does nothing about, and it
+aligns frames to the panel instead of merely counting them.
 
 ## `I_GetTimeFrac`
 
@@ -169,9 +214,11 @@ alone: changing the tic clock is not something to do in the same commit as a ren
 
 Without a screen, and worth repeating after any change here:
 
-- **Determinism.** Play back a real record demo with `uncapped 0` and `uncapped 1`, dumping player
+- **Determinism.** Play back a real record demo at several `framerate_cap` settings, dumping player
   x/y/z/angle per tic from `P_Ticker`, and diff. 453 tics of `doomu_E1M1_sk0_speed.lmp` came back
-  byte-identical. This is the check that matters; run it before believing anything else.
+  byte-identical at 35, 60, 120 and Uncapped. This is the check that matters; run it before
+  believing anything else, and run it across *caps*, not just on and off — the limiter changes when
+  frames are drawn, and that is exactly the kind of change that could reach the simulation.
 - **That interpolation actually engaged** — otherwise the identical trace above is vacuous. Count
   frames per tic and the distribution of `frac`: 3–4 frames per tic under the dummy driver, `frac`
   sweeping 0..`FRACUNIT`, and *zero* frames at all with the cvar off.
@@ -183,6 +230,21 @@ Without a screen, and worth repeating after any change here:
   that is 8 wall scrollers at level start, then doors and lifts as they are triggered, with slot 10
   taken twice by different movers.
 - `make smoke` (5/5), and an `SDL_VIDEODRIVER=offscreen` OpenGL run on the real GPU.
+
+## The Video Options page is full
+
+Adding the row exposed that this page had been overflowing the screen for some time: 17 rows at
+`STRINGHEIGHT` is 170 tall, and from the usual `y` of 40 the last row began at exactly y=200 — off
+the bottom of the 200-line screen, invisible, with nothing to indicate it was there. The OpenGL
+link had been the casualty; the framerate row made it two.
+
+`VideoOptionsDef` now starts at **y=24**. The title patch (`M_OPTTTL`, 15 tall, drawn at y=2) ends
+at y=17, so that clears it by 7 and the last row ends at y=194.
+
+**There is room for one more row and no more.** Measure before adding one — `M_DrawGenericMenu`
+advances `STRINGHEIGHT` (10) per ordinary row, and note that `IT_CV_SLIDER` rows advance by 10 as
+well: the `y+=16` in that drawer belongs to the `IT_CV_STRING` text-entry branch, not the slider,
+which is easy to misread and makes a hand-measurement of this page come out 24 px too tall.
 
 ## What is not done
 

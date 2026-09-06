@@ -34,9 +34,29 @@
 #include "z_zone.h"
 
 
-// [Arcade] Off by default.  It is a visual change to the whole game and the
-// cabinet's config decides it, not the build.
-consvar_t  cv_uncapped = { "uncapped", "0", CV_SAVE, CV_OnOff };
+// [Arcade] Frames per second to aim for.  "Uncapped" (0) draws as fast as the
+// machine will go, which on this cabinet meant ~600fps and a lot of wasted
+// electricity for a 60Hz panel -- so the list is the common refresh rates and
+// the default is the commonest of them.
+//
+// 35 is special: it is the tic rate, so it means one frame per tic, which is
+// the stock engine exactly.  Interpolation is switched off at that setting
+// rather than interpolating to a whole tic, since that would buy a tic of
+// display lag for a picture no different from not interpolating at all.
+CV_PossibleValue_t framerate_cap_cons_t[] = {
+    {  0, "Uncapped"},
+    { 35, "35"},
+    { 60, "60"},
+    { 75, "75"},
+    {100, "100"},
+    {120, "120"},
+    {144, "144"},
+    {165, "165"},
+    {240, "240"},
+    {  0, NULL}
+};
+
+consvar_t  cv_framerate_cap = { "framerate_cap", "60", CV_SAVE, framerate_cap_cons_t };
 
 fixed_t  rendertic_frac = FRACUNIT;
 boolean  interp_active = false;
@@ -478,7 +498,11 @@ void  R_Interp_Set_Frac( fixed_t frac )
     boolean  world_running = !paused
         && !( menuactive && !netgame && !demoplayback );
 
-    interp_active = ( cv_uncapped.value != 0 ) && world_running && !singletics;
+    // Interpolate whenever we are drawing at something other than the tic
+    // rate.  At exactly TICRATE the frames land on the tics and there is
+    // nothing between them to draw.
+    interp_active = ( cv_framerate_cap.value != TICRATE )
+                    && world_running && !singletics;
 
     if( !interp_active )
     {

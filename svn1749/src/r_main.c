@@ -1845,7 +1845,7 @@ consvar_t * engine_client_cvar_list[] =
 {
    &cv_chasecam,
 #ifdef THINKER_INTERPOLATIONS
-   &cv_uncapped,
+   &cv_framerate_cap,
 #endif
    &cv_cam_dist,
    &cv_cam_height,

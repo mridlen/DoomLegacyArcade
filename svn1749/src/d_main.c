@@ -1297,6 +1297,11 @@ void D_DoomLoop(void)
 {
     char acbuf[_MAX_PATH ];
     tic_t oldentertics, entertic, realtics, rendertimeout = -1;
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] When the next frame is due, in tics<<FRACBITS.  See the
+    // framerate cap below.
+    uint64_t  next_frame_time = 0;
+#endif
 
     // [Arcade] Check the config here, not from M_LoadConfig.  At load time
     // the video mode has not been set and several subsystems have not applied
@@ -1392,16 +1397,78 @@ void D_DoomLoop(void)
         boolean  draw_now = tic_advanced;
 
 #ifdef THINKER_INTERPOLATIONS
-        // [Arcade] Uncapped framerate: also draw on the passes that did NOT
-        // advance a tic.  Such a frame redraws the same simulation state
-        // interpolated further through the tic, so this buys smoothness with
-        // render time and nothing else -- TryRunTics above is untouched and
-        // is still the only thing that advances the game.
+        // [Arcade] Also draw on the passes that did NOT advance a tic.  Such
+        // a frame redraws the same simulation state interpolated further
+        // through the tic, so this buys smoothness with render time and
+        // nothing else -- TryRunTics above is untouched and is still the only
+        // thing that advances the game.
         //
-        // Not under singletics (which is one tic per frame by definition) and
-        // not for a dedicated server, which has nothing to draw.
-        if( cv_uncapped.value && !singletics && !dedicated )
-            draw_now = true;
+        // Not at a cap of TICRATE, which means one frame per tic (the stock
+        // engine); not under singletics, which is one tic per frame by
+        // definition; and not for a dedicated server, which draws nothing.
+        {
+            int  fps_cap = cv_framerate_cap.value;
+
+            if( (fps_cap != TICRATE) && !singletics && !dedicated )
+            {
+                if( fps_cap <= 0 )
+                {
+                    draw_now = true;   // uncapped: every pass
+                }
+                else
+                {
+                    // Pace to the cap.  Drawing every pass on a fast machine
+                    // reached ~600fps on a 60Hz panel: ten times the work for
+                    // a picture the display cannot show, which on a cabinet
+                    // left switched on is heat and electricity and nothing
+                    // else.
+                    //
+                    // The clock is the tic counter with the sub-tic fraction
+                    // below it, giving 1/65536 of a tic (~0.4us) without
+                    // needing another platform function.  Its two halves come
+                    // from separate reads, so it can very occasionally appear
+                    // to step backwards across a tic boundary -- treat that
+                    // as "due now" rather than waiting out a whole tic.
+                    uint64_t  now = ((uint64_t)I_GetTime() << FRACBITS)
+                                    | (uint32_t)I_GetTimeFrac();
+
+                    if( now < next_frame_time )
+                    {
+                        // Ahead of schedule.  Note this *overrides* a tic
+                        // having advanced: leaving the tic's own frame in
+                        // would add 35fps on top of the cap and a setting of
+                        // 60 measured 69.  Every offered cap is at or above
+                        // TICRATE, so the tics still get drawn.
+                        draw_now = false;
+                        // Yield rather than spin: the entire point of a cap.
+                        I_Sleep( 1 );
+                    }
+                    else
+                    {
+                        uint64_t  interval =
+                            (uint64_t)TICRATE * FRACUNIT / (unsigned)fps_cap;
+
+                        draw_now = true;
+
+                        // Advance the deadline by exactly one interval rather
+                        // than restarting it from now.  I_Sleep has 1ms
+                        // granularity, so a frame that was half a millisecond
+                        // early sleeps a whole one and lands late; measuring
+                        // from "now" bakes that overshoot into every frame and
+                        // a cap of 60 delivers 58.  Accumulating means the
+                        // next frame is already due and the error cancels.
+                        next_frame_time += interval;
+
+                        // Unless we have fallen properly behind -- the machine
+                        // cannot keep up, or the game was paused in a menu.
+                        // Resync instead of firing a burst of catch-up frames.
+                        if( (now > next_frame_time)
+                            && ((now - next_frame_time) > (interval * 4)) )
+                            next_frame_time = now + interval;
+                    }
+                }
+            }
+        }
 #endif
 
         if( tic_advanced )
