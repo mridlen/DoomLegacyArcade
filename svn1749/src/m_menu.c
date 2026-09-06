@@ -180,6 +180,7 @@
 #include "console.h"
 
 #include "r_local.h"
+#include "r_threads.h"   // [Arcade] cv_render_threads
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
   // cv_uncapped, on the Video Options page
@@ -4580,6 +4581,16 @@ enum
 #endif
 } videooptions_e;
 
+// [Arcade] The two rows that trade places, by index -- see
+// M_Video_Drawmode_Rows below and docs/arcade/menus.md.  Set by
+// M_Configure, because the array's #ifdefs make the positions
+// build-dependent and counting them by hand is how this page overflowed
+// before.
+static byte VO_render_threads = 0xFF;   // 0xFF = not present in this build
+static byte VO_opengl_link    = 0xFF;
+
+void M_DrawVideoOptions( void );   // [Arcade] below
+
 menuitem_t VideoOptionsMenu[]=
 {
     {IT_STRING | IT_WHITESTRING | IT_SUBMENU,0, "Drawing Options >>"   , &DrawmodeDef, 0},
@@ -4603,6 +4614,12 @@ menuitem_t VideoOptionsMenu[]=
     // dependencies on this array (VO_gamma and the two after it) are above.
     {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
 #endif
+#ifdef RENDER_THREADS
+    // [Arcade] Software renderer only, so it trades places with the OpenGL
+    // link below rather than adding a row -- this page has no room for one.
+    // M_Video_Drawmode_Rows decides which of the two is shown.
+    {IT_HIDDEN,0,              "Render Threads"   , &cv_render_threads, 0},
+#endif
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Screen Size"      , &cv_viewsize      , 0},
 #ifdef FIT_RATIO
@@ -4624,7 +4641,7 @@ menu_t  VideoOptionsDef =
     "M_OPTTTL",
     "Video Options",
     VideoOptionsMenu,
-    M_DrawGenericMenu,
+    M_DrawVideoOptions,   // [Arcade] settles the drawmode-dependent rows
     NULL,
     sizeof(VideoOptionsMenu)/sizeof(menuitem_t),
     // [Arcade] Starts at 24, not the usual 40.  This page has 17 rows at
@@ -4641,6 +4658,43 @@ menu_t  VideoOptionsDef =
 
 
 // Called by CV_gammafunc_OnChange.
+// [Arcade] Show whichever of "Render Threads" / "OpenGL 3D Card Options" is
+// the one that does something in the current drawmode, and hide the other.
+//
+// This page is full: 17 rows of STRINGHEIGHT from y=24 end at y=194, and the
+// title patch above leaves no room to start higher, so an 18th row would run
+// off the 200-line screen.  Trading the two keeps the count at 17 in either
+// drawmode, which is why this is a swap and not an insertion.  IT_HIDDEN is
+// IT_NODRAW, which the generic drawer skips *without advancing y*, so a
+// hidden row costs nothing.
+//
+// Called from the page's drawer, so it follows a drawmode change without
+// anything having to notify it.  Idempotent: it only ever assigns a value it
+// computes fresh, which matters because drawers run every frame.
+static void  M_Video_Drawmode_Rows( void )
+{
+    boolean soft = (rendermode == render_soft);
+
+    if( VO_render_threads != 0xFF )
+        VideoOptionsMenu[VO_render_threads].status =
+            soft ? (IT_STRING | IT_CVAR) : IT_HIDDEN;
+
+    if( VO_opengl_link != 0xFF )
+        VideoOptionsMenu[VO_opengl_link].status =
+            soft ? IT_HIDDEN
+                 : (IT_CALL | IT_WHITESTRING | IT_YOFFSET);
+}
+
+
+// [Arcade] The Video Options drawer: settle the two drawmode-dependent rows,
+// then draw the page as usual.
+void M_DrawVideoOptions( void )
+{
+    M_Video_Drawmode_Rows();
+    M_DrawGenericMenu();
+}
+
+
 void MenuGammaFunc_dependencies( byte gamma_en,
                                  byte black_en, byte bright_en )
 {
@@ -9674,6 +9728,27 @@ void M_Configure (void)
     SingleLevelMenu[SL_map] = (gamemode==doom2_commercial)?
          SingleLevelMenu_Map
        : SingleLevelMenu_EpisodeMap;
+
+    // [Arcade] Find the two drawmode-dependent Video Options rows by their
+    // contents rather than by a hardcoded index.  The array is full of
+    // #ifdefs (THINKER_INTERPOLATIONS, FIT_RATIO, HWRENDER, RENDER_THREADS),
+    // so the positions are build-dependent, and counting them by hand is
+    // exactly how a row ends up addressing its neighbour.  See
+    // M_Video_Drawmode_Rows and docs/arcade/menus.md.
+    {
+        byte  vi;
+        VO_render_threads = 0xFF;
+        VO_opengl_link = 0xFF;
+        for( vi = 0; vi < (sizeof(VideoOptionsMenu)/sizeof(menuitem_t)); vi++ )
+        {
+            const char * mt = VideoOptionsMenu[vi].text;
+            if( ! mt )  continue;
+            if( strcmp( mt, "Render Threads" ) == 0 )
+                VO_render_threads = vi;
+            else if( strncmp( mt, "OpenGL 3D Card", 14 ) == 0 )
+                VO_opengl_link = vi;
+        }
+    }
 
     // Here we could catch other version dependencies,
     //  like HELP1/2, and four episodes.
