@@ -739,6 +739,7 @@ menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
 menu_t AuditDef;        // [Arcade] operator audit, informational
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
+  PerformanceDef,   // [Arcade] Video Options -> Performance Options
   PlayerDirectorDef, PlayerOptionsDef,
   SingleMultiDef, TwoPlayerDef, MultiPlayerDef, SetupMultiPlayerDef,
   ReadDef2, ReadDef1, SaveDef, LoadDef, 
@@ -4581,15 +4582,7 @@ enum
 #endif
 } videooptions_e;
 
-// [Arcade] The two rows that trade places, by index -- see
-// M_Video_Drawmode_Rows below and docs/arcade/menus.md.  Set by
-// M_Configure, because the array's #ifdefs make the positions
-// build-dependent and counting them by hand is how this page overflowed
-// before.
-static byte VO_render_threads = 0xFF;   // 0xFF = not present in this build
-static byte VO_opengl_link    = 0xFF;
-
-void M_DrawVideoOptions( void );   // [Arcade] below
+void M_Draw_Performance( void );   // [Arcade] below
 
 menuitem_t VideoOptionsMenu[]=
 {
@@ -4607,19 +4600,6 @@ menuitem_t VideoOptionsMenu[]=
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Brightness"       , &cv_bright        , 0},
     {IT_STRING | IT_CVAR,0,    "Wait Retrace"     , &cv_vidwait       , 0},
-#ifdef THINKER_INTERPOLATIONS
-    // [Arcade] Below Wait Retrace deliberately: uncapped without a frame
-    // limiter spins the main loop as fast as the card will go, and Retrace
-    // is what limits it.  Safe to insert here -- the only positional
-    // dependencies on this array (VO_gamma and the two after it) are above.
-    {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
-#endif
-#ifdef RENDER_THREADS
-    // [Arcade] Software renderer only, so it trades places with the OpenGL
-    // link below rather than adding a row -- this page has no room for one.
-    // M_Video_Drawmode_Rows decides which of the two is shown.
-    {IT_HIDDEN,0,              "Render Threads"   , &cv_render_threads, 0},
-#endif
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Screen Size"      , &cv_viewsize      , 0},
 #ifdef FIT_RATIO
@@ -4629,7 +4609,10 @@ menuitem_t VideoOptionsMenu[]=
     {IT_STRING | IT_CVAR,0,    "Dark Back"        , &cv_darkback      , 0},
     {IT_STRING | IT_CVAR,0,    "Console font"     , &cv_con_fontsize  , 0},
     {IT_STRING | IT_CVAR,0,    "Message font"     , &cv_msg_fontsize  , 0},
-    {IT_STRING | IT_CVAR,0,    "Show Ticrate"     , &cv_ticrate       , 0},
+    // [Arcade] Everything that trades picture for speed lives on its own
+    // page now.  Framerate Cap and Show Ticrate moved there from here, so
+    // this page is a row shorter than it was -- it had been full.
+    {IT_STRING | IT_WHITESTRING | IT_SUBMENU,0, "Performance Options >>", &PerformanceDef, 0},
 #ifdef HWRENDER
     //17/10/99: added by Hurdler
     {IT_CALL | IT_WHITESTRING | IT_YOFFSET, 0, "OpenGL 3D Card Options >>", M_OpenGLOption    ,0},
@@ -4641,7 +4624,7 @@ menu_t  VideoOptionsDef =
     "M_OPTTTL",
     "Video Options",
     VideoOptionsMenu,
-    M_DrawVideoOptions,   // [Arcade] settles the drawmode-dependent rows
+    M_DrawGenericMenu,
     NULL,
     sizeof(VideoOptionsMenu)/sizeof(menuitem_t),
     // [Arcade] Starts at 24, not the usual 40.  This page has 17 rows at
@@ -4658,41 +4641,60 @@ menu_t  VideoOptionsDef =
 
 
 // Called by CV_gammafunc_OnChange.
-// [Arcade] Show whichever of "Render Threads" / "OpenGL 3D Card Options" is
-// the one that does something in the current drawmode, and hide the other.
+//===========================================================================
+//                     [Arcade] PERFORMANCE OPTIONS MENU
+//===========================================================================
 //
-// This page is full: 17 rows of STRINGHEIGHT from y=24 end at y=194, and the
-// title patch above leaves no room to start higher, so an 18th row would run
-// off the 200-line screen.  Trading the two keeps the count at 17 in either
-// drawmode, which is why this is a swap and not an insertion.  IT_HIDDEN is
-// IT_NODRAW, which the generic drawer skips *without advancing y*, so a
-// hidden row costs nothing.
+// The settings that trade picture for speed, gathered off Video Options --
+// which was full: 17 rows of STRINGHEIGHT from y=24 ended at y=191 and an
+// 18th would have run off the 200-line screen.  Moving two rows here and
+// adding one link leaves it shorter than it was.
 //
-// Called from the page's drawer, so it follows a drawmode change without
-// anything having to notify it.  Idempotent: it only ever assigns a value it
-// computes fresh, which matters because drawers run every frame.
-static void  M_Video_Drawmode_Rows( void )
+// Reached only from Video Options, which the lockdown already hides from
+// players (OptionsMenu[11]), so this page needs no lockdown of its own.
+
+enum
 {
-    boolean soft = (rendermode == render_soft);
+    PERF_framerate = 0,
+    PERF_threads,
+    PERF_ticrate,
+} performance_e;
 
-    if( VO_render_threads != 0xFF )
-        VideoOptionsMenu[VO_render_threads].status =
-            soft ? (IT_STRING | IT_CVAR) : IT_HIDDEN;
-
-    if( VO_opengl_link != 0xFF )
-        VideoOptionsMenu[VO_opengl_link].status =
-            soft ? IT_HIDDEN
-                 : (IT_CALL | IT_WHITESTRING | IT_YOFFSET);
-}
-
-
-// [Arcade] The Video Options drawer: settle the two drawmode-dependent rows,
-// then draw the page as usual.
-void M_DrawVideoOptions( void )
+menuitem_t PerformanceMenu[]=
 {
-    M_Video_Drawmode_Rows();
+    {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
+    {IT_STRING | IT_CVAR,0,    "Render Threads"   , &cv_render_threads, 0},
+    {IT_STRING | IT_CVAR,0,    "Show Ticrate"     , &cv_ticrate       , 0},
+};
+
+// [Arcade] Render Threads only does anything in the software renderer -- the
+// hardware one issues its GL calls from inside the BSP walk, and a GL context
+// belongs to one thread.  Shown greyed rather than hidden in the other
+// drawmodes, so it is still discoverable and it is obvious *why* it is not
+// available, instead of the row simply not being there.
+//
+// In the page's drawer, so it follows a drawmode change with nothing having
+// to notify it, and it only ever assigns a freshly computed value -- drawers
+// run every frame, so they have to be idempotent.
+void M_Draw_Performance( void )
+{
+    PerformanceMenu[PERF_threads].status =
+        (rendermode == render_soft)? (IT_STRING | IT_CVAR)
+                                   : (IT_STRING | IT_DISABLED);
     M_DrawGenericMenu();
 }
+
+menu_t  PerformanceDef =
+{
+    "M_OPTTTL",
+    "Performance Options",
+    PerformanceMenu,
+    M_Draw_Performance,
+    NULL,
+    sizeof(PerformanceMenu)/sizeof(menuitem_t),
+    60,48,              // x,y
+    0                   // lastOn
+};
 
 
 void MenuGammaFunc_dependencies( byte gamma_en,
@@ -9728,27 +9730,6 @@ void M_Configure (void)
     SingleLevelMenu[SL_map] = (gamemode==doom2_commercial)?
          SingleLevelMenu_Map
        : SingleLevelMenu_EpisodeMap;
-
-    // [Arcade] Find the two drawmode-dependent Video Options rows by their
-    // contents rather than by a hardcoded index.  The array is full of
-    // #ifdefs (THINKER_INTERPOLATIONS, FIT_RATIO, HWRENDER, RENDER_THREADS),
-    // so the positions are build-dependent, and counting them by hand is
-    // exactly how a row ends up addressing its neighbour.  See
-    // M_Video_Drawmode_Rows and docs/arcade/menus.md.
-    {
-        byte  vi;
-        VO_render_threads = 0xFF;
-        VO_opengl_link = 0xFF;
-        for( vi = 0; vi < (sizeof(VideoOptionsMenu)/sizeof(menuitem_t)); vi++ )
-        {
-            const char * mt = VideoOptionsMenu[vi].text;
-            if( ! mt )  continue;
-            if( strcmp( mt, "Render Threads" ) == 0 )
-                VO_render_threads = vi;
-            else if( strncmp( mt, "OpenGL 3D Card", 14 ) == 0 )
-                VO_opengl_link = vi;
-        }
-    }
 
     // Here we could catch other version dependencies,
     //  like HELP1/2, and four episodes.
