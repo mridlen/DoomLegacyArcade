@@ -77,6 +77,34 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## Demo safety
+
+**Verified, not assumed.** The simulation is untouched, at `render_threads` 1 and 4
+alike, so the record demos and high score times on the cabinet stay valid.
+
+The test: a probe printing the four RNG indices plus the player's position, angle,
+health and leveltime from `P_Ticker` at fixed gametics -- no rendering in it at all --
+applied *identically* to this tree and to a worktree at the commit before the feature
+(`5b335eb`), then a real cabinet record demo replayed through both.
+
+| run | result |
+| --- | --- |
+| pre-change binary | reference |
+| this tree, `render_threads 1` | **identical**, all 8 samples |
+| this tree, `render_threads 4` | **identical**, all 8 samples |
+
+Run over `doomu_E2M7_sk0_speed.lmp`, which spans several levels, so level
+transitions are covered as well. Confirm the demo actually played before trusting a
+pass -- the player's position must *move* and the RNG index must advance; a demo that
+failed to load leaves the title screen ticking and looks like a clean run.
+→ `gotchas.md`
+
+**The rule this enforces:** with `render_threads` at 1 nothing about a frame may
+differ from before this feature existed. That is why the catch-up `NetUpdate()` after
+the view join is conditional on workers actually having been used -- `NetUpdate` runs
+`Local_Maketic` -> `G_BuildTiccmd`, so an extra call on a serial frame is a gameplay
+change, and a gameplay change rejects every record demo on the cabinet.
+
 ## The rule for R_TLS, and both ways to get it wrong
 
 > A renderer global gets `R_TLS` if and only if it is **written while drawing a frame**.

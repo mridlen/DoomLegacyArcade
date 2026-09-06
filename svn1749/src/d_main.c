@@ -870,8 +870,13 @@ static boolean  D_View_On_Worker( byte vind )
     return (threaded_view_mask & (1 << vind)) != 0;
 }
 
+// True when this frame actually handed views to workers, kept because
+// D_Threaded_Views_Wait clears the mask.
+static boolean  threaded_this_frame = false;
+
 static void  D_Threaded_Views_Wait( void )
 {
+    threaded_this_frame = (threaded_view_mask != 0);
     if( threaded_view_mask )
     {
         R_Threads_Wait();
@@ -1178,11 +1183,19 @@ void D_Display(void)
                 if( rendermode == render_soft )
                     R_Use_Play_BSP();
 
-                // [Arcade] The network was not serviced while the workers were
-                // drawing (see R_NetUpdate_Main), so do it now that they are
-                // joined and it is safe for G_BuildTiccmd to write the view
-                // state again.
-                NetUpdate ();
+                // [Arcade] Catch up the NetUpdate calls that were suppressed
+                // while the workers were drawing (see R_NetUpdate_Main), now
+                // that they are joined and it is safe for G_BuildTiccmd to
+                // write the view state again.
+                //
+                // ONLY when some were actually suppressed.  NetUpdate runs
+                // Local_Maketic -> G_BuildTiccmd, which is simulation
+                // adjacent, so a serial frame must have exactly the NetUpdate
+                // calls it always had -- an extra one is a gameplay change,
+                // and a gameplay change rejects every record demo on the
+                // cabinet.  With render_threads at 1 this is not reached.
+                if( threaded_this_frame )
+                    NetUpdate ();
 
                 // [Arcade] Black out every cell no player claimed.
                 //
