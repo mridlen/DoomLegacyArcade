@@ -1519,16 +1519,20 @@ void R_SetupFrame( byte pind, player_t* player )
     {
         static mobj_t * last_viewmobj[MAXSPLITSCREENPLAYERS];
 
-        // [Arcade] Main thread only.  R_Interp_Reset_View writes reset_view
-        // and rendertic_frac, which are whole-frame state every view is
-        // already drawing with -- a worker resetting them mid-frame would
-        // move the frac under the other threads.  last_viewmobj[] is indexed
-        // by pind, so it stays correct per view either way.
-        if( (pind < MAXSPLITSCREENPLAYERS) && (last_viewmobj[pind] != viewmobj) )
+        // [Arcade] Main thread only, the whole check.
+        //
+        // R_Interp_Reset_View writes reset_view and rendertic_frac, which are
+        // whole-frame state every view is already drawing with.  And
+        // last_viewmobj[] is indexed by pind, which is per view -- safe while
+        // each thread drew a different view, but NOT once column bands put
+        // every thread on view 0: they would then all read and write
+        // last_viewmobj[0].  ThreadSanitizer caught exactly that.
+        if( ! R_On_Render_Worker()
+            && (pind < MAXSPLITSCREENPLAYERS)
+            && (last_viewmobj[pind] != viewmobj) )
         {
             last_viewmobj[pind] = viewmobj;
-            if( ! R_On_Render_Worker() )
-                R_Interp_Reset_View();
+            R_Interp_Reset_View();
         }
     }
 #endif
@@ -1888,7 +1892,12 @@ void R_RenderPlayerView( byte pind, player_t* player )
 
     // Check for new console commands.
     R_NetUpdate_Main ();
-    player->mo->flags &= ~MF_NOSECTOR; // don't show self (uninit) clientprediction code
+
+    // [Arcade] The MF_NOSECTOR clear that used to be here has moved to
+    // D_Display, after the views are joined.  It is a read-modify-write on the
+    // shared mobj's flags, and R_DrawPSprite READS those flags for the
+    // invisibility check -- so doing it here raced with the other threads
+    // still drawing, whether or not it was guarded to the main thread.
 
     // [Arcade] R_Use_Play_BSP() is the caller's now -- see above.
 }

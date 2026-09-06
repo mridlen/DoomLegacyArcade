@@ -67,6 +67,7 @@ typedef struct
     byte          index;       // 1 .. MAX_RENDER_WORKERS
     byte          vind;        // view to draw
     player_t   *  vpl;         // player of that view
+    int           bx1, bx2;    // column band, or 0,0 for the whole view
     boolean       busy;        // submitted and not yet waited for
 } render_worker_t;
 
@@ -151,6 +152,11 @@ static int  R_Worker_Main( void * arg )
         // it.  Both write thread-local state only, so nothing here is shared
         // with the main thread or with another worker.
         R_Set_View_Window( w->vind );
+        // A band job draws one vertical slice of the view; a view job draws
+        // the lot.  R_Set_View_Window has just reset the range to the whole
+        // view, so this must come after it.
+        if( w->bx2 > w->bx1 )
+            R_Set_Render_Band( w->bx1, w->bx2 );
         R_RenderPlayerView( w->vind, w->vpl );
 
         SDL_SemPost( worker_done );
@@ -241,6 +247,35 @@ boolean  R_Thread_Submit_View( byte vind, player_t * vpl )
 
         worker[i].vind = vind;
         worker[i].vpl  = vpl;
+        worker[i].bx1  = 0;      // whole view
+        worker[i].bx2  = 0;
+        worker[i].busy = true;
+        num_submitted++;
+        __atomic_store_n( &r_threads_active, true, __ATOMIC_RELAXED );
+        SDL_SemPost( worker[i].go );
+        return true;
+    }
+    return false;
+}
+
+
+// [Arcade] Hand one column band of a view to a worker.
+boolean  R_Thread_Submit_Band( byte vind, player_t * vpl, int x1, int x2 )
+{
+    byte  avail = R_Thread_Workers();
+    byte  i;
+
+    if( num_submitted >= avail )  return false;
+    if( x2 <= x1 )  return false;
+
+    for( i = 0; i < num_workers; i++ )
+    {
+        if( worker[i].busy )  continue;
+
+        worker[i].vind = vind;
+        worker[i].vpl  = vpl;
+        worker[i].bx1  = x1;
+        worker[i].bx2  = x2;
         worker[i].busy = true;
         num_submitted++;
         __atomic_store_n( &r_threads_active, true, __ATOMIC_RELAXED );

@@ -65,6 +65,7 @@ extern R_TLS int              columnofs[MAXVIDWIDTH];
 // Both tables carry the view's position, so any cell can be drawn, not just
 // the stacked halves splitscreen used to have.
 void     R_Set_View_Window( byte vind );
+void     R_Set_Render_Band( int x1, int x2 );   // [Arcade] column band
 // Size of one cell of the view grid, in screen pixels.
 void     R_View_Cell_Size( int * span_w, int * span_h );
 // True when a view covers its whole cell, so the views tile the screen and

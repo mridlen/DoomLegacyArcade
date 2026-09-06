@@ -58,6 +58,11 @@ byte   R_Thread_Index( void );
 // must render it itself.
 boolean  R_Thread_Submit_View( byte vind, struct player_s * vpl );
 
+// Hand one column band of a view to a worker, for the case where there is
+// only one view and per-view splitting has nothing to divide.
+boolean  R_Thread_Submit_Band( byte vind, struct player_s * vpl,
+                               int x1, int x2 );
+
 // Block until every submitted view has been drawn.  Always call it, even when
 // nothing was submitted.
 void   R_Threads_Wait( void );

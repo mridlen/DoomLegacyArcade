@@ -1812,8 +1812,8 @@ static void R_ProjectSprite (mobj_t* thing)
     }
     x1 = (centerxfrac + FixedMul (tx,xscale) ) >>FRACBITS;
 
-    // off the right side?
-    if (x1 > rdraw_viewwidth)
+    // off the right side?  [Arcade] of this thread's band
+    if (x1 >= rdraw_band_x2)
         return;
 
 #ifdef MONSTER_VARY
@@ -1822,8 +1822,11 @@ static void R_ProjectSprite (mobj_t* thing)
     x2 = ((centerxfrac + FixedMul (tx + sprlump->width, xscale) ) >>FRACBITS) - 1;
 #endif
 
-    // off the left side
-    if (x2 < 0)
+    // off the left side  [Arcade] of this thread's band.  Must pair with the
+    // right-side test above: without it a sprite entirely left of the band is
+    // still projected, then clamped to x1=band_x1 with x2 left below it, and
+    // the drawer is handed a backwards column range.
+    if (x2 < rdraw_band_x1)
         return;
 
     //SoM: 3/17/2000: Disregard sprites that are out of view..
@@ -1945,8 +1948,10 @@ static void R_ProjectSprite (mobj_t* thing)
          vis->texturemid -= 10*FRACUNIT;
     }
 
-    vis->x1 = (x1 < 0) ? 0 : x1;
-    vis->x2 = (x2 >= rdraw_viewwidth) ? rdraw_viewwidth-1 : x2;
+    // [Arcade] Clamped to the band, so each thread draws only its own columns
+    // of a sprite that straddles a band edge.
+    vis->x1 = (x1 < rdraw_band_x1) ? rdraw_band_x1 : x1;
+    vis->x2 = (x2 >= rdraw_band_x2) ? rdraw_band_x2-1 : x2;
     vis->xscale = xscale; // SoM: 4/17/2000
 #ifdef MONSTER_VARY
     vis->yscale = draw_yscale;  // column draw scale
@@ -2240,15 +2245,18 @@ void R_DrawPSprite (pspdef_t* psp)
 #endif
     x1 = (centerxfrac + FixedMul (tx,pspritescale) ) >>FRACBITS;
 
-    // off the right side
-    if (x1 > rdraw_viewwidth)
+    // off the right side  [Arcade] of this thread's band
+    if (x1 >= rdraw_band_x2)
         return;
 
     tx += sprlump->width;
     x2 = ((centerxfrac + FixedMul (tx, pspritescale) ) >>FRACBITS) - 1;
 
-    // off the left side
-    if (x2 < 0)
+    // off the left side  [Arcade] of this thread's band.  Must pair with the
+    // right-side test above: without it a sprite entirely left of the band is
+    // still projected, then clamped to x1=band_x1 with x2 left below it, and
+    // the drawer is handed a backwards column range.
+    if (x2 < rdraw_band_x1)
         return;
 
     // store information in a vissprite
@@ -2285,8 +2293,9 @@ void R_DrawPSprite (pspdef_t* psp)
 
     //vis->texturemid += FRACUNIT/2;
 
-    vis->x1 = (x1 < 0) ? 0 : x1;
-    vis->x2 = (x2 >= rdraw_viewwidth) ? rdraw_viewwidth-1 : x2;
+    // [Arcade] Band, not view -- the weapon spans every band.
+    vis->x1 = (x1 < rdraw_band_x1) ? rdraw_band_x1 : x1;
+    vis->x2 = (x2 >= rdraw_band_x2) ? rdraw_band_x2-1 : x2;
     vis->scale = pspriteyscale;  //<<detailshift;
 #ifdef MONSTER_VARY
     vis->yscale = pspriteyscale; // same scale
@@ -3025,9 +3034,11 @@ void Sprite_Corona_Light_setup( vissprite_t * vis )
     corona_x0 = corona_x1 = (midx - FixedMul(corona_sprlump.leftoffset, corona_xscale)) >>FRACBITS;
     corona_x2 = ((midx + FixedMul(corona_sprlump.width - corona_sprlump.leftoffset, corona_xscale)) >>FRACBITS) - 1;
     if( corona_x1 < 0 )  corona_x1 = 0;
-    if( corona_x1 > rdraw_viewwidth )  goto no_corona;  // off the right side
-    if( corona_x2 >= rdraw_viewwidth )  corona_x2 = rdraw_viewwidth - 1;
-    if( corona_x2 < 0 )  goto no_corona;  //  off the left side
+    // [Arcade] Band, not view.
+    if( corona_x1 >= rdraw_band_x2 )  goto no_corona;  // off the right side
+    if( corona_x2 >= rdraw_band_x2 )  corona_x2 = rdraw_band_x2 - 1;
+    if( corona_x1 < rdraw_band_x1 )   corona_x1 = rdraw_band_x1;
+    if( corona_x2 < rdraw_band_x1 )  goto no_corona;  // [Arcade] off the band
 
     corona_draw = 2;
     return;

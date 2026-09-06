@@ -102,6 +102,14 @@ int             rdraw_scaledviewwidth;		// was scaledrviewwidth
 int             rdraw_viewheight;		// was viewheight
                         // height of view window in rows (pixels)
 // position of smaller rdraw_view window within vid window
+// [Arcade] The columns this thread may draw, [rdraw_band_x1, rdraw_band_x2).
+// Full view width unless the frame is being split into column bands, which is
+// how a single view uses more than one core -- see docs/arcade/render-threads.md.
+// R_Set_View_Window resets them to the whole view, so a thread that is not
+// band rendering can never inherit a stale band from the frame before.
+R_TLS int             rdraw_band_x1 = 0;
+R_TLS int             rdraw_band_x2 = 0;
+
 R_TLS int             view_window_x;
 R_TLS int             view_window_y;
 
@@ -470,6 +478,17 @@ boolean  R_View_Fills_Cell( void )
 // height ints, about 1100 iterations at 1366x768.
 //
 //   vind : which view, 0 .. D_NumViews()-1
+// [Arcade] Narrow this thread to one vertical slice of the view.  Must be
+// called after R_Set_View_Window, which resets the range to the whole view.
+void R_Set_Render_Band( int x1, int x2 )
+{
+    if( x1 < 0 )  x1 = 0;
+    if( x2 > rdraw_viewwidth )  x2 = rdraw_viewwidth;
+    rdraw_band_x1 = x1;
+    rdraw_band_x2 = x2;
+}
+
+
 void R_Set_View_Window( byte vind )
 {
     byte col, row;
@@ -495,6 +514,11 @@ void R_Set_View_Window( byte vind )
     else
         view_window_y = (row * span_h)
                         + ((span_h - stbar_height - rdraw_viewheight) >> 1);
+
+    // [Arcade] Whole view by default.  A band thread narrows it straight
+    // after this call, so nothing can inherit last frame's band.
+    rdraw_band_x1 = 0;
+    rdraw_band_x2 = rdraw_viewwidth;
 
     // Column offset for those columns of the view window, but
     // relative to the entire screen
