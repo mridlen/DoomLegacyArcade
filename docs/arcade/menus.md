@@ -15,19 +15,22 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   y=200 and the OpenGL link was invisible. It now starts at **y=24** (the `M_OPTTTL` title patch is
   15 tall drawn at y=2, so that clears it by 7) and has room for **one more row**.
 
-  **That "one more row" is gone, and it was never really there.** 17 rows of `STRINGHEIGHT` from
-  y=24 end at y=191; an 18th would start at y=194 and run to 201, off the 200-line screen, and the
-  title patch above leaves nowhere to start higher. So *Render Threads* did not take it: that row
-  and the *OpenGL 3D Card Options* link **trade places** instead, in `M_Video_Drawmode_Rows`,
-  each shown only in the drawmode where it means anything. Software gets Render Threads, hardware
-  gets the OpenGL page, and the count stays 17 either way. `IT_HIDDEN` is `IT_NODRAW`, which the
-  generic drawer skips *without advancing y*, so a hidden row genuinely costs nothing.
+  **That headroom is gone, and there was less of it than the note claimed.** 17 rows of
+  `STRINGHEIGHT` from y=24 end at y=191; an 18th starts at y=194 and runs to 201, off the
+  200-line screen, and the title patch above leaves nowhere to start higher.
 
-  Their indices are found by **searching the array for the row text** in `M_Configure`, not
-  hardcoded: the array carries four `#ifdef`s (`THINKER_INTERPOLATIONS`, `FIT_RATIO`, `HWRENDER`,
-  `RENDER_THREADS`), so the positions are build-dependent and counting them by hand is exactly how
-  a row ends up addressing its neighbour. A miss leaves 0xFF and the row silently never appears,
-  so it is worth printing the resolved indices once when changing this. → `render-threads.md`
+  So the performance settings moved off instead. **Video Options -> Performance Options >>**
+  (`PerformanceMenu` / `PerformanceDef`) holds *Framerate Cap*, *Render Threads* and *Show
+  Ticrate* — everything that trades picture for speed. Two rows left Video Options and one link
+  arrived, so that page is **16 rows now, ending at y=181**: shorter than it was, with room again.
+
+  `VO_gamma` is unaffected — it is index 4 and both rows that left were below it. Check that
+  when moving anything on this page; the gamma triple is the only positional dependency and it
+  is easy to shift by accident.
+
+  *Render Threads* is shown **greyed** (`IT_DISABLED`) outside the software drawmode rather than
+  hidden, so it stays discoverable and it is obvious why it is unavailable — hiding it is what
+  made it impossible to find the first time. → `render-threads.md`
 
   **Measure before adding a row to a long page.** The trap when measuring by hand: `IT_CV_SLIDER`
   rows advance by `STRINGHEIGHT` like any other — the `y+=16` in that drawer belongs to the
