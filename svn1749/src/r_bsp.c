@@ -294,9 +294,14 @@ void R_ClipPassWallSegment ( int first, int last )
 //
 void R_Clear_ClipSegs (void)
 {
+    // [Arcade] Everything outside this thread's column band counts as already
+    // solid, so R_ClipSolidWallSegment refuses to draw there and the whole BSP
+    // walk -- walls, floors, ceilings -- clips itself to the band with no
+    // other change.  Without band rendering the range is the whole view, and
+    // this is then exactly what it always was.
     solidsegs[0].first = -0x7fffffff;
-    solidsegs[0].last = -1;
-    solidsegs[1].first = rdraw_viewwidth;
+    solidsegs[0].last = rdraw_band_x1 - 1;
+    solidsegs[1].first = rdraw_band_x2;
     solidsegs[1].last = 0x7fffffff;
     new_seg_end = solidsegs+2;
 }

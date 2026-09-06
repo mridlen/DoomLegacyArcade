@@ -286,6 +286,8 @@ extern  boolean menuactive;     // Menu overlayed?
 extern  boolean nodrawers;
 extern  boolean noblit;
 
+extern R_TLS int     rdraw_band_x1;   // [Arcade] column band, see r_draw.c
+extern R_TLS int     rdraw_band_x2;
 extern R_TLS int     view_window_x;
 extern R_TLS int     view_window_y;    // splitscreen window position
 extern  int     rdraw_viewheight;		// was viewheight

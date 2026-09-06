@@ -836,16 +836,116 @@ boolean D_Attract_Running( void )
 // of the BSP walk, and a GL context belongs to one thread.
 static byte  threaded_view_mask = 0;   // views a worker took this frame
 
+// [Arcade] Columns of view 0 handed to workers as bands, when there is only
+// one view to draw.  The main thread then draws the leftmost band itself; see
+// D_Submit_Threaded_Bands.
+static int   band_main_x1 = 0, band_main_x2 = 0;
+
+// [Arcade] Split ONE view into vertical column bands, one per thread.
+//
+// Per-view splitting has nothing to divide when a single player is at the
+// cabinet, which is the common case -- so the single view is cut into columns
+// instead and every core draws a slice of it.  Each thread walks the whole BSP
+// but R_Clear_ClipSegs marks everything outside its band as already solid, so
+// it only ever draws its own columns.
+//
+// That duplicated BSP walk is why this is the *fallback*: with several views
+// each thread walks the tree once for its own view, which is strictly better.
+// Bands only pay off because the walk is far cheaper than the drawing.
+//
+// Returns the number of bands given to workers.  The main thread keeps
+// [band_main_x1, band_main_x2).
+static byte  D_Submit_Threaded_Bands( player_t * vpl )
+{
+    byte  workers = R_Thread_Workers();
+    byte  nbands, b, given = 0;
+    int   width = rdraw_viewwidth;
+
+    band_main_x1 = 0;
+    band_main_x2 = width;
+
+    // [Arcade] UNFINISHED -- opt in with DL_RENDER_BANDS=1.
+    //
+    // The banded picture is not yet identical to the serial one: it differs
+    // deterministically, and differently for each band count, so the band
+    // clipping is systematically wrong rather than racing.  Localised with
+    // per-stripe checksums to *inside the main thread's own band* -- with two
+    // bands of a 1024 wide view the split is at x=512, but the picture starts
+    // differing at x=256 -- so it is not a seam or an off-by-one at the band
+    // edge.  Left in the tree, off, for a session that can chase it properly.
+    //
+    // render_threads on its own is unaffected: without this it does exactly
+    // what it did before, one view per worker, which is verified.
+    if( ! getenv("DL_RENDER_BANDS") )  return 0;
+
+    if( workers == 0 || width < 64 )  return 0;
+
+    // One band per thread, main thread included.
+    nbands = workers + 1;
+
+    // Narrow bands stop paying: every one repeats the BSP walk, and a band
+    // only a few columns wide draws almost nothing for it.
+    while( nbands > 1 && (width / nbands) < 32 )
+        nbands--;
+    if( nbands < 2 )  return 0;
+
+    // The main thread takes band 0; the workers take the rest.  Split by
+    // rounding so the bands tile the view exactly with no seam and no
+    // overlap -- a column drawn twice is a torn sprite, a column drawn by
+    // nobody is a black stripe.
+    band_main_x1 = 0;
+    band_main_x2 = (width * 1) / nbands;
+
+    for( b = 1; b < nbands; b++ )
+    {
+        int x1 = (width * b) / nbands;
+        int x2 = (width * (b + 1)) / nbands;
+
+        if( R_Thread_Submit_Band( 0, vpl, x1, x2 ) )
+        {
+            given++;
+        }
+        else
+        {
+            // No worker took it, so the main thread must cover it too.
+            band_main_x2 = width;
+            break;
+        }
+    }
+    return given;
+}
+
 static void  D_Submit_Threaded_Views( void )
 {
-    byte  vind, num_views;
+    byte  vind, num_views, drawn = 0;
 
     threaded_view_mask = 0;
+    band_main_x1 = 0;
+    band_main_x2 = 0;
 
     if( rendermode != render_soft )  return;
     if( R_Thread_Workers() == 0 )  return;
 
     num_views = D_NumViews();
+
+    // How many views will actually be drawn?  A panel nobody joined on is
+    // skipped, so four configured panels with one player is still one view --
+    // and one view is what band splitting is for.
+    for( vind = 0; vind < num_views; vind++ )
+    {
+        byte pn = localplayer[vind];
+        if( pn < MAXPLAYERS && players[pn].mo )  drawn++;
+    }
+
+    if( drawn <= 1 )
+    {
+        // Single view: split it into columns instead.
+        byte pn0 = localplayer[0];
+        if( (pn0 < MAXPLAYERS) && players[pn0].mo )
+            D_Submit_Threaded_Bands( &players[pn0] );
+        return;
+    }
+
     for( vind = 1; vind < num_views; vind++ )
     {
         byte pn = localplayer[vind];
@@ -870,18 +970,25 @@ static boolean  D_View_On_Worker( byte vind )
     return (threaded_view_mask & (1 << vind)) != 0;
 }
 
+// [Arcade] True when view 0 is being drawn as column bands this frame.
+static boolean  D_Bands_Active( void )
+{
+    return (band_main_x2 > band_main_x1) && (band_main_x2 > 0);
+}
+
 // True when this frame actually handed views to workers, kept because
 // D_Threaded_Views_Wait clears the mask.
 static boolean  threaded_this_frame = false;
 
 static void  D_Threaded_Views_Wait( void )
 {
-    threaded_this_frame = (threaded_view_mask != 0);
-    if( threaded_view_mask )
+    threaded_this_frame = (threaded_view_mask != 0) || D_Bands_Active();
+    if( threaded_view_mask || D_Bands_Active() )
     {
         R_Threads_Wait();
         threaded_view_mask = 0;
     }
+    band_main_x1 = band_main_x2 = 0;
 }
 
 
@@ -1104,13 +1211,16 @@ void D_Display(void)
                 else    //if (rendermode == render_soft)
 #endif
                 {
-                    // [Arcade] The other views are already in flight on the
-                    // render workers (D_Submit_Threaded_Views above), so this
-                    // one is drawn alongside them.  Its draw tables have to be
-                    // placed explicitly now: view_window_x/y, ylookup and
-                    // columnofs are per thread, so this thread's copy holds
-                    // whatever the last frame left in it.
+                    // [Arcade] The other views -- or, with a single view, the
+                    // other column bands -- are already in flight on the
+                    // workers (D_Submit_Threaded_Views above), so this is
+                    // drawn alongside them.  The draw tables have to be placed
+                    // explicitly: view_window_x/y, ylookup and columnofs are
+                    // per thread, so this thread's copy holds whatever the
+                    // last frame left in it.
                     R_Set_View_Window( 0 );
+                    if( D_Bands_Active() )
+                        R_Set_Render_Band( band_main_x1, band_main_x2 );
                     R_RenderPlayerView(0, displayplayer_ptr);
                 }
 #ifdef CLIENTPREDICTION2

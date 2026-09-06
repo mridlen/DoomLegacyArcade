@@ -62,6 +62,43 @@ Measured gain, same scene, four views: **9.6 ms serial → 2.8 ms with four thre
 Worst frame 14.3 ms → 4-8 ms. The serial path is unchanged (see `R_TLS` below), and measures
 the same as it did before the feature existed.
 
+## Column bands: started, not working, off by default
+
+Per-view threading does nothing for a single player, which on a four-panel
+cabinet is the common case: `D_NumViews()` may be 4, but the dispatch skips
+panels nobody joined on, so one player is one view is one thread. That is a
+real limit of the per-view split, not a setting.
+
+The answer is to cut the one view into vertical column bands, one per core.
+The machinery is in the tree and **it is off**: opt in with `DL_RENDER_BANDS=1`.
+
+It rests on `R_Clear_ClipSegs`, which already marks everything outside the view
+as solid so the BSP walk clips itself to the screen; a band thread marks
+everything outside its *band* instead, and walls, floors and ceilings clip
+themselves with no other change. Only the sprites need telling, because they
+clamp their x range against the view width directly -- `rdraw_band_x1/x2`
+(`r_draw.c`), reset to the whole view by `R_Set_View_Window` so a thread cannot
+inherit a stale band, and narrowed afterwards by `R_Set_Render_Band`.
+
+**It does not yet produce the serial picture, and here is what is known:**
+
+- The difference is **deterministic**, and **different for each band count** --
+  so the band clipping is systematically wrong, not racing.
+- Per-stripe checksums put the divergence **inside the main thread's own band**:
+  with two bands of a 1024-wide view the split is at x=512, but the picture
+  starts differing at x=256. So it is not a seam, an off-by-one at the band
+  edge, or a column drawn twice.
+- Both the left and right sprite rejections were fixed to test against the band
+  rather than 0 (a sprite entirely left of a band was being projected and then
+  clamped into a backwards column range). That was a real bug; it was not this
+  one.
+- MAP07 passes, which is the scene with least in it.
+
+Whoever picks this up: the per-stripe checksum is the tool -- checksum the
+screen in vertical stripes rather than as a whole, and compare band counts
+against each other as well as against serial. `render_threads` on its own is
+unaffected by any of this and stays verified.
+
 ## How it works
 
 `R_TLS` (`doomdef.h`) is `__thread` when `RENDER_THREADS` is defined and **nothing at all** when
