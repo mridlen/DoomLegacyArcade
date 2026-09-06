@@ -912,6 +912,38 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
     return given;
 }
 
+// [Arcade] Say, once, what the renderer is actually doing -- and say it again
+// whenever that changes.
+//
+// There was no way to tell whether threading was doing anything: the only
+// message was the pool size at startup, which says "3 workers" even when
+// render_threads is 1 and nothing is dispatched.  That is exactly the question
+// to answer first when the frame rate does not move, and answering it by
+// reading the config is guesswork.  Costs one int compare per frame.
+static void  D_Report_Render_Mode( byte mode, byte n )
+{
+    static byte last_mode = 0xFF, last_n = 0xFF;
+
+    if( mode == last_mode && n == last_n )  return;
+    last_mode = mode;  last_n = n;
+
+    switch( mode )
+    {
+     case 0:
+        CONS_Printf( "Render: single threaded\n" );
+        GenPrintf( EMSG_warn, "Render: single threaded\n" );
+        break;
+     case 1:
+        CONS_Printf( "Render: %d views on worker threads\n", n );
+        GenPrintf( EMSG_warn, "Render: %d views on worker threads\n", n );
+        break;
+     case 2:
+        CONS_Printf( "Render: 1 view split into %d column bands\n", n );
+        GenPrintf( EMSG_warn, "Render: 1 view split into %d column bands\n", n );
+        break;
+    }
+}
+
 static void  D_Submit_Threaded_Views( void )
 {
     byte  vind, num_views, drawn = 0;
@@ -920,8 +952,8 @@ static void  D_Submit_Threaded_Views( void )
     band_main_x1 = 0;
     band_main_x2 = 0;
 
-    if( rendermode != render_soft )  return;
-    if( R_Thread_Workers() == 0 )  return;
+    if( rendermode != render_soft )  { D_Report_Render_Mode(0,0); return; }
+    if( R_Thread_Workers() == 0 )   { D_Report_Render_Mode(0,0); return; }
 
     num_views = D_NumViews();
 
@@ -938,11 +970,14 @@ static void  D_Submit_Threaded_Views( void )
     {
         // Single view: split it into columns instead.
         byte pn0 = localplayer[0];
+        byte given = 0;
         if( (pn0 < MAXPLAYERS) && players[pn0].mo )
-            D_Submit_Threaded_Bands( &players[pn0] );
+            given = D_Submit_Threaded_Bands( &players[pn0] );
+        D_Report_Render_Mode( given? 2 : 0, given + 1 );
         return;
     }
 
+    byte submitted_views = 0;
     for( vind = 1; vind < num_views; vind++ )
     {
         byte pn = localplayer[vind];
@@ -954,12 +989,14 @@ static void  D_Submit_Threaded_Views( void )
 
         if( R_Thread_Submit_View( vind, vpl ) )
         {
+            submitted_views++;
             threaded_view_mask |= (1 << vind);
             // ##BENCH## bisection: one view at a time, still on a worker.
             if( getenv("DL_RTHREAD_SERIAL") )
                 R_Threads_Wait();
         }
     }
+    D_Report_Render_Mode( submitted_views? 1 : 0, submitted_views + 1 );
 }
 
 static boolean  D_View_On_Worker( byte vind )
