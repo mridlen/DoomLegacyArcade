@@ -1,6 +1,6 @@
 # Portable install, config.cfg handling and the command buffer
 
-*Part of the DoomLegacy arcade cabinet build. Read before touching `legacyhome` resolution in `d_main.c`, `M_SaveConfig`/`M_Verify_Config` in `m_misc.c`, or the tracked `cabinet/legacyhome/config.cfg`.*
+*Part of the DoomLegacy arcade cabinet build. Read before touching `legacyhome` resolution in `d_main.c`, `M_SaveConfig`/`M_Verify_Config`/`M_Atomic_Write_*` in `m_misc.c`, or the tracked `cabinet/legacyhome/config.cfg`.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
@@ -144,3 +144,60 @@ single level splits.
     The guard that makes the handler "safe" is exactly what makes the loss silent. This is the
     same family as the `M_Init`/`M_Configure` ordering rule in `menus.md`.
 
+
+---
+
+### Files that must survive the power being cut (`M_Atomic_Write_*`)
+
+**The cabinet is switched off at the wall, not quit cleanly, so any file rewritten in place has a
+window on every save where it is empty on disk.** `fopen(name, "w")` truncates immediately and only
+then starts writing. Lose power inside that window and you do not lose the last game — you lose the
+whole file. `highscores.dat`, `runs.dat` and `audit.dat` were all written this way.
+
+The trap is that the obvious mitigation makes it worse. `AU_Save` is called per game rather than at
+shutdown (`d_netcmd.c`, and the comment there says why: "a cabinet is far likelier to be switched
+off at the wall than quit cleanly"). That reasoning is right about *how much* a power cut costs, but
+each extra save is another moment when the file on disk is empty, so saving more often **widens** the
+exposure. Frequency and atomicity are separate problems and the frequency one was solved first.
+
+**Use `M_Atomic_Write_Open` / `M_Atomic_Write_Close` (`m_misc.c`) for any file that has to survive
+a power cut**, never `fopen(name, "w")` directly:
+
+```c
+fw = M_Atomic_Write_Open(hs_scorefile);   // really opens hs_scorefile ".tmp"
+if( ! fw )  { ...warn, return... }        // nothing has been touched yet
+...fprintf(fw, ...)...
+M_Atomic_Write_Close(fw, hs_scorefile);   // fsync, then rename over the target
+```
+
+Writes land in `<name>.tmp` and replace the target in a single `rename()`, which within one
+filesystem is atomic — a power cut leaves either the complete old file or the complete new one, never
+a torn one. **The `fsync` matters as much as the rename**: without it the rename can reach the disk
+ahead of the data it is publishing, which is the same lost file by a longer route. There are two
+syncs, one on the file and one on the *directory*, because the durability of the rename is a property
+of the directory entry, not of the file.
+
+The helper closes the handle on every path including failure, and on failure removes the temp file
+and leaves the target untouched, so a save that cannot complete costs nothing. Windows needs
+`remove()` before `rename()` (unlike POSIX it will not replace an existing file) and `_commit()`
+instead of `fsync()`; both are handled in the helper.
+
+**Verifying it:** there is no `strace` on this machine, and polling for a torn file proves nothing
+because the window is now microseconds. Interpose the calls instead — an `LD_PRELOAD` shim over
+`fopen`/`rename`/`fsync` logs the real sequence, and the property to check is that the live files are
+opened **only** with `"r"` while every `"w"` lands on a `.tmp` that is then renamed:
+
+```
+SHIM fopen(.../audit.dat, "r")
+SHIM fopen(.../audit.dat.tmp, "w")
+SHIM rename(.../audit.dat.tmp -> .../audit.dat)
+```
+
+Interposing `fopen` rather than `open` is what makes this work — glibc calls its own internal `open`
+from `fopen`, so a shim over `open` sees nothing. Test the failure path too, by making the temp write
+impossible (`mkdir highscores.dat.tmp` is enough — `fopen(...,"w")` cannot open a directory): the save
+must warn and leave the previous file byte-identical.
+
+**Not yet converted:** `config.cfg` (only written in a `-devmode` session, so a player session cannot
+lose it) and the demo writes in `g_game.c`, which stream during play rather than rewriting a whole
+file — a power cut there truncates one demo rather than destroying a table.

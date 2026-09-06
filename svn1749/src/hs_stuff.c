@@ -891,7 +891,8 @@ static void HS_Save( void )
     FILE * fw;
     int    i, sk, cat;
 
-    fw = fopen(hs_scorefile, "w");
+    // [Arcade] Atomic, so a power cut cannot empty the score table.
+    fw = M_Atomic_Write_Open(hs_scorefile);
     if( ! fw )
     {
         GenPrintf(EMSG_warn, "HS_Save: could not write %s\n", hs_scorefile);
@@ -923,7 +924,7 @@ static void HS_Save( void )
         }
     }
 
-    fclose(fw);
+    M_Atomic_Write_Close(fw, hs_scorefile);
 }
 
 
@@ -1072,7 +1073,8 @@ static void HS_Runs_Save( void )
     FILE * fw;
     int    i;
 
-    fw = fopen(hs_runfile, "w");
+    // [Arcade] Atomic, so a power cut cannot empty the run board.
+    fw = M_Atomic_Write_Open(hs_runfile);
     if( ! fw )
     {
         GenPrintf(EMSG_warn, "HS_Runs_Save: could not write %s\n", hs_runfile);
@@ -1098,7 +1100,7 @@ static void HS_Runs_Save( void )
                 (unsigned int) hs_runs[i].tics, ini);
     }
 
-    fclose(fw);
+    M_Atomic_Write_Close(fw, hs_runfile);
 }
 
 

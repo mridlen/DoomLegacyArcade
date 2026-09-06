@@ -1405,3 +1405,119 @@ uint32_t str_to_uint32( const char * str )
     return val;
 }
 #endif
+
+
+//===========================================================================
+//  [Arcade] Atomic file replacement
+//===========================================================================
+
+// A cabinet is switched off at the wall, not quit cleanly, so a save that
+// opens the real file with "w" and rewrites it in place has a window on
+// EVERY save where the file on disk is empty or half written.  Lose power
+// inside that window and the whole file goes -- the entire high score table,
+// not just the game in progress.  Saving more often, which is what the audit
+// and score code does to limit how much a power cut can cost, widens that
+// exposure rather than narrowing it.
+//
+// Writing a temp file and renaming it over the target closes the window:
+// rename() within one filesystem is atomic, so a power cut leaves either the
+// complete old file or the complete new one and never a torn one.  The fsync
+// matters as much as the rename -- without it the rename can reach the disk
+// ahead of the data it is supposed to be publishing, which is the same lost
+// file by a longer route.
+
+#ifdef __WIN32__
+#include <io.h>         // _commit
+#endif
+
+// Derive "<filename>.tmp".  false if it will not fit.
+static
+boolean M_Atomic_tmpname( const char * filename, char * buf, size_t bufsize )
+{
+    size_t len = strlen( filename );
+    if( len + 5 > bufsize )  return false;   // ".tmp" and the terminator
+    memcpy( buf, filename, len );
+    memcpy( buf + len, ".tmp", 5 );
+    return true;
+}
+
+// Open a write handle for filename.  The writes actually land in
+// "<filename>.tmp" and do not replace filename until M_Atomic_Write_Close.
+// Returns NULL on failure, having written nothing.
+FILE *  M_Atomic_Write_Open( const char * filename )
+{
+    char tmpname[MAX_WADPATH + 8];
+
+    if( ! M_Atomic_tmpname( filename, tmpname, sizeof(tmpname) ) )
+    {
+        GenPrintf(EMSG_warn, "M_Atomic_Write_Open: name too long: %s\n", filename);
+        return NULL;
+    }
+    return fopen( tmpname, "w" );
+}
+
+// Flush, sync, and rename the temp file over filename.  Always closes fw.
+// On failure filename is left exactly as it was and the temp file is removed,
+// so the previous contents survive intact.
+boolean M_Atomic_Write_Close( FILE * fw, const char * filename )
+{
+    char tmpname[MAX_WADPATH + 8];
+
+    if( ! fw )  return false;
+
+    if( ! M_Atomic_tmpname( filename, tmpname, sizeof(tmpname) ) )
+    {
+        fclose( fw );
+        return false;
+    }
+
+    // Get the contents onto the disk before the rename publishes them.
+    if( fflush( fw ) != 0 )  goto fail;
+#ifdef __WIN32__
+    if( _commit( _fileno( fw ) ) != 0 )  goto fail;
+#else
+    if( fsync( fileno( fw ) ) != 0 )  goto fail;
+#endif
+    if( fclose( fw ) != 0 )
+    {
+        fw = NULL;   // fclose releases the handle even when it fails
+        goto fail;
+    }
+    fw = NULL;
+
+#ifdef __WIN32__
+    // Unlike POSIX, rename() here will not replace an existing file.
+    remove( filename );
+#endif
+    if( rename( tmpname, filename ) != 0 )  goto fail;
+
+#ifndef __WIN32__
+    // The directory entry created by the rename needs to be durable too,
+    // which means syncing the directory rather than the file.
+    {
+        char   dirbuf[MAX_WADPATH + 8];
+        char * sep;
+        int    dfd;
+
+        dl_strncpy( dirbuf, filename, sizeof(dirbuf) );
+        sep = strrchr( dirbuf, '/' );
+        if( sep == dirbuf )   dirbuf[1] = 0;            // the file is in "/"
+        else if( sep )        *sep = 0;
+        else                  dl_strncpy( dirbuf, ".", sizeof(dirbuf) );
+
+        dfd = open( dirbuf, O_RDONLY );
+        if( dfd >= 0 )
+        {
+            fsync( dfd );
+            close( dfd );
+        }
+    }
+#endif
+    return true;
+
+fail:
+    GenPrintf(EMSG_warn, "M_Atomic_Write_Close: could not commit %s\n", filename);
+    if( fw )  fclose( fw );
+    remove( tmpname );
+    return false;
+}

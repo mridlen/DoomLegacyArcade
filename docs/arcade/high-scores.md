@@ -1085,3 +1085,12 @@ Speed is simply the category that never stops being alive, so its endpoint follo
   - Verified by running the attract cycle until both kinds came up: a single level record
     (`MAP01 ITYTD SPEED …`) reported the run total hidden, a Survival record
     (`SURVIVAL UV SPEED MAP01 …`) reported it shown.
+
+---
+
+### The score files are written atomically
+
+`HS_Save` and `HS_Runs_Save` go through `M_Atomic_Write_Open`/`M_Atomic_Write_Close` rather than
+`fopen(name, "w")`, so a power cut cannot leave `highscores.dat` or `runs.dat` empty or half
+written. Do not convert them back to a plain `fopen` — see `install-config.md` for why, and for how
+to verify the property.

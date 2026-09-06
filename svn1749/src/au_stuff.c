@@ -169,7 +169,8 @@ void AU_Save( void )
 
     if( ! au_file[0] )  return;
 
-    fw = fopen(au_file, "w");
+    // [Arcade] Atomic, so a power cut cannot leave this file empty.
+    fw = M_Atomic_Write_Open(au_file);
     if( ! fw )
     {
         GenPrintf(EMSG_warn, "AU_Save: could not write %s\n", au_file);
@@ -200,7 +201,7 @@ void AU_Save( void )
                 au_map[i].game, au_map[i].map, au_map[i].plays);
     }
 
-    fclose(fw);
+    M_Atomic_Write_Close(fw, au_file);
 }
 
 

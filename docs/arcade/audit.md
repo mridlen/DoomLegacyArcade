@@ -102,3 +102,12 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   everything and re-stamped the date. The `audit` console command prints the same numbers — its
   output goes to the in-game console, not stdout, so checking it headlessly needed the prints
   temporarily routed through `GenPrintf(EMSG_warn, ...)`.
+
+---
+
+### `audit.dat` is written atomically
+
+`AU_Save` goes through `M_Atomic_Write_Open`/`M_Atomic_Write_Close`. This matters more here than
+anywhere else because `AU_Save` is deliberately called per game rather than at shutdown: every one of
+those saves used to be a window in which a power cut destroyed the whole counter file. See
+`install-config.md`.

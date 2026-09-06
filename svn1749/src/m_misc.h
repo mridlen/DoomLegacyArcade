@@ -39,6 +39,8 @@
 #include "doomdef.h"
   // MAX_WADPATH
 #include "doomtype.h"
+#include <stdio.h>
+  // [Arcade] FILE, for the atomic write helpers at the bottom of this file
 
 
 //
@@ -136,5 +138,17 @@ char * dl_strcasestr( const char * haystack,  const char * needle );
 // MBF21 requires handling numeric bits, in base 10, hex, octal.
 uint32_t str_to_uint32( const char * str );
 #endif
+
+
+// [Arcade] Atomic file replacement, so a power cut cannot empty a file that
+// was only being rewritten.  Writes go to "<filename>.tmp" and replace
+// filename in one step at the close.  See the comment block in m_misc.c.
+// Use these instead of fopen(name,"w")/fclose for any file that must survive
+// the cabinet being switched off at the wall.
+FILE *  M_Atomic_Write_Open( const char * filename );
+
+// Always closes fw.  Returns false with filename untouched if the commit
+// failed, so the previous contents survive.
+boolean M_Atomic_Write_Close( FILE * fw, const char * filename );
 
 #endif

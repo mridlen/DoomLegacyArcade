@@ -371,6 +371,13 @@ written up in full in the doc named beside it.
   default in source does nothing on a machine that already has a config. This has bitten three
   times (overlay element letters, the level clock, weapon switching) and each time read as the
   feature being broken rather than unconfigured. → `install-config.md`, `hud.md`
+- **A file rewritten in place is empty on disk for the length of the rewrite, and this cabinet is
+  switched off at the wall.** `fopen(name, "w")` truncates before it writes, so a power cut during a
+  save loses the entire file rather than the game in progress — and saving *more often* to limit the
+  loss, which is what the audit counters do deliberately, **widens** that window rather than
+  narrowing it. Use `M_Atomic_Write_Open`/`M_Atomic_Write_Close` (`m_misc.c`) for anything that must
+  survive the power going: they write `<name>.tmp`, fsync the file *and* its directory, then
+  `rename()` over the target. → `install-config.md`
 - **A cvar's `OnChange` can fire before the subsystem it talks to exists, and the loss is silent.**
   `config.cfg` is executed well before the renderer is set up, so the GL cvars' handlers — all
   guarded with `if( HWD.pfnSetSpecialState )` — did nothing at all, and nothing re-applied them.
