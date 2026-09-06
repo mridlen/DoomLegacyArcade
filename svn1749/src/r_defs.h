@@ -742,9 +742,9 @@ typedef struct
     uint16_t  impl_flags;   // implementation flags, sprite_light_impl_flags_e
 } spr_light_t;
 
-extern spr_light_t  * corona_lsp;
-extern float     corona_size;
-extern byte      corona_alpha, corona_bright;
+extern R_TLS spr_light_t  * corona_lsp;
+extern R_TLS float     corona_size;
+extern R_TLS byte      corona_alpha, corona_bright;
 
 spr_light_t *  Sprite_Corona_Light_lsp( int sprnum, state_t * sprstate );
 byte  Sprite_Corona_Light_fade( spr_light_t * lsp, float cz, int objid );

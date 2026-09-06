@@ -93,6 +93,36 @@
 //#define PERSPCORRECT          // not finished
 #define SPLITSCREEN
 
+// [Arcade] Render worker threads for the software renderer (r_threads.c).
+//
+// The cabinet draws one viewport per panel, into disjoint cells of the
+// screen, so the views can be drawn at the same time on different cores.
+// Turning this off takes the whole feature out at compile time and restores
+// the stock serial renderer bit for bit -- R_TLS below becomes nothing, so
+// even the storage class of the renderer globals goes back to what it was.
+// The render_threads cvar turns it off at runtime.
+//
+// Needs SDL for its threads and semaphores, so it is gated on the SDL system
+// media interface; the X11, OS/2 and DOS backends build unthreaded.
+#if defined( SMIF_SDL )
+# define RENDER_THREADS
+#endif
+
+// [Arcade] Storage class for the software renderer's per-frame state.
+//
+// Every mutable global the renderer WRITES while drawing a frame carries
+// this, so each render thread gets its own copy.  Everything the renderer
+// only READS while drawing -- the tables R_ExecuteSetViewSize and R_Init*
+// build, which are identical for every view -- must NOT carry it, or the
+// workers would read a zeroed copy.  docs/arcade/render-threads.md has the
+// rule and the trap in full; the definition and the extern declaration of a
+// variable must always agree.
+#ifdef RENDER_THREADS
+# define R_TLS  __thread
+#else
+# define R_TLS
+#endif
+
 // [Arcade] Uncapped framerate: render-time interpolation (r_fps.c).  The
 // three hook sites in p_tick.c predate this and were left dormant by
 // upstream -- they name PrBoom's functions, which is what r_fps.c now

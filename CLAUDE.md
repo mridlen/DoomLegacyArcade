@@ -316,6 +316,7 @@ are kept below, in this file.
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
 | `docs/arcade/attract.md` | Attract cycle, menu-over-attract backdrop, idle timeout, arcade death | `D_AdvanceDemo`, `G_Idle_Timeout_Check`, `G_Arcade_Death_Check` |
+| `docs/arcade/render-threads.md` | Drawing the views on several cores: the `R_TLS` rule, the thread pool, the shared caches that had to be locked | `r_threads.c`, `R_TLS`, any file-scope variable in `r_main.c`/`r_bsp.c`/`r_segs.c`/`r_plane.c`/`r_things.c`/`r_draw.c`, the view loop in `D_Display` |
 | `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `framerate_cap` cvar, the frame limiter, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
@@ -353,6 +354,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+| Render threads | `r_threads.c` entire. `R_TLS` in `doomdef.h`; `D_Submit_Threaded_Views`/`D_Threaded_Views_Wait` (`d_main.c`); the seeding of `colfunc`/`spanfunc` and `R_NetUpdate_Main` (`r_main.c`); `R_Cache_Lock` call sites in `w_wad.c`, `r_segs.c`, `r_plane.c`, `r_bsp.c` |
 | Uncapped framerate | `r_fps.c` entire. Per tic: `R_UpdateInterpolations` (`P_Ticker`), `R_ActivateThinkerInterpolations`/`R_StopInterpolationIfNeeded` (`p_tick.c`), `R_Interp_Capture_Mobj` (`P_MobjThinker`, `P_PlayerThink`, `P_ThingHeightClip`, `P_BlasterMobjThinker`). Per frame: `R_Interp_Set_Frac` and `R_Interp_Frame_Begin/End` (`D_Display`), the `R_Interp_Fixed`/`R_Interp_View_Angle` calls in `R_SetupFrame`, `R_ProjectSprite`, `HWR_ProjectSprite`. Resets: `R_Interp_Reset_Mobj` (`P_SpawnMobj`, `P_TeleportMove`), `R_Interp_Reset_View` |
 | Whole-screen 2D page scale | `v_video.c`: `V_SetupDraw` (`x_scale`/`y_scale`, `x0_scale`/`y0_scale`) and the `V_scale_x`/`V_scale_y` macros in `v_video.h`. Flag set by `D_PageDrawer`, `HS_Draw_AttractTable`, `WI_Drawer`, `F_Drawer` |
 | Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Built by `P_Rebuild_Nodes` (`p_setup.c`) into `rbsp_*` and used for **rendering only**, via `R_Use_Render_BSP`/`R_Use_Play_BSP`; `-nonodebuild` disables it |
@@ -407,6 +409,25 @@ written up in full in the doc named beside it.
   clamp — the config, the menu and the cvar are all correct and only the arithmetic downstream is
   wrong. Use `.value` for any cvar that can exceed 255, and note that different readers of the
   same cvar can disagree. → `gotchas.md`
+- **A renderer global gets `R_TLS` if and only if it is written while drawing a frame.** Marked
+  when it should not be, a render worker reads a zeroed copy and the picture is *stable but
+  wrong*, which reads as a rendering bug rather than a threading one -- that is what
+  `pspritescale` and `clip_screen_top_min` did. Not marked when it should be, the threads
+  scribble on each other and it flickers. `R_ExecuteSetViewSize` computes the same geometry for
+  every cell, so what it sets is shared; `R_SetupFrame` and `R_Set_View_Window` write what is
+  genuinely per view. `centery` is set by **both** and must be marked. The renderer's state is
+  not only in the `r_*` files -- `colfunc` and `spanfunc` live in `screen.c`.
+  → `render-threads.md`
+- **Threading is verified by comparing pixels, never by a frame rate.** The software renderer is
+  integer throughout, so a threaded frame must be *bit identical* to a serial one; checksum the
+  screen at fixed gametics with `framerate_cap "35"` and compare `render_threads` 1 against 4.
+  Every bug in this feature was found that way and none would have shown up in an fps number.
+  When they differ, run each view on a worker but one at a time: still wrong means the `R_TLS`
+  split is wrong, right means the threads are racing on something shared.
+  → `render-threads.md`
+- **`W_CacheLumpNum` mutates shared state on a cache hit, not just a miss** -- it re-tags the
+  zone block. Anything called per visplane or per sprite from a render thread has to be
+  serialised with `R_Cache_Lock`. → `render-threads.md`
 - **The BSP the renderer walks must not be the one the simulation walks.** `p_sight.c` traverses
   the nodes for line-of-sight and `R_PointInSubsector` is used across the play code, so swapping in
   a rebuilt tree changes gameplay and desyncs demos — rarely enough to pass a careless test, which

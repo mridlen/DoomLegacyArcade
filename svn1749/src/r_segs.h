@@ -43,7 +43,7 @@
 #pragma interface
 #endif
 
-extern lighttable_t**   walllights;
+extern R_TLS lighttable_t**   walllights;
 
 // Render with transparency, over range x1..x2
 void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 );

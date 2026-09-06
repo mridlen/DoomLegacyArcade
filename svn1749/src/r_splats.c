@@ -61,10 +61,10 @@ static struct rastery_s rastertab[MAXVIDHEIGHT];
 static void prepare_rastertab (void);
 
 //r_plane.c
-extern fixed_t     cachedheight[MAXVIDHEIGHT];
-extern fixed_t     cacheddistance[MAXVIDHEIGHT];
-extern fixed_t     cachedxstep[MAXVIDHEIGHT];
-extern fixed_t     cachedystep[MAXVIDHEIGHT];
+extern R_TLS fixed_t     cachedheight[MAXVIDHEIGHT];
+extern R_TLS fixed_t     cacheddistance[MAXVIDHEIGHT];
+extern R_TLS fixed_t     cachedxstep[MAXVIDHEIGHT];
+extern R_TLS fixed_t     cachedystep[MAXVIDHEIGHT];
 extern fixed_t     basexscale;
 extern fixed_t     baseyscale;
 #endif

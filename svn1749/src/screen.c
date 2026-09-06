@@ -77,8 +77,8 @@
 // --------------------------------------------
 // assembly or c drawer routines for 8bpp/16bpp
 // --------------------------------------------
-void (*skycolfunc) (void);       //new sky column drawer draw posts >128 high
-void (*colfunc) (void);          // standard column upto 128 high posts
+R_TLS void (*skycolfunc) (void);       //new sky column drawer draw posts >128 high
+R_TLS void (*colfunc) (void);          // standard column upto 128 high posts
 
 #ifdef HORIZONTALDRAW
 //Fab 17-06-98
@@ -94,7 +94,7 @@ void (*fogcolfunc) (void);       // fog effects
 #ifdef ENABLE_DRAW_ALPHA
 void (*alpha_colfunc) (void);       // fog effects
 #endif
-void (*spanfunc) (void);         // span drawer, use a 64x64 tile
+R_TLS void (*spanfunc) (void);         // span drawer, use a 64x64 tile
 void (*basespanfunc) (void);     // default span func for color mode
 void (*fogspanfunc) (void);      // Legacy Fog sheet
 void (*transspanfunc) (void);    // translucent span drawer

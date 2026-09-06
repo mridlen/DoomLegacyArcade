@@ -129,6 +129,9 @@
 #include "console.h"
 #include "g_game.h"
 #include "r_local.h"
+#include "r_threads.h"
+
+static void Draw_Sprite_Corona_Light_locked( vissprite_t * vis );
 #include "sounds.h"             //skin sounds
 #include "st_stuff.h"
 #include "w_wad.h"
@@ -171,7 +174,7 @@ fixed_t         pspritescale;
 fixed_t         pspriteyscale;  //added:02-02-98:aspect ratio for psprites
 fixed_t         pspriteiscale;
 
-lighttable_t**  spritelights;	// selected scalelight for the sprite draw
+R_TLS lighttable_t**  spritelights;	// selected scalelight for the sprite draw
 
 
 
@@ -955,19 +958,19 @@ CV_PossibleValue_t spritelim_cons_t[] = {
 consvar_t  cv_spritelim = { "sprites_limit", "512", CV_SAVE, spritelim_cons_t, NULL };
 
 // [WDJ] Remove sprite limits.
-static int  vspr_change_delay = 128;  // quick first allocate
-static unsigned int  vspr_random = 0x7f43916;
-static int  vspr_halfcnt; // count to halfway
+static R_TLS int  vspr_change_delay = 128;  // quick first allocate
+static R_TLS unsigned int  vspr_random = 0x7f43916;
+static R_TLS int  vspr_halfcnt; // count to halfway
   
-static int  vspr_count = 0;	// count of sprites in the frame
-static int  vspr_needed = 64;     // max over several frames
-static int  vspr_max = 0;	// size of array - 1
-static vissprite_t*    vissprites = NULL;  // [0 .. vspr_max]
-static vissprite_t*    vissprite_last;	   // last vissprite in array
-static vissprite_t*    vissprite_p;    // next free vissprite
-static vissprite_t*    vissprite_far;  // a far vissprite, can be replaced
+static R_TLS int  vspr_count = 0;	// count of sprites in the frame
+static R_TLS int  vspr_needed = 64;     // max over several frames
+static R_TLS int  vspr_max = 0;	// size of array - 1
+static R_TLS vissprite_t*    vissprites = NULL;  // [0 .. vspr_max]
+static R_TLS vissprite_t*    vissprite_last;	   // last vissprite in array
+static R_TLS vissprite_t*    vissprite_p;    // next free vissprite
+static R_TLS vissprite_t*    vissprite_far;  // a far vissprite, can be replaced
 
-static vissprite_t     vsprsortedhead;  // sorted list head (circular linked)
+static R_TLS vissprite_t     vsprsortedhead;  // sorted list head (circular linked)
 
 
 // Call between frames, it does not copy contents, and does not init.
@@ -1104,6 +1107,8 @@ void R_Init_Sprites (char** namelist)
 // R_Clear_Sprites
 // Called at frame start.
 //
+static void  R_Clear_Sector_Sprite_Marks( void );   // [Arcade]
+
 void R_Clear_Sprites (void)
 {
     vissprites_tablesize();  // re-allocation
@@ -1115,13 +1120,14 @@ void R_Clear_Sprites (void)
     vissprite_far = & vsprsortedhead;
     vspr_halfcnt = 0; // force vissprite_far init
     vspr_count = 0;  // stat for allocation
+    R_Clear_Sector_Sprite_Marks();   // [Arcade] per-thread, see above
 }
 
 
 //
 // R_NewVisSprite
 //
-static vissprite_t     overflowsprite;
+static R_TLS vissprite_t     overflowsprite;
 
 // [WDJ] New vissprite sorted by scale
 // Closer sprites get preference in the vissprite list when too many.
@@ -1252,17 +1258,17 @@ void  set_int16( int16_t * dest, int x1, int x2, int16_t value )
 //
 // draw masked global parameters
 // clipping array[x], in int screen coord.
-int16_t      *  dm_floorclip;
-int16_t      *  dm_ceilingclip;
+R_TLS int16_t      *  dm_floorclip;
+R_TLS int16_t      *  dm_ceilingclip;
 
-fixed_t         dm_yscale;  // world to fixed_t screen coord
+R_TLS fixed_t         dm_yscale;  // world to fixed_t screen coord
 // draw masked column top and bottom, in fixed_t screen coord.
 fixed_t         dm_top_patch, dm_bottom_patch;
 // window clipping in fixed_t screen coord., set to FIXED_MAX to disable
 // to draw, require dm_windowtop < dm_windowbottom
 fixed_t         dm_windowtop, dm_windowbottom;
 // for masked draw of patch, to form dc_texturemid
-fixed_t         dm_texturemid;
+R_TLS fixed_t         dm_texturemid;
 
 
 // Called by R_RenderMaskedSegRange, R_RenderThickSideRange, R_RenderFog
@@ -2053,6 +2059,49 @@ static void R_ProjectSprite (mobj_t* thing)
 // R_AddSprites
 // During BSP traversal, this adds sprites by sector.
 //
+// [Arcade] "Has this thread already added this sector's sprites this frame?"
+//
+// Replaces the sec->validcount test, which lived in shared level data and so
+// could not be used once more than one thread draws at a time.  One array of
+// tags per thread, allocated with the level and grown if a bigger level is
+// loaded; the tag is bumped per view rather than cleared, so the cost per
+// frame is one integer.
+static R_TLS uint32_t * sprsec_tag = NULL;   // [numsectors]
+static R_TLS uint32_t   sprsec_alloc = 0;
+static R_TLS uint32_t   sprsec_frame = 0;
+
+// Called by R_Clear_Sprites, once per view, before anything is added.
+static void  R_Clear_Sector_Sprite_Marks( void )
+{
+    if( sprsec_alloc < numsectors )
+    {
+        uint32_t * n = realloc( sprsec_tag, numsectors * sizeof(uint32_t) );
+        if( ! n )  return;   // keep the old array; worst case a repeated add
+        sprsec_tag = n;
+        memset( sprsec_tag + sprsec_alloc, 0,
+                (numsectors - sprsec_alloc) * sizeof(uint32_t) );
+        sprsec_alloc = numsectors;
+    }
+    // Wrap is once every 4 billion views; clear rather than risk a stale hit.
+    if( ++sprsec_frame == 0 )
+    {
+        if( sprsec_tag )
+            memset( sprsec_tag, 0, sprsec_alloc * sizeof(uint32_t) );
+        sprsec_frame = 1;
+    }
+}
+
+static boolean  R_Sector_Sprites_First_Time( sector_t * sec )
+{
+    uint32_t  sn = (uint32_t)(sec - sectors);
+
+    if( !sprsec_tag || sn >= sprsec_alloc )  return true;  // no array: add it
+    if( sprsec_tag[sn] == sprsec_frame )  return false;
+    sprsec_tag[sn] = sprsec_frame;
+    return true;
+}
+
+
 void R_AddSprites (sector_t* sec, int lightlevel)
 {
     mobj_t*   thing;
@@ -2064,11 +2113,16 @@ void R_AddSprites (sector_t* sec, int lightlevel)
     // A sector might have been split into several
     //  subsectors during BSP building.
     // Thus we check whether its already added.
-    if (sec->validcount == validcount)
+    // [Arcade] Per-thread mark, not sec->validcount.
+    //
+    // This is the one place the software renderer wrote into the shared level
+    // structures while drawing.  With a view per thread, two threads marking
+    // the same sector would make one of them skip a sector the other had
+    // already claimed, and that view would silently lose every sprite in it.
+    // The mark is now a per-thread array indexed by sector, tagged with a
+    // per-thread counter so it never has to be cleared.
+    if( ! R_Sector_Sprites_First_Time( sec ) )
         return;
-
-    // Well, now it will be done.
-    sec->validcount = validcount;
 
     if(!sec->numlights)  // otherwise see ProjectSprite
     {
@@ -2605,14 +2659,14 @@ void R_Release_Corona( void )
 // --------------------------------------------------------------------------
 
 // corona state
-spr_light_t  * corona_lsp = NULL;
+R_TLS spr_light_t  * corona_lsp = NULL;
 fixed_t   corona_x0, corona_x1, corona_x2;
 fixed_t   corona_xscale, corona_yscale;
-float     corona_size;
-byte      corona_alpha;
-byte      corona_bright; // used by software draw to brighten active light sources
-byte      corona_index;  // corona_lsp index
-byte      corona_draw = 0;  // 1 = before sprite, 2 = after sprite
+R_TLS float     corona_size;
+R_TLS byte      corona_alpha;
+R_TLS byte      corona_bright; // used by software draw to brighten active light sources
+R_TLS byte      corona_index;  // corona_lsp index
+R_TLS byte      corona_draw = 0;  // 1 = before sprite, 2 = after sprite
 
 byte spec_dist[ 16 ] = {
   10,  // SPLT_unk
@@ -2982,7 +3036,20 @@ no_corona:
 
 
 static
+// [Arcade] Serialised for the render threads.  This builds corona_patch and
+// the per-colour corona_image[] copies lazily, into shared statics, with
+// Z_Malloc/Z_Free, while drawing -- so a second thread reallocates the patch
+// the first is reading from.  It crashed in R_DrawMaskedColumn on a column
+// pointer into freed memory, with nothing about coronas in the backtrace
+// above it.  Per light sprite, so the lock is not in a hot path.
 void Draw_Sprite_Corona_Light( vissprite_t * vis )
+{
+    R_Cache_Lock();
+    Draw_Sprite_Corona_Light_locked( vis );
+    R_Cache_Unlock();
+}
+
+static void Draw_Sprite_Corona_Light_locked( vissprite_t * vis )
 {
     int            texturecolumn;
    
@@ -3338,12 +3405,12 @@ void R_DrawSprite ( vissprite_t * spr, int dbx1, int dbx2, int16_t * env_clip_to
 #define  NUM_DRAWSPRITE_INC   128
 
 // drawsprite
-static drawsprite_t *  drawsprite_list = NULL;
-static drawsprite_t *  ds_sprite_first = NULL;
-static drawsprite_t *  ds_sprite_last = NULL;
+static R_TLS drawsprite_t *  drawsprite_list = NULL;
+static R_TLS drawsprite_t *  ds_sprite_first = NULL;
+static R_TLS drawsprite_t *  ds_sprite_last = NULL;
 
 
-static drawsprite_t *  drawsprite_freelist = NULL;  // free, linked by near, NULL term
+static R_TLS drawsprite_t *  drawsprite_freelist = NULL;  // free, linked by near, NULL term
 
 
 static

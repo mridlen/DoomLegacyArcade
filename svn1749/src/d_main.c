@@ -222,6 +222,7 @@
 #include "f_wipe.h"
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
+#include "r_threads.h"
 #endif
 #include "f_finale.h"
 
@@ -823,6 +824,63 @@ boolean D_Attract_Running( void )
 }
 
 
+// [Arcade] Render worker dispatch for the software renderer.
+//
+// The views write into disjoint cells of the screen and share nothing but
+// read-only level data, so they can be drawn at the same time.  Views 1..N-1
+// are handed to workers *before* the main thread draws view 0, so all of them
+// are in flight together; D_Threaded_Views_Wait() joins them before anything
+// else touches the screen buffer.
+//
+// Software renderer only.  The hardware one issues its GL calls straight out
+// of the BSP walk, and a GL context belongs to one thread.
+static byte  threaded_view_mask = 0;   // views a worker took this frame
+
+static void  D_Submit_Threaded_Views( void )
+{
+    byte  vind, num_views;
+
+    threaded_view_mask = 0;
+
+    if( rendermode != render_soft )  return;
+    if( R_Thread_Workers() == 0 )  return;
+
+    num_views = D_NumViews();
+    for( vind = 1; vind < num_views; vind++ )
+    {
+        byte pn = localplayer[vind];
+        player_t * vpl;
+
+        if( pn >= MAXPLAYERS )  continue;   // panel with no player
+        vpl = &players[pn];
+        if( ! vpl->mo )  continue;
+
+        if( R_Thread_Submit_View( vind, vpl ) )
+        {
+            threaded_view_mask |= (1 << vind);
+            // ##BENCH## bisection: one view at a time, still on a worker.
+            if( getenv("DL_RTHREAD_SERIAL") )
+                R_Threads_Wait();
+        }
+    }
+}
+
+static boolean  D_View_On_Worker( byte vind )
+{
+    return (threaded_view_mask & (1 << vind)) != 0;
+}
+
+static void  D_Threaded_Views_Wait( void )
+{
+    if( threaded_view_mask )
+    {
+        R_Threads_Wait();
+        threaded_view_mask = 0;
+    }
+}
+
+
+
 // Not called when dedicated.
 static
 void D_Display(void)
@@ -1010,6 +1068,19 @@ void D_Display(void)
                 }
             }
 
+            // [Arcade] Swap in the rebuilt BSP for the whole frame, on this
+            // thread only.  Was done per view inside R_RenderPlayerView; it
+            // cannot be, once views are drawn on several threads, because the
+            // save/restore underneath is one shared set of pointers.
+            if( rendermode == render_soft )
+                R_Use_Render_BSP();
+
+            // [Arcade] Hand views 1..N-1 to the render workers now, so they
+            // are drawn at the same time as view 0 below rather than after
+            // it.  Does nothing unless the software renderer is running with
+            // render_threads above 1.
+            D_Submit_Threaded_Views();
+
             if (displayplayer_ptr->mo)
             {
 #ifdef CLIENTPREDICTION2
@@ -1020,7 +1091,16 @@ void D_Display(void)
                     HWR_RenderPlayerView(0, displayplayer_ptr);
                 else    //if (rendermode == render_soft)
 #endif
+                {
+                    // [Arcade] The other views are already in flight on the
+                    // render workers (D_Submit_Threaded_Views above), so this
+                    // one is drawn alongside them.  Its draw tables have to be
+                    // placed explicitly now: view_window_x/y, ylookup and
+                    // columnofs are per thread, so this thread's copy holds
+                    // whatever the last frame left in it.
+                    R_Set_View_Window( 0 );
                     R_RenderPlayerView(0, displayplayer_ptr);
+                }
 #ifdef CLIENTPREDICTION2
                 displayplayer_ptr->mo->flags2 &= ~MF2_DONTDRAW;
 #endif
@@ -1060,7 +1140,7 @@ void D_Display(void)
                     vpl->mo->flags2 |= MF2_DONTDRAW;
 #endif
 #ifdef HWRENDER
-                    if (rendermode != render_soft)
+                        if (rendermode != render_soft)
                         HWR_RenderPlayerView(vind, vpl);
                     else
 #endif
@@ -1068,13 +1148,28 @@ void D_Display(void)
                         // Alter the draw tables to draw into this view's cell.
                         // Was Boris' hack for the second player window, which
                         // could only ever be the lower half of the screen.
-                        R_Set_View_Window( vind );
-                        R_RenderPlayerView(vind, vpl);
+                        // [Arcade] Unless a render worker already took this
+                        // view, in which case it is being drawn right now.
+                        if( ! D_View_On_Worker( vind ) )
+                        {
+                            R_Set_View_Window( vind );
+                            R_RenderPlayerView(vind, vpl);
+                        }
                     }
 #ifdef CLIENTPREDICTION2
                     vpl->mo->flags2 &= ~MF2_DONTDRAW;
 #endif
                 }
+
+                // [Arcade] Every view must be finished before anything
+                // else touches the screen buffer -- the cell blanking just
+                // below writes into it, and so do the HUD and status bar.
+                D_Threaded_Views_Wait();
+
+                // [Arcade] Put the wad's own tree back before anything but
+                // rendering runs again.  The simulation walks these globals.
+                if( rendermode == render_soft )
+                    R_Use_Play_BSP();
 
                 // [Arcade] Black out every cell no player claimed.
                 //
@@ -4184,6 +4279,11 @@ fatal_error_action:
 
     CONS_Printf(text[R_INIT_NUM]);
     R_Init();
+
+    // [Arcade] Render workers, after R_Init so the renderer they call into
+    // is built.  Creating the threads costs nothing while render_threads is
+    // 1: they block on their semaphore and are never posted.
+    R_Threads_Init();
 
     //
     // setting up sound

@@ -93,6 +93,7 @@
 #include "g_game.h"
 #include "g_input.h"
 #include "r_local.h"
+#include "r_threads.h"
 #include "r_splats.h"   //faB(21jan):testing
 #include "r_sky.h"
 #ifdef THINKER_INTERPOLATIONS
@@ -134,37 +135,37 @@ long long mytotal = 0;
 int                     viewangleoffset;
 
 // increment every time a check is made
-int                     validcount = 1;
+R_TLS int                     validcount = 1;
 
 // center of perspective projection, in screen coordinates, 0=top
 int                     centerx;
-int                     centery;
+R_TLS int                     centery;
 int                     centerypsp;     //added:06-02-98:cf R_DrawPSprite
 
 // center of perspective projection, in screen coordinates << FRACBITS
 fixed_t                 centerxfrac;
-fixed_t                 centeryfrac;
+R_TLS fixed_t                 centeryfrac;
 
 fixed_t                 projection_x;
 //added:02-02-98:fixing the aspect ratio stuff...
 fixed_t                 projection_y;
 
 // just for profiling purposes
-int                     framecount;
+R_TLS int                     framecount;
 
-int                     sscount;
-int                     linecount;
-int                     loopcount;
+R_TLS int                     sscount;
+R_TLS int                     linecount;
+R_TLS int                     loopcount;
 
 // fog render gobals
-uint16_t   fog_col_length;  // post_t column or picture height
-uint16_t   fog_tic;    // 0..0xFFF, tic per fog change
-byte	   fog_bltic;  // 0..31, blend/blur between tics
-tic_t      fog_nexttic;
-uint16_t   fog_wave1 = 0x200;   // 0..0x3FF, random small scale changes
-uint16_t   fog_wave2 = 0x200;   // 0..0x3FF, random slower
-byte       fog_index;  // 0.. column or texture height, for slow fog effect
-byte	   fog_init = 0;   // set 1 at fog linedef to clear previous fog blur
+R_TLS uint16_t   fog_col_length;  // post_t column or picture height
+R_TLS uint16_t   fog_tic;    // 0..0xFFF, tic per fog change
+R_TLS byte	   fog_bltic;  // 0..31, blend/blur between tics
+R_TLS tic_t      fog_nexttic;
+R_TLS uint16_t   fog_wave1 = 0x200;   // 0..0x3FF, random small scale changes
+R_TLS uint16_t   fog_wave2 = 0x200;   // 0..0x3FF, random slower
+R_TLS byte       fog_index;  // 0.. column or texture height, for slow fog effect
+R_TLS byte	   fog_init = 0;   // set 1 at fog linedef to clear previous fog blur
 
 // current viewer
 // Set by R_SetupFrame
@@ -173,35 +174,35 @@ byte	   fog_init = 0;   // set 1 at fog linedef to clear previous fog blur
 // Set to one lighttable_t entry of colormap table.
 // pain=>REDCOLORMAP, invulnerability=>INVERSECOLORMAP, goggles=>colormap[1]
 // Set from current viewer
-lighttable_t*           fixedcolormap;
+R_TLS lighttable_t*           fixedcolormap;
 
-mobj_t *   viewmobj;
+R_TLS mobj_t *   viewmobj;
 
-sector_t * viewer_sector;
-int      viewer_modelsec;
-boolean  viewer_has_model;
-boolean  viewer_underwater;  // only set when viewer_has_model
-boolean  viewer_at_water;    // viewer straddles the water plane
-boolean  viewer_overceiling; // only set when viewer_has_model
-boolean  viewer_at_ceiling;  // viewer straddles the ceiling plane
+R_TLS sector_t * viewer_sector;
+R_TLS int      viewer_modelsec;
+R_TLS boolean  viewer_has_model;
+R_TLS boolean  viewer_underwater;  // only set when viewer_has_model
+R_TLS boolean  viewer_at_water;    // viewer straddles the water plane
+R_TLS boolean  viewer_overceiling; // only set when viewer_has_model
+R_TLS boolean  viewer_at_ceiling;  // viewer straddles the ceiling plane
 
 // Boom colormap, and global viewer coloring
-lighttable_t*           view_colormap;  // full lightlevel range colormaps
-extracolormap_t *       view_extracolormap;
-ffloor_t *  view_fogfloor;  // viewer is in a FF_FOG floor
-sector_t *  view_fogmodel;  // viewer is in a FF_FOG floor
+R_TLS lighttable_t*           view_colormap;  // full lightlevel range colormaps
+R_TLS extracolormap_t *       view_extracolormap;
+R_TLS ffloor_t *  view_fogfloor;  // viewer is in a FF_FOG floor
+R_TLS sector_t *  view_fogmodel;  // viewer is in a FF_FOG floor
 
-fixed_t                 viewx;
-fixed_t                 viewy;
-fixed_t                 viewz;  // world coord
+R_TLS fixed_t                 viewx;
+R_TLS fixed_t                 viewy;
+R_TLS fixed_t                 viewz;  // world coord
 
-angle_t                 viewangle;
-angle_t                 aimingangle;
+R_TLS angle_t                 viewangle;
+R_TLS angle_t                 aimingangle;
 
-fixed_t                 viewcos;
-fixed_t                 viewsin;
+R_TLS fixed_t                 viewcos;
+R_TLS fixed_t                 viewsin;
 
-player_t*               viewplayer;
+R_TLS player_t*               viewplayer;
 
 // END current viewer
 
@@ -226,7 +227,7 @@ angle_t                 x_to_viewangle[MAXVIDWIDTH+1];
 
 
 lighttable_t*           scalelight[LIGHTLEVELS][MAXLIGHTSCALE];
-lighttable_t*           scalelightfixed[MAXLIGHTSCALE];
+R_TLS lighttable_t*           scalelightfixed[MAXLIGHTSCALE];
 lighttable_t*           zlight[LIGHTLEVELS][MAXLIGHTZ];
 
 //SoM: 3/30/2000: Hack to support extra boom colormaps.
@@ -234,9 +235,9 @@ int                     num_extra_colormaps = 0;
 extracolormap_t         extra_colormaps[MAXCOLORMAPS];
 
 // bumped light from gun blasts
-lightlev_t  extralight;	     // extralight seen by most draws
-lightlev_t  extralight_fog;  // partial extralight used by FF_FOG
-lightlev_t  extralight_cm;   // partial extralight used by colormap->fog
+R_TLS lightlev_t  extralight;	     // extralight seen by most draws
+R_TLS lightlev_t  extralight_fog;  // partial extralight used by FF_FOG
+R_TLS lightlev_t  extralight_cm;   // partial extralight used by colormap->fog
 
 consvar_t cv_chasecam       = {"chasecam","0",0,CV_OnOff};
 
@@ -1709,11 +1710,41 @@ extern void R_DrawFloorSplats (void);   //r_plane.c
 // In splitscreen the ylookup tables and view_window_y are adjusted per player.
 // Global variables include:  ylookup[], view_window_y, rdraw_viewheight
 //  pind : player index, [0]=main player, [1]=splitscreen player
+// [Arcade] NetUpdate, but only on the main thread.
+//
+// R_RenderPlayerView services the network as it goes, so that a slow frame
+// does not stall the client/server tick.  With the views drawn on worker
+// threads that would run the whole netcode from four threads at once, so a
+// worker skips it: the main thread is drawing its own view alongside and
+// calls it there, at the same points in the frame it always did.
+static void  R_NetUpdate_Main( void )
+{
+    if( R_On_Render_Worker() )  return;
+    NetUpdate ();
+}
+
+
 void R_RenderPlayerView( byte pind, player_t* player )
 {
-    // [Arcade] Draw from the rebuilt BSP, if there is one.  Swapped back
-    // before returning, so the simulation only ever walks the wad's tree.
-    R_Use_Render_BSP();
+    // [Arcade] The rebuilt BSP is swapped in by the caller now, once around
+    // every view, not here once per view.  It has to be: R_Use_Render_BSP
+    // saves the play tree into file statics guarded by one shared flag, so
+    // two render threads entering it together would save the *render*
+    // pointers as the play tree and the swap back would leave the simulation
+    // walking the rebuilt one.  That crashed in P_CrossSubsector, a whole
+    // subsystem away.  See docs/arcade/render-threads.md.
+
+    // [Arcade] colfunc and spanfunc are the *current* column and span drawer
+    // and are thread-local, because the render path reassigns them constantly
+    // (r_segs.c picks the translucent or shade drawer per wall, r_plane.c the
+    // fog or translucent span per visplane).  Shared, a worker choosing the
+    // skin-translation drawer for a sprite would have the main thread draw its
+    // next wall through it -- which is exactly how this crashed, in
+    // R_DrawTranslatedColumn with a NULL dc_skintran, called from
+    // R_RenderSegLoop.  screen.c sets the base drawers once per drawmode on
+    // the main thread, so seed this thread's copies from them here.
+    colfunc = basecolfunc;
+    spanfunc = basespanfunc;
 
     // rendermode == render_soft
     R_SetupFrame(pind, player);
@@ -1730,7 +1761,7 @@ void R_RenderPlayerView( byte pind, player_t* player )
 #endif
 
     // check for new console commands.
-    NetUpdate ();
+    R_NetUpdate_Main ();
 
     // The head node is the last node output.
 
@@ -1762,13 +1793,13 @@ void R_RenderPlayerView( byte pind, player_t* player )
 #endif
 
     // Check for new console commands.
-    NetUpdate ();
+    R_NetUpdate_Main ();
 
     //R_Draw_Portals ();
     R_Draw_Planes ();
 
     // Check for new console commands.
-    NetUpdate ();
+    R_NetUpdate_Main ();
 
 #ifdef FLOORSPLATS
     //faB(21jan): testing
@@ -1795,10 +1826,10 @@ void R_RenderPlayerView( byte pind, player_t* player )
         R_DrawPlayerSprites ();
 
     // Check for new console commands.
-    NetUpdate ();
+    R_NetUpdate_Main ();
     player->mo->flags &= ~MF_NOSECTOR; // don't show self (uninit) clientprediction code
 
-    R_Use_Play_BSP();  // [Arcade]
+    // [Arcade] R_Use_Play_BSP() is the caller's now -- see above.
 }
 
 
@@ -1878,4 +1909,10 @@ void R_Register_EngineStuff (void)
         return;
 
     CV_RegisterVar_list( engine_client_cvar_list );
+
+#ifdef RENDER_THREADS
+    // [Arcade] How many cores the software renderer may use.  Registered
+    // here so config.cfg can carry it like any other video setting.
+    CV_RegisterVar( &cv_render_threads );
+#endif
 }

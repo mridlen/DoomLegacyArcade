@@ -82,6 +82,7 @@
 #include "g_game.h"
 #include "r_data.h"
 #include "r_local.h"
+#include "r_threads.h"
 #include "r_state.h"
 #include "r_splats.h"   //faB(21jan):testing
 #include "r_sky.h"
@@ -91,8 +92,8 @@
 
 #include "p_setup.h"    // levelflats
 
-planefunction_t         floorfunc = NULL;
-planefunction_t         ceilingfunc = NULL;
+R_TLS planefunction_t         floorfunc = NULL;
+R_TLS planefunction_t         ceilingfunc = NULL;
 
 //
 // opening
@@ -101,19 +102,23 @@ planefunction_t         ceilingfunc = NULL;
 // [WDJ] visplane base   vispl_
 // Here comes the obnoxious "visplane".
 /*#define                 MAXVISPLANES 128 //SoM: 3/20/2000
-visplane_t*             vispl_head;
+R_TLS visplane_t*             vispl_head;
 visplane_t*             vispl_last;*/
 
 //SoM: 3/23/2000: Use Boom visplane hashing.
 #define           VISPL_HASHSIZE      128
 // visplane hash array, for fast duplicate check
-static visplane_t * vispl_hashtab[VISPL_HASHSIZE];
+static R_TLS visplane_t * vispl_hashtab[VISPL_HASHSIZE];
 
 // free list of visplane_t
 // [WDJ] head and tail were reversed from normal linked list meanings
 // Insert at tail, take free off head, use next for linking.
-static visplane_t * vispl_free_head = NULL;
-static visplane_t ** vispl_free_tail = &vispl_free_head;  // addr of head or next ptr
+static R_TLS visplane_t * vispl_free_head = NULL;
+// [Arcade] Cannot be initialised to &vispl_free_head any more: both are
+// thread-local now, and the address of one thread-local is not a
+// compile-time constant.  R_Clear_Planes points it at this thread's own
+// head on first use instead.
+static R_TLS visplane_t ** vispl_free_tail = NULL;  // addr of head or next ptr
 #ifdef DYNAMIC_VISPLANE_COVER
 static uint16_t visplane_width = 0;  // vid width of all visplanes
 static unsigned int  visplane_cover_size = 0; // sizeof cover array
@@ -121,17 +126,17 @@ static unsigned int  visplane_cover_size = 0; // sizeof cover array
 
 // [WDJ] visplane_t global parameters  vsp_
 // visplane used for drawing in r_bsp and r_segs
-visplane_t*             vsp_floorplane;
-visplane_t*             vsp_ceilingplane;
+R_TLS visplane_t*             vsp_floorplane;
+R_TLS visplane_t*             vsp_ceilingplane;
 
 // visplane used by R_MapPlane, set by R_DrawSinglePlane
-visplane_t*             vsp_currentplane;
+R_TLS visplane_t*             vsp_currentplane;
 
 // this use 251 Kb memory (in Legacy 1.43)
 // [WDJ] Renamed so they do not confuse with ffloor
 // The ffplanes of the subsector processed by BSP.
-ff_planemgr_t           ffplane[MAXFFLOORS];
-int                     numffplane;
+R_TLS ff_planemgr_t           ffplane[MAXFFLOORS];
+R_TLS int                     numffplane;
 
 //SoM: 3/23/2000: Boom visplane hashing routine.
 #define visplane_hash(picnum,lightlevel,height) \
@@ -148,23 +153,23 @@ int                     numffplane;
 //  Init floorclip to SCREENHEIGHT (bottom of screen).
 //  Init ceilingclip to 0 (top of screen).
 //  There are other limit tests applied that will limit the clip to the window.
-int16_t                 floorclip[MAXVIDWIDTH];
-int16_t                 ceilingclip[MAXVIDWIDTH];
-fixed_t                 backscale[MAXVIDWIDTH];
+R_TLS int16_t                 floorclip[MAXVIDWIDTH];
+R_TLS int16_t                 ceilingclip[MAXVIDWIDTH];
+R_TLS fixed_t                 backscale[MAXVIDWIDTH];
 
 
 //
 // spanstart holds the start of a plane span
 // initialized to 0 at start
 //
-int                     spanstart[MAXVIDHEIGHT];
+R_TLS int                     spanstart[MAXVIDHEIGHT];
 //int                     spanstop[MAXVIDHEIGHT]; //added:08-02-98: Unused!!
 
 //
 // texture mapping
 //
-lighttable_t**          planezlight;
-fixed_t                 planeheight;
+R_TLS lighttable_t**          planezlight;
+R_TLS fixed_t                 planeheight;
 
 //added:10-02-98: yslopetab is what yslope used to be,
 //                yslope points somewhere into yslopetab,
@@ -174,18 +179,18 @@ fixed_t                 planeheight;
 //                (when mouselookin', yslope is moving into yslopetab)
 //                Check R_SetupFrame, R_SetViewSize for more...
 fixed_t                 yslopetab[MAXVIDHEIGHT*4];
-fixed_t*                yslope = NULL;
+R_TLS fixed_t*                yslope = NULL;
 
 fixed_t                 distscale[MAXVIDWIDTH];
-fixed_t                 base_scale_x;
-fixed_t                 base_scale_y;
+R_TLS fixed_t                 base_scale_x;
+R_TLS fixed_t                 base_scale_y;
 
-fixed_t                 cachedheight[MAXVIDHEIGHT];
-fixed_t                 cacheddistance[MAXVIDHEIGHT];
-fixed_t                 cachedxstep[MAXVIDHEIGHT];
-fixed_t                 cachedystep[MAXVIDHEIGHT];
+R_TLS fixed_t                 cachedheight[MAXVIDHEIGHT];
+R_TLS fixed_t                 cacheddistance[MAXVIDHEIGHT];
+R_TLS fixed_t                 cachedxstep[MAXVIDHEIGHT];
+R_TLS fixed_t                 cachedystep[MAXVIDHEIGHT];
 
-fixed_t   xoffs, yoffs;
+R_TLS fixed_t   xoffs, yoffs;
 
 // R_Init_Planes
 // Only at game startup.
@@ -346,6 +351,11 @@ void R_Clear_Planes (player_t *player)
 
     //SoM: 3/23/2000
     // put all visplanes to free list, while clearing vispl_hashtab[] to NULL
+    // [Arcade] First use on this thread: the free list is empty and the tail
+    // is the address of this thread's own head.
+    if( ! vispl_free_tail )
+        vispl_free_tail = & vispl_free_head;
+
     for (i=0; i<VISPL_HASHSIZE; i++)
     {
         *vispl_free_tail = vispl_hashtab[i];
@@ -999,7 +1009,10 @@ void R_DrawSinglePlane(visplane_t* pl)
   }
 
 
+  // [Arcade] Zone allocator, from every render thread -- see R_Cache_Lock.
+  R_Cache_Lock();
   Z_ChangeTag (ds_source, PU_CACHE);
+  R_Cache_Unlock();
 }
 
 

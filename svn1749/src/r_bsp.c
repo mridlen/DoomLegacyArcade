@@ -86,6 +86,9 @@
 #include "doomincl.h"
 #include "g_game.h"
 #include "r_local.h"
+#include "r_threads.h"
+
+static void R_Prep3DFloors_locked(sector_t* sector);
 #include "r_state.h"
 
 #include "r_splats.h"
@@ -96,11 +99,11 @@
 // Draw
 // rendermode == render_soft
 
-seg_t*          curline;
-side_t*         sidedef;
-line_t*         linedef;
-sector_t*       frontsector;
-sector_t*       backsector;
+R_TLS seg_t*          curline;
+R_TLS side_t*         sidedef;
+R_TLS line_t*         linedef;
+R_TLS sector_t*       frontsector;
+R_TLS sector_t*       backsector;
 
 
 //
@@ -119,8 +122,8 @@ typedef struct
 #define MAX_SOLIDSEGS         MAXVIDWIDTH/2+1
 
 // new_seg_end is one past the last valid seg
-static cliprange_t*    new_seg_end;
-static cliprange_t     solidsegs[MAX_SOLIDSEGS];
+static R_TLS cliprange_t*    new_seg_end;
+static R_TLS cliprange_t     solidsegs[MAX_SOLIDSEGS];
 
 
 //
@@ -307,7 +310,7 @@ void R_Clear_ClipSegs (void)
 // of front-back closure (e.g. front floor is taller than back ceiling).
 
 //SoM:3/25/2000: indicates doors closed wrt automap bugfix:
-byte   doorclosed;  // 0=open
+R_TLS byte   doorclosed;  // 0=open
   // used r_segs.c
 
 // Called by R_AddLine, HWR_AddLine
@@ -568,7 +571,7 @@ sector_t* R_FakeFlat(sector_t *sec, sector_t *tempsec, boolean back,
 // Called by R_Subsector
 void R_AddLine (seg_t*  lineseg)
 {
-    static sector_t     tempsec; //SoM: FakeFlat ceiling/water
+    static R_TLS sector_t     tempsec; //SoM: FakeFlat ceiling/water
 
     int                 x1, x2;
     angle_t             angle1, angle2;
@@ -821,13 +824,13 @@ boolean R_CheckBBox (fixed_t*   bspcoord)
 //
 
 // First seg of subsector. It has the backscale for the plane.
-drawseg_t *  first_subsec_seg;
+R_TLS drawseg_t *  first_subsec_seg;
 
 // Called by R_RenderBSPNode
 static
 void R_Subsector ( uint32_t num )
 {
-    static sector_t     tempsec; //SoM: 3/17/2000: Deep water hack
+    static R_TLS sector_t     tempsec; //SoM: 3/17/2000: Deep water hack
 
     int                 segcount;
     seg_t*              lineseg;
@@ -1045,7 +1048,20 @@ void R_Subsector ( uint32_t num )
 // This function creates the lightlists that the given sector uses to light
 // floors/ceilings/walls according to the 3D floors.
 // Called by R_Subsector whenever a floor has moved
+// [Arcade] Serialised for the render threads: this rewrites
+// sector->lightlist, which is shared level data, and it does the memset on
+// every call rather than only when it reallocates -- so two views reaching
+// the same sector at once corrupt it, and the reallocating case double-frees.
+// Only 3D-floor sectors get here, and only when a floor has moved, so the
+// lock is nowhere near a hot path.  See docs/arcade/render-threads.md.
 void R_Prep3DFloors(sector_t*  sector)
+{
+    R_Cache_Lock();
+    R_Prep3DFloors_locked( sector );
+    R_Cache_Unlock();
+}
+
+static void R_Prep3DFloors_locked(sector_t*  sector)
 {
   ffloor_t*      rover;
   ffloor_t*      best;

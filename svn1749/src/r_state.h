@@ -172,19 +172,19 @@ extern side_t*          sides;
 //
 // POV data.
 //
-extern fixed_t          viewx;
-extern fixed_t          viewy;
-extern fixed_t          viewz;
+extern R_TLS fixed_t          viewx;
+extern R_TLS fixed_t          viewy;
+extern R_TLS fixed_t          viewz;
 
 // SoM: Portals require that certain functions use a different x and y pos
 // than the actual view pos...
 extern fixed_t          bspx;
 extern fixed_t          bspy;
 
-extern angle_t          viewangle;
-extern angle_t          aimingangle;
+extern R_TLS angle_t          viewangle;
+extern R_TLS angle_t          aimingangle;
 extern angle_t          bspangle;
-extern player_t*        viewplayer;
+extern R_TLS player_t*        viewplayer;
 
 // ?
 extern angle_t          clipangle;
@@ -198,15 +198,15 @@ extern int              viewangle_to_x[FINE_ANG180];
 extern angle_t          x_to_viewangle[MAXVIDWIDTH+1];
 //extern fixed_t                finetangent[FINEANGLES/2];
 
-extern fixed_t          rw_distance;
-extern angle_t          rw_normalangle;
+extern R_TLS fixed_t          rw_distance;
+extern R_TLS angle_t          rw_normalangle;
 
 
 
 // angle to line origin
-extern int              rw_angle1;
+extern R_TLS int              rw_angle1;
 
 // Segs count?
-extern int              sscount;
+extern R_TLS int              sscount;
 
 #endif

@@ -59,44 +59,44 @@
 //
 // POV related.
 //
-extern fixed_t          viewcos;
-extern fixed_t          viewsin;
+extern R_TLS fixed_t          viewcos;
+extern R_TLS fixed_t          viewsin;
 
 extern int              viewwidth;
 extern int              viewheight;
-extern int              view_window_x;
-extern int              view_window_y;
+extern R_TLS int              view_window_x;
+extern R_TLS int              view_window_y;
 
-extern mobj_t*		viewmobj;
+extern R_TLS mobj_t*		viewmobj;
 
 extern angle_t          clipangle, clipangle_x_2;
 
 extern int              centerx;
-extern int              centery;
+extern R_TLS int              centery;
 
 extern int      centerypsp;
 
 extern fixed_t          centerxfrac;
-extern fixed_t          centeryfrac;
+extern R_TLS fixed_t          centeryfrac;
 extern fixed_t          projection_x;
 extern fixed_t          projection_y;    //added:02-02-98:aspect ratio test...
 
-extern int              validcount;
+extern R_TLS int              validcount;
 
-extern int              linecount;
-extern int              loopcount;
+extern R_TLS int              linecount;
+extern R_TLS int              loopcount;
 
-extern int      framecount;
+extern R_TLS int      framecount;
 
 // fog render
-extern uint16_t	fog_col_length;
-extern uint16_t fog_tic;    // 0..0xFFF
-extern byte	fog_bltic;  // 0..32, blur/blend between tics
-extern uint16_t fog_wave1;  // 0..0x3FF, random small scale changes
-extern uint16_t fog_wave2;  // 0..0x3FF, random slower
-extern byte     fog_index;  // 0.. column or texture height
+extern R_TLS uint16_t	fog_col_length;
+extern R_TLS uint16_t fog_tic;    // 0..0xFFF
+extern R_TLS byte	fog_bltic;  // 0..32, blur/blend between tics
+extern R_TLS uint16_t fog_wave1;  // 0..0x3FF, random small scale changes
+extern R_TLS uint16_t fog_wave2;  // 0..0x3FF, random slower
+extern R_TLS byte     fog_index;  // 0.. column or texture height
 extern byte     fog_index2; // fog_index-1 mod texture height
-extern byte	fog_init;
+extern R_TLS byte	fog_init;
 
 //
 // Lighting LUT.
@@ -119,30 +119,30 @@ extern byte	fog_init;
 #define LIGHTZSHIFT             20
 
 extern lighttable_t*    scalelight[LIGHTLEVELS][MAXLIGHTSCALE];
-extern lighttable_t*    scalelightfixed[MAXLIGHTSCALE];
+extern R_TLS lighttable_t*    scalelightfixed[MAXLIGHTSCALE];
 extern lighttable_t*    zlight[LIGHTLEVELS][MAXLIGHTZ];
 
-extern lighttable_t*    fixedcolormap;
+extern R_TLS lighttable_t*    fixedcolormap;
 
-extern lightlev_t  extralight;      // extralight seen by most draws
-extern lightlev_t  extralight_fog;  // partial extralight used by FF_FOG
-extern lightlev_t  extralight_cm;   // partial extralight used by colormap->fog
+extern R_TLS lightlev_t  extralight;      // extralight seen by most draws
+extern R_TLS lightlev_t  extralight_fog;  // partial extralight used by FF_FOG
+extern R_TLS lightlev_t  extralight_cm;   // partial extralight used by colormap->fog
 
 // [WDJ] viewer setup as used by R_RenderBSPNode, R_FakeFlat, R_ProjectSprite
-extern sector_t * viewer_sector;
-extern int      viewer_modelsec;
-extern boolean  viewer_has_model;
-extern boolean  viewer_underwater;  // only set when viewer_has_model
-extern boolean  viewer_at_water;    // viewer straddles the water plane
-extern boolean  viewer_overceiling; // only set when viewer_has_model
-extern boolean  viewer_at_ceiling;  // viewer straddles the ceiling plane
+extern R_TLS sector_t * viewer_sector;
+extern R_TLS int      viewer_modelsec;
+extern R_TLS boolean  viewer_has_model;
+extern R_TLS boolean  viewer_underwater;  // only set when viewer_has_model
+extern R_TLS boolean  viewer_at_water;    // viewer straddles the water plane
+extern R_TLS boolean  viewer_overceiling; // only set when viewer_has_model
+extern R_TLS boolean  viewer_at_ceiling;  // viewer straddles the ceiling plane
 
-extern ffloor_t *  view_fogfloor;  // viewer is in a FF_FOG floor
-extern sector_t *  view_fogmodel;  // viewer is in a FF_FOG floor
+extern R_TLS ffloor_t *  view_fogfloor;  // viewer is in a FF_FOG floor
+extern R_TLS sector_t *  view_fogmodel;  // viewer is in a FF_FOG floor
 
 // Boom colormap, and global viewer coloring
-extern lighttable_t*    view_colormap;  // full lightlevel range colormaps
-extern extracolormap_t *  view_extracolormap;
+extern R_TLS lighttable_t*    view_colormap;  // full lightlevel range colormaps
+extern R_TLS extracolormap_t *  view_extracolormap;
 
 extern byte EN_boom_colormap;  // compatibility, user preference
 void BoomColormap_detect( void );

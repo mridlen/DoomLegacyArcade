@@ -102,11 +102,11 @@ int             rdraw_scaledviewwidth;		// was scaledrviewwidth
 int             rdraw_viewheight;		// was viewheight
                         // height of view window in rows (pixels)
 // position of smaller rdraw_view window within vid window
-int             view_window_x;
-int             view_window_y;
+R_TLS int             view_window_x;
+R_TLS int             view_window_y;
 
                 // pointer to the start of each line of the screen,
-byte*           ylookup[MAXVIDHEIGHT];
+R_TLS byte*           ylookup[MAXVIDHEIGHT];
 
 // [Arcade] The two precomputed half-screen row tables splitscreen used before
 // the view grid existed are gone; R_Set_View_Window() below places the tables
@@ -116,7 +116,7 @@ byte*           ylookup[MAXVIDHEIGHT];
 
                 // x byte offset for columns inside the view_window
                 // so the first column starts at (SCRWIDTH-VIEWWIDTH)/2
-int             columnofs[MAXVIDWIDTH];
+R_TLS int             columnofs[MAXVIDWIDTH];
 
 #ifdef HORIZONTALDRAW
 //Fab 17-06-98: horizontal column drawer optimisation
@@ -124,30 +124,30 @@ byte*           yhlookup[MAXVIDWIDTH];
 int             hcolumnofs[MAXVIDHEIGHT];
 #endif
 
-byte            dr_alpha;  // translucent and fog alpha, 0..255
+R_TLS byte            dr_alpha;  // translucent and fog alpha, 0..255
 #ifdef ENABLE_DRAW_ALPHA
-byte            dr_alpha_mode;  // alpha combine modes
-byte            dr_alpha_background;  // alpha applied to background
-byte            dr_color8;
-RGBA_t          dr_color;  // draw alpha
+R_TLS byte            dr_alpha_mode;  // alpha combine modes
+R_TLS byte            dr_alpha_background;  // alpha applied to background
+R_TLS byte            dr_color8;
+R_TLS RGBA_t          dr_color;  // draw alpha
 #endif
 
 // =========================================================================
 //                      COLUMN DRAWING CODE STUFF
 // =========================================================================
 
-lighttable_t*           dc_colormap;
-int                     dc_x;
-int                     dc_yl;
-int                     dc_yh;
+R_TLS lighttable_t*           dc_colormap;
+R_TLS int                     dc_x;
+R_TLS int                     dc_yl;
+R_TLS int                     dc_yh;
 #ifdef MONSTER_VARY
-int                     dc_y0;  // ref for draw, to allow separate sprite scaling
+R_TLS int                     dc_y0;  // ref for draw, to allow separate sprite scaling
 #endif
 
-fixed_t                 dc_iscale;
-fixed_t                 dc_texturemid;
+R_TLS fixed_t                 dc_iscale;
+R_TLS fixed_t                 dc_texturemid;
 
-byte*                   dc_source;
+R_TLS byte*                   dc_source;
 
 
 // -----------------------
@@ -159,8 +159,8 @@ byte*                   dc_source;
 byte*                   translucenttables;    // translucency tables
 
 // R_DrawTransColumn uses this
-byte*                   dc_translucentmap;    // one of the translucency tables
-byte                    dc_translucent_index;
+R_TLS byte*                   dc_translucentmap;    // one of the translucency tables
+R_TLS byte                    dc_translucent_index;
 
 
 // ----------------------
@@ -172,39 +172,39 @@ byte                    dc_translucent_index;
 byte*                   skintranstables;  // player skin translation tables
 
 // R_DrawTranslatedColumn uses this
-byte*                   dc_skintran; // ptr to one skintranstables table
+R_TLS byte*                   dc_skintran; // ptr to one skintranstables table
 
 
-struct r_lightlist_s*   dc_lightlist = NULL;
-int                     dc_numlights = 0;
-int                     dc_maxlights;
+R_TLS struct r_lightlist_s*   dc_lightlist = NULL;
+R_TLS int                     dc_numlights = 0;
+R_TLS int                     dc_maxlights;
 
-int     dc_texheight;
+R_TLS int     dc_texheight;
 
 // =========================================================================
 //                      SPAN DRAWING CODE STUFF
 // =========================================================================
 
-int                     ds_y;
-int                     ds_x1;
-int                     ds_x2;
+R_TLS int                     ds_y;
+R_TLS int                     ds_x1;
+R_TLS int                     ds_x2;
 
-lighttable_t*           ds_colormap;
+R_TLS lighttable_t*           ds_colormap;
 
-fixed_t                 ds_xfrac;
-fixed_t                 ds_yfrac;
-fixed_t                 ds_xstep;
-fixed_t                 ds_ystep;
+R_TLS fixed_t                 ds_xfrac;
+R_TLS fixed_t                 ds_yfrac;
+R_TLS fixed_t                 ds_xstep;
+R_TLS fixed_t                 ds_ystep;
 
-byte*                   ds_source;      // start of a 64*64 tile image
-byte*                   ds_translucentmap;    // one of the translucency tables
+R_TLS byte*                   ds_source;      // start of a 64*64 tile image
+R_TLS byte*                   ds_translucentmap;    // one of the translucency tables
 
 // Variable flat sizes SSNTails 06-10-2003
-unsigned int flatsize;
-unsigned int flatbitsz;  // flat bit size, flatsize = 2**flatbitsz
-unsigned int flatfracbits; // FRACBITS - flatbitsz
-unsigned int flat_ymask;   // index mask, = (flatsize-1)<<flatbitsz
-fixed_t      flat_imask;   // index mask, = (flatsize<<FRACBITS) - 1
+R_TLS unsigned int flatsize;
+R_TLS unsigned int flatbitsz;  // flat bit size, flatsize = 2**flatbitsz
+R_TLS unsigned int flatfracbits; // FRACBITS - flatbitsz
+R_TLS unsigned int flat_ymask;   // index mask, = (flatsize-1)<<flatbitsz
+R_TLS fixed_t      flat_imask;   // index mask, = (flatsize<<FRACBITS) - 1
 
 
 // ==========================================================================
@@ -228,7 +228,7 @@ static  int fuzzoffset[FUZZTABLE] =
     FUZZOFF,FUZZOFF,-FUZZOFF,FUZZOFF,FUZZOFF,-FUZZOFF,FUZZOFF
 };
 
-static  int fuzzpos = 0;     // move through the fuzz table
+static  R_TLS int fuzzpos = 0;     // move through the fuzz table
 
 
 //  fuzzoffsets are dependent upon vid width, for optimising purpose
