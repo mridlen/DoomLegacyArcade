@@ -180,6 +180,10 @@
 #include "console.h"
 
 #include "r_local.h"
+#ifdef THINKER_INTERPOLATIONS
+#include "r_fps.h"
+  // cv_uncapped, on the Video Options page
+#endif
 #include "hu_stuff.h"
 #include "g_game.h"
 #include "hs_stuff.h"
@@ -4592,6 +4596,13 @@ menuitem_t VideoOptionsMenu[]=
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Brightness"       , &cv_bright        , 0},
     {IT_STRING | IT_CVAR,0,    "Wait Retrace"     , &cv_vidwait       , 0},
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Below Wait Retrace deliberately: uncapped without a frame
+    // limiter spins the main loop as fast as the card will go, and Retrace
+    // is what limits it.  Safe to insert here -- the only positional
+    // dependencies on this array (VO_gamma and the two after it) are above.
+    {IT_STRING | IT_CVAR,0,    "Uncapped Frames"  , &cv_uncapped      , 0},
+#endif
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Screen Size"      , &cv_viewsize      , 0},
 #ifdef FIT_RATIO

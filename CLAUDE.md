@@ -179,11 +179,19 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   124 exactly as it does for a healthy run. Every run in the `SDL_QUIT` episode above returned 124.
   139 is still a segfault.
   - **The reliable check is whether the ENDOOM banner was printed**, since that only happens on a
-    real quit: `sed 's/\x1b\[[0-9;]*m//g' out.txt | grep -c 'READ THE DOCS'` — 0 means it was
-    still running when `timeout` killed it, 1 means it quit on its own.
-  - **Strip the colour escapes first.** ENDOOM text is interleaved with them per character, so a
-    plain `grep 'READ THE DOCS' out.txt` on the raw file finds nothing and hands back a false
-    "still running". That mistake is what kept the `SDL_QUIT` diagnosis pointing at `-warp`.
+    real quit — but detect it **structurally, never by the words on the screen**:
+    `grep -c $'\033\[0m' out.txt`. `endtxt.c` emits one reset per cell, so a printed screen is
+    80*25 = 2000 of them; measured 2026 on a clean quit against 0 on a run the timeout killed.
+    Anything over ~1000 means it quit on its own.
+  - **This file used to say to grep for `READ THE DOCS`, and that is wrong.** That phrase is from
+    the *stock* ENDOOM art, which this fork replaced — the cabinet's screen says "Thanks for
+    playing Doom Legacy Arcade". The stale instruction has now cost two separate investigations: it
+    turned three green smoke checks red while the engine was quitting perfectly cleanly, and it
+    later reported a healthy OpenGL run as "still running". `tools/smoke.sh` was fixed at the time;
+    this file was not. **Never tie a check to the contents of editable art.** → `branding.md`
+  - If you do match text, **strip the colour escapes first** — ENDOOM text is interleaved with them
+    per character, so a plain `grep` on the raw file finds nothing and hands back a false "still
+    running". That mistake is what kept the `SDL_QUIT` diagnosis pointing at `-warp`.
   - The other positive signal is per-tic output from temporary instrumentation: if it is still
     printing when the timeout hits, the loop was genuinely running.
   - `coredumpctl debug doomlegacyarcade --debugger=gdb --debugger-arguments="-batch -ex bt"`
@@ -308,6 +316,7 @@ are kept below, in this file.
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
 | `docs/arcade/attract.md` | Attract cycle, menu-over-attract backdrop, idle timeout, arcade death | `D_AdvanceDemo`, `G_Idle_Timeout_Check`, `G_Arcade_Death_Check` |
+| `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `uncapped` cvar, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |
@@ -344,6 +353,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+| Uncapped framerate | `r_fps.c` entire. Per tic: `R_UpdateInterpolations` (`P_Ticker`), `R_ActivateThinkerInterpolations`/`R_StopInterpolationIfNeeded` (`p_tick.c`), `R_Interp_Capture_Mobj` (`P_MobjThinker`, `P_PlayerThink`, `P_ThingHeightClip`, `P_BlasterMobjThinker`). Per frame: `R_Interp_Set_Frac` and `R_Interp_Frame_Begin/End` (`D_Display`), the `R_Interp_Fixed`/`R_Interp_View_Angle` calls in `R_SetupFrame`, `R_ProjectSprite`, `HWR_ProjectSprite`. Resets: `R_Interp_Reset_Mobj` (`P_SpawnMobj`, `P_TeleportMove`), `R_Interp_Reset_View` |
 | Whole-screen 2D page scale | `v_video.c`: `V_SetupDraw` (`x_scale`/`y_scale`, `x0_scale`/`y0_scale`) and the `V_scale_x`/`V_scale_y` macros in `v_video.h`. Flag set by `D_PageDrawer`, `HS_Draw_AttractTable`, `WI_Drawer`, `F_Drawer` |
 | Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Built by `P_Rebuild_Nodes` (`p_setup.c`) into `rbsp_*` and used for **rendering only**, via `R_Use_Render_BSP`/`R_Use_Play_BSP`; `-nonodebuild` disables it |
 
