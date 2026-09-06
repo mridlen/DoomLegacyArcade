@@ -129,26 +129,26 @@ typedef struct visplane_s
 
 // [WDJ] visplane_t global parameters  vsp
 // visplane used for drawing in r_bsp and r_segs
-extern visplane_t*    vsp_floorplane;
-extern visplane_t*    vsp_ceilingplane;
+extern R_TLS visplane_t*    vsp_floorplane;
+extern R_TLS visplane_t*    vsp_ceilingplane;
 
 
 // Visplane related.
 typedef void (*planefunction_t) (int top, int bottom);
 
-extern planefunction_t  floorfunc;
+extern R_TLS planefunction_t  floorfunc;
 extern planefunction_t  ceilingfunc_t;
 
 // [WDJ] Clip values are inside the drawable area.
 // This makes it easier to do limit tests, without needing +1 and -1.
 // In original doom, the clip values were outside the drawable area.
-extern int16_t          floorclip[MAXVIDWIDTH];
-extern int16_t          ceilingclip[MAXVIDWIDTH];
+extern R_TLS int16_t          floorclip[MAXVIDWIDTH];
+extern R_TLS int16_t          ceilingclip[MAXVIDWIDTH];
 //extern short            waterclip[MAXVIDWIDTH];   //added:18-02-98:WATER!
-extern fixed_t          backscale[MAXVIDWIDTH];
+extern R_TLS fixed_t          backscale[MAXVIDWIDTH];
 extern fixed_t          yslopetab[MAXVIDHEIGHT*4];
 
-extern fixed_t*         yslope;
+extern R_TLS fixed_t*         yslope;
 extern fixed_t          distscale[MAXVIDWIDTH];
 
 void R_Init_Planes (void);
@@ -201,6 +201,6 @@ typedef struct ff_planemgr_s
   ffloor_t  *  ffloor;
 } ff_planemgr_t;
 
-extern ff_planemgr_t  ffplane[MAXFFLOORS];
-extern int           numffplane;
+extern R_TLS ff_planemgr_t  ffplane[MAXFFLOORS];
+extern R_TLS int           numffplane;
 #endif

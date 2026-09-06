@@ -286,8 +286,8 @@ extern  boolean menuactive;     // Menu overlayed?
 extern  boolean nodrawers;
 extern  boolean noblit;
 
-extern  int     view_window_x;
-extern  int     view_window_y;    // splitscreen window position
+extern R_TLS int     view_window_x;
+extern R_TLS int     view_window_y;    // splitscreen window position
 extern  int     rdraw_viewheight;		// was viewheight
 extern  int     rdraw_viewwidth;		// was viewwidth
 extern  int     rdraw_scaledviewwidth;		// was scaledrviewwidth

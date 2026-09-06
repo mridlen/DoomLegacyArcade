@@ -58,8 +58,8 @@
 // -------------------------------
 // COMMON STUFF FOR 8bpp AND 16bpp
 // -------------------------------
-extern byte*            ylookup[MAXVIDHEIGHT];
-extern int              columnofs[MAXVIDWIDTH];
+extern R_TLS byte*            ylookup[MAXVIDHEIGHT];
+extern R_TLS int              columnofs[MAXVIDWIDTH];
 
 // [Arcade] Place the draw tables on one view's cell of the view grid.
 // Both tables carry the view's position, so any cell can be drawn, not just
@@ -77,12 +77,12 @@ extern byte*            yhlookup[MAXVIDWIDTH];
 extern int              hcolumnofs[MAXVIDHEIGHT];
 #endif
 
-extern byte             dr_alpha;  // translucent and fog alpha, 0..255
+extern R_TLS byte             dr_alpha;  // translucent and fog alpha, 0..255
 #ifdef ENABLE_DRAW_ALPHA
-extern byte             dr_alpha_mode;  // alpha combine modes
-extern byte             dr_alpha_background;  // alpha applied to background
-extern byte             dr_color8;
-extern RGBA_t           dr_color;  // draw alpha
+extern R_TLS byte             dr_alpha_mode;  // alpha combine modes
+extern R_TLS byte             dr_alpha_background;  // alpha applied to background
+extern R_TLS byte             dr_color8;
+extern R_TLS RGBA_t           dr_color;  // draw alpha
 #endif
 
 
@@ -90,30 +90,30 @@ extern RGBA_t           dr_color;  // draw alpha
 // COLUMN DRAWING CODE STUFF
 // -------------------------
 
-extern lighttable_t*    dc_colormap;
-extern int              dc_x;
-extern int              dc_yl;
-extern int              dc_yh;
+extern R_TLS lighttable_t*    dc_colormap;
+extern R_TLS int              dc_x;
+extern R_TLS int              dc_yl;
+extern R_TLS int              dc_yh;
 #ifdef MONSTER_VARY
-extern int              dc_y0;  // ref for draw, to allow separate sprite scaling
+extern R_TLS int              dc_y0;  // ref for draw, to allow separate sprite scaling
 #endif
-extern fixed_t          dc_iscale;
-extern fixed_t          dc_texturemid;
+extern R_TLS fixed_t          dc_iscale;
+extern R_TLS fixed_t          dc_texturemid;
 
-extern byte*            dc_source;      // first pixel in a column
+extern R_TLS byte*            dc_source;      // first pixel in a column
 
 // translucency stuff here
 extern byte*            translucenttables;   // translucency tables, should be (*transtables)[5][256][256]
-extern byte*            dc_translucentmap;   // ptr to selected table
-extern byte             dc_translucent_index;
+extern R_TLS byte*            dc_translucentmap;   // ptr to selected table
+extern R_TLS byte             dc_translucent_index;
 
 
 // Variable flat sizes SSNTails 06-10-2003
-extern unsigned int flatsize;
-extern unsigned int flatbitsz;  // flat bit size, flatsize = 2**flatbitsz
-extern unsigned int flatfracbits; // FRACBITS - flatbitsz
-extern unsigned int flat_ymask;   // index mask, = (flatsize-1)<<flatbitsz
-extern fixed_t      flat_imask;   // index mask, = (flatsize<<flatbitsz) - 1
+extern R_TLS unsigned int flatsize;
+extern R_TLS unsigned int flatbitsz;  // flat bit size, flatsize = 2**flatbitsz
+extern R_TLS unsigned int flatfracbits; // FRACBITS - flatbitsz
+extern R_TLS unsigned int flat_ymask;   // index mask, = (flatsize-1)<<flatbitsz
+extern R_TLS fixed_t      flat_imask;   // index mask, = (flatsize<<flatbitsz) - 1
 
 // translation stuff here
 
@@ -121,7 +121,7 @@ extern fixed_t      flat_imask;   // index mask, = (flatsize<<flatbitsz) - 1
 // Does not translate color 0
 // Boom calls these TRANSLATION, but that confuses with translucent.
 extern byte*            skintranstables;  // player skin translation tables
-extern byte*            dc_skintran;  // ptr to selected skin table
+extern R_TLS byte*            dc_skintran;  // ptr to selected skin table
 
 // for skin = 1..(MAXSKINNUM-1), skin=0 does not use translation
 #define SKIN_TO_SKINMAP( skin )  (&skintranstables[ ((skin)-1)<<8 ])
@@ -139,31 +139,31 @@ extern byte*            dc_skintran;  // ptr to selected skin table
 // #define MFT_TO_SKINMAP( flags )  (&skintranstables[ (((flags) & MFT_TRANSLATION6) << (8-MFT_TRANSSHIFT)) - 256 ])
 
 
-extern struct r_lightlist_s*      dc_lightlist;
-extern int                        dc_numlights;
-extern int                        dc_maxlights;
+extern R_TLS struct r_lightlist_s*      dc_lightlist;
+extern R_TLS int                        dc_numlights;
+extern R_TLS int                        dc_maxlights;
 
 //Fix TUTIFRUTI
-extern int      dc_texheight;
+extern R_TLS int      dc_texheight;
 
 
 // -----------------------
 // SPAN DRAWING CODE STUFF
 // -----------------------
 
-extern int              ds_y;
-extern int              ds_x1;
-extern int              ds_x2;
+extern R_TLS int              ds_y;
+extern R_TLS int              ds_x1;
+extern R_TLS int              ds_x2;
 
-extern lighttable_t*    ds_colormap;
+extern R_TLS lighttable_t*    ds_colormap;
 
-extern fixed_t          ds_xfrac;
-extern fixed_t          ds_yfrac;
-extern fixed_t          ds_xstep;
-extern fixed_t          ds_ystep;
+extern R_TLS fixed_t          ds_xfrac;
+extern R_TLS fixed_t          ds_yfrac;
+extern R_TLS fixed_t          ds_xstep;
+extern R_TLS fixed_t          ds_ystep;
 
-extern byte*            ds_source;      // start of a 64*64 tile image
-extern byte*            ds_translucentmap; // ptr to one translucent map
+extern R_TLS byte*            ds_source;      // start of a 64*64 tile image
+extern R_TLS byte*            ds_translucentmap; // ptr to one translucent map
 
 
 // viewborder patches lump numbers

@@ -111,6 +111,9 @@
 
 #include "doomincl.h"
 #include "w_wad.h"
+#include "r_threads.h"
+
+static void* W_CacheLumpNum_nolock ( lumpnum_t lumpnum, int ztag );
 #include "z_zone.h"
 
 #include "v_video.h"
@@ -1114,7 +1117,22 @@ void W_ReadLump ( lumpnum_t     lump,
 // [WDJ] Indicates cache miss, new lump read requires endian fixing.
 boolean lump_read;	// set by W_CacheLumpNum
 
+// [Arcade] The render threads all come through here, and it mutates shared
+// state on every call -- a cache miss allocates, and a cache *hit* still
+// re-tags the block (Z_ChangeTag below) and writes lump_read.  R_GetFlat
+// calls it once per visplane and R_DrawVisSprite once per sprite, from every
+// thread at once, so it has to be serialised.  R_Cache_Lock is a single
+// boolean test unless render workers are actually running.
 void* W_CacheLumpNum ( lumpnum_t lumpnum, int ztag )
+{
+    void * ret;
+    R_Cache_Lock();
+    ret = W_CacheLumpNum_nolock( lumpnum, ztag );
+    R_Cache_Unlock();
+    return ret;
+}
+
+static void* W_CacheLumpNum_nolock ( lumpnum_t lumpnum, int ztag )
 {
     lumpcache_t*  lumpcache;
 

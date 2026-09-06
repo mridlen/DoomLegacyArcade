@@ -5445,9 +5445,15 @@ boolean G_CheckDemoStatus (void)
         timingdemo = false;
         f1=time;
         f2=framecount*TICRATE;
+        // [Arcade] Also through GenPrintf, so a headless timedemo can be
+        // measured: CONS_Printf reaches the in-game console and the log file
+        // only, and LOGMESSAGES is not compiled in, so the result of a
+        // -timedemo run was invisible from a script.
         CONS_Printf ("timed %i gametics in %i realtics\n"
                      "%f seconds, %f avg fps\n"
                      ,leveltime,time,f1/TICRATE,f2/f1);
+        GenPrintf (EMSG_info, "timedemo: %i gametics in %i realtics, %f avg fps\n",
+                   leveltime, time, f2/f1);
         if( EV_restore_cv_vidwait != cv_vidwait.EV )
             CV_SetValue(&cv_vidwait, EV_restore_cv_vidwait);
         D_AdvanceDemo ();

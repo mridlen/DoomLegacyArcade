@@ -77,8 +77,13 @@
 // --------------------------------------------
 // assembly or c drawer routines for 8bpp/16bpp
 // --------------------------------------------
+// [Arcade] NOT R_TLS.  Set only by R_Setup_SkyDraw, which runs at level
+// load and video mode change -- never per view -- so it is a setup value
+// that the render threads only read.  Marked thread-local it was NULL on
+// every worker, and R_Draw_Planes jumped to address 0 the first time a
+// view could see sky.  See docs/arcade/render-threads.md.
 void (*skycolfunc) (void);       //new sky column drawer draw posts >128 high
-void (*colfunc) (void);          // standard column upto 128 high posts
+R_TLS void (*colfunc) (void);          // standard column upto 128 high posts
 
 #ifdef HORIZONTALDRAW
 //Fab 17-06-98
@@ -94,7 +99,7 @@ void (*fogcolfunc) (void);       // fog effects
 #ifdef ENABLE_DRAW_ALPHA
 void (*alpha_colfunc) (void);       // fog effects
 #endif
-void (*spanfunc) (void);         // span drawer, use a 64x64 tile
+R_TLS void (*spanfunc) (void);         // span drawer, use a 64x64 tile
 void (*basespanfunc) (void);     // default span func for color mode
 void (*fogspanfunc) (void);      // Legacy Fog sheet
 void (*transspanfunc) (void);    // translucent span drawer

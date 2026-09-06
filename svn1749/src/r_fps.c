@@ -480,7 +480,16 @@ void  R_Interp_Reset_View(void)
     // change of view target is noticed, and that runs after the frac for
     // this frame has already been chosen -- without this the very frame that
     // spots the discontinuity is the one that smears across it.
-    rendertic_frac = FRACUNIT;
+    //
+    // [Arcade] Relaxed atomic: with render threads this write lands while the
+    // workers are already reading the frac for their own views.  The value is
+    // always FRACUNIT and the meaning is "draw whole", so the only effect of
+    // the timing is whether a view that had already read the old frac draws
+    // one interpolated frame across the discontinuity -- which is what used
+    // to happen to every view anyway.  Relaxed, because the semaphores carry
+    // the ordering that matters; this is the same instruction as a plain
+    // store on x86 and ARM.
+    R_SET_INTERP_FRAC( FRACUNIT );
 }
 
 boolean  R_Interp_View_Active(void)

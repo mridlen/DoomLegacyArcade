@@ -57,21 +57,21 @@
 #endif
 
 
-extern seg_t*           curline;
-extern side_t*          sidedef;
-extern line_t*          linedef;
-extern sector_t*        frontsector;
-extern sector_t*        backsector;
+extern R_TLS seg_t*           curline;
+extern R_TLS side_t*          sidedef;
+extern R_TLS line_t*          linedef;
+extern R_TLS sector_t*        frontsector;
+extern R_TLS sector_t*        backsector;
 
 extern boolean          skymap;
-extern byte             doorclosed;
+extern R_TLS byte             doorclosed;
 
 // faB: drawsegs are now allocated on the fly ... see r_segs.c
 // extern drawseg_t*       drawsegs;
 //SoM: 3/26/2000: Use boom code.
-extern drawseg_t*       drawsegs;
+extern R_TLS drawseg_t*       drawsegs;
 extern uint16_t         maxdrawsegs;
-extern drawseg_t*       ds_p;
+extern R_TLS drawseg_t*       ds_p;
 extern drawseg_t*       firstnewseg;
 
 extern lighttable_t**   hscalelight;

@@ -98,6 +98,10 @@
 
 #include "doomincl.h"
 #include "r_local.h"
+#include "r_threads.h"
+
+static texture_render_t *  R_WallTexture_setup_locked( int texture_num );
+static texture_render_t *  R_MaskedDraw_setup_locked( int texture_num );
 #include "r_sky.h"
 
 #include "r_splats.h"           //faB: testing
@@ -118,11 +122,11 @@
 // OPTIMIZE: closed two sided lines as single sided
 
 // True if any of the segs textures might be visible.
-static boolean         segtextured;
-static boolean         markfloor; // False if the back side is the same plane.
-static boolean         markceiling;
+static R_TLS boolean         segtextured;
+static R_TLS boolean         markfloor; // False if the back side is the same plane.
+static R_TLS boolean         markceiling;
 
-static boolean         maskedtexture;
+static R_TLS boolean         maskedtexture;
 // maskedtexture can use transparent patches
 // Only single-sided linedefs use midtexture, 2-sided sets maskedtexture instead.
 
@@ -134,63 +138,63 @@ static boolean         maskedtexture;
 // Violation of this (by the wad) will give tutti-frutti colors.
 
 // texture num, 0=no-texture, otherwise is a valid texture index
-static int             toptexture;
-static int             bottomtexture;
-static int             midtexture;  // single-sided only
-static texture_render_t * top_texren = NULL;
-static texture_render_t * mid_texren = NULL;
-static texture_render_t * bottom_texren = NULL;
+static R_TLS int             toptexture;
+static R_TLS int             bottomtexture;
+static R_TLS int             midtexture;  // single-sided only
+static R_TLS texture_render_t * top_texren = NULL;
+static R_TLS texture_render_t * mid_texren = NULL;
+static R_TLS texture_render_t * bottom_texren = NULL;
 
 
-static int             numthicksides;
+static R_TLS int             numthicksides;
 //static short*          thicksidecol;
 
 
-angle_t         rw_normalangle;
+R_TLS angle_t         rw_normalangle;
 // angle to line origin
-int             rw_angle1;
-fixed_t         rw_distance;
+R_TLS int             rw_angle1;
+R_TLS fixed_t         rw_distance;
 
 //
 // regular wall
 //
-static int             rw_x;
-static int             rw_stopx;
-static angle_t         rw_centerangle;
-static fixed_t         rw_offset;
-static fixed_t         rw_offset2; // for splats
+static R_TLS int             rw_x;
+static R_TLS int             rw_stopx;
+static R_TLS angle_t         rw_centerangle;
+static R_TLS fixed_t         rw_offset;
+static R_TLS fixed_t         rw_offset2; // for splats
 
-static fixed_t         rw_scale;
-static fixed_t         rw_scalestep;
-static fixed_t         rw_midtexturemid;
-static fixed_t         rw_toptexturemid;
-static fixed_t         rw_bottomtexturemid;
+static R_TLS fixed_t         rw_scale;
+static R_TLS fixed_t         rw_scalestep;
+static R_TLS fixed_t         rw_midtexturemid;
+static R_TLS fixed_t         rw_toptexturemid;
+static R_TLS fixed_t         rw_bottomtexturemid;
 
 #ifndef TEXTURE_LOCK
-static int             rw_texture_num;  // to restore texture cache
+static R_TLS int             rw_texture_num;  // to restore texture cache
 #endif
 
 // [WDJ] 2/22/2010 actually is fixed_t in all usage
-static fixed_t         worldtop;	// front sector
-static fixed_t         worldbottom;
-static fixed_t         worldbacktop;	// back sector, only used on two sided lines
-static fixed_t         worldbackbottom;
+static R_TLS fixed_t         worldtop;	// front sector
+static R_TLS fixed_t         worldbottom;
+static R_TLS fixed_t         worldbacktop;	// back sector, only used on two sided lines
+static R_TLS fixed_t         worldbackbottom;
 
 // RenderSegLoop global parameters
-static fixed_t         pixhigh;
-static fixed_t         pixlow;
-static fixed_t         pixhighstep;
-static fixed_t         pixlowstep;
+static R_TLS fixed_t         pixhigh;
+static R_TLS fixed_t         pixlow;
+static R_TLS fixed_t         pixhighstep;
+static R_TLS fixed_t         pixlowstep;
 
-static fixed_t         topfrac;
-static fixed_t         topstep;
+static R_TLS fixed_t         topfrac;
+static R_TLS fixed_t         topstep;
 
-static fixed_t         bottomfrac;
-static fixed_t         bottomstep;
+static R_TLS fixed_t         bottomfrac;
+static R_TLS fixed_t         bottomstep;
 
-lighttable_t**  walllights;  // array[] of colormap selected by lightlevel
+R_TLS lighttable_t**  walllights;  // array[] of colormap selected by lightlevel
 
-int16_t  *  maskedtexturecol;
+R_TLS int16_t  *  maskedtexturecol;
 
 
 // Define  colfunc_2s_t
@@ -212,7 +216,21 @@ static const char *  rangecheck_draw_name[] = { "top", "mid", "bottom" };
 // [WDJ] Setup wall drawer, outside of column loops.
 // Can afford to create cached textures here, and other overhead.
 static inline
+// [Arcade] Serialised for the render threads.  This tests texren->cache
+// and texren->detect and then generates into that same shared
+// texture_render[] entry, so two views wanting the same texture at once
+// would both decide to generate and the second would free the block the
+// first is drawing from.  Called per wall texture, not per column.
 texture_render_t *  R_WallTexture_setup( int texture_num )
+{
+    texture_render_t * ret;
+    R_Cache_Lock();
+    ret = R_WallTexture_setup_locked( texture_num );
+    R_Cache_Unlock();
+    return ret;
+}
+
+static texture_render_t *  R_WallTexture_setup_locked( int texture_num )
 {
     texture_render_t * texren;
 
@@ -271,7 +289,17 @@ void  R_Draw_WallColumn( texture_render_t * texren, int colnum )
         // Messy update, but probably never executed.
         // The detect used to select texren would not have changed
         // during SegLoop, so do not try to change texren.
-        R_GenerateTexture2( rw_texture_num, texren, TM_picture_column );
+        //
+        // [Arcade] Re-checked under the cache lock, because with render
+        // threads two views can arrive here for the same texture together
+        // and must not both generate.  The lock is inside the branch on
+        // purpose: this is a per-column path and the branch above is the
+        // "probably never executed" one, so the common case pays nothing.
+        R_Cache_Lock();
+        if( ! texren->cache )
+            R_GenerateTexture2( rw_texture_num, texren, TM_picture_column );
+        data = texren->cache;
+        R_Cache_Unlock();
     }
 #endif
 
@@ -381,7 +409,7 @@ typedef struct drawmem_block_s {
    void * mem[ DRAWMEM_BLOCK_NUM_PTR ];
 } drawmem_block_t;
 
-static drawmem_block_t *  drawmem_pool = NULL;
+static R_TLS drawmem_block_t *  drawmem_pool = NULL;
 
 #define DRAWMEM_ALIGN_MASK  (sizeof(void*) - 1)
 
@@ -465,11 +493,11 @@ typedef struct  bsr_mem_s {
     fixed_t  mem_block[ BSR_ALLOC ];
 } bsr_mem_t;
 
-bsr_mem_t *  bsr_mem_head = NULL;  // All bsr_mem
-bsr_mem_t *  bsr_mem_freelist = NULL;  // Tail of bsr_mem_head list that has not been used.
+R_TLS bsr_mem_t *  bsr_mem_head = NULL;  // All bsr_mem
+R_TLS bsr_mem_t *  bsr_mem_freelist = NULL;  // Tail of bsr_mem_head list that has not been used.
 // Allocation available in current freelist block.
-fixed_t * bsr_free_array = NULL;
-int       bsr_free_count = 0;
+R_TLS fixed_t * bsr_free_array = NULL;
+R_TLS int       bsr_free_count = 0;
 
 // Get ptr to array of backscale, covering the range.
 static
@@ -559,12 +587,12 @@ void R_Clear_backscale_ref( void )
 //         default is 128 segs, so it means nearly 1Mb allocated
 // Drawsegs set by R_StoreWallRange, used by R_Create_DrawNodes
 // [WDJ] DrawSeg no longer includes backscale array, so got smaller.
-uint16_t     max_drawsegs;    // number allocated
-drawseg_t  * drawsegs = NULL;  // allocated drawsegs
-drawseg_t  * ds_p = NULL;    // last drawseg used (tail)
+R_TLS uint16_t     max_drawsegs;    // number allocated
+R_TLS drawseg_t  * drawsegs = NULL;  // allocated drawsegs
+R_TLS drawseg_t  * ds_p = NULL;    // last drawseg used (tail)
 // drawseg_t  * firstnewseg = NULL;  // unused
 
-extern drawseg_t * first_subsec_seg;
+extern R_TLS drawseg_t * first_subsec_seg;
 
 
 static void  R_Clear_pool16( void );
@@ -623,8 +651,8 @@ void expand_drawsegs( void )
 #ifdef WALLSPLATS
 #define BORIS_FIX
 #ifdef BORIS_FIX
-static short last_ceilingclip[MAXVIDWIDTH];
-static short last_floorclip[MAXVIDWIDTH];
+static R_TLS short last_ceilingclip[MAXVIDWIDTH];
+static R_TLS short last_floorclip[MAXVIDWIDTH];
 #endif
 
 // Called by R_DrawWallSplats
@@ -739,8 +767,8 @@ static void R_DrawWallSplats (void)
         ro_colormap = fixedcolormap;
     else if( view_colormap )
         ro_colormap = view_colormap;
-    else if( frontsector->extra_colormap )  // over the whole line
-        ro_colormap = frontsector->extra_colormap->colormap;
+    else if( R_SECTOR_COLORMAP(frontsector) )  // over the whole line
+        ro_colormap = R_SECTOR_COLORMAP(frontsector)->colormap;
 
     // draw all splats from the line that touches the range of the seg
     for ( ; splat ; splat=splat->next)
@@ -937,10 +965,10 @@ typedef struct pool16_s
     int16_t  data[0];  // variable size array
 } pool16_t;
 
-static pool16_t * pool16_head = NULL; // all pool16_t
-static pool16_t * pool16_use = NULL;  // current pool16_t
-static int16_t  * pool16_data = NULL;
-static int16_t  * pool16_end = NULL;  // last data + 1
+static R_TLS pool16_t * pool16_head = NULL; // all pool16_t
+static R_TLS pool16_t * pool16_use = NULL;  // current pool16_t
+static R_TLS int16_t  * pool16_data = NULL;
+static R_TLS int16_t  * pool16_end = NULL;  // last data + 1
 
 
 static
@@ -1018,9 +1046,9 @@ void pool16_need( int need )
 #else
 // Old expand_openings method.  Deprecated.
 //SoM: 3/23/2000: Use boom opening limit removal
-static size_t  maxopenings = 0;
-static int16_t * openings = NULL;
-static int16_t * lastopening = NULL;
+static R_TLS size_t  maxopenings = 0;
+static R_TLS int16_t * openings = NULL;
+static R_TLS int16_t * lastopening = NULL;
 
 static
 void  R_Clear_pool16( void )
@@ -1100,7 +1128,7 @@ void pool16_need( int need )
 //  This way we don't have to store or process extra post_t info with each column
 //  for multi-patch textures. They are not normally needed as multi-patch
 //  textures don't have holes in it. At least not for now.
-static int  column2s_length;     // column->length : for multi-patch on 2sided wall = texture->height
+static R_TLS int  column2s_length;     // column->length : for multi-patch on 2sided wall = texture->height
 
 // The colfunc_2s function for TM_picture
 static
@@ -1178,7 +1206,21 @@ colfunc_2s_t  colfunc_2s_masked_table[] =
 // [WDJ] Setup masked draw, outside of column loops.
 // Can afford to create cached textures here, and other overhead.
 static inline
+// [Arcade] Serialised for the render threads.  This tests texren->cache
+// and texren->detect and then generates into that same shared
+// texture_render[] entry, so two views wanting the same texture at once
+// would both decide to generate and the second would free the block the
+// first is drawing from.  Called per wall texture, not per column.
 texture_render_t *  R_MaskedDraw_setup( int texture_num )
+{
+    texture_render_t * ret;
+    R_Cache_Lock();
+    ret = R_MaskedDraw_setup_locked( texture_num );
+    R_Cache_Unlock();
+    return ret;
+}
+
+static texture_render_t *  R_MaskedDraw_setup_locked( int texture_num )
 {
     texture_render_t * texren;
 
@@ -1402,7 +1444,7 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
       // frontsector->numlights == 0
       if(colfunc == fogcolfunc) // Legacy Fog sheet
         vlight = frontsector->lightlevel + extralight_fog;
-      else if(frontsector->extra_colormap && frontsector->extra_colormap->fog)
+      else if(R_SECTOR_COLORMAP(frontsector) && R_SECTOR_COLORMAP(frontsector)->fog)
         vlight = frontsector->lightlevel + extralight_cm;
       else if(colfunc == transcolfunc)  // Translucent 
         vlight = 255 + orient_light;
@@ -1420,8 +1462,8 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
         ro_colormap = fixedcolormap;
       else if( view_colormap )
         ro_colormap = view_colormap;
-      else if( frontsector->extra_colormap )
-        ro_colormap = frontsector->extra_colormap->colormap;
+      else if( R_SECTOR_COLORMAP(frontsector) )
+        ro_colormap = R_SECTOR_COLORMAP(frontsector)->colormap;
     }
 
     maskedtexturecol = ds->maskedtexturecol;
@@ -1429,7 +1471,7 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
     dm_floorclip = ds->spr_bottomclip;
     dm_ceilingclip = ds->spr_topclip;
 
-    if (curline->linedef->flags & ML_DONTPEGBOTTOM)
+    if (R_LINE_FLAGS(curline->linedef) & ML_DONTPEGBOTTOM)
     {
         // highest floor
         dm_texturemid =
@@ -1783,7 +1825,7 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
       //SoM: Get correct light level!
       if(ffloor->flags & FF_FOG)
         vlight = ffloor->master->frontsector->lightlevel + extralight_fog;
-      else if(frontsector->extra_colormap && frontsector->extra_colormap->fog)
+      else if(R_SECTOR_COLORMAP(frontsector) && R_SECTOR_COLORMAP(frontsector)->fog)
         vlight = frontsector->lightlevel + extralight_cm;
       else if(colfunc == transcolfunc)
         vlight = 255 + orient_light;
@@ -1800,10 +1842,10 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
          : scalelight[vlight>>LIGHTSEGSHIFT];
 
       // colormap precedence:
-      //  fixedcolormap, ffloor FF_FOG colormap, frontsector->extra_colormap
+      //  fixedcolormap, ffloor FF_FOG colormap, R_SECTOR_COLORMAP(frontsector)
       if( !ro_extracolormap )
       {
-        ro_extracolormap = frontsector->extra_colormap;
+        ro_extracolormap = R_SECTOR_COLORMAP(frontsector);
       }
 
       if( ro_extracolormap )
@@ -1818,7 +1860,7 @@ void R_RenderThickSideRange( drawseg_t* ds, int x1, int x2, ffloor_t* ffloor)
     dm_texturemid = *ffloor->topheight - viewz;
 
     offsetvalue = sides[ffloor->master->sidenum[0]].rowoffset;
-    if(curline->linedef->flags & ML_DONTPEGBOTTOM)
+    if (R_LINE_FLAGS(curline->linedef) & ML_DONTPEGBOTTOM)
       offsetvalue -= *ffloor->topheight - *ffloor->bottomheight;
 
     dm_texturemid += offsetvalue;  // R_DrawMaskedColumn sets dc_texturemid
@@ -2152,8 +2194,8 @@ void R_RenderFog( ffloor_t* fff, sector_t * intosec, lightlev_t foglight,
         ro_colormap = fixedcolormap;
     else if( view_colormap )
         ro_colormap = view_colormap;
-    else if( modelsec->extra_colormap )
-        ro_colormap = modelsec->extra_colormap->colormap;;
+    else if( R_SECTOR_COLORMAP(modelsec) )
+        ro_colormap = R_SECTOR_COLORMAP(modelsec)->colormap;;
 
     if( !fixedcolormap )
     {
@@ -2318,7 +2360,7 @@ void R_RenderSegLoop (void)
         else if( view_extracolormap )
             ro_extracolormap = view_extracolormap;
         else  // over the whole line
-            ro_extracolormap = frontsector->extra_colormap;
+            ro_extracolormap = R_SECTOR_COLORMAP( frontsector );
 
         if( ro_extracolormap )
             ro_colormap = ro_extracolormap->colormap;
@@ -2747,7 +2789,8 @@ void R_StoreWallRange( int   start, int   stop)
     linedef = curline->linedef;
 
     // mark the segment as visible for auto map
-    linedef->flags |= ML_MAPPED;
+    // [Arcade] Shared level data, written by every render thread.
+    R_LINE_SET_MAPPED( linedef );
 
     // calculate rw_distance for scale calculation
     rw_normalangle = curline->angle + ANG90;
@@ -2847,7 +2890,7 @@ void R_StoreWallRange( int   start, int   stop)
         // a single sided line is terminal, so it must mark ends
         markfloor = markceiling = true;
 
-        if (linedef->flags & ML_DONTPEGBOTTOM)
+        if (R_LINE_FLAGS(linedef) & ML_DONTPEGBOTTOM)
         {
             // tile using original texture size
             vtop = frontsector->floorheight +
@@ -2966,7 +3009,7 @@ void R_StoreWallRange( int   start, int   stop)
             || backsector->modelsec != frontsector->modelsec
             || backsector->floorlightsec != frontsector->floorlightsec
             //SoM: 4/3/2000: Check for colormaps
-            || frontsector->extra_colormap != backsector->extra_colormap
+            || R_SECTOR_COLORMAP(frontsector) != R_SECTOR_COLORMAP(backsector)
             || (frontsector->ffloors != backsector->ffloors && frontsector->tag != backsector->tag))
         {
             markfloor = true;  // backsector and frontsector floor are different
@@ -2991,7 +3034,7 @@ void R_StoreWallRange( int   start, int   stop)
             || backsector->modelsec != frontsector->modelsec
             || backsector->floorlightsec != frontsector->floorlightsec
             //SoM: 4/3/2000: Check for colormaps
-            || frontsector->extra_colormap != backsector->extra_colormap
+            || R_SECTOR_COLORMAP(frontsector) != R_SECTOR_COLORMAP(backsector)
             || (frontsector->ffloors != backsector->ffloors && frontsector->tag != backsector->tag))
         {
             markceiling = true;  // backsector and frontsector ceilings are different
@@ -3016,7 +3059,7 @@ void R_StoreWallRange( int   start, int   stop)
             toptexture = texturetranslation[sidedef->toptexture];
             top_texren = R_WallTexture_setup( toptexture );
 
-            if (linedef->flags & ML_DONTPEGTOP)
+            if (R_LINE_FLAGS(linedef) & ML_DONTPEGTOP)
             {
                 // top of texture at top
                 rw_toptexturemid = worldtop;
@@ -3039,7 +3082,7 @@ void R_StoreWallRange( int   start, int   stop)
             bottomtexture = texturetranslation[sidedef->bottomtexture];
             bottom_texren = R_WallTexture_setup( bottomtexture );
 
-            if (linedef->flags & ML_DONTPEGBOTTOM )
+            if (R_LINE_FLAGS(linedef) & ML_DONTPEGBOTTOM)
             {
                 // bottom of texture at bottom
                 // top of texture at top

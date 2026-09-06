@@ -742,9 +742,35 @@ typedef struct
     uint16_t  impl_flags;   // implementation flags, sprite_light_impl_flags_e
 } spr_light_t;
 
-extern spr_light_t  * corona_lsp;
-extern float     corona_size;
-extern byte      corona_alpha, corona_bright;
+extern R_TLS spr_light_t  * corona_lsp;
+extern R_TLS float     corona_size;
+extern R_TLS byte      corona_alpha, corona_bright;
+
+
+// [Arcade] Render-thread accessors for the two pieces of shared level data
+// the software renderer writes while drawing.
+//
+// sector_t.extra_colormap is a renderer-derived cache that R_FakeFlat fills
+// in, and line_t.flags carries ML_MAPPED, which R_StoreWallRange sets for the
+// automap.  Every render thread does both, so both need defined accesses
+// rather than plain ones.  Every thread computes the same value, so relaxed
+// ordering is all that is wanted -- and it compiles to an ordinary load or
+// store on x86 and ARM, so this costs nothing.
+//
+// Use these for EVERY read of those two fields in the render path.  Missing
+// one is not a crash, it is a ThreadSanitizer report and a latent bug.
+#ifdef RENDER_THREADS
+# define R_SECTOR_COLORMAP(sp)   __atomic_load_n( &(sp)->extra_colormap, __ATOMIC_RELAXED )
+# define R_SET_SECTOR_COLORMAP(sp,v) \
+             __atomic_store_n( &(sp)->extra_colormap, (v), __ATOMIC_RELAXED )
+# define R_LINE_FLAGS(lp)        __atomic_load_n( &(lp)->flags, __ATOMIC_RELAXED )
+# define R_LINE_SET_MAPPED(lp)   __atomic_or_fetch( &(lp)->flags, ML_MAPPED, __ATOMIC_RELAXED )
+#else
+# define R_SECTOR_COLORMAP(sp)   ((sp)->extra_colormap)
+# define R_SET_SECTOR_COLORMAP(sp,v)  ((sp)->extra_colormap = (v))
+# define R_LINE_FLAGS(lp)        ((lp)->flags)
+# define R_LINE_SET_MAPPED(lp)   ((lp)->flags |= ML_MAPPED)
+#endif
 
 spr_light_t *  Sprite_Corona_Light_lsp( int sprnum, state_t * sprstate );
 byte  Sprite_Corona_Light_fade( spr_light_t * lsp, float cz, int objid );
