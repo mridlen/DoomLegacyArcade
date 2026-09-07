@@ -1,15 +1,22 @@
-# DoomLegacy — Arcade Cabinet Build
+# Doom Legacy Arcade
 
-A build of [DoomLegacy](http://doomlegacy.sourceforge.net/) 1.48.18 customised to run unattended in
+A fork of [DoomLegacy](http://doomlegacy.sourceforge.net/) 1.48.18 customised to run unattended in
 an arcade cabinet: locked-down menus, joystick-and-buttons navigation, an attract cycle, and a
 persistent high-score table with saved record demos.
 
 It plays Ultimate Doom, Doom II and Final Doom (Plutonia and TNT), plus level packs in `.wad` form.
 You supply the game data — no copyrighted content is included here.
 
+The program calls itself **Doom Legacy Arcade**, the binary is `doomlegacyarcade`, and it prints
+what it is a fork of on every launch. That is deliberate in both directions: nobody should mistake
+this for stock DoomLegacy and take a bug here to that project, and upstream keeps every bit of the
+credit it is owed. **It is unaffiliated with the DoomLegacy team**, who have not asked for any of
+this and are not responsible for it.
+
 > Looking for internals, or hacking on the code? See [`CLAUDE.md`](CLAUDE.md), which documents the
-> engine architecture and every local change in detail. This file is for people who want to *run*
-> the thing.
+> engine architecture and the build, and [`docs/arcade/`](docs/arcade/), which has a write-up per
+> feature — what was tried, what broke, and how it was verified. This file is for people who want to
+> *run* the thing.
 
 ---
 
@@ -30,9 +37,21 @@ Discord is likely to get you banned.
   hidden as well, since a cabinet has nothing to quit *to*; the operator can put it back.
 - **The cabinet buttons drive the menus.** No keyboard needed — the stick moves the cursor, fire
   selects, use backs out.
-- **Up to four players on one machine.** Two share the screen as the usual stacked halves; three or
-  four get a 2x2 grid, each with their own HUD. A **join screen** after the skill select lets each
-  panel press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous.
+- **Up to four players on one machine.** Two share the screen as the usual stacked halves — or side
+  by side, if the operator prefers — and three or four get a 2x2 grid, or four columns on a very
+  wide screen, each with their own HUD. A **join screen** after the skill select lets each panel
+  press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous. Four players
+  cost about the same as one: each view is drawn on its own core.
+- **Smoother than 35 FPS.** Doom's simulation runs at 35 tics a second and the engine used to draw
+  exactly one frame per tic. It now draws as many as the display can take, with everything moving
+  interpolated between tics — so on a 60 or 144 Hz panel the motion is genuinely smoother, while the
+  game itself, and every recorded demo, is untouched. Capped at 60 by default.
+- **Ultrawide screens.** 21:9 and 32:9 panels are supported properly — the view is drawn at the
+  monitor's real shape with the field of view widened to match, rather than a 4:3 picture stretched
+  across it, and the menus, HUD and full-screen pages no longer stretch with it.
+- **Full-screen menus and score pages.** The attract pages, the intermission and the finale fill the
+  screen at any resolution instead of sitting in a letterboxed 4:3 box with a tiled floor texture
+  around the edges.
 - **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
   its own separate high score table and its own record demos.
 - **Single Player - Survival.** A campaign run is scored on **how far you got in the episode**,
@@ -89,6 +108,18 @@ Discord is likely to get you banned.
   a `-devmode` session.
 - **A guided control setup** that asks for each control in turn and binds whatever you press —
   stick, buttons, or anything else your panel is wired to. One per panel, up to four.
+- **A Players and Views page** (Options → Arcade Options → **Players & Views**) gathers everything
+  about how many people can play and how the screen is divided: how many control panels the cabinet
+  has, whether two players get stacked halves or side-by-side, whether three or four get a 2x2 grid
+  or four columns, which quadrant each panel drives, and how long the join screen waits.
+- **A Performance page** (Options → Video Options → **Performance Options**) holds the settings that
+  trade picture for speed: **Framerate Cap**, **Render Threads**, **8bpp Draw** and **Show
+  Ticrate**. Render Threads is what lets a Pi run a four-way split at full speed; it applies to the
+  software renderer only and is greyed out under OpenGL, where it would gain nothing.
+- **A usable video mode list.** Every mode the display offers is now reachable — the list pages
+  instead of stopping dead partway through, sorts by size, drops the duplicate entries a monitor
+  advertises once per refresh rate, and can be filtered to one aspect ratio so a 32:9 panel isn't
+  buried in 4:3 modes it will never use.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
   readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
   except the position readout, which only shows information.
@@ -171,6 +202,12 @@ to anyone else running this port. Each is written up in full in the commit that 
 - **A menu on which nothing is selectable hung the game.** The cursor's up/down search is an
   unbounded loop looking for a selectable row, so a page where every row is disabled spins inside
   the event handler for ever — no tics, no redraw, no way out. Both loops are bounded now.
+- **The sound thread could kill the game at the start of a level.** Starting a sound published the
+  channel to the mixer before it had filled in the volume table the mixer reads a line later, so an
+  audio callback landing in that window dereferenced a null pointer and took the whole process down
+  from SDL's audio thread — with the game thread nowhere in the backtrace. Only ever on the first
+  use of each of the sixteen channels, which is the first burst of sound after a level loads, so it
+  read as a random crash on startup. It showed up once in about 110 headless demo replays.
 
 **OpenGL**
 
@@ -208,6 +245,13 @@ to anyone else running this port. Each is written up in full in the commit that 
   everything after it green, and taking a hit at the exit switch left it red, right through the
   intermission and into whatever came next — the tint is only ever reset when the *next* level
   starts.
+- **Changing resolution in OpenGL did nothing.** Three separate things stopped it: the mode change
+  required a texture that belongs to the software path alone and so always took the failure branch;
+  the code then asked SDL what mode it had got and was told the mode SDL *intended*; and a
+  fullscreen window created moments after its predecessor was destroyed does not reliably get input
+  focus, without which SDL never applies its mode at all. The result was that OpenGL always rendered
+  at the desktop resolution, whatever the menu said — and there is no scaling step in the hardware
+  renderer, so nothing else could correct it.
 
 **Demos**
 
@@ -220,8 +264,19 @@ to anyone else running this port. Each is written up in full in the commit that 
   start of a run was however long the machine had been sitting idle. Upstream had already fixed the
   identical bug in the other copy of it (`A_Tracer`) and missed this one.
 - **The demo header described the *previous* game** — skill, episode, map, deathmatch, respawn and
-  fast monsters were all written before the new game's settings had been applied. Harmless to
-  playback, misleading to anything that reads a header.
+  fast monsters were all written before the new game's settings had been applied. Those were only
+  misleading to anything that reads a header. One field was worse: the multiplayer byte. Playback
+  restores it from the header and sets the level up with it, so a solo run recorded in a session
+  that had earlier been multiplayer replayed with *multiplayer rules* for the whole level — weapons
+  and keys persisting on pickup, different kill accounting, a different damage path. The E1M3 run
+  that found this matched its recording for 901 tics, then took damage the replay didn't, drifted
+  off route and spent its last 600 tics stuck on a lift.
+- **Every DoomLegacy demo replayed under different rules than it was recorded with.** Playback
+  decided which Boom-era behaviours to switch off by comparing the demo's version number against
+  Boom's numbering — but Legacy demos are numbered 111–148 and Boom demos 200–214, two separate
+  schemes that are not comparable, so the test was never true and the whole Boom behaviour set was
+  switched off on playback while recording left it on. Eight engine behaviours differed between
+  recording and replay, the movement model among them.
 
 **Gameplay**
 
@@ -314,6 +369,26 @@ to anyone else running this port. Each is written up in full in the commit that 
   mode where fills and patches apply it, and text positions by a float scale factor where
   everything around it uses the rounded integer. Neither showed at full screen size; both throw
   anything drawn at half scale off its background.
+- **Slime trails.** The thin ragged strips of floor showing through a wall, most famously on the
+  E1M1 stairs — an artefact of the node data id's own builder wrote in 1993, baked into every IWAD.
+  The engine now rebuilds the BSP nodes at level load with a modern builder (ZDBSP, vendored here)
+  and uses the result **for rendering only**, so the simulation still walks the map's original tree
+  and nothing about gameplay or demo playback changes. `-nonodebuild` turns it off.
+- **Full-screen pages were letterboxed in software.** The software renderer scales the 320x200 art
+  by a whole number, so a 1366x768 screen got a 1280x600 page with a tiled floor texture filling the
+  rest. Whole-screen pages — the attract slides, the intermission, the finale — now scale by the
+  exact ratio and fill the screen. Menus, HUD and status bar deliberately keep the whole-number
+  scale, which is what keeps them sharp.
+- **Ultrawide monitors were unusable.** The engine capped what it could draw at 1600x1200 and
+  filtered the display's modes against that in three places without logging a thing — so on a
+  3440x1440 or 5120x1440 panel every native mode was silently discarded and the list came back
+  holding only the legacy 4:3 and 16:9 sizes the monitor also happens to advertise. It reads as "not
+  supported" rather than "a constant ate it". The cap is now 5120x2160, and the view, field of view,
+  weapon and 2D layer all follow the real aspect instead of stretching.
+- **The video mode list lost modes before the menu ever saw them**, at three separate stacked caps,
+  none of which logged anything. It also never removed the duplicate entries a monitor advertises
+  once per refresh rate, so the caps were being spent on repeats. The list now dedupes, sorts by
+  size, pages rather than truncating, and can be filtered by aspect ratio.
 
 ---
 
@@ -331,28 +406,57 @@ A Linux machine with a C compiler and these development packages:
 
 Plus `gcc` and `make`.
 
-Hardware-wise almost anything modern is enough — the renderer is from 1993. The one thing that
-matters is **single-core speed**: the game is single-threaded and its main loop never sleeps, so it
-will sit at 100% of one core permanently, including while idling on the attract screen. Budget for
-sustained load rather than average, and make sure a fanless machine in a sealed cabinet won't
-thermally throttle.
+Hardware-wise almost anything modern is enough — the renderer is from 1993. What matters is
+**single-core speed first, then cores**: the software renderer now spreads a frame across as many
+cores as you give it (see [Performance](#performance) below), but everything else — the simulation,
+the sound, the game logic — is still one thread. The main loop yields between frames once a
+framerate cap is set, so a capped cabinet no longer sits at 100% of a core permanently the way it
+used to; leave the cap off and it will. Budget for sustained load rather than average, and make sure
+a fanless machine in a sealed cabinet won't thermally throttle.
 
-**A Raspberry Pi is enough.** Measured on a **Pi 3B+** with the software renderer, running
-four-player splitscreen — the heaviest thing the cabinet does, since every view is rendered
-separately:
+### Performance
 
-| Resolution | Four-player splitscreen |
-| --- | --- |
-| 640x480 | 35 FPS |
-| 800x600 | ~30 FPS |
+**A Raspberry Pi 3B+ is enough**, and that is the point of the threaded renderer. Measured on a Pi
+3B+ — quad-core Cortex-A53 — with the **software** renderer, **Render Threads** on and **8bpp Draw**
+on. Fastest first, which is not quite pixel order — 800x600 has more pixels than 864x486:
 
-35 is the **engine's** ceiling, not the hardware's: `D_Display` is called once per game tic and the
-tic rate is 35, so nothing ever draws faster than that. 640x480 four-up is therefore full speed with
-headroom to spare, and fewer players is easier again. If a heavier level or a bigger screen does
-fall short, 320x200 and 400x300 can be selected fullscreen and are scaled up by the GPU, so dropping
-the render resolution costs sharpness rather than screen size.
+| Resolution | Shape | FPS |
+| --- | --- | --- |
+| 512x384 | 4:3 | **~60** — the sweet spot on this board |
+| 640x350 | ~16:9 | ~55 |
+| 720x400 | ~16:9 | ~49–51 |
+| 640x480 | 4:3 | ~45–47 |
+| 864x486 | 16:9 | ~38–40 |
+| 800x600 | 4:3 | 35+ |
+| 928x580 | 16:10 | ~33–36 |
+| 1024x576 | 16:9 | ~22–27 |
+
+**Four players cost about the same as one** — within a couple of FPS across that whole table. With
+one player the renderer cuts the single view into vertical bands, one per core; with four it gives
+each player's view its own core. Either way the work is spread over all four, so the numbers above
+are what the cabinet does *full*, not what it does empty. That was not true before: the old figures
+here were 35 FPS at 640x480 and ~30 at 800x600 for a four-way split, single-threaded.
+
+35 FPS is worth knowing as a landmark. The simulation runs at exactly 35 tics a second and always
+has, and until recently the engine drew exactly one frame per tic, so 35 was a hard ceiling. It
+isn't any more — **Framerate Cap** draws extra frames between tics with everything interpolated, so
+above 35 the motion genuinely gets smoother. Below 35 the game is not slowing down; it is simply
+skipping frames, and it stays playable well under it.
+
+On a Pi, prefer the **software** renderer. The Pi's VideoCore IV has no fast path for this engine's
+fixed-function OpenGL, so the hardware renderer runs through Mesa's slow compatibility layer and is
+the *worse* of the two there. On a desktop GPU the reverse is true and OpenGL is nearly free.
+
+If a heavier level or a bigger screen falls short, the low resolutions can be selected fullscreen
+and are scaled up by the GPU with nearest-neighbour filtering, so dropping the render resolution
+costs sharpness rather than screen size.
 
 ## Building
+
+**You may not need to.** Every push to `main` is built for Linux and Windows on GitHub Actions and
+the packages are attached to the run, and tagged releases carry the same two builds. Grab one from
+the repository's Releases page if you just want to run the thing. Those are built for a generic
+x86-64 baseline so they run anywhere; building it yourself gets you a binary tuned for your own CPU.
 
 **The easy way — one command, and it tells you what to install if anything is missing.**
 
@@ -385,6 +489,13 @@ switches: `--deps` to only check, `--clean` to start fresh, `--jobs N` to limit 
 It knows the Debian, Fedora, Arch and SUSE families and their derivatives — Ubuntu, Mint, Manjaro,
 Rocky and so on are all recognised through the same mechanism. It will **not** overwrite a build
 configuration you have already tuned; pass `--reconfigure` if you want it rewritten.
+
+**Building for another machine?** The default is `-march=native`, which bakes in whatever the
+*builder's* CPU supports. That is right for a machine building for itself and wrong for anything you
+hand to somebody else: it links and packages without a murmur and then dies on the target with a
+bare `Illegal instruction`. Pass `--arch '-march=x86-64 -mtune=generic'` (`-Arch` on Windows) for a
+binary anyone else will run — and note it implies `--reconfigure`, or an existing configuration is
+reused and the flag is silently ignored.
 
 Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
 it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
@@ -444,8 +555,10 @@ cp /path/to/DOOM2.WAD ../bin/
 ```
 
 `legacy.wad` is required — it ships with this repository and holds the engine's own menu graphics,
-including the cabinet's own artwork (the Single Level, join, cheats and game-over screens), so use
-the copy from `common/` rather than one from an upstream DoomLegacy release.
+including the cabinet's own artwork (the Single Level, join, cheats and game-over screens) and the
+`ENDOOM` text screen printed on exit, so use the copy from `common/` rather than one from an
+upstream DoomLegacy release. `tools/endoom.py` edits that exit screen; SLADE will not, which is why
+the tool exists.
 
 `dogs.wad` is optional and lives in exactly the same place, beside the binary. It carries the
 sprites and sounds for MBF helper dogs, which the engine has none of its own for. It does nothing
@@ -512,8 +625,12 @@ press fire and watch your own square claim itself. It starts when the countdown 
 as anyone already in presses **use**.
 
 Whoever joins plays at the panel they pressed at, so a lone player can use panel 3 and still get the
-whole screen. One or two players share the screen as **stacked halves**; three or four get a **2x2
-grid**, one quadrant each, with the fourth left empty for three players.
+whole screen. One player gets the whole screen; two share it as **stacked halves**, or **side by
+side** if the operator has set it that way; three or four get a **2x2 grid**, one quadrant each with
+the fourth left empty for three players, or **four columns** on a very wide screen. Which quadrant
+each panel drives is an operator setting too, so each player's view can be on the side of the screen
+they are actually standing at. All of that is under
+[Players, panels, and how the screen is divided](#players-panels-and-how-the-screen-is-divided).
 
 The page is skipped entirely on a single-panel cabinet, and for a single player it starts on the
 first press rather than making one person sit through a countdown.
@@ -676,18 +793,93 @@ There is a guided setup per panel, P1 to P4, and a **Player n Controls** page be
 panels with more than six buttons — the guided setup only teaches the ten controls a standard panel
 needs, so anything beyond that gets bound on the full page.
 
-### More than one control panel
+### Players, panels, and how the screen is divided
 
-**Options → Arcade Options → Control Panels** (devmode only) is how many sets of controls the cabinet
-has, 1 to 4. It ships at 1, and until you raise it the join screen never appears and panels 3 and 4
-have no configuration pages — which reads as those features being broken, when the cabinet simply
-hasn't been told they exist.
+Everything about this is on one page: **Options → Arcade Options → Players & Views** (devmode only).
 
-**Join Time** beside it is how long the join screen waits, in seconds; `0` skips the page entirely.
+**Control Panels** is how many sets of controls the cabinet has, 1 to 4. It ships at 1, and until
+you raise it the join screen never appears and panels 3 and 4 have no configuration pages — which
+reads as those features being broken, when the cabinet simply hasn't been told they exist.
+
+**2 Player Split** is `Top/Bottom` (the classic stacked halves) or `Side by Side`. On a wide screen
+side-by-side gives each player a more natural shape than a letterbox slit.
+
+**3-4 Player Split** is `Grid` (the 2x2 quadrants) or `Columns` (four full-height strips). Grid is
+right up to and including 21:9. At 32:9 it is wrong — a quadrant of a 32:9 screen is itself 32:9, a
+letterbox slit — where a column comes out close to the shape of a portrait arcade monitor. Three
+players use four cells with one empty either way, so this covers "three columns" as well.
+
+**Screen Order** is which quadrant of the 2x2 grid each panel drives, `1 3 / 2 4` or `1 2 / 3 4`.
+The panels stand in a row across the front of a cabinet, so filling the grid in reading order puts
+panel 2's view on the far side of the screen from where panel 2 is standing; the default fills it by
+columns instead, and every player watches their own side. Reading order is kept for four people on
+gamepads sitting wherever they like, which is what they will expect.
+
+**Join Time** is how long the join screen waits, in seconds; `0` skips the page entirely.
 
 Set the panel count first, then run the guided setup for each panel. Panels 3 and 4 have no preset
 bindings on purpose — the two built-in schemes are chosen so one keyboard can drive two players, and
 there is no third set that wouldn't collide.
+
+### Choosing a resolution, and tuning performance
+
+Both pages are under **Options → Video Options** (devmode only — Video Options is hidden from
+players).
+
+**Video Modes** lists what the display can do. It sorts largest first, hides the duplicate entries a
+monitor advertises once per refresh rate, and **pages** rather than stopping partway through —
+*Left/Right for more*, and the page number is shown, so look for that before concluding a mode is
+missing.
+
+The line above it reads **`Aspect: <shape>`**, and **pressing `A` cycles it**: `AUTO` (the default)
+shows the shapes that suit the display, `All` shows everything, then `4:3`, `16:10`, `16:9`, `21:9`
+and `32:9`. When the filter is hiding anything the line says how many, so a mode you cannot find is
+never silently gone. On an ultrawide panel `AUTO` is what stops the list being buried in 4:3 modes
+it will never use.
+
+**Performance Options**, near the bottom of Video Options, holds the four settings that trade
+picture for speed:
+
+| Setting | What it does |
+| --- | --- |
+| **Framerate Cap** | `Uncapped`, or 35 / 60 / 75 / 100 / 120 / 144 / 165 / 240. Default **60**. |
+| **Render Threads** | `Auto`, or 1 to 4. Default **1**. Software renderer only. |
+| **8bpp Draw** | Draw the world at 8 bits and expand it through the palette at the last moment. Default **Off**. |
+| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the other three. |
+
+**Framerate Cap** is how many frames a second are drawn. The simulation is not affected by it in any
+way: it still runs at exactly 35 tics a second, and every recorded demo plays back identically at
+any setting. Above 35 the extra frames are drawn *between* tics with everything moving interpolated,
+which is real added smoothness rather than repeated pictures. Set it to your panel's refresh rate.
+`35` is the old behaviour, one frame per tic with interpolation off entirely, and is the setting to
+fall back to if anything looks wrong. `Uncapped` measured about 600 fps on a 60 Hz panel — ten times
+the work for frames the display cannot show, which on a machine left switched on is heat and
+electricity and nothing else. It is there for measuring what the hardware can do.
+
+**Render Threads** spreads the software renderer over several cores. With more than one player each
+view gets its own thread; with one player the single view is cut into vertical bands, one per core.
+Either way it is close to a 4x gain on four cores, which is what makes a Pi 3B+ run a four-way split
+at full speed. `Auto` picks a count from the machine. It is greyed out under OpenGL, where it would
+gain nothing — the hardware renderer issues its GL calls from inside the walk of the level and a GL
+context belongs to one thread.
+
+**It ships at 1, deliberately.** Threading is still opt-in. Nothing crashes, it has run clean under
+a thread sanitiser, and **nothing about the simulation changes** — scores, demos and gameplay are
+identical either way, because only the drawing is threaded. What is not yet perfect is the picture:
+splitting one view into bands makes about 1–2% of pixels sample the neighbouring texel, which is
+inherent to slicing the drawing up and is what GZDoom's banded renderer does too; and on a few maps
+with sky and open space a threaded frame still differs slightly from a serial one, and from itself
+run to run. It is a handful of scattered pixels, not something you would notice playing. Turn it on
+if you need the speed — which on a Pi you will — and set it to 1 if you ever want to rule it out.
+
+**8bpp Draw** helps exactly when memory bandwidth is the limit and not otherwise. There are no 8-bit
+display modes any more, so even in the software drawmode the renderer normally writes four bytes per
+pixel; this makes it write one and expand at the end. Worth a lot on a Pi, usually nothing on a
+desktop. Try it with **Show Ticrate** on.
+
+**On a Pi, use the software renderer** — see [Performance](#performance) for the measured numbers.
+The Pi's GPU has no fast path for this engine's fixed-function OpenGL, so the hardware renderer goes
+through a slow compatibility layer and is the worse of the two there.
 
 ### Cheats
 
@@ -863,6 +1055,10 @@ like any other, so they only stick from a `-devmode` session.
 | `-file <wad>` | Load a wad at startup — a level pack, a soundtrack, a DEH/BEX patch |
 | `-config <file>` | Use a different configuration file |
 | `-v` | Verbose startup, showing which files were found |
+| `-nonodebuild` | Don't rebuild the level's BSP nodes at load — the slime-trail fix, off |
+| `-frameprofile` | Print a breakdown of where each frame's time actually goes |
+| `-noendtext` | Skip the exit text screen |
+| `--version` | Print the version and what it is a fork of, and exit |
 
 ---
 
@@ -945,8 +1141,9 @@ ruleset — the console log names which one — or somebody died. Returning to t
 resets the ruleset automatically, so starting a fresh game normally clears it.
 
 **The join screen never appears, or panels 3 and 4 have no settings pages.**
-`Control Panels` under Options → Arcade Options is still at 1. Nothing about the extra panels shows up
-until the cabinet is told how many it has. Check `Join Time` isn't 0 while you're there.
+`Control Panels`, on the Options → Arcade Options → **Players & Views** page, is still at 1. Nothing
+about the extra panels shows up until the cabinet is told how many it has. Check `Join Time` isn't 0
+while you're there.
 
 **Replacement music isn't playing.**
 Check `music_source` is `Auto` rather than `MUS` — that alone disables it, and an older config may
@@ -956,6 +1153,23 @@ simply never gets looked for. `-v` reports the wad being loaded at startup.
 
 **A game is missing from the Select Game menu.**
 Its IWAD wasn't found. Run with `-v` and check the search paths reported at startup.
+
+**The game runs slowly, or the frame rate is choppy.**
+Options → Video Options → **Performance Options**, with **Show Ticrate** on so you can see what each
+change does. On a Pi or another low-power board: use the **software** drawmode, turn **Render
+Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — 512x384 is the sweet spot on a
+Pi 3B+. See [Performance](#performance) for measured numbers. On a desktop, use OpenGL and check
+**Framerate Cap** matches the panel's refresh rate.
+
+**My monitor's resolution isn't in the Video Modes list.**
+Two things hide modes, and the page tells you about both. The `Aspect:` line at the top says how
+many are filtered out — press **`A`** until it reads `All`. And the list **pages**: if it says
+*Page 1 of 3*, press Left/Right. Only if it is still missing with `All` on every page is the mode
+genuinely unavailable.
+
+**The picture is fine but the motion looks different from what I remember.**
+That will be **Framerate Cap**, which now draws frames between tics and interpolates them. Setting
+it to `35` gives the exact old behaviour. It changes nothing about the simulation either way.
 
 **The game won't build.**
 Almost always one of the three `make_options` edits above. `-march=i686` and the default `gnu23`
