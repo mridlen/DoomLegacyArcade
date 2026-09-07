@@ -211,9 +211,22 @@ did ("so the 320x200 layout spans the cell whichever shape it is... the art scal
 question"); it was true until the cap made `vid.fdupx` stop meaning "the width of the cell in base
 units".
 
+The K/I/S block needed the same treatment and one thing more. Each row placed itself with
+`SCX(318 - V_StringWidth(buf), x0, xdiv)` — a base-unit width subtracted in layout space, then drawn
+in art space — so once the two scales parted company **every row was displaced by its own width** and
+the block visibly came apart. `ST_KIS_Columns` now measures the widest label and the widest count
+across all three rows, anchors the right edge in *screen* pixels, and steps left by the **drawn**
+width, so the letters make one column and the counts another.
+
+Note that this part is **not** ultrawide-only: `hu_font` is proportional, so right-aligning each row
+on its own text never lined the three up, at any resolution. The bug was invisible at 4:3 and 16:9
+because the rows are short and the eye forgives it; the wide screens only made it obvious. The K row
+lands where it always did and the I and S rows move left to join it.
+
 **The general lesson, and it is the one this whole part keeps teaching: a 2D scale answers two
 questions, and an ultrawide screen is where they stop having the same answer.** Anything that reads
-`vid.dupx`/`vid.fdupx` should be checked for which of the two it wanted.
+`vid.dupx`/`vid.fdupx` should be checked for which of the two it wanted — and anything that places
+text against `V_StringWidth` should be checked for which space it is subtracting in.
 
 ## 6. The aspect filter, which is what was actually asked for
 

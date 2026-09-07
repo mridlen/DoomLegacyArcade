@@ -1802,6 +1802,48 @@ void  ST_drawOverlayKeys( int x, int y, player_t * plyr )
 }
 
 
+// [Arcade] Where the two columns of the K/I/S block start, in screen pixels.
+//
+// The three rows are drawn as two columns -- the letter in one, the count in
+// the other -- and every row has to use the SAME two x positions.  hu_font is
+// proportional, so right-aligning each row on its own text lines nothing up:
+// "K 0/19" and "S 0/5" are different widths and each row ends up somewhere
+// different.  The widths are therefore measured over all three rows.
+//
+// Anchored on the right edge in SCREEN pixels and stepped left by the DRAWN
+// width, because the layout scale (xdiv) and the art scale (sf_dupx) stopped
+// being the same number once the art scale was capped for wide screens
+// (ultrawide.md part 5).  The previous form,
+//   SCX(318 - V_StringWidth(buf), x0, xdiv)
+// mixed the two spaces: it subtracted a base-unit width and then scaled the
+// result by the layout, so each row was displaced by its own width and the
+// block came apart.  It was exactly right while the two scales agreed.
+static
+void  ST_KIS_Columns( player_t * plyr, int x0, float xdiv, float sf_dupx,
+                      int * out_label_x, int * out_value_x )
+{
+    static const char * const kis_label[3] = { "K", "I", "S" };
+    const int  count[3] = { plyr->killcount, plyr->itemcount, plyr->secretcount };
+    const int  total[3] = { totalkills, totalitems, totalsecret };
+    char  buf[24];
+    int   i, w, value_w = 0, label_w = 0;
+
+    for( i = 0; i < 3; i++ )
+    {
+        snprintf( buf, sizeof(buf), "%d/%d", count[i], total[i] );
+        buf[sizeof(buf)-1] = '\0';
+        w = V_StringWidth( buf );
+        if( w > value_w )  value_w = w;
+        w = V_StringWidth( kis_label[i] );
+        if( w > label_w )  label_w = w;
+    }
+    label_w += V_StringWidth( " " );   // one space between the columns
+
+    *out_value_x = SCX(318, x0, xdiv) - (int)( value_w * sf_dupx );
+    *out_label_x = *out_value_x - (int)( label_w * sf_dupx );
+}
+
+
 //  Draw the status bar overlay, customisable : the user choose which
 //  kind of information to overlay
 //
@@ -1814,6 +1856,10 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     int    i;
     // [WDJ] 8/2012 fix opengl overlay position to use fdupy
     float  sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy ;
+    // [Arcade] The scale V_DrawString actually draws at, which is the capped
+    // art scale and NOT xdiv.  Needed wherever text has to be placed against
+    // its own drawn width.
+    float  sf_dupx = (rendermode == render_soft)? vid.dupx : vid.fdupx ;
 
     // [Arcade] This view's cell of the screen, matching the viewport grid in
     // hw_main.c: two views stack or sit side by side, three or four are a 2x2
@@ -1888,6 +1934,7 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
         if( vid.dupx < 1 )  vid.dupx = 1;
         if( vid.dupy < 1 )  vid.dupy = 1;
         sf_dupy = (rendermode == render_soft)? vid.dupy : vid.fdupy;
+        sf_dupx = (rendermode == render_soft)? vid.dupx : vid.fdupx;
     }
 
     // [Arcade] Small status numbers when the tall ones do not fit the view.
@@ -2030,8 +2077,11 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            if( ST_SOLO_HUD )
            {
                char buf[24];
-               sprintf(buf, "K %d/%d", plyr->killcount, totalkills);
-               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(1, y0, ydiv), 0, buf);
+               int  label_x, value_x, ry = SCY(1, y0, ydiv);
+               ST_KIS_Columns( plyr, x0, xdiv, sf_dupx, &label_x, &value_x );
+               V_DrawString(label_x, ry, 0, "K");
+               sprintf(buf, "%d/%d", plyr->killcount, totalkills);
+               V_DrawString(value_x, ry, 0, buf);
            }
            break;
 
@@ -2039,8 +2089,11 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            if( ST_SOLO_HUD )
            {
                char buf[24];
-               sprintf(buf, "I %d/%d", plyr->itemcount, totalitems);
-               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(11, y0, ydiv), 0, buf);
+               int  label_x, value_x, ry = SCY(11, y0, ydiv);
+               ST_KIS_Columns( plyr, x0, xdiv, sf_dupx, &label_x, &value_x );
+               V_DrawString(label_x, ry, 0, "I");
+               sprintf(buf, "%d/%d", plyr->itemcount, totalitems);
+               V_DrawString(value_x, ry, 0, buf);
            }
            break;
 
@@ -2048,8 +2101,11 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
            if( ST_SOLO_HUD )
            {
                char buf[24];
-               sprintf(buf, "S %d/%d", plyr->secretcount, totalsecret);
-               V_DrawString(SCX(318-V_StringWidth(buf), x0, xdiv), SCY(21, y0, ydiv), 0, buf);
+               int  label_x, value_x, ry = SCY(21, y0, ydiv);
+               ST_KIS_Columns( plyr, x0, xdiv, sf_dupx, &label_x, &value_x );
+               V_DrawString(label_x, ry, 0, "S");
+               sprintf(buf, "%d/%d", plyr->secretcount, totalsecret);
+               V_DrawString(value_x, ry, 0, buf);
            }
            break;
 
