@@ -1044,9 +1044,37 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     uint32_t rend_reqflags = SDL_RENDERER_TARGETTEXTURE;
     if( cv_vidwait.EV )   rend_reqflags |= SDL_RENDERER_PRESENTVSYNC;
 
-    sdl_renderer = SDL_CreateRenderer( sdl_window, -1, rend_reqflags );
+    // [Arcade] Ask for an accelerated renderer first.
+    //
+    // This used to request TARGETTEXTURE alone with driver -1, which lets SDL
+    // return the SOFTWARE renderer -- and then SDL_RenderCopy scales the
+    // texture up to the display on the CPU, every frame.  That is invisible
+    // until the drawn size stops matching the display: on the Pi, present
+    // cost MORE at 640x350 than at full resolution, which is the signature of
+    // a scale rather than a copy.
+    //
+    // Falls back to the original request if no accelerated driver will take
+    // it, so a machine that only has the software renderer behaves exactly as
+    // it did.
+    sdl_renderer = SDL_CreateRenderer( sdl_window, -1,
+                                       rend_reqflags | SDL_RENDERER_ACCELERATED );
+    if( sdl_renderer == NULL )
+        sdl_renderer = SDL_CreateRenderer( sdl_window, -1, rend_reqflags );
     if( sdl_renderer == NULL)
         goto failed;
+
+    // [Arcade] Say which one, because software and accelerated look identical
+    // from outside until the frame profile is read carefully.
+    {
+        SDL_RendererInfo ri;
+        if( SDL_GetRendererInfo( sdl_renderer, &ri ) == 0 )
+        {
+            GenPrintf( EMSG_warn, "SDL renderer: %s (%s%s)\n",
+                ri.name ? ri.name : "?",
+                (ri.flags & SDL_RENDERER_ACCELERATED)? "accelerated" : "SOFTWARE",
+                (ri.flags & SDL_RENDERER_PRESENTVSYNC)? ", vsync" : "" );
+        }
+    }
 #endif
 
     // Get surface for palette draw.

@@ -154,6 +154,40 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## The present, and the software SDL renderer
+
+On the Pi, after threading and `draw8bpp` had done their work, the frame looked
+like this at 640x350:
+
+```
+FRAME 640x350 8bpp 17.52ms (57 fps) = tics 0.61 (3%) views 5.47 (31%) present 10.93 (62%) hud/other 0.50 (3%)
+```
+
+**The present had become 62% of the frame** — and it cost *more* at 640x350
+than it had at full resolution. A present that gets dearer as the picture gets
+*smaller* is not copying, it is **scaling**: `SDL_RenderCopy` stretching the
+small texture up to the display, every frame.
+
+`SDL_CreateRenderer` was asking for `SDL_RENDERER_TARGETTEXTURE` alone, with
+driver `-1`. That lets SDL return the **software** renderer — and with
+`SDL_HINT_FRAMEBUFFER_ACCELERATION` disabled a few lines above it, quite
+likely did. A software renderer does that scale on the CPU.
+
+It now asks for `SDL_RENDERER_ACCELERATED` first and falls back to exactly the
+old request, so a machine with only the software renderer behaves as before.
+And it says which it got, because the two are indistinguishable from outside
+until someone reads a frame profile carefully:
+
+```
+SDL renderer: opengles2 (accelerated, vsync)
+SDL renderer: software (SOFTWARE)
+```
+
+**The lesson worth keeping**: `views` was never the whole story. Threading
+made the drawing ~4x faster and the frame rate did not move, because drawing
+was a third of the frame and the present was two thirds. Read the profile
+before optimising anything.
+
 ## `draw8bpp`: draw at 8bpp, expand at present time
 
 **The biggest single win found, and it is not threading.**
