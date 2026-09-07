@@ -154,6 +154,173 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## How it ended on the Pi: read `present` as a wait, not a cost
+
+The Pi 3b+ finished at 640x350, software drawmode, `draw8bpp` on, four column
+bands:
+
+```
+FRAME 640x350 8bpp 17.37ms (58 fps) = tics 0.64 (4%) views 5.39 (31%) present 10.81 (62%) hud/other 0.53 (3%)
+```
+
+`present` at 62% looks like the bottleneck. **It is not.** Watch it against
+`views` across samples:
+
+| views | present | sum |
+| --- | --- | --- |
+| 5.14 | 11.06 | 16.20 |
+| 5.39 | 10.81 | 16.20 |
+| 5.93 | 10.50 | 16.43 |
+| 6.52 | 10.39 | 16.91 |
+
+They are **anti-correlated and sum to a constant**. As the drawing gets
+slower the present gets shorter by the same amount. That is a fixed frame
+budget, not a cost: `SDL_RenderPresent` is blocking for the 60Hz refresh, and
+`present` is absorbing whatever slack is left.
+
+**Real work per frame is `tics + views + hud` — about 6.5ms, roughly 150fps of
+capability**, displayed at 57 because the panel is 60Hz.
+
+Two wrong turns were taken before seeing this, both worth remembering:
+
+- *"The SDL renderer must be software, that's why the scale is expensive."*
+  It was `opengl (accelerated)` all along. Fixed by making it say so.
+- *"SDL_LockTexture writes into uncached GPU memory, that's the cost."*
+  Plausible, and testable — the cached staging buffer measured **identical**
+  (10.5-11.1ms either way). Both paths kept, `DL_DRAW8_LOCK=1` selects the old
+  one.
+
+**The tell was arithmetic, not instrumentation.** 17.3-18.5ms totals against a
+60Hz panel is 54-58fps, and a frame rate that sits just under the refresh rate
+deserves suspicion before anything is optimised. Check whether the phases sum
+to a constant before believing the biggest one is a bottleneck.
+
+## The present, and the software SDL renderer
+
+On the Pi, after threading and `draw8bpp` had done their work, the frame looked
+like this at 640x350:
+
+```
+FRAME 640x350 8bpp 17.52ms (57 fps) = tics 0.61 (3%) views 5.47 (31%) present 10.93 (62%) hud/other 0.50 (3%)
+```
+
+**The present had become 62% of the frame** — and it cost *more* at 640x350
+than it had at full resolution. A present that gets dearer as the picture gets
+*smaller* is not copying, it is **scaling**: `SDL_RenderCopy` stretching the
+small texture up to the display, every frame.
+
+`SDL_CreateRenderer` was asking for `SDL_RENDERER_TARGETTEXTURE` alone, with
+driver `-1`. That lets SDL return the **software** renderer — and with
+`SDL_HINT_FRAMEBUFFER_ACCELERATION` disabled a few lines above it, quite
+likely did. A software renderer does that scale on the CPU.
+
+It now asks for `SDL_RENDERER_ACCELERATED` first and falls back to exactly the
+old request, so a machine with only the software renderer behaves as before.
+And it says which it got, because the two are indistinguishable from outside
+until someone reads a frame profile carefully:
+
+```
+SDL renderer: opengles2 (accelerated, vsync)
+SDL renderer: software (SOFTWARE)
+```
+
+**The lesson worth keeping**: `views` was never the whole story. Threading
+made the drawing ~4x faster and the frame rate did not move, because drawing
+was a third of the frame and the present was two thirds. Read the profile
+before optimising anything.
+
+## `draw8bpp`: draw at 8bpp, expand at present time
+
+**The biggest single win found, and it is not threading.**
+
+Doom renders palettized. DoomLegacy grew 15/16/24/32-bit drawers, and
+`vid.bitpp` is taken **straight from the SDL texture format**
+(`sdl/i_video.c`) — so on any modern display the software renderer writes
+**four bytes per pixel even in the "Software 8bit" drawmode**. There are no
+8bpp display modes any more; an 8bpp request deliberately takes the native
+depth for the *mode* (`i_video.c:574`), and the draw depth silently followed
+it. The drawmode's name has been a lie on modern hardware for years.
+
+`draw8bpp` keeps `vid.display` at 8bpp — which the engine already supports
+completely, those drawers are the original ones — and expands once through the
+palette into the texture, via `SDL_LockTexture` so there is no intermediate
+buffer and no second copy.
+
+Measured, one player, 1024x768, MAP07:
+
+| threads | draw8bpp | total | views | present |
+| --- | --- | --- | --- | --- |
+| 1 | Off (32bpp) | 12.18 ms (82 fps) | 10.54 | 1.36 |
+| 1 | **On (8bpp)** | **5.93 ms (169 fps)** | **4.48** | 1.32 |
+| 4 | Off | 4.87 ms (205 fps) | 3.20 | 1.39 |
+| 4 | **On** | **3.15 ms (317 fps)** | **1.60** | 1.42 |
+
+**2.1x on its own**, and it stacks with threading: 82 → 317 fps together.
+
+Note `present` did **not** get worse (1.36 → 1.32). The expansion reads a
+quarter as much as the memcpy it replaces, which pays for the palette lookup.
+That is the whole point: it cuts memory traffic at both ends, which is what a
+machine short of bandwidth actually needs.
+
+The palette table is built in `I_SetPalette`, which the engine already calls
+on every palette change while the draw depth is 8 — the damage and bonus
+flashes included, so they keep working with no extra plumbing. It is written
+as arithmetic on a `uint32_t` rather than through `pixel32_t`, which makes it
+correct on both endiannesses.
+
+**Verified the picture is unchanged**: dumping the same frame at 32bpp and at
+8bpp, every one of 262144 sampled pixels maps its palette index to exactly one
+32bpp colour — a clean one-to-one mapping, 0.00% disagreement. The two paths
+draw the same picture.
+
+**What does differ** is translucency: the truecolor drawers blend outside the
+palette, the 8bpp ones use the translucency tables. Fog and translucent
+surfaces will look slightly different — the classic 8bpp-versus-truecolor
+difference, not a bug.
+
+## When threading does not help: `-frameprofile`
+
+Threading the renderer only helps if rendering is what the frame is made of.
+It is not, everywhere. Run with **`-frameprofile`** and every three seconds it
+prints where the frame actually went:
+
+```
+FRAME 12.66ms (79 fps) =  tics 0.02 (0%)  views 10.63 (84%)  present 1.71 (13%)  hud/other 0.30 (2%)
+```
+
+- **views** is the part `render_threads` speeds up. If it dominates, threading
+  will help and the numbers should move when you change the setting.
+- **present** is `I_FinishUpdate` -- handing the finished frame to SDL. At
+  1366x768x4 that is a ~4MB copy per frame, and on a machine with slow memory
+  it can be most of the frame. **No amount of render threading touches it.**
+- **tics** is the simulation. Threading never touches this either.
+- **hud/other** is the remainder: status bar, HUD, menus, console, and
+  anything not separately timed.
+
+Measured on the development laptop, one player, software, MAP07:
+
+| | views | present |
+| --- | --- | --- |
+| `render_threads 1` | 10.6 ms (84%) | 1.7 ms (13%) |
+| `render_threads 4` | 5.1 ms (68%) | 2.1 ms (27%) |
+
+Rendering dominates there, which is why threading shows up. Where it does not
+show up, this is the first thing to run -- before changing any more renderer
+code.
+
+There is also a running statement of what the renderer is doing, printed once
+and again whenever it changes, so "is it even on?" never has to be inferred:
+
+```
+Render: single threaded
+Render: 1 view split into 4 column bands
+Render: 4 views on worker threads
+```
+
+**In a hardware drawmode it says `single threaded` whatever `render_threads`
+is set to** -- which is exactly the symptom that otherwise looks identical to
+the feature not working.
+
 ## Demo safety
 
 **Verified, not assumed.** The simulation is untouched, at `render_threads` 1 and 4

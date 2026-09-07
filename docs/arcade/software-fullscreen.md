@@ -196,6 +196,59 @@ Mouse motion is in window pixels, so a 320x200 screen scaled to 1080p moves the 
 times slower relative to the game screen. The cabinet has no mouse and the mouse settings are
 devmode-only, so this is left alone.
 
+## Three separate caps hid modes, and every one of them failed silently
+
+The scaled modes above are appended at the **end** of the fullscreen list, which turned out to be
+the worst place to be: everything that truncates this list truncates the tail. The reported symptom
+was "the list stops at 640x350" — the small sizes, the ones the whole `VID_add_scaled_modes` change
+exists to provide, were the ones missing. Three caps were stacked, none of them said anything, and
+each had to be lifted before the next became visible.
+
+- **`add_vid_mode` did not deduplicate.** `SDL_GetNumDisplayModes` reports one entry per
+  *(width, height, refresh rate, format)* combination and `vid_mode_t` stores only width and height,
+  so a display offering 60/75/100/144Hz produced four byte-identical entries per resolution. The
+  menu deduplicates by name when it draws, so this was invisible *there* — but the surplus entries
+  still consumed mode indices, and index is what the next cap is measured in. A synthetic display
+  with four refresh rates over ten resolutions goes from 40 entries to 10.
+
+- **`VID_GetModeName` returns NULL above `MAX_NUM_VIDMODENAME`**, which was 42, and the menu treats
+  a mode with no name as no mode at all — `if (desc)` and on to the next index, no message. With the
+  duplicates above, a fairly ordinary monitor pushes past 42 on its own, and the appended scaled
+  modes are the first thing over the edge. Now **256**, which is not a raised cap but the removal of
+  one: `modenum_t.index` is a `byte`, so 256 covers every index that can exist and the guard becomes
+  unreachable. 128 was picked first and would have left a cliff at index 128 — moving a silent limit
+  is not the same as removing it, and it is worth checking which one a number is.
+
+- **The menu stopped filling at `MAXMODEDESCS`.** See `menus.md` — that one is now paged rather than
+  raised.
+
+The general shape is worth remembering: **a list capped by a constant fails at its far end, and the
+far end is where anything appended locally lives.** Neither the engine nor the menu logs a mode it
+declined to name or store, so the only evidence is a resolution that is not on screen — which reads
+as "that resolution is not supported", not as "the list ran out".
+
+The dedup is checked by **`tools/vidmodes-deduptest.py`**, which lifts `add_vid_mode` verbatim out
+of `i_video.c` — brace matching, not a copy — feeds it this display's real mode list and a synthetic
+multi-refresh-rate one, and compares the sizes it keeps against the first-seen order of the input.
+The property that matters is not "duplicates are removed" but "nothing else is": a resolution
+quietly dropped is the bug being fixed.
+
+```
+this display                  6 in ->  5 out,  5 distinct  OK
+synthetic 4 refresh rates    40 in -> 10 out, 10 distinct  OK
+```
+
+Ordering is the menu's job, not this list's — see `menus.md`. `VID_add_scaled_modes` still appends
+at the end and `add_vid_mode` still keeps first-seen order, because those orders are what the mode
+*indices* are built from, and the config resolves sizes rather than indices precisely so that the
+two need not agree.
+
+The menu paging and sorting have their own harness, built the same way — see `menus.md`.
+
+Nothing indexes into this list by number across a restart: the config stores `scr_width`/
+`scr_height` and `VID_GetModeForSize` resolves them to whatever index they land on, so shortening
+the list does not move anyone's saved mode.
+
 ## Verifying a change here
 
 `./doomlegacyarcade -v` prints one line per mode set:

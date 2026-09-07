@@ -1026,6 +1026,7 @@ consvar_t * video_cvar_list[] =
   &cv_scr_width,
   &cv_scr_height,
   &cv_fuzzymode,
+  &cv_draw8bpp,       // [Arcade] 8bpp draw buffer, expanded at present time
   NULL
 };
 

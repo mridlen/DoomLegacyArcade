@@ -262,6 +262,9 @@ extern consvar_t cv_scr_depth;
 extern consvar_t cv_fullscreen;
 
 extern consvar_t cv_fuzzymode;
+extern consvar_t cv_draw8bpp;   // [Arcade] 8bpp draw buffer
+void SCR_ChangeDraw8bpp( void );
+boolean SCR_Draw8bpp_Active( void );
 
 // quick fix for tall/short skies, depending on bytesperpixel
 extern void (*skydrawerfunc[2]) (void);

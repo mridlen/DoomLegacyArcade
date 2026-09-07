@@ -4657,6 +4657,7 @@ enum
 {
     PERF_framerate = 0,
     PERF_threads,
+    PERF_draw8bpp,
     PERF_ticrate,
 } performance_e;
 
@@ -4664,6 +4665,7 @@ menuitem_t PerformanceMenu[]=
 {
     {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
     {IT_STRING | IT_CVAR,0,    "Render Threads"   , &cv_render_threads, 0},
+    {IT_STRING | IT_CVAR,0,    "8bpp Draw"        , &cv_draw8bpp      , 0},
     {IT_STRING | IT_CVAR,0,    "Show Ticrate"     , &cv_ticrate       , 0},
 };
 
@@ -6235,20 +6237,75 @@ void M_ChangeControl(int choice)
 //===========================================================================
 // Video mode and drawmode test and draw support.
 
-//max modes displayed in one column
-//#define MAXCOLUMNMODES   10
-#define MAXCOLUMNMODES   8
+// max modes displayed in one column
+// [Arcade] Was 8, with 10 commented out beside it.  Measured against the real
+// hu_font (V_StringHeight is hu_font[0]->height, and STCFN033 is 7 tall):
+// the last row of 10 ends at y = MODES_Y + 9*MODES_Y_INC + 7 = 123, which
+// clears the instruction block at MODETXT_Y (128) by 5 pixels.  11 rows would
+// end at 131 and draw over it.
+#define MAXCOLUMNMODES   10
+// Modes shown on one page: three columns of MAXCOLUMNMODES.  Three is also the
+// most that fits -- the widest name the list can produce is "win 1600x1200" at
+// 92 pixels, and the third column starts at x=224 and ends at 316 of 320.
 #define MAXMODEDESCS     (MAXCOLUMNMODES*3)
+// [Arcade] Modes held in total, over all pages.  The list used to stop dead at
+// MAXMODEDESCS, which on a display advertising many modes cut off the tail --
+// and the tail is where VID_add_scaled_modes appends the small software sizes,
+// so the modes most worth having were the ones that went missing.
+#define MAXVIDMODEDESCS  128
 #define MODES_X          16
 #define MODES_Y          44
 #define MODES_X_INC      (8*13)
 #define MODES_Y_INC      8
+// [Arcade] Page indicator, between the title (M_VIDEO is 168x15 at y=2) and
+// the first row of modes.
+#define MODES_PAGE_Y     34
 #define MODETXT_Y        (MODES_Y + 60 + 24)
 
 static int vidm_testing_cnt=0;  // test videomode failsafe
-static int vidm_current=0;  // modedesc index
-static int vidm_nummodes;
+static int vidm_current=0;  // modedesc index, over the whole list
+static int vidm_nummodes;   // modes in the whole list
 static int vidm_column_size;
+// [Arcade] The slice of the list currently on screen.  vidm_current is a whole
+// list index; the page drawn is the one it falls on, so paging is just a matter
+// of moving vidm_current and letting the drawer follow.
+static int vidm_page_first = 0;  // first modedesc index of the drawn page
+static int vidm_page_count = 0;  // modes on the drawn page
+
+// Modes on page p.  Pages are fixed MAXMODEDESCS slices, so this needs no
+// state and the key handler can ask about a page it is not on yet.
+static int  vidm_page_modes( int p )
+{
+    int n = vidm_nummodes - (p * MAXMODEDESCS);
+    if( n > MAXMODEDESCS )  n = MAXMODEDESCS;
+    return (n > 0) ? n : 0;
+}
+
+// Rows per column for a page holding count modes.  Balances three columns, as
+// the single-page code always did; a short last page gets short columns rather
+// than one full column and two empty ones.
+static int  vidm_page_colsize( int count )
+{
+    int cs = (count + 2) / 3;
+    return (cs > 0) ? cs : 1;
+}
+
+// Settle the drawn page around vidm_current, which the key handler moves.
+// vidm_current can be stale on entry -- the drawmode menu shares it, and the
+// mode list itself changes with the fullscreen setting -- so it is range
+// checked here, before anything indexes modedescs[] with it.
+static void  vidm_set_page( void )
+{
+    int page;
+
+    if( (vidm_current >= vidm_nummodes) || (vidm_current < 0) )
+        vidm_current = 0;
+
+    page = vidm_current / MAXMODEDESCS;
+    vidm_page_first = page * MAXMODEDESCS;
+    vidm_page_count = vidm_page_modes( page );
+    vidm_column_size = vidm_page_colsize( vidm_page_count );
+}
 
 
 // Draw the instructions for the video mode setting
@@ -6324,83 +6381,106 @@ void  draw_set_mode_instructions( byte vm_mode, const char * current_mode_name, 
     if (skullAnimCounter<4)    //use the Skull anim counter to blink the cursor
 //    if( (itemOn > 0) && skullAnimCounter<4 )    //use the Skull anim counter to blink the cursor
     {
-        int i = MODES_X - 10 + ((vidm_current / vidm_column_size) * MODES_X_INC);
-        int j = MODES_Y + ((vidm_current % vidm_column_size) * MODES_Y_INC);
+        // [Arcade] The cursor is placed within the drawn page, not within the
+        // whole list, or it would run off the bottom of the screen on page 2.
+        int loc = vidm_current - vidm_page_first;
+        int i, j;
+        if( loc < 0 )  loc = 0;
+        i = MODES_X - 10 + ((loc / vidm_column_size) * MODES_X_INC);
+        j = MODES_Y + ((loc % vidm_column_size) * MODES_Y_INC);
         V_DrawCharacter( i, j, '*' | 0x80);  // white
     }
 }
 
-// Stay in the column.
-// Alternative is to jump from column to column.
-#define VIDMODE_COLUMNAR_MOVEMENT
+// Stay in the column: up and down wrap within the column rather than running
+// on into the next one.  [Arcade] This used to be selectable with
+// VIDMODE_COLUMNAR_MOVEMENT; the paging handler below does it unconditionally,
+// because Left/Right off the edge of a page is what moves between pages and
+// Up/Down running off the end of a column would fight it.
 
 //added:30-01-98: special menuitem key handler for video mode list
 void M_VideoMode_key_handler (int key)
 {
-#ifdef VIDMODE_COLUMNAR_MOVEMENT       
-    byte old_col, new_col;
-#endif
+    int  loc, col, row, page;
 
     // Test specific key handler
     if( key_handler2(key) )  return;
 
-#ifdef VIDMODE_COLUMNAR_MOVEMENT       
-    old_col = vidm_current / vidm_column_size;
-#endif
+    // [Arcade] Everything below works in page-local coordinates: loc is the
+    // position within the drawn page, and vidm_current is put back together
+    // from it at the end.  The drawer sets vidm_page_first/count/column_size,
+    // and it has always run before a key can reach here -- but a column size
+    // of zero would divide by zero, so do not trust it blindly.
+    if( vidm_column_size < 1 )  vidm_column_size = 1;
+    if( vidm_page_count < 1 )
+    {
+        vidm_page_first = 0;
+        vidm_page_count = (vidm_nummodes > 0) ? vidm_nummodes : 1;
+    }
+
+    page = vidm_page_first / MAXMODEDESCS;
+    loc  = vidm_current - vidm_page_first;
+    if( loc < 0 )  loc = 0;
+    if( loc >= vidm_page_count )  loc = vidm_page_count - 1;
+    col  = loc / vidm_column_size;
+    row  = loc % vidm_column_size;
 
     switch( key )
     {
       case KEY_DOWNARROW:
         S_StartSound(menu_sfx_updown);
-        vidm_current++;
-#ifdef VIDMODE_COLUMNAR_MOVEMENT       
-        new_col = vidm_current / vidm_column_size;
-        if( ( vidm_current >= vidm_nummodes )
-            || new_col != old_col )
-        {
-            // Move to top of the column
-            vidm_current = old_col * vidm_column_size;
-        }
-#else
-        if( vidm_current >= vidm_nummodes )
-        {
-            // Move to the first item of the mode list.
-            vidm_current = 0;
-        }
-#endif
+        row++;
+        // Stay in the column: wrap at its bottom, or at the end of a short
+        // last column.
+        if( (row >= vidm_column_size)
+            || (((col * vidm_column_size) + row) >= vidm_page_count) )
+            row = 0;
+        loc = (col * vidm_column_size) + row;
         break;
 
       case KEY_UPARROW:
         S_StartSound(menu_sfx_updown);
-        vidm_current--;
-#ifdef VIDMODE_COLUMNAR_MOVEMENT       
-        new_col = vidm_current / vidm_column_size;
-        if( ( vidm_current < 0 )
-            || new_col != old_col )
+        row--;
+        if( row < 0 )
         {
-            // Move to bottom of the column
-            vidm_current = (old_col * vidm_column_size) + vidm_column_size - 1;
+            // Bottom of this column, which may be short.
+            row = vidm_column_size - 1;
+            while( (row > 0) && (((col * vidm_column_size) + row) >= vidm_page_count) )
+                row--;
         }
-#else
-        if( vidm_current < 0 )
-        {
-            // Move to the last item of the mode list.
-            vidm_current = vidm_nummodes-1;
-        }
-#endif
+        loc = (col * vidm_column_size) + row;
         break;
 
       case KEY_LEFTARROW:
         S_StartSound(menu_sfx_val);
-        if( (vidm_current - vidm_column_size) < 0  )  return;
-        vidm_current -= vidm_column_size;
-        break;
+        if( col > 0 )
+        {
+            loc -= vidm_column_size;
+            break;
+        }
+        goto prev_page;
 
       case KEY_RIGHTARROW:
         S_StartSound(menu_sfx_val);
-        if( (vidm_current + vidm_column_size) >= vidm_nummodes )  return;
-        vidm_current += vidm_column_size;
-        break;
+        if( ((col + 1) * vidm_column_size) < vidm_page_count )
+        {
+            loc += vidm_column_size;
+            if( loc >= vidm_page_count )  loc = vidm_page_count - 1;
+            break;
+        }
+        goto next_page;
+
+      // [Arcade] Explicit page keys as well.  Left/Right off the edge of the
+      // list is the one that matters on the cabinet, where the panel has only
+      // the four directions and a fire button, but a keyboard should not have
+      // to discover it.
+      case KEY_PGUP:
+        S_StartSound(menu_sfx_val);
+        goto prev_page;
+
+      case KEY_PGDN:
+        S_StartSound(menu_sfx_val);
+        goto next_page;
 
       case KEY_ESCAPE:      //this one same as M_Responder
         key_handler2 = NULL;
@@ -6411,7 +6491,33 @@ void M_VideoMode_key_handler (int key)
       default:
         break;
     }
+    goto done;
 
+prev_page:
+    // Previous page, last column, same row where there is one.
+    if( page <= 0 )  return;
+    {
+        int pc = vidm_page_modes( page - 1 );
+        int cs = vidm_page_colsize( pc );
+        int t  = (((pc - 1) / cs) * cs) + row;
+        if( t >= pc )  t = pc - 1;
+        vidm_current = ((page - 1) * MAXMODEDESCS) + t;
+    }
+    return;
+
+next_page:
+    // Next page, first column, same row where there is one.
+    if( ((page + 1) * MAXMODEDESCS) >= vidm_nummodes )  return;
+    {
+        int pc = vidm_page_modes( page + 1 );
+        int t  = row;
+        if( t >= pc )  t = pc - 1;
+        vidm_current = ((page + 1) * MAXMODEDESCS) + t;
+    }
+    return;
+
+done:
+    vidm_current = vidm_page_first + loc;
     if( vidm_current >= vidm_nummodes )
         vidm_current = vidm_nummodes-1;
     if( vidm_current < 0 )
@@ -6452,8 +6558,81 @@ typedef struct
     char    *  desc;    // XXXxYYY
 } modedesc_t;
 
-static modedesc_t   modedescs[MAXMODEDESCS];
+static modedesc_t   modedescs[MAXVIDMODEDESCS];
 static modenum_t    vidm_previousmode;  // modenum in format of setmodeneeded
+
+
+// [Arcade] Sort modedescs[0 .. vidm_nummodes) by size, largest first, and
+// return where "current" ended up (NULL if it was NULL).
+//
+// Nothing used to order this list.  The fullscreen half arrives in whatever
+// order SDL reported the display's modes -- largest first, as a rule -- and
+// VID_add_scaled_modes appends the small software sizes after all of it, so
+// those came out both last and out of sequence.  The windowed half is a static
+// table in i_video.c that runs the other way.  Neither agreed with the other.
+//
+// Sorted here rather than in i_video.c on purpose: it is presentation, it
+// covers both lists in one place, and it leaves the engine's mode indices
+// alone, so vid.modenum, VID_GetModeForSize and the per-drawmode configs all
+// keep meaning exactly what they meant.
+//
+// Insertion sort -- at most MAXVIDMODEDESCS entries, once a frame -- and
+// stable, so entries of equal size keep their list order.  The order has to be
+// total and repeatable or vidm_current would point at a different mode from one
+// frame to the next.  Strict < keeps it stable; <= would not.
+//
+// The caller's pointer has to be handed back rather than kept, because it
+// points into the array being sorted.  Mode numbers are unique per entry, so it
+// is found again by that.
+static modedesc_t *  vidm_sort_by_size( modedesc_t * current )
+{
+    int  w[MAXVIDMODEDESCS], h[MAXVIDMODEDESCS];
+    modenum_t  cur_modenum = { MODE_NOP, 0 };
+    boolean    have_cur = (current != NULL);
+    int  i;
+
+    if( have_cur )   cur_modenum = current->modenum;
+
+    for( i = 0; i < vidm_nummodes; i++ )
+    {
+        modestat_t ms = VID_GetMode_Stat( modedescs[i].modenum );
+        // A mode with no size sorts to the end rather than to the front.  The
+        // key for that is BELOW every real size here, and would have to be
+        // above it if this ever sorted the other way round.
+        w[i] = ( ms.mark )? ms.width : 0;
+        h[i] = ( ms.mark )? ms.height : 0;
+    }
+
+    for( i = 1; i < vidm_nummodes; i++ )
+    {
+        modedesc_t  hold = modedescs[i];
+        int  hw = w[i], hh = h[i];
+        int  j = i;
+
+        while( (j > 0)
+               && ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )
+        {
+            modedescs[j] = modedescs[j-1];
+            w[j] = w[j-1];
+            h[j] = h[j-1];
+            j--;
+        }
+        modedescs[j] = hold;
+        w[j] = hw;
+        h[j] = hh;
+    }
+
+    if( have_cur )
+    {
+        for( i = 0; i < vidm_nummodes; i++ )
+        {
+            if( (modedescs[i].modenum.modetype == cur_modenum.modetype)
+                && (modedescs[i].modenum.index == cur_modenum.index) )
+                return & modedescs[i];
+        }
+    }
+    return NULL;
+}
 
 
 //
@@ -6565,33 +6744,54 @@ void M_DrawVideoMode(void)
             }
 
             // Must be after the detection.
-            if( vidm_nummodes >= MAXMODEDESCS )  break;
+            if( vidm_nummodes >= MAXVIDMODEDESCS )  break;
         }
     }
 
-    vidm_column_size = (vidm_nummodes+2) / 3;
+    // [Arcade] Order the list by size before drawing it.
+    current_modedesc = vidm_sort_by_size( current_modedesc );
+    if( current_modedesc )   current_modename = current_modedesc->desc;
 
-    // list down col first
-    col = MODES_X;
-    row = MODES_Y;
-    for(i=0; i<vidm_nummodes; i++)
+    // [Arcade] Draw one page of the list.  vidm_current indexes the whole
+    // list and the page shown is the one it falls on, so the key handler pages
+    // simply by moving it.
+    vidm_set_page();
+
     {
-        mdp = & modedescs[i];
+        int page = vidm_page_first / MAXMODEDESCS;
 
-        V_DrawString (col, row, (mdp == current_modedesc) ? V_WHITEMAP : 0, mdp->desc);
-
-        row += MODES_Y_INC;
-        if((i % vidm_column_size) == (vidm_column_size-1))
+        if( vidm_nummodes > MAXMODEDESCS )
         {
-            col += MODES_X_INC;
-            row = MODES_Y;
+            char  pagetxt[64];
+            int   numpages = ((vidm_nummodes - 1) / MAXMODEDESCS) + 1;
+            sprintf( pagetxt, "Page %d of %d - Left/Right for more",
+                     page + 1, numpages );
+            M_CentreText( MODES_PAGE_Y, pagetxt );
+        }
+
+        // list down col first
+        col = MODES_X;
+        row = MODES_Y;
+        for(i=0; i<vidm_page_count; i++)
+        {
+            mdp = & modedescs[vidm_page_first + i];
+
+            V_DrawString (col, row, (mdp == current_modedesc) ? V_WHITEMAP : 0, mdp->desc);
+
+            row += MODES_Y_INC;
+            if((i % vidm_column_size) == (vidm_column_size-1))
+            {
+                col += MODES_X_INC;
+                row = MODES_Y;
+            }
         }
     }
 
 #ifdef CONFIG_MENU_PAGE
 draw_instructions:
 #endif
-    draw_set_mode_instructions( 1, current_modename, modedescs[vidm_current].desc );
+    draw_set_mode_instructions( 1, current_modename,
+        (vidm_nummodes > 0) ? modedescs[vidm_current].desc : "" );
 }
 
 
@@ -6825,6 +7025,14 @@ void M_Draw_drawmode(void)
             row = MODES_Y;
         }
     }
+
+    // [Arcade] vidm_current is shared with the video mode list, which is much
+    // longer, so it can point past the end of vidm_drawmode[] on the way back
+    // from that menu.  There is only ever one page of drawmodes.
+    if( (vidm_current >= vidm_nummodes) || (vidm_current < 0) )
+        vidm_current = 0;
+    vidm_page_first = 0;
+    vidm_page_count = vidm_nummodes;
 
     byte sel_dm = vidm_drawmode[vidm_current];  // selected drawmode
     const char * sel_drawmode_str = CV_get_possiblevalue_string( drawmode_sel_t, sel_dm );

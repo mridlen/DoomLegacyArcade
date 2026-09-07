@@ -135,6 +135,19 @@ static  int  num_vid_mode_allocated = 0;
 static  int  num_vid_mode = 0;
 static  byte       modelist_bitpp = 0;  // with modelist
 
+// [Arcade] 8bpp draw buffer with palette expansion at present time.
+//
+// draw8_active is decided once per mode set, not read from the cvar per frame:
+// the buffer is allocated to match it, so it must not change under the
+// drawers.  draw8_to32 is rebuilt by I_SetPalette, which the engine already
+// calls on every palette change while the draw depth is 8 -- including the
+// damage flash, so the flash keeps working with no extra plumbing.
+static  boolean    draw8_active = false;
+static  byte       draw8_texture_bytepp = 0;   // what the texture really is
+static  uint32_t   draw8_to32[256];
+static  uint32_t * draw8_staging = NULL;       // cached expansion buffer
+static  size_t     draw8_staging_size = 0;
+
 // indexed by fullscreen
 const char * fullscreen_str[2] = {
   "Windowed",
@@ -223,6 +236,21 @@ static
 void  add_vid_mode( int w, int h )
 {
     vid_mode_t * vm;
+    int  i;
+
+    // [Arcade] Do not add the same size twice.
+    //
+    // SDL_GetNumDisplayModes reports one mode per (width, height, refresh,
+    // format) combination, and vid_mode_t keeps only width and height -- so a
+    // display offering 60/75/144Hz produced three identical entries, and the
+    // mode list came out several times longer than the number of resolutions
+    // it actually described.  The menu deduplicates by name when it draws, so
+    // this was invisible there, but the surplus entries still consumed mode
+    // indices, and index is what VID_GetModeName's table is sized by.
+    for( i = 0; i < num_vid_mode; i++ )
+    {
+        if( (vid_modelist[i].w == w) && (vid_modelist[i].h == h) )  return;
+    }
 
     if( num_vid_mode >= num_vid_mode_allocated )
     {
@@ -418,6 +446,58 @@ void I_FinishUpdate(void)
         // own malloc'ed buffer of vid.ybytes per row.  It is not the pitch of
         // the window surface (vid.direct_rowbytes), which is a different buffer
         // and, in fullscreen, usually a different width.
+        if( draw8_active )
+        {
+            // [Arcade] Expand the 8bpp draw buffer through the palette into a
+            // CACHED staging buffer, then let SDL_UpdateTexture do the one
+            // transfer into GPU memory.
+            //
+            // Writing the expansion straight into SDL_LockTexture's pointer
+            // looks better -- no intermediate buffer, no second copy -- and on
+            // the Pi measured about EIGHT TIMES WORSE per pixel than the
+            // SDL_UpdateTexture it replaced.  That memory is uncached or
+            // write-combined; a scattered 4-byte store per palette lookup into
+            // it is nothing like a linear copy.  Expanding in cached memory
+            // and copying once linearly is faster even though it moves the
+            // bytes twice.  DL_DRAW8_LOCK=1 restores the direct path for
+            // comparison.
+            static int use_lock = -1;
+            if( use_lock < 0 )  use_lock = getenv("DL_DRAW8_LOCK")? 1 : 0;
+
+            if( use_lock )
+            {
+                void * tex_pixels = NULL;
+                int    tex_pitch = 0;
+                if( SDL_LockTexture( sdl_texture, NULL, &tex_pixels, &tex_pitch ) == 0 )
+                {
+                    int y;
+                    for( y = 0; y < vid.height; y++ )
+                    {
+                        byte     * src = vid.display + (y * vid.ybytes);
+                        uint32_t * dst = (uint32_t*)((byte*)tex_pixels + (y * tex_pitch));
+                        int x = vid.width;
+                        while( x-- )
+                            *dst++ = draw8_to32[ *src++ ];
+                    }
+                    SDL_UnlockTexture( sdl_texture );
+                }
+            }
+            else if( draw8_staging )
+            {
+                int y;
+                for( y = 0; y < vid.height; y++ )
+                {
+                    byte     * src = vid.display + (y * vid.ybytes);
+                    uint32_t * dst = draw8_staging + ((size_t)y * vid.width);
+                    int x = vid.width;
+                    while( x-- )
+                        *dst++ = draw8_to32[ *src++ ];
+                }
+                SDL_UpdateTexture( sdl_texture, NULL, draw8_staging,
+                                   vid.width * 4 );
+            }
+        }
+        else
         SDL_UpdateTexture( sdl_texture, NULL, vid.display, vid.ybytes );
 
         // SDL2 docs use RenderClear, but we do not have any conflicting drawers.
@@ -530,6 +610,23 @@ void I_SetPalette(RGBA_t* palette)
         localPalette[i].r = palette[i].s.red;
         localPalette[i].g = palette[i].s.green;
         localPalette[i].b = palette[i].s.blue;
+    }
+
+    // [Arcade] The 8 -> 32 table for the present-time expansion.  Built here
+    // because the engine already calls I_SetPalette on every palette change
+    // while the draw depth is 8, the damage and bonus flashes included, so
+    // nothing else has to know about it.  Laid out to match the 32bpp
+    // drawers' pixel order (see pixelunion32_t), which is what the texture
+    // was created with.
+    if( draw8_active )
+    {
+        for(i=0; i<256; i++)
+        {
+            draw8_to32[i] = ((uint32_t)palette[i].s.red   << 16)
+                          | ((uint32_t)palette[i].s.green <<  8)
+                          | ((uint32_t)palette[i].s.blue       )
+                          | 0xFF000000;
+        }
     }
 
 #ifdef SDL2
@@ -797,7 +894,14 @@ fail:
 }
 
 // Static mode name storage
-#define  MAX_NUM_VIDMODENAME  42
+// [Arcade] Was 42.  This is indexed by mode index, and VID_GetModeName returns
+// NULL above it -- which the menu treats as "no such mode" and skips silently.
+// A modern display can advertise more modes than that on its own, and
+// VID_add_scaled_modes appends the small software sizes at the END of the
+// list, so they were the first thing to fall off the far side of the cap.
+// modenum_t.index is a byte, so 256 covers every index that can exist and the
+// cap stops being a cap at all -- 4KB of BSS to remove a silent cliff.
+#define  MAX_NUM_VIDMODENAME  256
 #define  MAX_LEN_VIDMODENAME  16
 static char  mode_name_store[MAX_NUM_VIDMODENAME][MAX_LEN_VIDMODENAME];
 
@@ -989,9 +1093,37 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     uint32_t rend_reqflags = SDL_RENDERER_TARGETTEXTURE;
     if( cv_vidwait.EV )   rend_reqflags |= SDL_RENDERER_PRESENTVSYNC;
 
-    sdl_renderer = SDL_CreateRenderer( sdl_window, -1, rend_reqflags );
+    // [Arcade] Ask for an accelerated renderer first.
+    //
+    // This used to request TARGETTEXTURE alone with driver -1, which lets SDL
+    // return the SOFTWARE renderer -- and then SDL_RenderCopy scales the
+    // texture up to the display on the CPU, every frame.  That is invisible
+    // until the drawn size stops matching the display: on the Pi, present
+    // cost MORE at 640x350 than at full resolution, which is the signature of
+    // a scale rather than a copy.
+    //
+    // Falls back to the original request if no accelerated driver will take
+    // it, so a machine that only has the software renderer behaves exactly as
+    // it did.
+    sdl_renderer = SDL_CreateRenderer( sdl_window, -1,
+                                       rend_reqflags | SDL_RENDERER_ACCELERATED );
+    if( sdl_renderer == NULL )
+        sdl_renderer = SDL_CreateRenderer( sdl_window, -1, rend_reqflags );
     if( sdl_renderer == NULL)
         goto failed;
+
+    // [Arcade] Say which one, because software and accelerated look identical
+    // from outside until the frame profile is read carefully.
+    {
+        SDL_RendererInfo ri;
+        if( SDL_GetRendererInfo( sdl_renderer, &ri ) == 0 )
+        {
+            GenPrintf( EMSG_warn, "SDL renderer: %s (%s%s)\n",
+                ri.name ? ri.name : "?",
+                (ri.flags & SDL_RENDERER_ACCELERATED)? "accelerated" : "SOFTWARE",
+                (ri.flags & SDL_RENDERER_PRESENTVSYNC)? ", vsync" : "" );
+        }
+    }
 #endif
 
     // Get surface for palette draw.
@@ -1067,6 +1199,46 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     vid.bitpp = texture_format->BitsPerPixel;
     vid.bytepp = texture_format->BytesPerPixel;
     SDL_FreeFormat( texture_format );
+
+    // [Arcade] Draw 8bpp and expand at present time.  Decided here, before
+    // vid.ybytes and the screen buffer are sized from vid.bytepp below, and
+    // only for a 32bpp texture -- the expansion writes uint32_t.
+    draw8_texture_bytepp = vid.bytepp;
+    draw8_active = ( cv_draw8bpp.EV
+                     && (rendermode == render_soft)
+                     && (vid.bytepp == 4) );
+    if( draw8_active )
+    {
+        vid.bitpp = 8;
+        vid.bytepp = 1;
+
+        // Expansion buffer, in ordinary cached memory.  See I_FinishUpdate.
+        {
+            size_t need = (size_t)vid.width * vid.height * 4;
+            if( need != draw8_staging_size )
+            {
+                free( draw8_staging );
+                draw8_staging = (uint32_t*) malloc( need );
+                draw8_staging_size = draw8_staging? need : 0;
+            }
+            if( draw8_staging == NULL )
+            {
+                draw8_active = false;   // cannot expand, draw at display depth
+                vid.bitpp = draw8_texture_bytepp * 8;
+                vid.bytepp = draw8_texture_bytepp;
+            }
+        }
+    }
+
+    // [Arcade] Say why.  "It still says 32bpp" is otherwise three separate
+    // guesses: the cvar not reaching here, the texture not being 32bpp, or a
+    // stale object file -- this tree has no dep files for most objects, so a
+    // header change (cv_draw8bpp lives in screen.h) does NOT rebuild the file
+    // that reads it.  See the stale-objects rule in CLAUDE.md.
+    GenPrintf( EMSG_warn,
+        "draw8bpp: %s (cvar=%d, texture=%d bytes/pixel)\n",
+        draw8_active? "ON, drawing 8bpp" : "off, drawing at display depth",
+        (int)cv_draw8bpp.EV, (int)draw8_texture_bytepp );
 
     if( vidSurface )
     {
