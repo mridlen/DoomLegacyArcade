@@ -968,7 +968,15 @@ void  FP_Frame_End( double t0 )
     if( (now - fp_report_at) < 3.0 )  return;
 
     tot = fp_acc[FP_TOTAL] / fp_frames * 1000.0;
-    pos += snprintf(line+pos, sizeof(line)-pos, "FRAME %.2fms (%.0f fps) =",
+    // [Arcade] The draw depth and size are on the line because they are the
+    // two biggest levers on a machine short of memory bandwidth, and because
+    // the startup log's "VID_SetMode(fullscreen,24)" is the DISPLAY mode, not
+    // what the engine draws at -- an 8bpp request deliberately takes the
+    // native depth for the mode (i_video.c).  Reading that as "8-bit did not
+    // take" cost a whole test.
+    pos += snprintf(line+pos, sizeof(line)-pos,
+                    "FRAME %dx%d %dbpp %.2fms (%.0f fps) =",
+                    vid.width, vid.height, vid.bitpp,
                     tot, (tot > 0.0)? 1000.0/tot : 0.0);
     rest = tot;
     for( i = 0; i < 3; i++ )
