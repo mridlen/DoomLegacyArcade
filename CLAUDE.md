@@ -280,7 +280,7 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   cannot have, believe the arithmetic. → `ultrawide.md`
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
-  `tools/viewgrid-test.py` and `tools/vidmodes-deduptest.py` lift
+  `tools/viewgrid-test.py`, `tools/hudtext-test.py` and `tools/vidmodes-deduptest.py` lift
   the functions they test **verbatim out of the source by brace matching**, stub what those touch,
   and drive them exhaustively. A copied test drifts away from the code and then passes forever;
   an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
@@ -514,6 +514,16 @@ written up in full in the doc named beside it.
   has, is 24 to the macro and 32 to an `SDL_PixelFormat`. `vid.bitpp` picks the software drawer, so
   the macro drew 4-byte pixels with the 3-byte drawer and mangled every texture on screen — in the
   software and native drawmodes only, and with `make smoke` passing throughout. → `gotchas.md`
+- **Art is drawn at one scale and positioned at another, and which is which depends on the
+  renderer.** `V_SetupDraw` puts the whole number `vid.dupx` into `drawinfo` for `V_SCALEPATCH`, but
+  `V_DrawScaledPatch` in hardware mode hands off to `HWR_DrawPatch`, which scales by the exact
+  `fdupx` — so any code that steps by `n * vid.dupx` and then draws a patch is right in software and
+  wrong in OpenGL. That is what overlapped the status digits by 30% at 1366x768. The mirror image is
+  centring on `BASEVIDWIDTH`: in software the 320x200 box is smaller than the screen wherever the
+  division is not exact, so a "centred" string sits half the leftover to the left — 96px at 512x384,
+  203px at 1366x768, and **nothing at all** at 640x480 or 1920x1080, which is what makes it read as
+  one bad resolution rather than a rule. Position against the screen, draw at the art scale, and
+  take the art scale from `rendermode`. → `hud.md`, `screen-fill.md`
 - **The software renderer scales 2D by a whole number; the hardware renderer scales by the exact
   ratio.** `vid.dupx` is `vid.width / 320` truncated, so a 320x200 page drew 1280x600 of a 1366x768
   screen and `D_PageDrawer` tiled a flat into what was left — which is what "the slides don't fill

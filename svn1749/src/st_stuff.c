@@ -1689,15 +1689,38 @@ void ST_drawOverlayNum (int x, int y,
     patch_t * pf = V_patch( numpat[0] );
     int  hf = pf->height;
     int  wf = pf->width;
-    int  wfv = wf * vid.dupx;
+    // [Arcade] Advance by the width the digit is ACTUALLY DRAWN, which is not
+    // the same number in the two renderers.
+    //
+    // V_DrawScaledPatch scales the art by drawinfo, and V_SCALEPATCH puts
+    // vid.dupx/vid.dupy there for software and vid.fdupx/vid.fdupy for
+    // hardware (HWR_DrawPatch, hw_draw.c) -- a whole number against the exact
+    // fraction.  Stepping by the whole number while the hardware renderer
+    // draws by the fraction overlaps every digit with the one before it, and
+    // only in OpenGL, which is what made it look like a renderer bug.
+    //
+    // It was always slightly wrong wherever fdupx had a fractional part; it
+    // became gross once the two whole-number scales were chosen together
+    // (screen-fill.md) and vid.dupx at 1366x768 went from 4 to 3.  There the
+    // 14 wide STTNUM digit is drawn 14*4.2667 = 59.7 pixels and was stepped
+    // 14*3 = 42, so each digit ate 30% of its neighbour and "100" ran
+    // together.  Software is unaffected and stays bit identical: there the
+    // scale below IS vid.dupx.
+    float  art_dupx = (rendermode == render_soft)? (float)vid.dupx : vid.fdupx;
+    float  art_dupy = (rendermode == render_soft)? (float)vid.dupy : vid.fdupy;
+    int  wfv = (int)(( wf * art_dupx ) + 0.5f);
+    int  hfv = (int)(( hf * art_dupy ) + 0.5f);
     boolean   neg;
+
+    if( wfv < 1 )  wfv = 1;
+    if( hfv < 1 )  hfv = 1;
 
     V_SetupDraw( FG | V_NOSCALE | V_SCALEPATCH | V_TRANSLUCENTPATCH );
    
     if( pickup_flash && (cv_pickupflash.EV == 1))
     {
         // Assume 3 digits  0..200
-        V_DrawVidFill(x - (wfv*3), y, wfv*3, hf*vid.dupy, FLASH_COLOR);
+        V_DrawVidFill(x - (wfv*3), y, wfv*3, hfv, FLASH_COLOR);
     }
 
     // in the special case of 0, you draw 0
@@ -1722,7 +1745,7 @@ void ST_drawOverlayNum (int x, int y,
 
     // draw a minus sign if necessary, minus is at [10] in the number font
     if (neg && numpat[10])
-        V_DrawScaledPatch(x - (8*vid.dupx), y, numpat[10]);
+        V_DrawScaledPatch(x - (int)((8 * art_dupx) + 0.5f), y, numpat[10]);
 }
 
 //  y : status position in 320x200 space
