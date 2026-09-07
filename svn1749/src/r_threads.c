@@ -289,6 +289,7 @@ boolean  R_Thread_Submit_Band( byte vind, player_t * vpl, int x1, int x2 )
 void  R_Threads_Wait( void )
 {
     byte i;
+    boolean  was_threaded = (num_submitted > 0);
 
     while( num_submitted )
     {
@@ -298,6 +299,23 @@ void  R_Threads_Wait( void )
     for( i = 0; i < num_workers; i++ )
         worker[i].busy = false;
     __atomic_store_n( &r_threads_active, false, __ATOMIC_RELAXED );
+
+    // [Arcade] Let go of the lumps the drawers pinned for this frame.
+    //
+    // A drawer used to hand its lump back the moment it was done with it.
+    // With workers that is too early: two threads draw the same flat, the
+    // first to finish makes the block purgable again, and the next Z_Malloc
+    // from any thread frees it out from under the second.  The second then
+    // draws from freed memory and hands back a block that has already been
+    // merged and reused -- which is the cabinet's
+    // "Z_ChangeTag: free block has corrupt ZONEID".
+    //
+    // Only the main thread is running here, so this is the first moment at
+    // which no worker can still be reading.  R_DRAW_LUMP_TAG is the pin;
+    // PU_LUMP is not used by anything else while a frame is being drawn, so
+    // this releases exactly what the drawers pinned.
+    if( was_threaded )
+        Z_ChangeTags_To( PU_LUMP, PU_CACHE );
 }
 
 #endif  // RENDER_THREADS

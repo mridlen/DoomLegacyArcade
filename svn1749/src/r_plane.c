@@ -1013,10 +1013,14 @@ void R_DrawSinglePlane(visplane_t* pl)
   }
 
 
-  // [Arcade] Zone allocator, from every render thread -- see R_Cache_Lock.
-  R_Cache_Lock();
-  Z_ChangeTag (ds_source, PU_CACHE);
-  R_Cache_Unlock();
+  // [Arcade] Only the main thread, and only outside the parallel section, may
+  // hand the flat back here.  Another worker may be drawing the same flat
+  // right now -- measured at over 20000 times a minute standing still on
+  // MAP01 -- and making the block purgable while it is still being read is
+  // what let the allocator free it underneath.  R_Threads_Wait releases every
+  // pinned lump once the last worker has stopped.
+  if( ! R_Threads_Drawing() )
+      Z_ChangeTag (ds_source, PU_CACHE);
 }
 
 
