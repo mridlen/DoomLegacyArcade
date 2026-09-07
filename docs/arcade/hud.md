@@ -237,3 +237,67 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - `HS_Cumulative_Tics()` is the run's time *before* the current level — `HS_LevelExit` folds
     `leveltime` in at the exit — so the HUD adds the live `leveltime` to it. It is maintained during
     demo playback too, so a record demo's replay shows its own running total.
+
+## The status digits overlapped in OpenGL, and only in OpenGL
+
+Reported as "in 1366x768 in OpenGL, the health bar digits overlap each other sometimes". They did,
+by 30% of a digit, and the "sometimes" was simply one digit versus three.
+
+`ST_drawOverlayNum` steps from digit to digit by `wf * vid.dupx` and then draws each one with
+`V_DrawScaledPatch`. **Those are two different scales, and which one they are depends on the
+renderer.** `V_SetupDraw` puts `vid.dupx` — the whole number — into `drawinfo` for
+`V_SCALEPATCH`, and the software drawers use it; but `V_DrawScaledPatch` in hardware mode hands
+straight off to `HWR_DrawPatch` (`hardware/hw_draw.c`), which scales the quad by
+`drawinfo.fdupx` — the **exact fraction**. So the advance was the whole number while OpenGL drew
+the fraction, and the digits ran into each other by the difference.
+
+Software was right the whole time, by accident: there the two numbers are the same one.
+
+| mode | `dupx` | `fdupx` | STTNUM advance | STTNUM drawn | overlap in GL |
+| --- | --- | --- | --- | --- | --- |
+| 320x200 | 1 | 1.00 | 14 | 14.0 | none |
+| 640x480 | 2 | 2.00 | 28 | 28.0 | none |
+| 1024x768 | 3 | 3.20 | 42 | 44.8 | 2.8px |
+| **1366x768** | **3** | **4.27** | **42** | **59.7** | **17.7px, 30% of a digit** |
+| 1920x1080 | 6 | 6.00 | 84 | 84.0 | none |
+
+It was always slightly wrong wherever `fdupx` had a fractional part, and it became gross when
+*Choose the two 2D whole-number scales together* took `vid.dupx` at 1366x768 from 4 to 3 — which
+is also why that commit's note that "the hardware renderer is untouched: it scales by the exact
+fdupx/fdupy and never had this" was wrong. It never had the *software* symptom. It had this one,
+and halving the whole number doubled it.
+
+- **Fixed by advancing at the scale the digit is actually drawn at** — `vid.dupx` in software,
+  `vid.fdupx` in hardware, the same `sf_dupx` split `ST_overlayDrawer` already uses for text a few
+  lines above. Software is bit identical: there the expression evaluates to `wf * vid.dupx` as
+  before.
+- The minus sign steps by `8 * art scale`, and 8 is right — `STTMINUS` is measured **8x6**.
+- The pickup flash behind the number (`V_DrawVidFill`) was sized `wfv*3` by `hf*vid.dupy` and had
+  the same split: `V_DrawVidFill` takes raw pixels in both renderers, so its height was the
+  software one on a hardware screen. It follows the digits now.
+- **Widening the digits is the risk this fix carries**, since they grow leftwards into the icon
+  beside them. Measured rather than assumed, from the real lumps — `STTNUM` 14x16, `STYSNUM` 4x6,
+  `SBOHEALT`/`SBOARMOR`/`SBOFRAGS`/`SBOARMBL` all 16x16. The tight pair is the ammo icon (ending at
+  base 252) against the armor digits (ending at base 300): at 1366x768 in GL the icon ends at
+  1075px and three armor digits now start at 1101px, 26px clear. Checked at every resolution in
+  the table below.
+
+### `tools/hudtext-test.py`
+
+Neither this nor the centring bug below is visible to a headless run, and nothing else measures
+either. The tool lifts `ST_drawOverlayNum`, the `HU_*` placement helpers and `V_Setup_VideoDraw`'s
+scale derivation **verbatim out of the source by brace matching**, stubs `V_DrawScaledPatch` to
+record where each patch lands and how wide it is drawn, and drives them over 16 resolutions in
+both renderers. It runs in under a second and checks that
+
+- consecutive digits abut exactly — no overlap, no gap — for both `STTNUM` and `STYSNUM`,
+- the pickup flash matches the digits it sits behind,
+- the digits clear the icon to their left and stay on the screen,
+- a centred string is centred **on the screen**, and a layout row lands where the screen puts it.
+
+`--selfcheck` reinstates each of the six real bugs and reports whether the check goes red. That is
+not decoration: it caught a check of its own that could not fail. "PRESS FIRE TO START clears the
+status bar" passes happily on the *old* code, because the old code drew the text far too **high** —
+`160*dupy` down a screen that is `200*fdupy` tall. The property worth testing was that the row lands
+where the layout puts it, not that it stays above something. **A clean result from a check never
+shown to fail is not evidence.** → `screen-fill.md`

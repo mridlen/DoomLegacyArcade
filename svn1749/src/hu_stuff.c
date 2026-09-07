@@ -652,6 +652,68 @@ boolean HU_Responder (event_t *ev)
 //                         HEADS UP DRAWING
 //======================================================================
 
+// [Arcade] Placing overlay text on the SCREEN rather than in the 320x200 box.
+//
+// The 2D layer is 320x200 base units multiplied by a scale, and in software
+// that scale is a WHOLE NUMBER (vid.dupx/vid.dupy).  Wherever the division is
+// not exact the drawn box is smaller than the screen -- 320 of 512, 640 of
+// 800, 960 of 1280 and 1366 -- and it sits against the top left, because
+// nothing here asks for V_CENTERHORZ.  So (BASEVIDWIDTH - width)/2 centres a
+// string in that box and NOT on the screen, and the error is exactly half the
+// leftover: 96px at 512x384, 203px at 1366x768, 0 at 640x480 and 1920x1080
+// where 320*dupx already lands on the width.  That is why it looked resolution
+// dependent and "not to the same degree" rather than simply broken.  Vertically
+// the same leftover pushes anything anchored to the bottom of the layout well
+// above the status bar it was meant to sit on -- PRESS FIRE TO START floated in
+// mid screen at 512x384, y 160 of a 384 tall screen.
+//
+// The fix is the split st_stuff.c's overlay already uses: POSITIONS span the
+// whole screen, ART is drawn at the whole-number scale.  These helpers take
+// 320x200 layout values and return base units for a V_SCALESTART draw, which
+// is how every caller already draws, so only the arithmetic changes.
+//
+// The hardware renderer draws at the exact vid.fdupx/fdupy, so 320*fdupx is
+// the screen width and all three are identities there -- except on a screen
+// wider than 16:9, where fdupx is capped (v_video.c) and the 2D layer really
+// is pillarboxed; there this centres it, which is what was wanted anyway.
+static float HU_Art_ScaleX(void)
+{
+    float sx = (rendermode == render_soft)? (float)vid.dupx : vid.fdupx;
+    return (sx < 0.001f)? 1.0f : sx;
+}
+
+static float HU_Art_ScaleY(void)
+{
+    float sy = (rendermode == render_soft)? (float)vid.dupy : vid.fdupy;
+    return (sy < 0.001f)? 1.0f : sy;
+}
+
+// Centre something base_w layout units wide across the screen.
+static int HU_Center_X( int base_w )
+{
+    float sx = HU_Art_ScaleX();
+    int   x = (int)(( (float)vid.width - (base_w * sx) ) / (2.0f * sx));
+    return (x < 0)? 0 : x;
+}
+
+// A layout row, placed down the whole screen height instead of down 200*dupy.
+// vid.fdupy is the exact height scale and is never capped, so this is the
+// vertical twin of st_stuff.c's ydiv.
+static int HU_Screen_Y( int base_y )
+{
+    return (int)(( base_y * vid.fdupy ) / HU_Art_ScaleY());
+}
+
+// Centre something base_h layout units tall inside a band base_bottom layout
+// units deep from the top of the screen.
+static int HU_Center_Y( int base_h, int base_bottom )
+{
+    float sy = HU_Art_ScaleY();
+    int   y = (int)(( (base_bottom * vid.fdupy) - (base_h * sy) ) / (2.0f * sy));
+    return (y < 0)? 0 : y;
+}
+
+
 //  Draw chat input
 //
 static void HU_Draw_Chat (void)
@@ -768,7 +830,8 @@ void HU_Drawer(void)
         if( label )
         {
             V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-            V_DrawString( (BASEVIDWIDTH - V_StringWidth(label)) / 2, 8,
+            V_DrawString( HU_Center_X( V_StringWidth(label) ),
+                          HU_Screen_Y(8),
                           V_WHITEMAP, (char*) label );
         }
 
@@ -785,7 +848,8 @@ void HU_Drawer(void)
         {
             static const char chasecam_msg[] = "CHASE CAM";
             V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-            V_DrawString( (BASEVIDWIDTH - V_StringWidth(chasecam_msg)) / 2, 18,
+            V_DrawString( HU_Center_X( V_StringWidth(chasecam_msg) ),
+                          HU_Screen_Y(18),
                           V_WHITEMAP, (char*) chasecam_msg );
         }
     }
@@ -814,8 +878,8 @@ void HU_Drawer(void)
         // and the blink is what keeps it readable against the moving demo.
         static const char press_fire[] = "PRESS FIRE TO START";
         V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-        V_DrawString( (BASEVIDWIDTH - V_StringWidth(press_fire)) / 2,
-                      BASEVIDHEIGHT - ST_HEIGHT - 8,
+        V_DrawString( HU_Center_X( V_StringWidth(press_fire) ),
+                      HU_Screen_Y( BASEVIDHEIGHT - ST_HEIGHT - 8 ),
                       V_WHITEMAP, (char*) press_fire );
     }
 
@@ -844,7 +908,7 @@ void HU_Drawer(void)
         if( mark )
         {
             V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
-            V_DrawString( (BASEVIDWIDTH - V_StringWidth(mark)) / 2, 0,
+            V_DrawString( HU_Center_X( V_StringWidth(mark) ), 0,
                           V_WHITEMAP, (char*) mark );
         }
     }
@@ -896,8 +960,8 @@ static void  HU_Draw_GameOver( void )
 
         // Centred on the patch's own width, and placed by its height rather
         // than a guessed y, so any size of artwork lands in the same place.
-        V_DrawScaledPatch( (BASEVIDWIDTH - p->width) / 2,
-                           (BASEVIDHEIGHT - ST_HEIGHT - p->height) / 2,
+        V_DrawScaledPatch( HU_Center_X( p->width ),
+                           HU_Center_Y( p->height, BASEVIDHEIGHT - ST_HEIGHT ),
                            p );
     }
     else
@@ -906,8 +970,8 @@ static void  HU_Draw_GameOver( void )
         // measured width rather than a character count.
         static const char  go[] = "GAME OVER";
 
-        V_DrawString( (BASEVIDWIDTH - V_StringWidth(go)) / 2,
-                      (BASEVIDHEIGHT - ST_HEIGHT) / 2,
+        V_DrawString( HU_Center_X( V_StringWidth(go) ),
+                      HU_Center_Y( 8, BASEVIDHEIGHT - ST_HEIGHT ),
                       V_WHITEMAP, (char*) go );
     }
 }
@@ -1070,8 +1134,8 @@ void HU_Draw_Tip(void)
   V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
   for(i = 0; i < numtiplines; i++)
   {
-    V_DrawString((BASEVIDWIDTH - largestline) / 2,
-                 ((BASEVIDHEIGHT - (numtiplines * 8)) / 2) + ((i + 1) * 8),
+    V_DrawString(HU_Center_X( largestline ),
+                 HU_Center_Y( numtiplines * 8, BASEVIDHEIGHT ) + ((i + 1) * 8),
                  0,
                  tiplines[i]);
   }

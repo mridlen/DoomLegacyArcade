@@ -300,6 +300,64 @@ change. If a machine ever turns up where the mode cannot be switched (a Wayland 
 the warning above will fire and OpenGL will simply render at the desktop resolution; making it do
 otherwise would need rendering to a framebuffer object and blitting it scaled, which is not built.
 
+## Overlay text was centred in the 320x200 box, not on the screen
+
+Reported as "in 512x384 software mode, the demo title and PRESS FIRE TO START are not centered",
+and then "similar behavior with other resolutions, but not to the same degree".
+
+Same cause as the letterboxed pages above, one layer up. The 2D layer in software is 320x200 base
+units multiplied by the **whole number** `vid.dupx`/`vid.dupy`, and wherever the division is not
+exact that box is smaller than the screen and sits against the top left, because nothing in
+`hu_stuff.c` asks for `V_CENTERHORZ` or `V_CENTERMENU`. So `(BASEVIDWIDTH - V_StringWidth(s)) / 2`
+centres a string **in that box**, and the error on screen is exactly half the leftover:
+
+| mode | `dupx` | 2D box | off centre by | `dupy` | rows drawn down |
+| --- | --- | --- | --- | --- | --- |
+| 320x200 | 1 | 320 of 320 | 0 | 1 | 200 of 200 |
+| **512x384** | **1** | **320 of 512** | **96px** | **1** | **200 of 384** |
+| 640x480 | 2 | 640 of 640 | 0 | 2 | 400 of 480 |
+| 800x600 | 2 | 640 of 800 | 80px | 3 | 600 of 600 |
+| 1024x768 | 3 | 960 of 1024 | 32px | 3 | 600 of 768 |
+| 1280x720 | 3 | 960 of 1280 | 160px | 3 | 600 of 720 |
+| **1366x768** | **3** | **960 of 1366** | **203px** | **3** | **600 of 768** |
+| 1920x1080 | 6 | 1920 of 1920 | 0 | 5 | 1000 of 1080 |
+
+That is the "not to the same degree": it is nothing at all at 640x480 and 1920x1080, where
+`320*dupx` lands exactly on the width, and worst where the truncation is most lopsided. Reading it
+as a single broken resolution is what hid it — every 4:3 mode whose width divides by 320 looks
+perfect.
+
+**The vertical half is worse and was not in the report.** `PRESS FIRE TO START` is anchored at
+`BASEVIDHEIGHT - ST_HEIGHT - 8` so it sits just above the status bar, and at `dupy` 1 that is y 160
+of a 384 tall screen — floating in mid air with the bar 190px below it. The before/after captures
+show it plainly.
+
+The hardware renderer draws at the exact `fdupx`/`fdupy`, so `320*fdupx` **is** the screen width and
+none of this happened there — except on a screen wider than 16:9, where `fdupx` is capped and the 2D
+layer genuinely is pillarboxed. Centring on the screen is what was wanted there too.
+
+- **Fixed with the split `st_stuff.c`'s overlay already uses: positions span the whole screen, art
+  is drawn at the whole-number scale.** `HU_Center_X`, `HU_Screen_Y` and `HU_Center_Y` (`hu_stuff.c`)
+  take 320x200 layout values and return **base units for a `V_SCALESTART` draw**, which is how every
+  caller already draws — so only the arithmetic changed, not the draw path.
+- Applied to the seven screen-centred overlay items: the attract demo caption, `CHASE CAM`,
+  `PRESS FIRE TO START`, the `UNRANKED` marker, `GAME OVER` (both the `M_GAMOVR` patch and its text
+  fallback) and `HU_Draw_Tip`.
+- **Not** applied to the rankings block, which already handles this its own way — `V_CENTERHORZ` for
+  the single full-screen view and explicit cell coordinates otherwise, for the reason written up
+  beside it (in hardware `V_DrawString` does not apply `drawinfo.start_offset` while the patches and
+  fills do, so the two disagree by exactly that offset).
+- **The result is a no-op wherever `320*dupx == vid.width`**, which is exactly where nothing was
+  wrong: at 640x480 the new expression gives base x 93 for a 133 wide string, the same 93 the old
+  one did.
+- A base-unit position can only land within one whole base unit of the ideal, so the two margins can
+  differ by up to twice the art scale. That quantisation is the tolerance in the test and is not
+  removable without abandoning `V_SCALESTART` for these draws.
+- Verified numerically by `tools/hudtext-test.py` (see `hud.md`) over 16 resolutions in both
+  renderers, and visually with a before/after `tools/shotsheet.py` capture of the attract demo at
+  512x384: before, `PRESS FIRE TO START` spans x 93..226 at y 155; after, x 190..320 at y 307, just
+  above the status row.
+
 ## Verifying a change here
 
 - `tools/smoke.sh` (`make smoke`) covers this only as far as "it still runs".
