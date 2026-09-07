@@ -271,13 +271,18 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   animated textures advance per tic. When a diff says a resolution changed that arithmetic says
   cannot have, believe the arithmetic. → `ultrawide.md`
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
-  drives the menus headlessly, so `tools/vidmenu-navtest.py` and `tools/vidmodes-deduptest.py` lift
+  drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
+  `tools/viewgrid-test.py` and `tools/vidmodes-deduptest.py` lift
   the functions they test **verbatim out of the source by brace matching**, stub what those touch,
   and drive them exhaustively. A copied test drifts away from the code and then passes forever;
   an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
   reinstates each bug it claims to catch and reports whether the check goes red — worth doing for
   any new check, because **a clean result from a check never shown to fail is not evidence**, and
-  two of its five checks were silently useless until this was run. → `menus.md`
+  two of its five checks were silently useless until this was run. The same thing happened again in
+  `viewgrid-test.py`: it drove every combination of joined panels but always in panel order, so
+  ranking by join order and ranking by panel gave identical answers and the check could not tell
+  them apart — `--selfcheck` is the only reason anyone noticed. **A test whose cases all share an
+  incidental property is not testing that property.** → `menus.md`, `ultrawide.md`
 - **A headless run can reach the intermission**, which used to be written off as needing a play
   session. There is a **`wait`** console command (used by the bot code, `d_main.c`), and
   `D_DoomLoop` execs `legacyhome/autoexec.cfg`, so dropping this into the *scratch* home drives a

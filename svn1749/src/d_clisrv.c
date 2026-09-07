@@ -416,9 +416,60 @@ static byte  localplayer_panel[MAXSPLITSCREENPLAYERS] = { 0, 1, 2, 3 };
 
 typedef char localplayer_cell_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 : -1 ];
 
+// [Arcade] True when three players get three columns rather than a 2x2 with a
+// dead quadrant.  Gated on the operator's column setting, because whether it is
+// an improvement depends entirely on the shape of the screen:
+//
+//                  3 columns          2x2, one cell empty
+//   16:9        0.59:1,  41 deg        1.78:1, 90 deg
+//   21:9        0.80:1,  53 deg        2.39:1, 112 deg
+//   32:9        1.18:1,  73 deg        3.56:1, 131 deg  (a letterbox slit)
+//
+// On a 16:9 cabinet the 2x2 gives three well shaped views and wastes a corner;
+// on a 32:9 one it gives three slits and wastes a quarter of a very wide
+// screen.  cv_split4 is already the operator's answer to that same question for
+// four players, so three follows it rather than adding a second control.
+//
+// Not during demo playback, which has one viewpoint whatever the cabinet is
+// set up for.
+static boolean  D_Three_Column_Views( void )
+{
+    return ( ! demoplayback ) && ( D_NumLocalPlayers() == 3 ) && cv_split4.EV;
+}
+
+// [Arcade] Where this player sits among the joined players, by panel number.
+// Panels are numbered left to right across the cabinet, so this is the column
+// they should be drawn in: the lowest panel takes the left column, the highest
+// the right, and whichever is in between takes the middle.
+static byte  D_Panel_Rank( byte pind )
+{
+    byte i, rank = 0;
+    byte n = D_NumLocalPlayers();
+    byte panel = D_Panel_Of( pind );
+
+    // Players are handed pind 0..n-1 in join order, so those are the joined
+    // slots -- the same range D_NumViews walks.
+    for( i = 0; i < n && i < MAXSPLITSCREENPLAYERS; i++ )
+    {
+        if( i == pind )  continue;
+        if( D_Panel_Of(i) < panel )  rank++;
+    }
+    return rank;
+}
+
 byte  D_View_Cell( byte pind )
 {
-    return (pind < MAXSPLITSCREENPLAYERS) ? localplayer_cell[pind] : pind;
+    if( pind >= MAXSPLITSCREENPLAYERS )  return pind;
+
+    // [Arcade] Three columns are filled in panel order, so a player's view is
+    // where they are standing: panels 1+2+4 put panel 2 in the middle, 1+3+4
+    // put panel 3 there.  Derived rather than stored, because the join screen
+    // records a cell in the four cell grid and cannot know how many will
+    // actually join.
+    if( D_Three_Column_Views() && (pind < D_NumLocalPlayers()) )
+        return D_Panel_Rank( pind );
+
+    return localplayer_cell[pind];
 }
 
 // [Arcade] The control panel driving this local player.
@@ -485,10 +536,21 @@ void  D_Reset_View_Cells( void )
 
 // [Arcade] How many viewports are drawn, and so how the screen is carved up:
 //   1 -> whole screen
-//   2 -> two stacked halves, as splitscreen has always been
-//   4 -> a 2x2 grid, used for three players too, leaving one quadrant unused
-// Three players in a 2x2 grid rather than three strips because thirds would
-// need a third layout and would not match a 4 player cabinet's muscle memory.
+//   2 -> two stacked halves, or side by side (cv_splitvertical)
+//   3 -> three columns, three players under the column layout (cv_split4)
+//   4 -> a 2x2 grid, or four columns (cv_split4); also three players under
+//        the grid layout, leaving one quadrant unused
+//
+// Three players were always the 2x2 with a dead quadrant, on the reasoning
+// that thirds would need a third layout and would not match a four player
+// cabinet's muscle memory.  That still holds on a 4:3 or 16:9 screen, where a
+// quadrant has very nearly the screen's own aspect ratio and a third is a
+// narrow slot (0.59:1, 41 degrees at 16:9).  It stops holding as the screen
+// widens: at 32:9 a quadrant IS 32:9, a letterbox slit, while a third is
+// 1.18:1 -- so the layout that wastes a quarter of the screen also gives the
+// worse view.  Hence cv_split4 rather than a rule: the operator has already
+// answered the same question for four players.
+//
 // Note a quadrant has very nearly the screen's own aspect ratio, so unlike
 // the 2 view split it needs no projection fix.
 byte  D_NumViews( void )
@@ -507,6 +569,12 @@ byte  D_NumViews( void )
 
     n = D_NumLocalPlayers();
     if( n <= 1 )  return 1;
+
+    // [Arcade] Three columns, when the operator has chosen the column layout.
+    // Before the cell loop below, which calls D_View_Cell -- and D_View_Cell
+    // asks the same question, so answering here first keeps them from calling
+    // each other.
+    if( D_Three_Column_Views() )  return 3;
 
     for( pind=0; pind<n && pind<MAXSPLITSCREENPLAYERS; pind++ )
     {
@@ -557,6 +625,13 @@ void  D_View_Grid( byte * out_cols, byte * out_rows )
             cols = 2;
             rows = 2;
         }
+    }
+    else if( n == 3 )
+    {
+        // [Arcade] Only ever reached when D_Three_Column_Views said so;
+        // otherwise three players are four views with one cell unused.
+        cols = 3;
+        rows = 1;
     }
     else if( n >= 2 )
     {

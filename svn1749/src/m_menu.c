@@ -546,7 +546,7 @@ static void CV_Splitvertical_OnChange( void )
 // Three players use four cells with one empty, the same as the grid does, so
 // this covers "3 columns" as well without a third setting.
 static void CV_Split4_OnChange( void );
-CV_PossibleValue_t split4_cons_t[] = {{0,"2x2 Grid"},{1,"4 Columns"},{0,NULL}};
+CV_PossibleValue_t split4_cons_t[] = {{0,"Grid"},{1,"Columns"},{0,NULL}};
 consvar_t cv_split4 = {"split4", "0", CV_SAVE | CV_CALL, split4_cons_t, CV_Split4_OnChange };
 
 static void CV_Split4_OnChange( void )
@@ -4519,7 +4519,7 @@ menuitem_t PlayerViewsMenu[]=
 {
     {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
     {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
-    {IT_STRING | IT_CVAR,0, "4 Player Split"  , &cv_split4        , 0},
+    {IT_STRING | IT_CVAR,0, "3-4 Player Split", &cv_split4        , 0},
     {IT_STRING | IT_CVAR,0, "Screen Order"    , &cv_panelorder    , 0},
     {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
 };

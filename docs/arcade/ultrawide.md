@@ -356,9 +356,29 @@ shapes, with the field of view each player gets:
 
 **The right answer changes sign in the middle of the range**, which is why this is an operator
 setting and not derived from the aspect: 2x2 is right up to *and including* 21:9 (112 degrees a
-player against 41 for four columns) and wrong at 32:9. `cv_split4` — "4 Player Split", `2x2 Grid` or
-`4 Columns` — is on the new Players and Views page. Three players use four cells with one empty, the
-same as the grid does, so this covers "three columns" without a third setting.
+player against 41 for four columns) and wrong at 32:9. `cv_split4` -- "3-4 Player Split", `Grid` or
+`Columns` -- is on the new Players and Views page.
+
+**Three players follow the same setting.** Under `Grid` they are the 2x2 with one quadrant unused,
+which is what they always were; under `Columns` they are three columns and the screen is fully used.
+The same sign change applies -- a third of a 16:9 screen is 0.59:1 and 41 degrees, worse than a
+quadrant, while a third of a 32:9 screen is 1.18:1 and 73 degrees, far better than a quadrant's
+letterbox slit. One operator decision covering both counts rather than two.
+
+**The columns are filled in panel order, not join order.** Panels are numbered left to right across
+the cabinet, so the lowest joined panel takes the left column and the highest the right: panels
+1+2+4 put panel 2 in the middle, 1+3+4 put panel 3 there. `D_Panel_Rank` derives this rather than
+reading `localplayer_cell[]`, because the join screen records a cell in the *four* cell grid and
+cannot know how many will actually join. Taking it from the join order instead would put the player
+who pressed fire first on the left of the screen while standing on the right -- the exact failure
+the panel/cell split exists to prevent (`multiplayer-views.md`).
+
+`tools/viewgrid-test.py` extracts `D_Three_Column_Views`, `D_Panel_Rank`, `D_View_Cell`,
+`D_NumViews`, `D_View_Grid` and `D_Grid_Cell_Pos` verbatim and drives every 3-of-4 panel combination
+**in every join order** -- 24 cases -- plus the four and two player layouts and demo playback. The
+join orders are the point: when everyone joins in panel order, ranking by join order and ranking by
+panel give identical answers, and the first version of this test could not tell them apart.
+`--selfcheck` is what caught that, and now reinstates it among four bugs; all four go red.
 
 What had to become general for four columns to be possible:
 
