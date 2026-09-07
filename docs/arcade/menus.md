@@ -668,6 +668,24 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     labels shorter than ~90 units fit beside it — `Crosshair` (93) and `Your color` (103) do.
 
 
+## Arcade Options had to be split
+
+Sixteen rows from y=40, at the generic menu's spacing, reaches the bottom of a 200 unit screen with
+nothing to spare — so the page was full and "4 Player Split" had nowhere to go. Control Panels,
+2 Player Split, 4 Player Split, Screen Order and Join Time moved to a new **Players and Views** page
+reached from it (`PlayerViewsMenu`/`PlayerViewsDef`), which groups better than the flat list did and
+leaves Arcade Options four rows shorter.
+
+Safe to reorder because **nothing indexes `MenuOptionsMenu`** — every row is `IT_CVAR` or
+`IT_SUBMENU`, there is no `IT_CALL` handler taking a `choice`, and the array is only ever referenced
+by name and `sizeof`. That is not the usual case in this file and it was checked rather than
+assumed; the note in the source about appending rather than inserting is the general rule
+(`grep -n "choice ==" m_menu.c`), not a fact about this array. The new page inherits the lockdown
+the same way, by hanging off a page that is only reachable under `-devmode`.
+
+Forward-declared as a tentative definition — `menu_t PlayerViewsDef;` up beside `AuditDef` — which
+is how this file already handles a menu that has to be named before it is defined.
+
 ## The Video Modes page, and paging a list that used to be truncated
 
 `M_DrawVideoMode` lays the mode list out in three columns, filling down each column in turn, and it

@@ -441,6 +441,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     A cell is `vid.width / cols` by `vid.height / rows`, and that is the only sizing rule left.
     The callers are both renderers' viewports, the software draw tables (`R_Set_View_Window`), the
     HUD overlay, the deathmatch rankings, the crosshair, the black fill of an unclaimed cell in
+    **Four columns is a layout now, not just the 2x2** — `cv_split4`, added for 32:9 monitors where a
+    quadrant is itself a letterbox slit. It is written up in **`ultrawide.md`**, including the table
+    of cell shapes that says why 2x2 is still right at 21:9 and wrong at 32:9. The things it had to
+    make general are the ones this file warns about: `R_ExecuteSetViewSize` divided the draw window
+    by two against a *boolean*, `ST_overlayDrawer` shrank the HUD art by two, and the join screen
+    keeps its own copy of the grid. `D_Grid_Cell_Pos` and `D_View_Squash` needed nothing.
+
     `D_Display`, and the join screen's boxes. **Add a layout and you change `D_View_Grid`, not
     nine call sites** — which is the reason to do it this way even though only one new layout
     exists.
