@@ -899,8 +899,9 @@ fail:
 // A modern display can advertise more modes than that on its own, and
 // VID_add_scaled_modes appends the small software sizes at the END of the
 // list, so they were the first thing to fall off the far side of the cap.
-// 2KB of BSS for a list nothing else limits.
-#define  MAX_NUM_VIDMODENAME  128
+// modenum_t.index is a byte, so 256 covers every index that can exist and the
+// cap stops being a cap at all -- 4KB of BSS to remove a silent cliff.
+#define  MAX_NUM_VIDMODENAME  256
 #define  MAX_LEN_VIDMODENAME  16
 static char  mode_name_store[MAX_NUM_VIDMODENAME][MAX_LEN_VIDMODENAME];
 

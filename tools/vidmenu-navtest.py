@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test the real video mode paging navigation, without a screen.
+"""Test the real video mode menu logic -- paging and sorting -- without a screen.
 
 The paging arithmetic is the part that can be wrong in ways a build will not
 catch: a cursor that lands outside the drawn page, a mode that no sequence of
@@ -18,6 +18,12 @@ under the four arrow keys and PgUp/PgDn and check:
   * the row it lands on is inside the page's columns and inside the screen
   * every mode in the list is reachable using ONLY the four arrows -- the
     cabinet panel has no PgUp
+
+A second harness does the same for vidm_sort_by_size: that the result is
+ascending by width then height, that it is a permutation of the input with
+nothing lost or duplicated, that it is stable, and that the caller's
+current-mode pointer comes back pointing at the same mode it went in as.
+
 Run it from anywhere:  tools/vidmenu-navtest.py
 A clean result from a check that has never been shown to fail is worth nothing,
 so  tools/vidmenu-navtest.py --selfcheck  reinstates each bug the checks claim
@@ -256,6 +262,217 @@ int main(void)
 }
 ''' % ('\n'.join('#define %-18s %s' % (k, v) for k, v in defs.items()), funcs)
 
+sort_func = extract('static modedesc_t *  vidm_sort_by_size( modedesc_t * current )')
+print('extracted %d lines of sort code' % sort_func.count('\n'))
+
+sort_harness = r'''
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define MAXVIDMODEDESCS  128
+#define MAXVIDWIDTH      1600
+#define MAXVIDHEIGHT     1200
+
+/* ---- stubs: the engine types this function touches ---- */
+typedef int  boolean;
+typedef unsigned char byte;
+enum { MODE_NOP = 0, MODE_window, MODE_fullscreen };
+typedef struct { byte modetype; byte index; } modenum_t;
+typedef struct { int width, height; const char * mark; byte type; } modestat_t;
+typedef struct { modenum_t modenum; char * desc; } modedesc_t;
+
+static modedesc_t  modedescs[MAXVIDMODEDESCS];
+static int         vidm_nummodes;
+
+/* Sizes the stubbed VID_GetMode_Stat reports, by modenum.index - 1.
+   A width of 0 stands for a mode it cannot describe (mark == NULL). */
+static int stub_w[MAXVIDMODEDESCS], stub_h[MAXVIDMODEDESCS];
+
+static modestat_t VID_GetMode_Stat( modenum_t modenum )
+{
+    modestat_t ms;
+    int i = modenum.index - 1;
+    ms.type = modenum.modetype;
+    if( i < 0 || i >= MAXVIDMODEDESCS || stub_w[i] == 0 )
+    {
+        ms.width = ms.height = 0;
+        ms.mark = NULL;
+        return ms;
+    }
+    ms.width = stub_w[i];
+    ms.height = stub_h[i];
+    ms.mark = "";
+    return ms;
+}
+
+/* ---- verbatim from m_menu.c ---- */
+%s
+
+/* ---- checks ---- */
+static int failures = 0;
+static int in_w[MAXVIDMODEDESCS], in_h[MAXVIDMODEDESCS];  /* by index-1 */
+
+static void fail(const char *what, const char *set, int n)
+{
+    if( failures++ < 20 )
+        printf("  FAIL %%s [%%s, n=%%d]\n", what, set, n);
+}
+
+/* Load a list.  sizes is n pairs; a width of 0 means "no size". */
+static void setup(const int *sizes, int n)
+{
+    int i;
+    vidm_nummodes = n;
+    for( i = 0; i < n; i++ )
+    {
+        modedescs[i].modenum.modetype = MODE_fullscreen;
+        modedescs[i].modenum.index = i + 1;
+        modedescs[i].desc = NULL;
+        stub_w[i] = in_w[i] = sizes[i*2];
+        stub_h[i] = in_h[i] = sizes[i*2 + 1];
+    }
+}
+
+static void check(const char *set, int n, int pick)
+{
+    int i, seen[MAXVIDMODEDESCS + 1];
+    modedesc_t * before = (pick >= 0 && pick < n) ? &modedescs[pick] : NULL;
+    byte want_index = before ? before->modenum.index : 0;
+    modedesc_t * after;
+
+    after = vidm_sort_by_size( before );
+
+    /* a permutation: every original index exactly once */
+    memset(seen, 0, sizeof(seen));
+    for( i = 0; i < n; i++ )
+    {
+        int ix = modedescs[i].modenum.index;
+        if( ix < 1 || ix > n ) { fail("index out of range after sort", set, n); return; }
+        if( seen[ix]++ )       { fail("entry duplicated by the sort", set, n); return; }
+    }
+    for( i = 1; i <= n; i++ )
+        if( !seen[i] ) { fail("entry lost by the sort", set, n); return; }
+
+    /* ascending by width then height, sizeless entries last */
+    for( i = 1; i < n; i++ )
+    {
+        int pw = in_w[modedescs[i-1].modenum.index - 1];
+        int ph = in_h[modedescs[i-1].modenum.index - 1];
+        int cw = in_w[modedescs[i].modenum.index - 1];
+        int ch = in_h[modedescs[i].modenum.index - 1];
+        if( pw == 0 )  pw = MAXVIDWIDTH + 1, ph = MAXVIDHEIGHT + 1;
+        if( cw == 0 )  cw = MAXVIDWIDTH + 1, ch = MAXVIDHEIGHT + 1;
+        if( (pw > cw) || ((pw == cw) && (ph > ch)) )
+        {
+            fail("not ascending by width then height", set, n);
+            return;
+        }
+        /* stable: equal sizes keep their original order */
+        if( (pw == cw) && (ph == ch)
+            && (modedescs[i-1].modenum.index > modedescs[i].modenum.index) )
+        {
+            fail("equal sizes reordered (unstable)", set, n);
+            return;
+        }
+    }
+
+    /* the caller's pointer comes back pointing at the same mode */
+    if( before )
+    {
+        if( after == NULL )
+            fail("current mode lost by the sort", set, n);
+        else if( after->modenum.index != want_index )
+            fail("current mode points at a different mode", set, n);
+        else if( after < modedescs || after >= modedescs + n )
+            fail("current mode points outside the list", set, n);
+    }
+    else if( after != NULL )
+        fail("NULL current came back non-NULL", set, n);
+}
+
+static void run(const char *set, const int *sizes, int n)
+{
+    int pick;
+    for( pick = -1; pick < n; pick++ )
+    {
+        setup(sizes, n);
+        check(set, n, pick);
+    }
+}
+
+int main(void)
+{
+    /* This laptop after the i_video.c dedup: SDL's order, then the appended
+       scaled modes.  Exactly the shape the reported bug had. */
+    static const int laptop[] = { 1366,768, 1280,720, 1024,768, 800,600, 640,480,
+                                  320,200, 400,300, 512,384 };
+    /* windowedModes[] from i_video.c, which runs the other way. */
+    static const int windowed[] = { 1600,1200, 1280,1024, 1024,768, 800,600,
+                                    640,480, 512,384, 400,300, 320,200 };
+    /* A display with a lot of modes, unsorted, with duplicates in size and a
+       couple the engine cannot describe. */
+    static const int messy[] = { 1024,768, 640,480, 1024,768, 0,0, 1280,1024,
+                                 640,350, 640,400, 0,0, 800,600, 320,200,
+                                 1280,720, 640,480, 512,384, 400,300, 720,480 };
+    int i, k, n;
+    static int rnd[MAXVIDMODEDESCS * 2];
+
+    run("laptop", laptop, sizeof(laptop) / (2 * sizeof(int)));
+    run("windowed", windowed, sizeof(windowed) / (2 * sizeof(int)));
+    run("messy", messy, sizeof(messy) / (2 * sizeof(int)));
+
+    /* Empty and single-entry lists. */
+    run("empty", laptop, 0);
+    run("one", laptop, 1);
+
+    /* Random lists, fixed seed.  Sizes drawn from a small set so equal sizes
+       are common -- that is what the stability check needs. */
+    srand(12345);
+    for( k = 0; k < 400; k++ )
+    {
+        n = 1 + (rand() %% MAXVIDMODEDESCS);
+        for( i = 0; i < n; i++ )
+        {
+            int r = rand() %% 12;
+            if( r == 0 ) { rnd[i*2] = 0; rnd[i*2+1] = 0; }      /* sizeless */
+            else {
+                rnd[i*2]   = 320 * (1 + (rand() %% 5));
+                rnd[i*2+1] = 200 * (1 + (rand() %% 6));
+            }
+        }
+        /* pick is exercised by run(), but that is O(n^2) on a 128 entry list
+           400 times over -- still under a second, and worth it. */
+        run("random", rnd, n);
+    }
+
+    printf("sort: 3 real lists, empty, single, 400 random lists, %%d failures\n",
+           failures);
+    return failures ? 1 : 0;
+}
+''' % sort_func
+
+SORT_MUTATIONS = [
+    ('sorted descending instead of ascending',
+     'while( (j > 0)\n               && ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
+     'while( (j > 0)\n               && ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )'),
+    ('height tiebreak dropped (same width unordered)',
+     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
+     '&& (w[j-1] > hw) )'),
+    # Breaks stability ONLY: identical sizes get swapped, while the ascending
+    # order stays perfectly valid.  The earlier version of this mutation used
+    # >= on the width too, which broke the ordering as well -- so it was the
+    # ordering check that caught it and the stability check was never exercised.
+    ('unstable: identical sizes reordered, ordering still valid',
+     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
+     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] >= hh))) )'),
+    ('current mode not found again after the sort',
+     'return & modedescs[i];', 'return NULL;'),
+    ('sizeless modes sort to the front instead of the end',
+     'w[i] = ( ms.mark )? ms.width : MAXVIDWIDTH + 1;',
+     'w[i] = ( ms.mark )? ms.width : 0;'),
+]
+
 # Each entry is a bug the checks above are supposed to catch, expressed as a
 # substitution on the extracted source.  --selfcheck applies them one at a time
 # and reports whether the harness notices.  Two of these were NOT caught by the
@@ -294,38 +511,48 @@ def build_and_run(text, name, quiet=False):
     return r.returncode, r.stdout + r.stderr
 
 
+SUITES = [('navigation', harness, MUTATIONS),
+          ('sort', sort_harness, SORT_MUTATIONS)]
+
 try:
     if '--selfcheck' in sys.argv:
-        print('mutations that must be caught:')
         worst = 0
-        for i, mut in enumerate(MUTATIONS):
-            name, subs = mut[0], mut[1:]
-            text = harness
-            for a, b in zip(subs[0::2], subs[1::2]):
-                assert text.count(a), 'mutation %r no longer applies' % name
-                text = text.replace(a, b)
-            rc, out = build_and_run(text, 'mut%d' % i, quiet=True)
-            if rc is None:
-                print('  %-58s DID NOT COMPILE' % name)
-                worst = 1
-            elif rc:
-                why = ([l.strip() for l in out.splitlines() if 'FAIL' in l]
-                       or ['exit %d' % rc])[0]
-                print('  %-58s caught -> %s' % (name, why))
-            else:
-                print('  %-58s *** NOT CAUGHT ***' % name)
-                worst = 1
-        print()
+        for suite, text0, muts in SUITES:
+            print('%s -- mutations that must be caught:' % suite)
+            for i, mut in enumerate(muts):
+                name, subs = mut[0], mut[1:]
+                text = text0
+                for a, b in zip(subs[0::2], subs[1::2]):
+                    assert text.count(a), \
+                        '%s: mutation %r no longer applies' % (suite, name)
+                    text = text.replace(a, b)
+                rc, out = build_and_run(text, '%s-mut%d' % (suite, i), quiet=True)
+                if rc is None:
+                    print('  %-58s DID NOT COMPILE' % name)
+                    worst = 1
+                elif rc:
+                    why = ([l.strip() for l in out.splitlines() if 'FAIL' in l]
+                           or ['exit %d' % rc])[0]
+                    print('  %-58s caught -> %s' % (name, why))
+                else:
+                    print('  %-58s *** NOT CAUGHT ***' % name)
+                    worst = 1
+            print()
         print('control (unmutated):')
-        rc, out = build_and_run(harness, 'ctl')
-        print(''.join('  ' + l + chr(10) for l in out.splitlines()))
-        sys.exit(worst or rc)
+        for suite, text0, _ in SUITES:
+            rc, out = build_and_run(text0, 'ctl-' + suite)
+            print(''.join('  ' + l + chr(10) for l in out.splitlines()))
+            worst = worst or rc
+        sys.exit(worst)
 
-    rc, out = build_and_run(harness, 'navtest')
-    if rc is None:
-        print(out)
-        sys.exit('harness did not compile')
-    print(out)
-    sys.exit(rc)
+    bad = 0
+    for suite, text0, _ in SUITES:
+        rc, out = build_and_run(text0, suite)
+        if rc is None:
+            print(out)
+            sys.exit('%s harness did not compile' % suite)
+        print(out, end='' if out.endswith(chr(10)) else chr(10))
+        bad = bad or rc
+    sys.exit(bad)
 finally:
     shutil.rmtree(TMP, ignore_errors=True)

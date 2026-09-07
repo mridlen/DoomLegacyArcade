@@ -694,6 +694,24 @@ commented out beside the 8. Three columns is likewise the most that fits: the wi
 can produce is `win 1600x1200`, 92 pixels in `hu_font`, and the third column already starts at
 x=224 and ends at 316 of a 320-wide base screen. A fourth column at any spacing runs off the edge.
 
+**The list is sorted by size, smallest first, in `vidm_sort_by_size()`.** Nothing used to order it.
+The fullscreen half arrives in whatever order SDL reported the display's modes — largest first, as a
+rule — and `VID_add_scaled_modes` appends the small software sizes after all of it, so those came out
+both last *and* out of sequence. The windowed half is `windowedModes[]` in `i_video.c`, a static
+table that runs the other way. Neither agreed with the other. On this laptop the fullscreen list now
+reads 320x200, 400x300, 512x384, 640x480, 800x600, 1024x768, 1280x720, 1366x768.
+
+Sorted in the menu rather than in `i_video.c` on purpose: it is presentation, it covers both lists in
+one place, and it leaves the engine's mode *indices* alone — `vid.modenum`, `VID_GetModeForSize` and
+the per-drawmode configs all keep meaning what they meant. Two things it must get right:
+
+- **The order has to be total and repeatable.** A drawer runs 35 times a second and `vidm_current` is
+  a position in the sorted order, so an unstable or input-order-dependent sort would move the cursor
+  under the player's finger. Insertion sort, stable, comparing width then height.
+- **`current_modedesc` is a pointer into the array being sorted**, so it is handed in and handed
+  back rather than kept. Mode numbers are unique per entry, so it is found again by that — not by
+  the description string, which two entries could share.
+
 **`vidm_current` indexes the whole list; the page drawn is the one it falls on.** There is no
 separate page variable to keep in step. `vidm_set_page()` settles `vidm_page_first`,
 `vidm_page_count` and `vidm_column_size` around it, the drawer calls that first, and the key handler
@@ -719,10 +737,11 @@ Two range checks that look redundant and are not:
 ### Testing it without a screen
 
 Nothing drives this menu headlessly, and the failures here — a cursor outside the drawn page, a mode
-no key sequence can reach — are invisible to a smoke run. **`tools/vidmenu-navtest.py`** covers it.
-It **extracts `vidm_page_modes`, `vidm_page_colsize`, `vidm_set_page` and `M_VideoMode_key_handler`
-verbatim from `m_menu.c` by brace matching**, stubs the handful of things they touch
-(`S_StartSound`, `key_handler2`, `Pop_Menu`, the `KEY_*` values) and drives them. It reads the
+no key sequence can reach, a sort that quietly drops an entry — are invisible to a smoke run.
+**`tools/vidmenu-navtest.py`** covers it, in two suites. It **extracts `vidm_page_modes`,
+`vidm_page_colsize`, `vidm_set_page`, `M_VideoMode_key_handler` and `vidm_sort_by_size` verbatim
+from `m_menu.c` by brace matching**, stubs the handful of things they touch (`S_StartSound`,
+`key_handler2`, `Pop_Menu`, the `KEY_*` values, `VID_GetMode_Stat`) and drives them. It reads the
 geometry constants out of `m_menu.c` too. Extracting rather than copying matters: a copied test
 drifts, and this one tests the shipped text — run it after any change to that page.
 
@@ -730,6 +749,12 @@ For list sizes 0..128, from every starting position, it walks every state reacha
 keys and checks the cursor stays inside the drawn page, the row stays inside the geometry above, the
 page keys land where they are supposed to, and **every mode is reachable using the four arrows
 alone, in both directions**.
+
+The sort suite checks, over the two real lists, a messy one with duplicate and undescribable modes,
+and 400 random lists: the result is ascending by width then height, it is a *permutation* of the
+input with nothing lost or duplicated, equal sizes keep their input order, and the current-mode
+pointer comes back pointing at the same mode. Nothing lost is the one that matters — a resolution
+silently dropped is the bug this whole page exists to fix.
 
 That last clause was learned the hard way. The first version only checked reachability *forwards*
 from mode 0, and a mutation that broke Left-edge paging left every mode still reachable by going
@@ -740,12 +765,25 @@ So the mutations are part of the tool. **`tools/vidmenu-navtest.py --selfcheck`*
 one and reports whether the checks go red:
 
 ```
+navigation:
   11 rows per column (overlaps the instructions)      caught -> FAIL row overlaps instructions
   left edge stops instead of paging back              caught -> FAIL unreachable: from mode 30 ...
   right edge stops instead of paging forward          caught -> FAIL unreachable: from mode 0 ...
   page target not clamped to a short page             caught -> FAIL page forward went astray
   both divide-by-zero guards removed                  caught -> exit -8
+sort:
+  sorted descending instead of ascending              caught -> FAIL not ascending by width...
+  height tiebreak dropped                             caught -> FAIL not ascending by width...
+  unstable: identical sizes reordered                 caught -> FAIL equal sizes reordered
+  current mode not found again after the sort         caught -> FAIL current mode lost
+  sizeless modes sort to the front                    caught -> FAIL not ascending by width...
 ```
+
+The sort mutations make the same point a second time. The first "unstable" mutation used `>=` on the
+width as well, which broke the *ordering* too — so the ordering check caught it and the stability
+check was never exercised at all. Narrowing it to `>=` on the height alone, where ascending order
+stays perfectly valid, is what finally put the stability check on trial. **A mutation that trips a
+different check than the one you meant to test has not tested anything.**
 
 **A clean result from a check that has never been shown to fail is not evidence.** If a mutation
 stops applying because the code moved, the tool says so rather than quietly testing nothing.

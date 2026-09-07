@@ -214,7 +214,10 @@ each had to be lifted before the next became visible.
 - **`VID_GetModeName` returns NULL above `MAX_NUM_VIDMODENAME`**, which was 42, and the menu treats
   a mode with no name as no mode at all — `if (desc)` and on to the next index, no message. With the
   duplicates above, a fairly ordinary monitor pushes past 42 on its own, and the appended scaled
-  modes are the first thing over the edge. Now 128 (2KB of BSS; nothing else limits this list).
+  modes are the first thing over the edge. Now **256**, which is not a raised cap but the removal of
+  one: `modenum_t.index` is a `byte`, so 256 covers every index that can exist and the guard becomes
+  unreachable. 128 was picked first and would have left a cliff at index 128 — moving a silent limit
+  is not the same as removing it, and it is worth checking which one a number is.
 
 - **The menu stopped filling at `MAXMODEDESCS`.** See `menus.md` — that one is now paged rather than
   raised.
@@ -235,7 +238,12 @@ this display                  6 in ->  5 out,  5 distinct  OK
 synthetic 4 refresh rates    40 in -> 10 out, 10 distinct  OK
 ```
 
-The menu paging has its own harness, built the same way — see `menus.md`.
+Ordering is the menu's job, not this list's — see `menus.md`. `VID_add_scaled_modes` still appends
+at the end and `add_vid_mode` still keeps first-seen order, because those orders are what the mode
+*indices* are built from, and the config resolves sizes rather than indices precisely so that the
+two need not agree.
+
+The menu paging and sorting have their own harness, built the same way — see `menus.md`.
 
 Nothing indexes into this list by number across a restart: the config stores `scr_width`/
 `scr_height` and `VID_GetModeForSize` resolves them to whatever index they land on, so shortening

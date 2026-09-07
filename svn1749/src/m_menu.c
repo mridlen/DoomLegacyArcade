@@ -6562,6 +6562,77 @@ static modedesc_t   modedescs[MAXVIDMODEDESCS];
 static modenum_t    vidm_previousmode;  // modenum in format of setmodeneeded
 
 
+// [Arcade] Sort modedescs[0 .. vidm_nummodes) by size, smallest first, and
+// return where "current" ended up (NULL if it was NULL).
+//
+// Nothing used to order this list.  The fullscreen half arrives in whatever
+// order SDL reported the display's modes -- largest first, as a rule -- and
+// VID_add_scaled_modes appends the small software sizes after all of it, so
+// those came out both last and out of sequence.  The windowed half is a static
+// table in i_video.c that runs the other way.  Neither agreed with the other.
+//
+// Sorted here rather than in i_video.c on purpose: it is presentation, it
+// covers both lists in one place, and it leaves the engine's mode indices
+// alone, so vid.modenum, VID_GetModeForSize and the per-drawmode configs all
+// keep meaning exactly what they meant.
+//
+// Insertion sort -- at most MAXVIDMODEDESCS entries, once a frame -- and
+// stable, so entries of equal size keep their list order.  The order has to be
+// total and repeatable or vidm_current would point at a different mode from one
+// frame to the next.
+//
+// The caller's pointer has to be handed back rather than kept, because it
+// points into the array being sorted.  Mode numbers are unique per entry, so it
+// is found again by that.
+static modedesc_t *  vidm_sort_by_size( modedesc_t * current )
+{
+    int  w[MAXVIDMODEDESCS], h[MAXVIDMODEDESCS];
+    modenum_t  cur_modenum = { MODE_NOP, 0 };
+    boolean    have_cur = (current != NULL);
+    int  i;
+
+    if( have_cur )   cur_modenum = current->modenum;
+
+    for( i = 0; i < vidm_nummodes; i++ )
+    {
+        modestat_t ms = VID_GetMode_Stat( modedescs[i].modenum );
+        // A mode with no size sorts to the end rather than to the front.
+        w[i] = ( ms.mark )? ms.width : MAXVIDWIDTH + 1;
+        h[i] = ( ms.mark )? ms.height : MAXVIDHEIGHT + 1;
+    }
+
+    for( i = 1; i < vidm_nummodes; i++ )
+    {
+        modedesc_t  hold = modedescs[i];
+        int  hw = w[i], hh = h[i];
+        int  j = i;
+
+        while( (j > 0)
+               && ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )
+        {
+            modedescs[j] = modedescs[j-1];
+            w[j] = w[j-1];
+            h[j] = h[j-1];
+            j--;
+        }
+        modedescs[j] = hold;
+        w[j] = hw;
+        h[j] = hh;
+    }
+
+    if( have_cur )
+    {
+        for( i = 0; i < vidm_nummodes; i++ )
+        {
+            if( (modedescs[i].modenum.modetype == cur_modenum.modetype)
+                && (modedescs[i].modenum.index == cur_modenum.index) )
+                return & modedescs[i];
+        }
+    }
+    return NULL;
+}
+
+
 //
 // Draw the video modes list, a-la-Quake
 //
@@ -6674,6 +6745,10 @@ void M_DrawVideoMode(void)
             if( vidm_nummodes >= MAXVIDMODEDESCS )  break;
         }
     }
+
+    // [Arcade] Order the list by size before drawing it.
+    current_modedesc = vidm_sort_by_size( current_modedesc );
+    if( current_modedesc )   current_modename = current_modedesc->desc;
 
     // [Arcade] Draw one page of the list.  vidm_current indexes the whole
     // list and the page shown is the one it falls on, so the key handler pages
