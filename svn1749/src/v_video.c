@@ -1324,9 +1324,16 @@ void V_SetupDraw( uint32_t screenflags )
     }
     else if (screenflags & V_SCALEPATCH)
     {   // Scaled patches and Large text.
-        drawinfo.dupx = vid.dupx;
+        // [Arcade] A whole screen page asks for V_SCALEEXACT because it is
+        // meant to fill the screen (screen-fill.md), so it wants the uncapped
+        // horizontal scale -- the aspect cap in V_Setup_VideoDraw would
+        // pillarbox it on an ultrawide.  Everything else that comes through
+        // here is a patch, the status bar, a menu or the HUD, and wants the
+        // capped one or it stretches.
+        boolean  fill_x = (screenflags & V_SCALEEXACT) != 0;
+        drawinfo.dupx = fill_x ? vid.dupx_fill : vid.dupx;
         drawinfo.dupy = vid.dupy;
-        drawinfo.fdupx = vid.fdupx;
+        drawinfo.fdupx = fill_x ? vid.fdupx_fill : vid.fdupx;
         drawinfo.fdupy = vid.fdupy;
     }
     else
@@ -1367,10 +1374,13 @@ void V_SetupDraw( uint32_t screenflags )
 
     if (screenflags & V_SCALESTART)
     {
-        drawinfo.dupx0 = vid.dupx;  // scaled
+        // [Arcade] Positions follow the same rule as the patch scale above, or
+        // a whole screen page would be drawn at one scale and placed at
+        // another.
+        drawinfo.dupx0 = ( screenflags & V_SCALEEXACT )? vid.dupx_fill : vid.dupx;
         drawinfo.dupy0 = vid.dupy;
 #ifdef HWRENDER
-        drawinfo.fdupx0 = vid.fdupx;
+        drawinfo.fdupx0 = ( screenflags & V_SCALEEXACT )? vid.fdupx_fill : vid.fdupx;
         drawinfo.fdupy0 = vid.fdupy;
 #endif
     }
@@ -1393,7 +1403,7 @@ void V_SetupDraw( uint32_t screenflags )
     if( screenflags & V_SCALESTART )
     {
         drawinfo.x0_scale = ( screenflags & V_SCALEEXACT )?
-              (fixed_t)( vid.fdupx * FRACUNIT ) : (drawinfo.dupx0 << FRACBITS);
+              (fixed_t)( vid.fdupx_fill * FRACUNIT ) : (drawinfo.dupx0 << FRACBITS);
         drawinfo.y0_scale = ( screenflags & V_SCALEEXACT )?
               (fixed_t)( vid.fdupy * FRACUNIT ) : (drawinfo.dupy0 << FRACBITS);
     }
@@ -3514,10 +3524,35 @@ void V_Setup_VideoDraw(void)
     // menus and overlays... calculated once and for all
     // used by routines in v_video.c
     // leave it be 1 in hardware accelerated modes
-    vid.dupx = vid.width / BASEVIDWIDTH;
+    // [Arcade] The horizontal and vertical scales used to be derived
+    // independently -- width/320 and height/200 -- so their ratio followed the
+    // shape of the display.  At 4:3 that ratio is 5:6, which is Doom's
+    // non-square pixels and the look everything was drawn for.  The wider the
+    // screen, the more the 2D layer stretches with it: at 32:9 the status bar
+    // came out four times as wide as it was tall per unit, so the health
+    // numbers and the weapon were visibly squashed flat.
+    //
+    // The horizontal scale is now capped at the proportions of a 16:9 screen
+    // (fdupy * 10/9).  Below that -- 4:3, 16:10, 16:9 -- the cap never engages
+    // and this is arithmetically what it always was, so every existing install
+    // is unchanged.  Above it the 2D layer keeps 16:9 proportions and the
+    // extra width is simply spare, which vid.centerofs below centres it in.
+    //
+    // 16:9 is the cap rather than 4:3 on purpose: a 4:3 cap would un-stretch
+    // every widescreen install at once, which is a different decision from
+    // making ultrawide usable.  (1366x768 is a hair wider than 16:9, so the
+    // cap does clip it -- by 0.05%, and vid.dupx is an integer and comes out
+    // identical.)
+    vid.dupx_fill = vid.width / BASEVIDWIDTH;
+    vid.fdupx_fill = (float)vid.width / BASEVIDWIDTH;
     vid.dupy = vid.height / BASEVIDHEIGHT;
-    vid.fdupx = (float)vid.width / BASEVIDWIDTH;
     vid.fdupy = (float)vid.height / BASEVIDHEIGHT;
+
+    {
+        float  fdupx_max = vid.fdupy * (10.0f / 9.0f);
+        vid.fdupx = (vid.fdupx_fill > fdupx_max) ? fdupx_max : vid.fdupx_fill;
+    }
+    vid.dupx = (int)vid.fdupx;   // floor, as width/320 was
     //vid.baseratio = FixedDiv(vid.height << FRACBITS, BASEVIDHEIGHT << FRACBITS); //Hurdler: not used anymore
     vid.fx_center = (float) vid.width * 0.5f;   
     vid.fx_scale2 = 2.0f / (float)vid.width;
@@ -3527,8 +3562,13 @@ void V_Setup_VideoDraw(void)
     //added:18-02-98: calculate centering offset for the scaled menu
     // Adds a left margin and top margin for CENTERMENU
     // Fixed to account for video buffer line padding.
-    vid.centerofs = (((vid.height%BASEVIDHEIGHT)/2) * vid.ybytes) +
-                    (((vid.width%BASEVIDWIDTH)/2)  * vid.bytepp) ;
+    // [Arcade] Written against the scale actually in use rather than as a
+    // remainder.  Identical arithmetic while dupx is width/320 -- the leftover
+    // of a floored division IS the remainder -- but once the aspect cap above
+    // engages the leftover is much larger than vid.width % 320, and this is
+    // what centres the 2D layer in it instead of leaving it all on the right.
+    vid.centerofs = (((vid.height - (BASEVIDHEIGHT * vid.dupy))/2) * vid.ybytes) +
+                    (((vid.width  - (BASEVIDWIDTH  * vid.dupx))/2) * vid.bytepp) ;
 
 //    if( cv_gammafunc.value != cv_gammafunc.EV )
     {

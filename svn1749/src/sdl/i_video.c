@@ -350,6 +350,18 @@ void  VID_add_scaled_modes( void )
             add_vid_mode( sw, sh );
     }
 
+    // [Arcade] An explicit -width/-height is a request for that exact drawing
+    // size, so put it in the list rather than letting VID_GetModeForSize snap
+    // it to the nearest advertised mode and silently draw something else.
+    //
+    // Software only, like the rest of this function: the frame is scaled into
+    // the window, so any drawing size works whatever the display advertises.
+    // This is what lets tools/shotsheet.py preview a 21:9 or 32:9 drawing size
+    // on a machine whose monitor is neither.
+    if( (req_width >= 320) && (req_height >= 200)
+        && (req_width <= MAXVIDWIDTH) && (req_height <= MAXVIDHEIGHT) )
+        add_vid_mode( req_width, req_height );
+
     // Only the ones shaped like this display.  add_vid_mode already refuses a
     // duplicate size, so no second search is needed here.
     if( ! have_display )  return;

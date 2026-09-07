@@ -1156,6 +1156,31 @@ std_fit:
     // The sky scale follows this too (R_Set_Sky_Scale), and wants the same
     // full height projection in a side-by-side view for the same reason.
     pspriteyscale = (((vid.height*fit_ref_width)/vid.width)<<FRACBITS)/BASEVIDHEIGHT;
+
+    // [Arcade] Cap the weapon's horizontal scale at 16:9 proportions, the same
+    // rule and the same reason as vid.fdupx in V_Setup_VideoDraw.
+    //
+    // pspritescale / pspriteyscale works out as 0.625 * width / height, so it
+    // follows the shape of the screen: 0.83 at 4:3, which is the proportion
+    // the weapon art was drawn for, 1.11 at 16:9, 1.48 at 21:9 and 2.22 at
+    // 32:9.  Past 16:9 the gun is visibly squashed flat, and the wider the
+    // monitor the flatter it gets.
+    //
+    // 10/9 is exactly the 16:9 value, so this never engages at 16:9 or
+    // narrower and no existing install changes.  The weapon is positioned
+    // relative to centerx, so a smaller horizontal scale leaves it centred
+    // rather than sliding it left.
+    //
+    // pspriteyscale is deliberately untouched: R_Set_Sky_Scale is
+    // FixedDiv(FRACUNIT, pspriteyscale), and the sky must still fill.
+    {
+        fixed_t  psp_x_max = FixedMul( pspriteyscale, (10*FRACUNIT)/9 );
+        if( pspritescale > psp_x_max )
+        {
+            pspritescale  = psp_x_max;
+            pspriteiscale = FixedDiv( FRACUNIT, pspritescale );
+        }
+    }
 #endif
 
     // thing clipping

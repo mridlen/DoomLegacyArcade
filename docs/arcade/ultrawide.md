@@ -1,15 +1,17 @@
 # Ultrawide monitors — 21:9 and 32:9
 
 Read this before changing `MAXVIDWIDTH`/`MAXVIDHEIGHT` (`screen.h`), the fullscreen mode list or
-`windowedModes[]` (`sdl/i_video.c`), the `viewfit` block or `R_Init_TextureMapping` (`r_main.c`), or
+`windowedModes[]` (`sdl/i_video.c`), the `viewfit` block, `R_Init_TextureMapping` or the psprite
+scales (`r_main.c`), the `dupx`/`fdupx` setup in `V_Setup_VideoDraw`/`V_SetupDraw` (`v_video.c`), or
 the aspect filter on the Video Modes page (`m_menu.c`). For the *present* path — the texture pitch,
 why software fullscreen stretches rather than letterboxes — see `software-fullscreen.md`; for the
 Video Modes page's paging and sorting, `menus.md`.
 
 It began as one request — "can it do 21:9 or 32:9" — with a suggested answer: an aspect ratio
 selector in the video options, to cut down how many resolutions are listed at once. The selector was
-the right idea and it is the last part of this document. It was not the hard part. Four separate
-things had to change before there was anything for it to select.
+the right idea and it is the last part of this document. It was not the hard part. Five separate
+things had to change before there was anything for it to select, and one of them — the 2D layer —
+was only spotted because someone looked at a screenshot.
 
 ## 1. The engine threw ultrawide modes away before the menu saw them
 
@@ -129,7 +131,57 @@ shape matches the display are added** (`VID_Display_Size` asks SDL for the deskt
 machine gains five 16:9 sizes and nothing else; a 4:3 machine gains nothing. `windowedModes[]` gets
 the same treatment as a static table, because a *window* has no display to take its shape from.
 
-## 5. The aspect filter, which is what was actually asked for
+## 5. The 2D layer stretched flat, and so did the weapon
+
+Everything above is the 3D view. The 2D layer — status bar, HUD numbers, menus,
+weapon sprite — was still stretching, and on a 32:9 screenshot it is the first thing anyone
+notices: the health numbers and the gun are squashed flat. Two independent places, one cause.
+
+**`V_Setup_VideoDraw` derived the two scales separately**: `vid.dupx = vid.width/320` and
+`vid.dupy = vid.height/200`. Their *ratio* therefore followed the shape of the display —
+`0.625 * width/height`, which is 0.83 at 4:3. That 5:6 is Doom's non-square pixels and the
+proportion all the art was drawn for. At 16:9 the ratio is 1.11, at 21:9 1.48, at 32:9 **2.22**.
+
+**`R_ExecuteSetViewSize` does the same thing for the weapon**, `pspritescale` coming off the view
+width and `pspriteyscale` off the height, and works out to exactly the same `0.625 * w/h`.
+
+Both are now **capped at the proportions of a 16:9 screen** — `fdupy * 10/9`, and
+`FixedMul(pspriteyscale, 10*FRACUNIT/9)`. 10/9 is precisely the 16:9 value, so:
+
+| screen | ratio | capped? |
+| --- | --- | --- |
+| 4:3 | 0.83 | no |
+| 16:10 | 1.00 | no |
+| 16:9 | 1.11 | exactly at the cap |
+| 21:9 | 1.48 | yes, to 1.11 |
+| 32:9 | 2.22 | yes, to 1.11 |
+
+**16:9 is the cap rather than 4:3 deliberately.** A 4:3 cap would un-stretch every widescreen
+install in existence, which is a different decision from making ultrawide usable — the same call
+made for `viewfit` in part 2. Nothing at 16:9 or narrower changes.
+
+Three things this had to get right:
+
+- **`vid.centerofs` was written as a remainder** — `(vid.width % BASEVIDWIDTH)/2`. That is only the
+  leftover width while `dupx` is `width/320`; once the cap engages the leftover is far larger, and
+  the 2D layer would have sat hard against the left edge with all the spare space on the right. It
+  is `(vid.width - BASEVIDWIDTH*vid.dupx)/2` now, which is identical arithmetic in the uncapped case
+  and correct in the capped one.
+- **A whole-screen page is meant to fill the screen and must not be capped**, or the title and
+  intermission backgrounds would come back pillarboxed and undo `screen-fill.md`. Those pass
+  `V_SCALEEXACT`, so `vid.dupx_fill`/`vid.fdupx_fill` keep the uncapped `width/320` and
+  `V_SetupDraw` hands those out for `V_SCALEEXACT` only — for the patch scale, for the start
+  coordinates, and for `x0_scale`. Scale and position have to take the same branch or a page is
+  drawn at one size and placed at another.
+- **`pspriteyscale` is left alone.** `R_Set_Sky_Scale` is `FixedDiv(FRACUNIT, pspriteyscale)` and
+  the sky still has to fill. Only the horizontal scale is capped, and since the weapon is positioned
+  relative to `centerx` a smaller horizontal scale leaves it centred rather than sliding it left.
+
+1366x768 is a hair wider than 16:9 (1366*9 = 12294 against 768*16 = 12288), so the cap does clip the
+cabinet — by 0.05%. `vid.dupx` is an integer and comes out identical; only the hardware renderer's
+float scale moves, by a twentieth of a percent.
+
+## 6. The aspect filter, which is what was actually asked for
 
 A `vid_aspect` cvar (`m_menu.c`, `CV_SAVE`) filters the Video Modes list to one shape: **AUTO**
 (whatever the display is), **All**, 4:3, 16:10, 16:9, 21:9, 32:9. **A** on the page cycles it, the
@@ -181,14 +233,34 @@ checks were silently useless until someone ran it.
 `tools/vidmenu-navtest.py` still passes unchanged: the paging and sorting functions were not
 touched.
 
-### Screenshots
+### Screenshots, and `tools/shotsheet.py`
 
-Screenshots at ultrawide draw sizes are taken the way `screen-fill.md` describes — under
-`SDL_VIDEODRIVER=offscreen`, never `dummy`, where the capture comes out black — driven by an
-`autoexec.cfg` of `wait 105` then `screenshot`, with `localplayers "1"` in the scratch config so it
-is one view rather than the cabinet's 2x2 grid. A 1280x360 capture of MAP01 shows the wide field of
-view with clean geometry to both edges and no smeared band, which is the thing none of the numeric
-checks above can see.
+**Checking that a screen *looks right* is the one thing a headless run cannot do and a person can do
+in seconds.** `tools/shotsheet.py` runs the game once per drawing size, takes a screenshot of each,
+and writes one self-contained HTML page with every shot on it at its true pixel shape, labelled with
+what the engine actually did. Two runs into two directories, before and after a change, is the way
+to check anything visual:
+
+```
+tools/shotsheet.py --out /tmp/before
+tools/shotsheet.py --sizes 3440x1440,1280x360 --aspect 21:9,32:9 --scenes game,title
+```
+
+It already goes round every trap in this tree: `SDL_VIDEODRIVER=offscreen` (under `dummy` the
+capture is entirely black), `SDL_NO_SIGNAL_HANDLERS=1`, `fullscreen "Yes"` (the offscreen driver has
+no window manager and a windowed request dies with "cannot draw 0 bits per pixel"), a *copy* of
+`legacyhome` per run, the per-drawmode configs deleted, and `localplayers "1"` so it is one view
+rather than the cabinet's 2x2 grid. It reads `MAXVIDWIDTH`/`MAXVIDHEIGHT` out of `screen.h` and
+skips anything over them, so the ladder does not have to be kept in step by hand.
+
+**`-width`/`-height` are exact for the software renderer**, which is what makes this work at all: a
+size not in the mode list used to be snapped to the nearest one by `VID_GetModeForSize`, silently, so
+asking for 3440x1440 on a 16:9 laptop drew 1366x768 and the sheet would have been a page of
+identical pictures. `VID_add_scaled_modes` now puts an explicitly requested size into the list.
+
+The whole 2D scaling bug in part 5 was found this way, in about two seconds of looking at a 32:9
+capture — after four numeric checks had all come back clean, because none of them was measuring the
+2D layer at all.
 
 ## What is still not done
 

@@ -157,6 +157,13 @@ typedef struct viddef_s
 #endif
     int         dupx,dupy;       // scale 1,2,3 value for menus & overlays
     float       fdupx,fdupy;     // same as dupx,dupy but exact value when aspect ratio isn't 320/200
+ // [Arcade] The horizontal scale with NO aspect cap applied -- width/320, which
+ // is what dupx/fdupx used to be.  A whole screen 2D page (V_SCALEEXACT) is
+ // meant to fill the screen and so wants these; a patch, the status bar, the
+ // HUD and the menus want the capped dupx/fdupx above, or they stretch wider
+ // and wider as the display does.  See V_Setup_VideoDraw.
+    int         dupx_fill;
+    float       fdupx_fill;
     float       fx_center,fy_center; // half width height
     float       fx_scale2,fy_scale2; // 2.0 / width, 2.0 / height
     int         centerofs;       // centering for the scaled menu gfx

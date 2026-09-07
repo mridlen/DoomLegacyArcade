@@ -247,6 +247,14 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   bug and the high-score page timing were both pinned down. Remove it before committing.
 - **Before blaming a run for changed files, compare mtimes against the run times.** The cabinet is
   played between turns, and those writes belong to the user, not the test.
+- **Whether a screen *looks* right is the one thing a headless run cannot judge and a person can
+  judge instantly — so build the page and hand it over.** `tools/shotsheet.py` runs the game once per
+  drawing size, screenshots each, and writes one self-contained HTML page of every shot at its true
+  pixel shape. Two runs into two directories is a before/after. It encodes every trap in this
+  section (offscreen not dummy, `SDL_NO_SIGNAL_HANDLERS`, `fullscreen "Yes"`, a *copy* of
+  `legacyhome`, `localplayers "1"`) and reads the size caps out of `screen.h`. The whole 2D scaling
+  bug in `ultrawide.md` was found by looking at one 32:9 capture, after four numeric checks had come
+  back clean — because none of them was measuring the 2D layer. → `ultrawide.md`
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py` and `tools/vidmodes-deduptest.py` lift
   the functions they test **verbatim out of the source by brace matching**, stub what those touch,
