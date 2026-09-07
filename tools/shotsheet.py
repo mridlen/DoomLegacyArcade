@@ -12,6 +12,7 @@ actually did.  Open it, scroll, done -- no need to describe anything to anyone.
     tools/shotsheet.py --aspect 21:9,32:9    # only those shapes
     tools/shotsheet.py --scenes game,title   # attract screen too
     tools/shotsheet.py --out /tmp/before     # then again into /tmp/after
+    tools/shotsheet.py --resume              # continue a run that was killed
 
 Two runs into two directories is the way to check a change: open both pages
 side by side.
@@ -329,6 +330,9 @@ def main():
                          'so nothing on the page is wider than about 1600)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'shotsheet'))
     ap.add_argument('--keep', action='store_true', help='keep the scratch dirs')
+    ap.add_argument('--resume', action='store_true',
+                    help='keep shots already in --out instead of retaking them, '
+                         'so a run killed part way can be continued')
     ap.add_argument('--nomonsters', action='store_true',
                     help='pass -nomonsters, for a scene that holds still')
     ap.add_argument('--cvar', action='append', default=[], metavar='NAME=VALUE',
@@ -378,6 +382,18 @@ def main():
                 continue
             for scene in scenes:
                 done += 1
+                name = '%dx%d-%s.png' % (w, h, scene)
+                path = os.path.join(args.out, name)
+                # [Arcade] --resume: a shot already on disk is kept and the run
+                # skipped.  This machine's low-memory watchdog kills a long
+                # sheet part way through, and without this every kill threw away
+                # everything it had done.
+                if args.resume and os.path.exists(path):
+                    print('  [%d/%d] %dx%d %s ... kept' % (done, total, w, h, scene))
+                    items.append({'w': w, 'h': h,
+                                  'scene': scene if len(scenes) > 1 else None,
+                                  'file': path})
+                    continue
                 print('  [%d/%d] %dx%d %s ... ' % (done, total, w, h, scene),
                       end='', flush=True)
                 tga, info = run_one(args.binary, w, h, scene, args.game,
@@ -394,8 +410,6 @@ def main():
                     tw, th, rows = read_tga(tga)
                     shrink = args.shrink or max(1, -(-tw // 1600))
                     data, ow, oh = png_bytes(tw, th, rows, shrink)
-                    name = '%dx%d-%s.png' % (w, h, scene)
-                    path = os.path.join(args.out, name)
                     open(path, 'wb').write(data)
                     it['file'] = path
                     del data, rows
