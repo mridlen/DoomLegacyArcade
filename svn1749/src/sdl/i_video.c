@@ -145,6 +145,8 @@ static  byte       modelist_bitpp = 0;  // with modelist
 static  boolean    draw8_active = false;
 static  byte       draw8_texture_bytepp = 0;   // what the texture really is
 static  uint32_t   draw8_to32[256];
+static  uint32_t * draw8_staging = NULL;       // cached expansion buffer
+static  size_t     draw8_staging_size = 0;
 
 // indexed by fullscreen
 const char * fullscreen_str[2] = {
@@ -431,28 +433,53 @@ void I_FinishUpdate(void)
         // and, in fullscreen, usually a different width.
         if( draw8_active )
         {
-            // [Arcade] Expand the 8bpp draw buffer through the palette,
-            // straight into the texture.  Locking rather than
-            // SDL_UpdateTexture means there is no intermediate 32bpp buffer
-            // and no second copy: the only traffic is one read of the small
-            // 8bpp buffer and one write of the texture.  Texture memory is
-            // usually write-combined, which is fine here because this writes
-            // and never reads it.
-            void * tex_pixels = NULL;
-            int    tex_pitch = 0;
+            // [Arcade] Expand the 8bpp draw buffer through the palette into a
+            // CACHED staging buffer, then let SDL_UpdateTexture do the one
+            // transfer into GPU memory.
+            //
+            // Writing the expansion straight into SDL_LockTexture's pointer
+            // looks better -- no intermediate buffer, no second copy -- and on
+            // the Pi measured about EIGHT TIMES WORSE per pixel than the
+            // SDL_UpdateTexture it replaced.  That memory is uncached or
+            // write-combined; a scattered 4-byte store per palette lookup into
+            // it is nothing like a linear copy.  Expanding in cached memory
+            // and copying once linearly is faster even though it moves the
+            // bytes twice.  DL_DRAW8_LOCK=1 restores the direct path for
+            // comparison.
+            static int use_lock = -1;
+            if( use_lock < 0 )  use_lock = getenv("DL_DRAW8_LOCK")? 1 : 0;
 
-            if( SDL_LockTexture( sdl_texture, NULL, &tex_pixels, &tex_pitch ) == 0 )
+            if( use_lock )
+            {
+                void * tex_pixels = NULL;
+                int    tex_pitch = 0;
+                if( SDL_LockTexture( sdl_texture, NULL, &tex_pixels, &tex_pitch ) == 0 )
+                {
+                    int y;
+                    for( y = 0; y < vid.height; y++ )
+                    {
+                        byte     * src = vid.display + (y * vid.ybytes);
+                        uint32_t * dst = (uint32_t*)((byte*)tex_pixels + (y * tex_pitch));
+                        int x = vid.width;
+                        while( x-- )
+                            *dst++ = draw8_to32[ *src++ ];
+                    }
+                    SDL_UnlockTexture( sdl_texture );
+                }
+            }
+            else if( draw8_staging )
             {
                 int y;
                 for( y = 0; y < vid.height; y++ )
                 {
                     byte     * src = vid.display + (y * vid.ybytes);
-                    uint32_t * dst = (uint32_t*)((byte*)tex_pixels + (y * tex_pitch));
+                    uint32_t * dst = draw8_staging + ((size_t)y * vid.width);
                     int x = vid.width;
                     while( x-- )
                         *dst++ = draw8_to32[ *src++ ];
                 }
-                SDL_UnlockTexture( sdl_texture );
+                SDL_UpdateTexture( sdl_texture, NULL, draw8_staging,
+                                   vid.width * 4 );
             }
         }
         else
@@ -1162,6 +1189,23 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     {
         vid.bitpp = 8;
         vid.bytepp = 1;
+
+        // Expansion buffer, in ordinary cached memory.  See I_FinishUpdate.
+        {
+            size_t need = (size_t)vid.width * vid.height * 4;
+            if( need != draw8_staging_size )
+            {
+                free( draw8_staging );
+                draw8_staging = (uint32_t*) malloc( need );
+                draw8_staging_size = draw8_staging? need : 0;
+            }
+            if( draw8_staging == NULL )
+            {
+                draw8_active = false;   // cannot expand, draw at display depth
+                vid.bitpp = draw8_texture_bytepp * 8;
+                vid.bytepp = draw8_texture_bytepp;
+            }
+        }
     }
 
     // [Arcade] Say why.  "It still says 32bpp" is otherwise three separate
