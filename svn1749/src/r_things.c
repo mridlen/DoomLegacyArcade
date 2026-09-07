@@ -1395,7 +1395,10 @@ static void R_DrawVisSprite ( vissprite_t *  vis,
 
     //Fab:R_Init_Sprites now sets a wad lump number
     // Use common patch read, all patch in cache have endian fixed.
-    patch = W_CachePatchNum (vis->patch_lumpnum, PU_CACHE);
+    // [Arcade] R_DRAW_LUMP_TAG, not PU_CACHE: the columns below are read long
+    // after this call, and inside the parallel section another thread's
+    // Z_Malloc would purge the patch while they are being drawn.
+    patch = W_CachePatchNum (vis->patch_lumpnum, R_DRAW_LUMP_TAG);
 
     dc_colormap = vis->colormap;
 

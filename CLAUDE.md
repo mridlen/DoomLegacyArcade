@@ -472,7 +472,12 @@ written up in full in the doc named beside it.
   → `render-threads.md`
 - **`W_CacheLumpNum` mutates shared state on a cache hit, not just a miss** -- it re-tags the
   zone block. Anything called per visplane or per sprite from a render thread has to be
-  serialised with `R_Cache_Lock`. → `render-threads.md`
+  serialised with `R_Cache_Lock`. **Serialising the call is not enough on its own**: a drawer
+  holds the pointer long after the call returns, and letting the lump go back to `PU_CACHE` when
+  *this* thread has finished lets the allocator free it under a thread that has not. That is the
+  cabinet's `Z_ChangeTag: free block has corrupt ZONEID`. Inside the parallel section a drawer
+  pins its lump with `R_DRAW_LUMP_TAG` and `R_Threads_Wait` releases them all after the join.
+  → `render-threads.md`
 - **The BSP the renderer walks must not be the one the simulation walks.** `p_sight.c` traverses
   the nodes for line-of-sight and `R_PointInSubsector` is used across the play code, so swapping in
   a rebuilt tree changes gameplay and desyncs demos — rarely enough to pass a careless test, which

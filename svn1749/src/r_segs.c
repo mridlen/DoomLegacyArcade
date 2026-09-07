@@ -817,7 +817,9 @@ static void R_DrawWallSplats (void)
         dm_floorclip = floorclip;
         dm_ceilingclip = ceilingclip;
 
-        patch = W_CachePatchNum (splat->patch, PU_CACHE); // endian fix
+        // [Arcade] R_DRAW_LUMP_TAG, not PU_CACHE -- see r_threads.h.  The
+        // splat is drawn from well after this call.
+        patch = W_CachePatchNum (splat->patch, R_DRAW_LUMP_TAG); // endian fix
 
         // clip splat range to seg range left
         /*if (x1 < ds_p->x1)
@@ -1341,7 +1343,9 @@ void R_RenderMaskedSegRange( drawseg_t* ds, int x1, int x2 )
 #else
             // dc_translucentmap required for DRAW8PAL,
             // but is used indirectly in other draw modes, for some TRANSLU.
-            dc_translucentmap = W_CacheLumpNum( tm->translu_lump_num, PU_CACHE );
+            // [Arcade] R_DRAW_LUMP_TAG, not PU_CACHE -- see r_threads.h.  The
+            // map is held in dc_translucentmap across the column draws.
+            dc_translucentmap = W_CacheLumpNum( tm->translu_lump_num, R_DRAW_LUMP_TAG );
 #endif
             // for other draws
             dc_translucent_index = tm->substitute_std_translucent;

@@ -23,9 +23,20 @@ Where it stands after a ThreadSanitizer pass:
 | Serial path | unchanged, and measures the same as before the feature existed |
 | `make smoke` | 5/5 with the default |
 
+**The Pi ran with it above 1 anyway and found the lump-lifetime crash** — see
+"6. A lump let go while another thread is still drawing from it". That one is
+fixed. It is worth reading even if you never touch this file, because the
+mistake was reasoning about a lock instead of about how long a pointer is held.
+
 The remaining fault is on maps with sky and open space, it is timing-dependent
 (two threaded runs of MAP11 differ from each other while two serial runs are
-identical), and **ThreadSanitizer does not see it**. That is not a
+identical), and **ThreadSanitizer does not see it**. **MAP01 shows it too** with
+four column bands, which the table above does not say: three runs of one binary
+gave two distinct pictures, differing in ~240 pixels (0.03%) scattered over the
+upper half of the view. One serial run repeats exactly. Measured with
+`-nomonsters` and `framerate_cap 35`, so it is not the two noise sources in
+"A screenshot of a live level is not reproducible"; and it is identical in the
+stock binary, so it predates the lump fix. That is not a
 contradiction: TSan only reports interleavings it actually observes, and a
 sanitised run covers a small fraction of the frames an optimised one does. The
 next step is more TSan time on MAP11/15/29 specifically -- repeated runs, and
@@ -390,7 +401,7 @@ declarations are not all in headers — `first_subsec_seg` is declared inside `r
 compile-time constant. `vispl_free_tail` used to be `= &vispl_free_head`; it is NULL now and
 `R_Clear_Planes` points it at this thread's own head on first use.
 
-## Five things that are shared and had to be dealt with
+## Six things that are shared and had to be dealt with
 
 Everything below is state the renderer touches that is **not** the renderer's own, so `R_TLS`
 could not fix it.
@@ -415,6 +426,10 @@ Not just on a miss. A hit still calls `Z_ChangeTag` on the block and writes the 
 every thread — so this is a live race on every threaded frame, not a theoretical one, and its
 damage is to the zone allocator's block lists, which surfaces as a crash somewhere unrelated
 much later. It is serialised with `R_Cache_Lock` now.
+
+**Serialising the call is only half of it**, and reading this section as though it closed the
+subject is exactly how the Pi crash got shipped. The lock makes each cache call atomic; it says
+nothing about the pointer the drawer keeps afterwards. See item 6.
 
 ### 3. The texture cache is check-then-act on a shared struct
 
@@ -450,6 +465,85 @@ cache that is filled the first time something is drawn is shared mutable state, 
 read-only it looks afterwards.** The texture cache, the lump cache and the corona patches are
 all this shape. When adding anything to the render path, the question is not "does it write a
 global" but "does it *fill in* anything the first time it runs".
+
+### 6. A lump let go while another thread is still drawing from it
+
+This is the one that reached the cabinet. The Pi died with:
+
+```
+Error: Z_ChangeTag: free block has corrupt ZONEID: 2d25231d
+```
+
+after several minutes of the attract cycle, in the software renderer, with one view split into
+four column bands.
+
+**Serialising the cache call was not enough — the *lifetime* was still wrong.** `R_Cache_Lock`
+(item 2) makes each `W_CacheLumpNum` call atomic, and everyone reasoned about it as though that
+settled the lump cache. It does not, because a drawer does not just call the cache, it *holds
+the pointer*:
+
+```c
+ds_source = R_GetFlat(...);      // W_CacheLumpNum, PU_LUMP: pinned, locked
+... draw every span of the visplane ...   // unlocked, and long
+Z_ChangeTag(ds_source, PU_CACHE);         // purgable again, locked
+```
+
+Serially that is airtight: nothing else runs between the two, so nothing can allocate, so
+nothing can purge. With workers it falls apart, and it needs no exotic interleaving at all:
+
+1. thread A and thread B both draw a visplane using flat F — the floor of a room spans every
+   column band, so this is the *normal* case, not a corner;
+2. A finishes first and hands F back to `PU_CACHE`;
+3. any thread's next `Z_Malloc` needs room and purges F, which is now purgable. `Z_Free` nulls
+   the lumpcache entry and merges the block into its free neighbour, so the header B's pointer
+   points at is now *inside* someone else's allocation;
+4. B is still drawing from it — garbage pixels — and then hands back a block whose `id` field
+   has been overwritten with whatever was allocated over it. `2d25231d` is that data.
+
+The engine's own check caught it one instruction before the real damage. It is a use-after-free
+that had already been read from.
+
+**How often step 1–2 happens**: a temporary counter that recorded each thread's current
+`ds_source` and checked the other threads' at release time measured **over 20 000 early
+releases in 45 seconds** standing still on MAP01 with four bands. The window is not rare; the
+Pi's memory pressure is what made a purge land inside it.
+
+**Why only the Pi.** Two reasons, and both had to hold. The cabinet's config selects OpenGL, so
+the laptop never runs the software flat path at all. And the zone starts at 8 MiB and grows
+(`GROW_ZONE`) — a machine with memory to spare grows instead of purging, and step 3 never
+happens. `Z_Malloc`'s ordinary pass purges `PU_CACHE` and nothing else, which is exactly the tag
+the drawers were putting their lumps back to.
+
+**The fix** is `R_DRAW_LUMP_TAG` (`r_threads.h`): inside the parallel section a drawer caches
+its lump as `PU_LUMP` (non-purgable) instead of `PU_CACHE`, and nobody hands anything back
+mid-frame. `R_Threads_Wait` releases the lot with one `Z_ChangeTags_To(PU_LUMP, PU_CACHE)` after
+the join, which is the first moment at which no worker can still be reading. Outside the
+parallel section the tag is `PU_CACHE` and the release is immediate, exactly as before — the
+serial renderer is byte-for-byte the code it always was.
+
+Three call sites hold a lump across a draw and all three use the macro: the flat
+(`R_DrawSinglePlane`), the sprite patch (`R_DrawVisSprite`) and the wall splat and Boom
+translucency map (`r_segs.c`). Nothing else tags `PU_LUMP` while a frame is being drawn — the
+only other users are `PNAMES`/`TEXTURE1`/`TEXTURE2` at load time — so the sweep releases exactly
+what the drawers pinned, and if a frame is abandoned the level-load
+`Z_ChangeTags_To(PU_LUMP, PU_CACHE)` in `p_setup.c` catches the leftovers.
+
+**How it was proved, both directions.** A crash that needs memory pressure will not show up on
+demand, so the pressure was supplied: a temporary `Z_FreeTags(PU_CACHE, PU_CACHE)` at the point
+where the flat used to be released, standing in for "the allocator needs space right now".
+
+- stock binary + that hack: dies in **seconds**, in `R_DrawSinglePlane`, on the sibling check in
+  the same function (`Z_ChangeTag: an owner is required for purgable blocks` — the block was
+  already free);
+- fixed binary + the same hack: **60 seconds and still running**, then a clean quit.
+
+That is the shape to copy for anything else in this file: **a race you cannot reproduce is one
+whose window you have not widened yet.** Widen it artificially, confirm the old code dies, then
+confirm the new code does not. A fix verified only against a run that never crashed anyway is
+not verified.
+
+The pixel check confirmed the fix is invisible: the fixed binary's frame is byte-identical to
+the stock binary's at the same gametic.
 
 `NetUpdate` is called three times inside `R_RenderPlayerView` to keep the client/server tick
 alive through a slow frame. A worker must not: it would run the netcode from four threads at
@@ -521,12 +615,15 @@ default is ever changed from 1.
 
 ## Known residual risk
 
-A texture or flat block is read without the lock while another thread may allocate. If the zone
-allocator purges a `PU_CACHE` block mid-draw, the reader is left with a dangling pointer.
-`precache` is on by default, so the level's textures are composed at load and little allocates
-during a frame — but this is the reason `render_threads` defaults to 1. `TEXTURE_LOCK`
-(`r_segs.c`) is the existing compile-time option that pins textures with `PU_IN_USE` and is the
-proper fix if this ever bites.
+The **wall texture** cache is still read without the lock while another thread may allocate.
+Textures are tagged `PU_PRIV_CACHE`, which `Z_Malloc` only purges once a normal pass has failed
+and it retries with `current_purgelevel = PU_PURGELEVEL`, and `precache` composes the level's
+textures at load — so this is a much narrower window than the flat one below was, and it has not
+been seen. `TEXTURE_LOCK` (`r_segs.c`) is the existing compile-time option that pins textures
+with `PU_IN_USE` and is the fix if it ever bites.
+
+The **flat and sprite** case that used to be listed here **did** bite, on the Pi, and is fixed —
+see below.
 
 ## What to try on the cabinet
 

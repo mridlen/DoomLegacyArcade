@@ -28,6 +28,8 @@
 
 #include "doomtype.h"
 #include "command.h"
+#include "z_zone.h"
+  // PU_LUMP, PU_CACHE, for R_DRAW_LUMP_TAG
 
 struct player_s;
 
@@ -81,6 +83,10 @@ extern volatile boolean  r_threads_active;
 void   R_Cache_Lock( void );
 void   R_Cache_Unlock( void );
 
+// True while the workers are dispatched, for code that has to behave
+// differently inside the parallel section.  See R_DRAW_LUMP_TAG.
+#define R_Threads_Drawing()     (r_threads_active)
+
 #else
 
 #define R_Thread_Workers()      0
@@ -91,7 +97,24 @@ void   R_Cache_Unlock( void );
 #define R_Threads_Wait()        do {} while(0)
 #define R_Cache_Lock()          do {} while(0)
 #define R_Cache_Unlock()        do {} while(0)
+#define R_Threads_Drawing()     false
 
 #endif  // RENDER_THREADS
+
+
+// [Arcade] The tag a drawer caches a lump under while it is reading from it.
+//
+// Serially, PU_CACHE is safe: the drawer is the only thing running, so
+// nothing can allocate -- and therefore nothing can purge the block -- between
+// caching the lump and finishing with it.  With workers running that is no
+// longer true.  Any other thread's Z_Malloc purges PU_CACHE blocks to make
+// room, and it will happily take the flat or the sprite patch that this thread
+// is in the middle of drawing from.
+//
+// So inside the parallel section a drawer pins its lump instead, and
+// R_Threads_Wait lets every pinned lump go again once the last worker has
+// stopped reading.  Outside it, the tag is PU_CACHE exactly as before.
+// See docs/arcade/render-threads.md.
+#define R_DRAW_LUMP_TAG   ( R_Threads_Drawing() ? PU_LUMP : PU_CACHE )
 
 #endif  // R_THREADS_H
