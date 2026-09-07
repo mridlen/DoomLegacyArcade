@@ -794,6 +794,20 @@ void P_ResetCamera (player_t *player)
 
     camera.mo->angle = player->mo->angle;
     camera.aiming = 0;
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: the camera did not travel here, it was
+    // placed here -- by a spawn, a teleport, or the unstick in
+    // P_MoveChaseCamera.  Drawing the step it appears to have taken would
+    // smear it across the level.
+    //
+    // This used to be covered by accident: nothing captured the camera's
+    // history until P_MobjThinker ran, which is after every caller of this
+    // function, so the jump was always recorded as the starting point.  That
+    // stops being true the moment P_MoveChaseCamera captures for itself.
+    R_Interp_Reset_Mobj( camera.mo );
+    camera.prev_aiming = camera.aiming;
+#endif
 }
 
 // Unused
@@ -862,6 +876,31 @@ void P_MoveChaseCamera (player_t *player)
 
     if (!camera.mo)
         P_ResetCamera (player);
+
+#ifdef THINKER_INTERPOLATIONS
+    // [Arcade] Uncapped framerate: where this tic's camera view starts from.
+    //
+    // This is the same trap P_PlayerThink documents, and the chase camera
+    // fell into it too.  P_MoveChaseCamera is called from P_PlayerThink,
+    // which runs *before* P_RunThinkers, and it writes camera.mo->angle
+    // below -- so by the time the camera mobj's own capture ran, inside
+    // P_MobjThinker, the turn had already happened and PrevAngle equalled
+    // angle.  The camera's position interpolated and its pitch interpolated
+    // (camera.prev_aiming is taken by hand further down), but its yaw did
+    // not: it snapped 35 times a second while everything around it moved
+    // smoothly, which reads as the view juddering whenever the player turns.
+    //
+    // Measured on the doom2_ep1_sk3_speed record demo at framerate_cap 200:
+    // PrevAngle equalled angle on 1500 of 1501 frames, and 44.5% of frames
+    // drew no yaw change at all before the next one jumped a whole tic's
+    // worth.
+    //
+    // Capture is idempotent within a tic, so P_MobjThinker's later call
+    // becomes a no-op rather than a conflict.  Ordering against the unstick
+    // below does not matter: that places the camera rather than moving it,
+    // and P_ResetCamera overwrites the history unconditionally.
+    R_Interp_Capture_Mobj( camera.mo );
+#endif
 
     // [Arcade] Unstick the camera.
     //

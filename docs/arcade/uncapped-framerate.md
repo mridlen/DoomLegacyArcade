@@ -60,7 +60,7 @@ upstream did not copy that one.
 | Camera position, yaw | the view mobj's `PrevX/PrevY/PrevAngle` | `R_SetupFrame` |
 | Camera height | `player->prev_viewz` — head bob and step easing, not just floor height | `R_SetupFrame` |
 | Camera pitch | `player->prev_aiming`, or `prev_localaiming[]` for a live local player | `R_SetupFrame` |
-| Chase camera | rides `camera.mo` like any mobj; only `camera.prev_aiming` is its own | `R_SetupFrame` |
+| Chase camera | rides `camera.mo` like any mobj, but captures its own history in `P_MoveChaseCamera` (see below); only `camera.prev_aiming` is separate | `R_SetupFrame` |
 | Sprites | `PrevX/PrevY/PrevZ` | `R_ProjectSprite`, `HWR_ProjectSprite` |
 | Floors, ceilings | the registry, below | `R_Interp_Frame_Begin/End` |
 | Wall and flat panning | the registry, below | same |
@@ -109,14 +109,48 @@ every thing in the level every tic, almost all of which never move.
 So a parity bit flips once per tic and each mobj records the parity it last captured at. Whichever
 code touches the thing first that tic takes the snapshot; the rest are no-ops. `R_Interp_Capture_Mobj`
 goes at the top of anything that can move a thing — currently `P_MobjThinker`,
-`P_BlasterMobjThinker`, `P_ThingHeightClip` and `P_PlayerThink`.
+`P_BlasterMobjThinker`, `P_ThingHeightClip`, `P_PlayerThink` and `P_MoveChaseCamera`.
 
-**`P_PlayerThink` is the one that is not obvious, and leaving it out is a real bug that looks like
-the feature half-working.** `P_PlayerThink` runs *before* `P_RunThinkers` and is where `pmo->angle`
-is set from the ticcmd, so by the time `P_MobjThinker`'s capture runs the turn has already
-happened and `PrevAngle == angle`. The symptom is that walking is smooth but **turning still snaps
-35 times a second** — and turning is the more visible half. It was caught by tracing `viewangle`
-per frame and noticing it was constant within each tic; it is invisible in a still.
+**The last two are the ones that are not obvious, and leaving either out is a real bug that looks
+like the feature half-working.** Both are called from `P_PlayerThink`, which runs *before*
+`P_RunThinkers`, and both write an angle. So by the time `P_MobjThinker`'s capture runs the turn
+has already happened and `PrevAngle == angle`. The symptom is that walking is smooth but **turning
+still snaps 35 times a second** — and turning is the more visible half. It is invisible in a
+still; it was caught by tracing `viewangle` per frame and noticing it was constant within each tic.
+
+`P_PlayerThink` (`pmo->angle` from the ticcmd) was fixed when the feature landed. **The chase
+camera was missed, and shipped that way** — `P_MoveChaseCamera` writes `camera.mo->angle` from
+`R_PointToAngle2`, and the capture that would have preserved the old value did not run until
+`P_MobjThinker`. The camera's *position* interpolated and its *pitch* interpolated
+(`camera.prev_aiming` is taken by hand, right where the pitch is eased), so three of the four
+degrees of freedom were smooth and only the yaw stepped — which is worse to look at than all
+four stepping together, because the stepping beats against the smooth motion instead of matching
+it. It read as the picture juddering whenever the player turned, and as being *better* at
+`framerate_cap 35`, where nothing interpolates and everything steps in unison.
+
+Measured on the `doom2_ep1_sk3_speed` record demo at `framerate_cap 200`, software, one view,
+`render_threads 1`, by printing `PrevAngle`, `angle` and the resulting `viewangle` per frame from
+the chase branch of `R_SetupFrame`:
+
+| | before | after | first-person view, same demo |
+| --- | --- | --- | --- |
+| frames where `PrevAngle == angle` | 99.9% | 4.9% | 45.3% |
+| frames drawing no yaw change at all | 44.5% | 4.1% | 42.5% |
+| yaw jerk (2nd difference), rms | 3.72° | 1.52° | 2.31° |
+| roughness (jerk rms / step rms) | 1.225 | 0.635 | 0.732 |
+
+The first-person column is the reference for what "smooth" looks like in this engine, not a
+target to beat — its high zero-yaw share is simply a player who is not turning on 42% of tics,
+whereas the chase camera eases toward the player every tic and so is almost always turning. What
+matters is the roughness index: the chase camera went from noticeably rougher than the normal view
+to slightly smoother than it.
+
+`P_ResetCamera` had to gain an `R_Interp_Reset_Mobj` at the same time. It *places* the camera —
+spawn, teleport, and the unstick in `P_MoveChaseCamera` — and that was previously un-smeared
+only by accident: nothing captured the camera's history until `P_MobjThinker`, which runs after
+every caller, so the jump was always recorded as the starting point. Capturing earlier removes
+that accident. (The demo above snaps once in 878 tics, a 242-unit jump; it is a designed
+discontinuity, not the jitter.)
 
 ## Discontinuities
 
@@ -128,6 +162,8 @@ across the level. These draw whole:
   points at the previous level's freed sectors.
 - **Spawn** — `R_Interp_Reset_Mobj` at the end of `P_SpawnMobj`. Without it the `Prev` fields are
   the zeroes from `Z_Malloc` and the first frame streaks the thing in from the map origin.
+- **The chase camera being placed** — `R_Interp_Reset_Mobj` at the end of `P_ResetCamera`,
+  which covers spawn, teleport and the unstick snap in `P_MoveChaseCamera`.
 - **Teleport** — `P_TeleportMove`. All four teleport paths in `p_telept.c` go through it. A
   teleport that *turns* the player also needs `prev_localangle` synced, in `p_telept.c` — otherwise
   the view spins through whatever arc lies between the two headings.
