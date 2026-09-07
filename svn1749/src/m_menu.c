@@ -6562,7 +6562,7 @@ static modedesc_t   modedescs[MAXVIDMODEDESCS];
 static modenum_t    vidm_previousmode;  // modenum in format of setmodeneeded
 
 
-// [Arcade] Sort modedescs[0 .. vidm_nummodes) by size, smallest first, and
+// [Arcade] Sort modedescs[0 .. vidm_nummodes) by size, largest first, and
 // return where "current" ended up (NULL if it was NULL).
 //
 // Nothing used to order this list.  The fullscreen half arrives in whatever
@@ -6579,7 +6579,7 @@ static modenum_t    vidm_previousmode;  // modenum in format of setmodeneeded
 // Insertion sort -- at most MAXVIDMODEDESCS entries, once a frame -- and
 // stable, so entries of equal size keep their list order.  The order has to be
 // total and repeatable or vidm_current would point at a different mode from one
-// frame to the next.
+// frame to the next.  Strict < keeps it stable; <= would not.
 //
 // The caller's pointer has to be handed back rather than kept, because it
 // points into the array being sorted.  Mode numbers are unique per entry, so it
@@ -6596,9 +6596,11 @@ static modedesc_t *  vidm_sort_by_size( modedesc_t * current )
     for( i = 0; i < vidm_nummodes; i++ )
     {
         modestat_t ms = VID_GetMode_Stat( modedescs[i].modenum );
-        // A mode with no size sorts to the end rather than to the front.
-        w[i] = ( ms.mark )? ms.width : MAXVIDWIDTH + 1;
-        h[i] = ( ms.mark )? ms.height : MAXVIDHEIGHT + 1;
+        // A mode with no size sorts to the end rather than to the front.  The
+        // key for that is BELOW every real size here, and would have to be
+        // above it if this ever sorted the other way round.
+        w[i] = ( ms.mark )? ms.width : 0;
+        h[i] = ( ms.mark )? ms.height : 0;
     }
 
     for( i = 1; i < vidm_nummodes; i++ )
@@ -6608,7 +6610,7 @@ static modedesc_t *  vidm_sort_by_size( modedesc_t * current )
         int  j = i;
 
         while( (j > 0)
-               && ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )
+               && ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )
         {
             modedescs[j] = modedescs[j-1];
             w[j] = w[j-1];

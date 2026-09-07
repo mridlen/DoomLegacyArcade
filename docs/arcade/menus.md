@@ -694,12 +694,13 @@ commented out beside the 8. Three columns is likewise the most that fits: the wi
 can produce is `win 1600x1200`, 92 pixels in `hu_font`, and the third column already starts at
 x=224 and ends at 316 of a 320-wide base screen. A fourth column at any spacing runs off the edge.
 
-**The list is sorted by size, smallest first, in `vidm_sort_by_size()`.** Nothing used to order it.
+**The list is sorted by size, largest first, in `vidm_sort_by_size()`.** Nothing used to order it.
 The fullscreen half arrives in whatever order SDL reported the display's modes — largest first, as a
-rule — and `VID_add_scaled_modes` appends the small software sizes after all of it, so those came out
-both last *and* out of sequence. The windowed half is `windowedModes[]` in `i_video.c`, a static
-table that runs the other way. Neither agreed with the other. On this laptop the fullscreen list now
-reads 320x200, 400x300, 512x384, 640x480, 800x600, 1024x768, 1280x720, 1366x768.
+rule, but only as a rule — and `VID_add_scaled_modes` appends the small software sizes after all of
+it, so those came out both last *and* out of sequence. The windowed half is `windowedModes[]` in
+`i_video.c`, a static table that runs largest to smallest. Neither agreed with the other. On this
+laptop the fullscreen list now reads 1366x768, 1280x720, 1024x768, 800x600, 640x480, 512x384,
+400x300, 320x200.
 
 Sorted in the menu rather than in `i_video.c` on purpose: it is presentation, it covers both lists in
 one place, and it leaves the engine's mode *indices* alone — `vid.modenum`, `VID_GetModeForSize` and
@@ -711,6 +712,11 @@ the per-drawmode configs all keep meaning what they meant. Two things it must ge
 - **`current_modedesc` is a pointer into the array being sorted**, so it is handed in and handed
   back rather than kept. Mode numbers are unique per entry, so it is found again by that — not by
   the description string, which two entries could share.
+- **The sentinel key for a mode the engine cannot describe flips with the direction.** Those sort to
+  the *end*, which descending means a key *below* every real size (0) and ascending would mean one
+  *above* it (`MAXVIDWIDTH + 1`). This sorted ascending first, and reversing the comparison alone
+  would have hauled the undescribable entries to the top of the list. Reversing a sort is two edits,
+  not one.
 
 **`vidm_current` indexes the whole list; the page drawn is the one it falls on.** There is no
 separate page variable to keep in step. `vidm_set_page()` settles `vidm_page_first`,
@@ -750,11 +756,12 @@ keys and checks the cursor stays inside the drawn page, the row stays inside the
 page keys land where they are supposed to, and **every mode is reachable using the four arrows
 alone, in both directions**.
 
-The sort suite checks, over the two real lists, a messy one with duplicate and undescribable modes,
-and 400 random lists: the result is ascending by width then height, it is a *permutation* of the
-input with nothing lost or duplicated, equal sizes keep their input order, and the current-mode
-pointer comes back pointing at the same mode. Nothing lost is the one that matters — a resolution
-silently dropped is the bug this whole page exists to fix.
+The sort suite checks, over the two real lists, an already-ascending one, a messy one with duplicate
+and undescribable modes, and 400 random lists: the result is descending by width then height, it is a
+*permutation* of the input with nothing lost or duplicated, equal sizes keep their input order, and
+the current-mode pointer comes back pointing at the same mode. Nothing lost is the one that matters
+— a resolution silently dropped is the bug this whole page exists to fix. The already-ascending list
+is there so the sort is never handed input that is already close to what it must produce.
 
 That last clause was learned the hard way. The first version only checked reachability *forwards*
 from mode 0, and a mutation that broke Left-edge paging left every mode still reachable by going
@@ -772,16 +779,16 @@ navigation:
   page target not clamped to a short page             caught -> FAIL page forward went astray
   both divide-by-zero guards removed                  caught -> exit -8
 sort:
-  sorted descending instead of ascending              caught -> FAIL not ascending by width...
-  height tiebreak dropped                             caught -> FAIL not ascending by width...
+  sorted ascending instead of descending              caught -> FAIL not descending by width...
+  height tiebreak dropped                             caught -> FAIL not descending by width...
   unstable: identical sizes reordered                 caught -> FAIL equal sizes reordered
   current mode not found again after the sort         caught -> FAIL current mode lost
-  sizeless modes sort to the front                    caught -> FAIL not ascending by width...
+  sizeless modes sort to the front                    caught -> FAIL not descending by width...
 ```
 
-The sort mutations make the same point a second time. The first "unstable" mutation used `>=` on the
-width as well, which broke the *ordering* too — so the ordering check caught it and the stability
-check was never exercised at all. Narrowing it to `>=` on the height alone, where ascending order
+The sort mutations make the same point a second time. The first "unstable" mutation loosened the
+width comparison as well, which broke the *ordering* too — so the ordering check caught it and the
+stability check was never exercised at all. Narrowing it to the height alone, where the sort order
 stays perfectly valid, is what finally put the stability check on trial. **A mutation that trips a
 different check than the one you meant to test has not tested anything.**
 

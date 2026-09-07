@@ -20,7 +20,7 @@ under the four arrow keys and PgUp/PgDn and check:
     cabinet panel has no PgUp
 
 A second harness does the same for vidm_sort_by_size: that the result is
-ascending by width then height, that it is a permutation of the input with
+DESCENDING by width then height, that it is a permutation of the input with
 nothing lost or duplicated, that it is stable, and that the caller's
 current-mode pointer comes back pointing at the same mode it went in as.
 
@@ -354,18 +354,18 @@ static void check(const char *set, int n, int pick)
     for( i = 1; i <= n; i++ )
         if( !seen[i] ) { fail("entry lost by the sort", set, n); return; }
 
-    /* ascending by width then height, sizeless entries last */
+    /* descending by width then height, sizeless entries (width 0) last --
+       which falls out of the descending order rather than needing a special
+       case, and is exactly what the sort must not get backwards */
     for( i = 1; i < n; i++ )
     {
         int pw = in_w[modedescs[i-1].modenum.index - 1];
         int ph = in_h[modedescs[i-1].modenum.index - 1];
         int cw = in_w[modedescs[i].modenum.index - 1];
         int ch = in_h[modedescs[i].modenum.index - 1];
-        if( pw == 0 )  pw = MAXVIDWIDTH + 1, ph = MAXVIDHEIGHT + 1;
-        if( cw == 0 )  cw = MAXVIDWIDTH + 1, ch = MAXVIDHEIGHT + 1;
-        if( (pw > cw) || ((pw == cw) && (ph > ch)) )
+        if( (pw < cw) || ((pw == cw) && (ph < ch)) )
         {
-            fail("not ascending by width then height", set, n);
+            fail("not descending by width then height", set, n);
             return;
         }
         /* stable: equal sizes keep their original order */
@@ -407,6 +407,10 @@ int main(void)
        scaled modes.  Exactly the shape the reported bug had. */
     static const int laptop[] = { 1366,768, 1280,720, 1024,768, 800,600, 640,480,
                                   320,200, 400,300, 512,384 };
+    /* Ascending input too, so the sort is not handed something already nearly
+       right in the direction it is meant to produce. */
+    static const int ascending[] = { 320,200, 400,300, 512,384, 640,480, 800,600,
+                                     1024,768, 1280,720, 1366,768 };
     /* windowedModes[] from i_video.c, which runs the other way. */
     static const int windowed[] = { 1600,1200, 1280,1024, 1024,768, 800,600,
                                     640,480, 512,384, 400,300, 320,200 };
@@ -419,6 +423,7 @@ int main(void)
     static int rnd[MAXVIDMODEDESCS * 2];
 
     run("laptop", laptop, sizeof(laptop) / (2 * sizeof(int)));
+    run("ascending", ascending, sizeof(ascending) / (2 * sizeof(int)));
     run("windowed", windowed, sizeof(windowed) / (2 * sizeof(int)));
     run("messy", messy, sizeof(messy) / (2 * sizeof(int)));
 
@@ -446,31 +451,36 @@ int main(void)
         run("random", rnd, n);
     }
 
-    printf("sort: 3 real lists, empty, single, 400 random lists, %%d failures\n",
+    printf("sort: 4 lists, empty, single, 400 random lists, %%d failures\n",
            failures);
     return failures ? 1 : 0;
 }
 ''' % sort_func
 
 SORT_MUTATIONS = [
-    ('sorted descending instead of ascending',
-     'while( (j > 0)\n               && ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
-     'while( (j > 0)\n               && ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )'),
+    ('sorted ascending instead of descending',
+     'while( (j > 0)\n               && ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )',
+     'while( (j > 0)\n               && ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )'),
     ('height tiebreak dropped (same width unordered)',
-     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
-     '&& (w[j-1] > hw) )'),
-    # Breaks stability ONLY: identical sizes get swapped, while the ascending
-    # order stays perfectly valid.  The earlier version of this mutation used
-    # >= on the width too, which broke the ordering as well -- so it was the
-    # ordering check that caught it and the stability check was never exercised.
+     '&& ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )',
+     '&& (w[j-1] < hw) )'),
+    # Breaks stability ONLY: identical sizes get swapped, while the sort order
+    # stays perfectly valid.  An earlier version of this mutation loosened the
+    # width comparison too, which broke the ordering as well -- so it was the
+    # ordering check that caught it and the stability check was never
+    # exercised.  A mutation that trips a different check than the one it was
+    # aimed at has tested nothing.
     ('unstable: identical sizes reordered, ordering still valid',
-     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] > hh))) )',
-     '&& ((w[j-1] > hw) || ((w[j-1] == hw) && (h[j-1] >= hh))) )'),
+     '&& ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] < hh))) )',
+     '&& ((w[j-1] < hw) || ((w[j-1] == hw) && (h[j-1] <= hh))) )'),
     ('current mode not found again after the sort',
      'return & modedescs[i];', 'return NULL;'),
+    # The sentinel key for an undescribable mode has to flip with the sort
+    # direction.  Ascending it was MAXVIDWIDTH+1, to push those entries past
+    # every real size; descending, that same value drags them to the TOP.
     ('sizeless modes sort to the front instead of the end',
-     'w[i] = ( ms.mark )? ms.width : MAXVIDWIDTH + 1;',
-     'w[i] = ( ms.mark )? ms.width : 0;'),
+     'w[i] = ( ms.mark )? ms.width : 0;',
+     'w[i] = ( ms.mark )? ms.width : MAXVIDWIDTH + 1;'),
 ]
 
 # Each entry is a bug the checks above are supposed to catch, expressed as a
