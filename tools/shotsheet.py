@@ -272,7 +272,7 @@ PAGE_HEAD = """<!doctype html>
 """
 
 
-def build_page(path, title, meta, groups):
+def build_page(path, title, meta, groups, embed=True):
     out = [PAGE_HEAD % dict(title=title, meta=meta)]
     for gname, items in groups:
         if not items:
@@ -289,9 +289,20 @@ def build_page(path, title, meta, groups):
             if it.get('error'):
                 out.append('<span class="err">%s</span>' % it['error'])
             out.append('</figcaption>')
-            if it.get('png'):
-                out.append('<img alt="%dx%d" src="data:image/png;base64,%s">'
-                           % (it['w'], it['h'], it['png']))
+            if it.get('file'):
+                if embed:
+                    # One image in memory at a time.  Holding all of them was
+                    # enough, on a 7GB laptop with a browser open, for the
+                    # whole run to be killed for memory before it wrote a
+                    # single shot.
+                    with open(it['file'], 'rb') as fh:
+                        b64 = base64.b64encode(fh.read()).decode('ascii')
+                    out.append('<img alt="%dx%d" src="data:image/png;base64,%s">'
+                               % (it['w'], it['h'], b64))
+                    del b64
+                else:
+                    out.append('<img alt="%dx%d" src="%s">'
+                               % (it['w'], it['h'], os.path.basename(it['file'])))
             else:
                 out.append('<div class="missing">no screenshot</div>')
             out.append('</figure>\n')
@@ -325,6 +336,10 @@ def main():
                          '--cvar localplayers=4 --cvar split4="4 Columns". '
                          'Applied after the defaults, so it can override them.')
     ap.add_argument('--title', default=None)
+    ap.add_argument('--no-embed', action='store_true',
+                    help='reference the PNG files beside the page instead of '
+                         'embedding them, for a much smaller HTML file that is '
+                         'no longer self-contained')
     args = ap.parse_args()
 
     if not os.path.exists(args.binary):
@@ -380,8 +395,10 @@ def main():
                     shrink = args.shrink or max(1, -(-tw // 1600))
                     data, ow, oh = png_bytes(tw, th, rows, shrink)
                     name = '%dx%d-%s.png' % (w, h, scene)
-                    open(os.path.join(args.out, name), 'wb').write(data)
-                    it['png'] = base64.b64encode(data).decode('ascii')
+                    path = os.path.join(args.out, name)
+                    open(path, 'wb').write(data)
+                    it['file'] = path
+                    del data, rows
                     if shrink > 1:
                         it['note'] = ((it.get('note', '') + ' ') if it.get('note') else '') \
                                      + 'shown at 1/%d' % shrink
@@ -397,10 +414,10 @@ def main():
                          capture_output=True, text=True).stdout.strip()
     meta = ('%d screenshots &middot; %s &middot; engine cap %dx%d &middot; '
             'software renderer, %s map %s'
-            % (sum(1 for _, i in out_groups for x in i if x.get('png')),
+            % (sum(1 for _, i in out_groups for x in i if x.get('file')),
                rev or 'unknown build', maxw, maxh, args.game, args.warp))
     index = os.path.join(args.out, 'index.html')
-    build_page(index, title, meta, out_groups)
+    build_page(index, title, meta, out_groups, embed=not args.no_embed)
     print('\nwrote %s' % index)
     print('open it with:  xdg-open %s' % index)
 
