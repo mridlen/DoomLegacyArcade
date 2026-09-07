@@ -1636,6 +1636,7 @@ EXPORT void HWRAPI( DrawMD2 ) (int *gl_cmd_buffer, md2_frame_t *frame,
 EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
 {
     static int special_splitscreen;   // [Arcade] 0 none, 1 stacked, 2 side by side
+    static int split_cols = 2;        // [Arcade] columns, for special_splitscreen 2
     static float split_fovy = 90.0f;  // [Arcade] for the side-by-side case
 
     glLoadIdentity();
@@ -1656,6 +1657,10 @@ EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
         special_splitscreen = (transform->splitscreen == 2) ? 2
              : ((transform->splitscreen && transform->fovxangle==90.0f) ? 1 : 0);
         split_fovy = transform->fovxangle;
+        // [Arcade] Was a hardcoded /2.  A side-by-side cell is 1/cols of the
+        // screen wide and full height, so that is what the aspect divides by,
+        // and cols is 3 or 4 under the column layouts.
+        split_cols = (transform->viewcols > 0) ? transform->viewcols : 2;
         if (special_splitscreen == 1)
         {
             gluPerspective( 53.13, 2*ASPECT_RATIO,  // 53.13 = 2*atan(0.5)
@@ -1663,7 +1668,7 @@ EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
         }
         else if (special_splitscreen == 2)
         {
-            gluPerspective( split_fovy, ASPECT_RATIO/2,   // [Arcade] side by side
+            gluPerspective( split_fovy, ASPECT_RATIO/split_cols,  // [Arcade] columns
                             near_clipping_plane, FAR_CLIPPING_PLANE);
         }
         else
@@ -1688,7 +1693,7 @@ EXPORT void HWRAPI( SetTransform ) (FTransform_t *transform)
         }
         else if (special_splitscreen == 2)
         {
-            gluPerspective( split_fovy, ASPECT_RATIO/2,   // [Arcade] side by side
+            gluPerspective( split_fovy, ASPECT_RATIO/split_cols,  // [Arcade] columns
                             near_clipping_plane, FAR_CLIPPING_PLANE);
         }
         else

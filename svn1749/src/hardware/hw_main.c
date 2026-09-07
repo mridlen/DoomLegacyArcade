@@ -4458,16 +4458,15 @@ void HWR_SetViewSize( int viewsize )
 
     D_View_Grid( &cols, &rows );
 
-    if( rows >= 2 )
-    {
-        gr_viewheight /= 2;
-        view_span_h /= 2;
-    }
-    if( cols >= 2 )
-    {
-        gr_viewwidth /= 2;
-        view_span_w /= 2;
-    }
+    // [Arcade] Divide by the count, not by two.  The grid can be three or four
+    // columns wide now (cv_split4), and halving regardless gave every column
+    // player a viewport half the screen wide -- so three of them landed on top
+    // of each other in the right half and only two views were visible.
+    // Dividing by 1 is a no-op, so this needs no condition.
+    gr_viewheight /= rows;
+    view_span_h /= rows;
+    gr_viewwidth /= cols;
+    view_span_w /= cols;
 
     gr_centerx = gr_viewwidth / 2;
     gr_basecentery = gr_viewheight / 2; //note: this is (gr_centerx * gr_viewheight / gr_viewwidth)
@@ -4583,15 +4582,25 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
         gr_viewwindowy = gr_baseviewwindowy;
         gr_windowcentery = gr_basewindowcentery;
 
-        if( col )
+        // [Arcade] col and row are INDICES, not flags.  Treating col as a
+        // flag put every column past the first at the same x -- the whole
+        // right half of the screen -- so a three or four column game showed
+        // two views, whichever players happened to draw last.
         {
-            gr_viewwindowx += (vid.width / 2);
-            gr_windowcenterx += (vid.width / 2);
-        }
-        if( row )
-        {
-            gr_viewwindowy += (vid.height / 2);
-            gr_windowcentery += (vid.height / 2);
+            byte cols, rows;
+            D_View_Grid( &cols, &rows );
+            if( col )
+            {
+                float dx = ((float)vid.width / cols) * col;
+                gr_viewwindowx += dx;
+                gr_windowcenterx += dx;
+            }
+            if( row )
+            {
+                float dy = ((float)vid.height / rows) * row;
+                gr_viewwindowy += dy;
+                gr_windowcentery += dy;
+            }
         }
     }
 
@@ -4636,6 +4645,13 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     // own ratio and gets neither correction.  The driver turns this into its
     // own perspective -- see SetTransform in r_opengl.c.
     atransform.splitscreen = D_View_Squash();
+    // [Arcade] The driver needs the column count as well as the fact of a
+    // side-by-side split: it divides the projection aspect by it.
+    {
+        byte sq_cols, sq_rows;
+        D_View_Grid( &sq_cols, &sq_rows );
+        atransform.viewcols = (sq_cols > 0) ? sq_cols : 1;
+    }
     gr_fovlud = 1 / tan(cv_grfov.value * PI / 360);
 
 #ifdef NO_MLOOK_EXTENDS_FOV

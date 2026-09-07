@@ -255,6 +255,14 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `legacyhome`, `localplayers "1"`) and reads the size caps out of `screen.h`. The whole 2D scaling
   bug in `ultrawide.md` was found by looking at one 32:9 capture, after four numeric checks had come
   back clean — because none of them was measuring the 2D layer. → `ultrawide.md`
+- **A layout verified in one renderer is not verified.** The software and hardware paths place their
+  views by completely different code — draw tables (`R_Set_View_Window`) against GL viewport
+  (`HWR_RenderPlayerView`) — so a view-grid change has to be looked at in both. The three and four
+  column layouts worked perfectly in software and were broken three ways in GL, and shipped that way
+  because every capture had been software. `tools/shotsheet.py --drawmode OpenGL` renders on the
+  real GPU under the offscreen driver. Note `-width`/`-height` are exact for software only, so a GL
+  capture comes out at whatever mode the driver advertises (1024x768 offscreen) — enough for a
+  layout, not for a resolution. → `multiplayer-views.md`
 - **A screenshot of a live level is not reproducible run to run, and the noise looks exactly like a
   regression in the code under test.** Two causes, and both have to go before two captures can be
   compared. `r_fps.c` sets `interp_active` from `cv_framerate_cap.value != TICRATE`, so above the

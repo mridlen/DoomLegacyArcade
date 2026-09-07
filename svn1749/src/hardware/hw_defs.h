@@ -166,9 +166,13 @@ typedef struct
     float  anglex,angley;   // aimingangle / viewangle 
     float  scalex,scaley,scalez;
     float  fovxangle, fovyangle;
-    // [Arcade] 0 none, 1 half height (stacked), 2 half width (side by side).
-    // Was a flag; the driver reads the value.  See D_View_Squash.
+    // [Arcade] 0 none, 1 half height (stacked), 2 narrower than tall (side by
+    // side).  Was a flag; the driver reads the value.  See D_View_Squash.
     int	   splitscreen;
+    // [Arcade] How many columns the screen is carved into, for splitscreen==2.
+    // The driver divides the projection aspect by this, and it is no longer
+    // always 2 -- three and four column layouts exist (cv_split4).
+    int	   viewcols;
 } FTransform_t;
 
 

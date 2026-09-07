@@ -441,6 +441,16 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     A cell is `vid.width / cols` by `vid.height / rows`, and that is the only sizing rule left.
     The callers are both renderers' viewports, the software draw tables (`R_Set_View_Window`), the
     HUD overlay, the deathmatch rankings, the crosshair, the black fill of an unclaimed cell in
+    **The hardware renderer places views by a completely separate route, and it did not know about
+    columns.** `HWR_SetViewSize` and `HWR_RenderPlayerView` (`hw_main.c`) had three independent
+    two-column assumptions, all invisible in software: the viewport was `/= 2` rather than
+    `/= cols`; the placement read `if( col )` and added `vid.width / 2`, treating a column *index*
+    as a flag, so every column past the first landed in the same right half; and the GL driver's
+    projection used a hardcoded `ASPECT_RATIO/2`, now `/split_cols` fed by a new `viewcols` field on
+    `FTransform`. The symptom was a three or four player game showing **two** views, whichever
+    players drew last. Verify a view-grid change with `tools/shotsheet.py --drawmode OpenGL` as well
+    as in software — the two renderers share the grid functions and nothing else.
+
     **Three players can be three columns, and four can be four**, not just the 2x2 — `cv_split4`, added for 32:9 monitors where a
     quadrant is itself a letterbox slit. It is written up in **`ultrawide.md`**, including the table
     of cell shapes that says why 2x2 is still right at 21:9 and wrong at 32:9. The things it had to

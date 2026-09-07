@@ -13,6 +13,7 @@ actually did.  Open it, scroll, done -- no need to describe anything to anyone.
     tools/shotsheet.py --scenes game,title   # attract screen too
     tools/shotsheet.py --out /tmp/before     # then again into /tmp/after
     tools/shotsheet.py --resume              # continue a run that was killed
+    tools/shotsheet.py --drawmode OpenGL     # the hardware renderer
 
 Two runs into two directories is the way to check a change: open both pages
 side by side.
@@ -29,6 +30,12 @@ docs/arcade/):
     bits per pixel", which reads as a colour depth problem and is not one.
   * A COPY of legacyhome per run, never the live one next to the binary: that
     one holds the cabinet's real config, high scores and record demos.
+  * --drawmode OpenGL renders on the real GPU under the offscreen driver, with
+    DISPLAY blanked so it cannot reach the live X session.  Worth running: the
+    software and hardware renderers place their views by completely different
+    code (draw tables versus GL viewport), so a layout bug can exist in one and
+    not the other -- the three and four column layouts worked in software and
+    were broken in GL, and only software had been looked at.
   * config8p/configgl/confign.cfg deleted -- they execute after config.cfg and
     would put the drawmode back.
   * localplayers "1", or the cabinet's own config gives you a 2x2 grid.
@@ -140,7 +147,7 @@ STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
 def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
-            extra_cvars=(), nomonsters=False):
+            extra_cvars=(), nomonsters=False, drawmode='Software 8bit'):
     """Run the engine once and return (tga_path or None, info dict)."""
     rd = tempfile.mkdtemp(prefix='shotsheet.')
     info = {}
@@ -165,7 +172,7 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
 
         cfg = os.path.join(home, 'config.cfg')
         text = open(cfg, encoding='latin-1').read()
-        settings = [('drawmode', '"Software 8bit"'),
+        settings = [('drawmode', '"%s"' % drawmode),
                     ('fullscreen', '"Yes"'),
                     ('viewfit', '"AUTO"'),
                     ('localplayers', '"1"'),
@@ -333,6 +340,11 @@ def main():
     ap.add_argument('--resume', action='store_true',
                     help='keep shots already in --out instead of retaking them, '
                          'so a run killed part way can be continued')
+    ap.add_argument('--drawmode', default='Software 8bit',
+                    help='an exact value from drawmode_sel_t in v_video.c -- '
+                         '"Software 8bit" (default) or "OpenGL".  A wrong '
+                         'string silently leaves the previous drawmode set and '
+                         'looks like the option being ignored.')
     ap.add_argument('--nomonsters', action='store_true',
                     help='pass -nomonsters, for a scene that holds still')
     ap.add_argument('--cvar', action='append', default=[], metavar='NAME=VALUE',
@@ -398,7 +410,7 @@ def main():
                       end='', flush=True)
                 tga, info = run_one(args.binary, w, h, scene, args.game,
                                     args.warp, args.wait, args.timeout, args.keep,
-                                    extra, args.nomonsters)
+                                    extra, args.nomonsters, args.drawmode)
                 it = {'w': w, 'h': h,
                       'scene': scene if len(scenes) > 1 else None}
                 if info.get('error'):
