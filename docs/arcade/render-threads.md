@@ -154,6 +154,47 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## How it ended on the Pi: read `present` as a wait, not a cost
+
+The Pi 3b+ finished at 640x350, software drawmode, `draw8bpp` on, four column
+bands:
+
+```
+FRAME 640x350 8bpp 17.37ms (58 fps) = tics 0.64 (4%) views 5.39 (31%) present 10.81 (62%) hud/other 0.53 (3%)
+```
+
+`present` at 62% looks like the bottleneck. **It is not.** Watch it against
+`views` across samples:
+
+| views | present | sum |
+| --- | --- | --- |
+| 5.14 | 11.06 | 16.20 |
+| 5.39 | 10.81 | 16.20 |
+| 5.93 | 10.50 | 16.43 |
+| 6.52 | 10.39 | 16.91 |
+
+They are **anti-correlated and sum to a constant**. As the drawing gets
+slower the present gets shorter by the same amount. That is a fixed frame
+budget, not a cost: `SDL_RenderPresent` is blocking for the 60Hz refresh, and
+`present` is absorbing whatever slack is left.
+
+**Real work per frame is `tics + views + hud` — about 6.5ms, roughly 150fps of
+capability**, displayed at 57 because the panel is 60Hz.
+
+Two wrong turns were taken before seeing this, both worth remembering:
+
+- *"The SDL renderer must be software, that's why the scale is expensive."*
+  It was `opengl (accelerated)` all along. Fixed by making it say so.
+- *"SDL_LockTexture writes into uncached GPU memory, that's the cost."*
+  Plausible, and testable — the cached staging buffer measured **identical**
+  (10.5-11.1ms either way). Both paths kept, `DL_DRAW8_LOCK=1` selects the old
+  one.
+
+**The tell was arithmetic, not instrumentation.** 17.3-18.5ms totals against a
+60Hz panel is 54-58fps, and a frame rate that sits just under the refresh rate
+deserves suspicion before anything is optimised. Check whether the phases sum
+to a constant before believing the biggest one is a bottleneck.
+
 ## The present, and the software SDL renderer
 
 On the Pi, after threading and `draw8bpp` had done their work, the frame looked
