@@ -40,9 +40,10 @@ true in a window, because the window is created at the requested size. **That is
 the bug hides until you go fullscreen.**
 
 In fullscreen they routinely differ. The fullscreen mode list is built from the display's real
-modes filtered to `w <= MAXVIDWIDTH` (1600) and `h <= MAXVIDHEIGHT` (1200), so on any 1920x1080
-panel the native mode is *excluded* and fullscreen always asks for something the display is not
-currently showing. Whether that request produces a real mode switch or a desktop-sized window is up
+modes filtered to `w <= MAXVIDWIDTH` and `h <= MAXVIDHEIGHT` — 1600x1200 when this was written,
+5120x2160 since ultrawide support (`ultrawide.md`), so a 1920x1080 panel's native mode is now in the
+list where it used to be excluded. It is still perfectly possible for fullscreen to ask for
+something the display is not currently showing, which is all this bug needs. Whether that request produces a real mode switch or a desktop-sized window is up
 to the driver, the window manager and the compositor. When it is the latter, `SDL_GetWindowSurface`
 returns a desktop-sized surface, and every row the engine sends is read from the wrong offset.
 
@@ -134,8 +135,8 @@ mode, and it had two consequences on a machine that wants to render small:
   320x200 came up rendering 1024x768 in software, which on that machine is the difference between
   comfortable and unplayable. Nothing reported the substitution.
 - **A display that advertises nothing small enough could not run software mode at all.** Every mode
-  wider than `MAXVIDWIDTH` (1600) or taller than `MAXVIDHEIGHT` (1200) is filtered out, so a panel
-  offering only 1920x1080 leaves the list empty — and that is not a fallback, it is
+  wider than `MAXVIDWIDTH` or taller than `MAXVIDHEIGHT` is filtered out — 1600x1200 at the time, so
+  a panel offering only 1920x1080 left the list empty — and that is not a fallback, it is
   `I_Error( "FullGraphics: setup drawmode failed, cannot use native window." )`. The game does not
   start. Reproduced by building with `MAXVIDWIDTH`/`MAXVIDHEIGHT` lowered to 800x600 so the one
   advertised mode is filtered out:

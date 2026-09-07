@@ -6260,7 +6260,108 @@ void M_ChangeControl(int choice)
 // [Arcade] Page indicator, between the title (M_VIDEO is 168x15 at y=2) and
 // the first row of modes.
 #define MODES_PAGE_Y     34
+// [Arcade] The aspect filter line, above the page line.  The M_VIDEO title is
+// 168x15 at y=2 and so ends at 16; two 7-tall lines at 26 and 34 fit between
+// it and the first row of modes at MODES_Y (44) with a pixel to spare.
+#define MODES_ASPECT_Y   26
 #define MODETXT_Y        (MODES_Y + 60 + 24)
+
+// [Arcade] Aspect ratio filter for the video mode list.
+//
+// Two problems, one control.  A 21:9 or 32:9 monitor now has modes in the list
+// (see MAXVIDWIDTH in screen.h), but so does every shape the display does not
+// have -- and a mode of the wrong shape is not merely useless, it is actively
+// wrong, because the software present path stretches the drawn frame to fill
+// the window rather than letterboxing it (software-fullscreen.md).  Filtering
+// to the shape of the display both hides the modes that would come out smeared
+// and cuts a list that had grown long enough to need paging back to one page
+// on most machines.
+//
+// The order here is the order the A key cycles through.
+enum {
+  VIDM_ASPECT_AUTO = 0,   // whatever shape this display is
+  VIDM_ASPECT_ALL,        // no filter
+  VIDM_ASPECT_4_3,
+  VIDM_ASPECT_16_10,
+  VIDM_ASPECT_16_9,
+  VIDM_ASPECT_21_9,
+  VIDM_ASPECT_32_9,
+  VIDM_ASPECT_NUM
+};
+
+CV_PossibleValue_t vid_aspect_cons_t[] = {
+  {VIDM_ASPECT_AUTO,  "AUTO"},
+  {VIDM_ASPECT_ALL,   "All"},
+  {VIDM_ASPECT_4_3,   "4:3"},
+  {VIDM_ASPECT_16_10, "16:10"},
+  {VIDM_ASPECT_16_9,  "16:9"},
+  {VIDM_ASPECT_21_9,  "21:9"},
+  {VIDM_ASPECT_32_9,  "32:9"},
+  {0,NULL}
+};
+// Default AUTO: the shapes that are wrong for the display are the ones worth
+// hiding, and "All" is one keypress away on the page itself.
+consvar_t cv_vid_aspect = {"vid_aspect", "AUTO", CV_SAVE, vid_aspect_cons_t };
+
+// Indexed by the enum above.  21:9 is really 64:27 (2.370), which is what both
+// 2560x1080 and 3440x1440 are; the two AUTO/All entries are never read.
+static const uint16_t  vidm_aspect_ratio[VIDM_ASPECT_NUM][2] =
+  { {0,0}, {0,0}, {4,3}, {16,10}, {16,9}, {64,27}, {32,9} };
+
+// Modes the filter removed, for the header line.
+static int  vidm_aspect_hidden = 0;
+
+// The shape to filter to.  False means filter nothing -- either "All", or
+// "AUTO" on a display whose size could not be read, where hiding modes on a
+// guess would be worse than showing too many.
+//
+// Resolved once per draw rather than per mode: AUTO asks SDL for the desktop
+// size, and the mode list is walked every frame.
+static boolean  vidm_aspect_target( int * tw, int * th )
+{
+    byte  ev = cv_vid_aspect.EV;
+
+    if( ev >= VIDM_ASPECT_NUM )  return false;  // config could say anything
+    if( ev == VIDM_ASPECT_ALL )  return false;
+    if( ev == VIDM_ASPECT_AUTO )
+        return VID_Display_Size( tw, th );
+
+    *tw = vidm_aspect_ratio[ev][0];
+    *th = vidm_aspect_ratio[ev][1];
+    return true;
+}
+
+// The shape a mode is meant to be *displayed* at, which is not always the shape
+// of its pixels.  320x200 is 16:10 by the numbers and 4:3 on the screen: its
+// pixels are not square, and it is meant to fill a 4:3 monitor.  That is the
+// same special case r_main.c makes -- "if( vid.width == 320 ) goto std_fit" --
+// when it decides how to fit the 3D view, and without it here a 4:3 filter hid
+// 320x200 and a 16:10 filter offered it.
+//
+// Everything else in the list is square pixels and is its own shape.
+static void  vidm_mode_shape( int w, int h, int * sw, int * sh )
+{
+    if( w == 320 )
+    {
+        *sw = 4;  *sh = 3;
+        return;
+    }
+    *sw = w;  *sh = h;
+}
+
+// "All", "4:3", or "AUTO 1366x768" -- AUTO names the display it resolved to,
+// because the shape it picked is not otherwise visible anywhere.
+static void  vidm_aspect_label( char * buf, int buflen )
+{
+    byte  ev = cv_vid_aspect.EV;
+    int   dw, dh;
+
+    if( (ev == VIDM_ASPECT_AUTO) && VID_Display_Size( &dw, &dh ) )
+        snprintf( buf, buflen, "AUTO %dx%d", dw, dh );
+    else
+        snprintf( buf, buflen, "%s", cv_vid_aspect.string );
+    buf[buflen-1] = '\0';
+}
 
 static int vidm_testing_cnt=0;  // test videomode failsafe
 static int vidm_current=0;  // modedesc index, over the whole list
@@ -6364,6 +6465,12 @@ void  draw_set_mode_instructions( byte vm_mode, const char * current_mode_name, 
         M_CentreText(MODETXT_Y + 30,temp);
 
         M_CentreText(MODETXT_Y + 40,"Press ESC to exit");
+
+        // [Arcade] Only the video mode page has an aspect filter; the drawmode
+        // page shares this drawer and its A key does nothing.  y = 178, and
+        // the 7 tall font ends at 185 of 200.
+        if( vm_mode )
+            M_CentreText(MODETXT_Y + 50,"A to change aspect ratio filter");
     }
 
     if( test_mkcfg && ! M_Have_configfile_drawmode() )
@@ -6697,6 +6804,10 @@ void M_DrawVideoMode(void)
     vidm_nummodes = 0;
     current_modedesc = NULL;
     current_modename = NULL;
+    // [Arcade] Resolve the aspect filter once, not once per mode.
+    int  aspect_w = 0, aspect_h = 0;
+    boolean  aspect_filtering = vidm_aspect_target( &aspect_w, &aspect_h );
+    vidm_aspect_hidden = 0;
     moderange = VID_ModeRange( dmode.modetype );   // indexing
     for (i=moderange.first ; i<=moderange.last ; i++)
     {
@@ -6705,6 +6816,29 @@ void M_DrawVideoMode(void)
         if (desc)
         {
             int j;
+            modestat_t  ms = VID_GetMode_Stat( dmode );
+            boolean  is_current;
+
+#ifdef CONFIG_MENU_PAGE
+            is_current = (dmode.modetype == cfg_vid_mode.modetype
+                          && dmode.index == cfg_vid_mode.index);
+#else
+            is_current = (dmode.modetype == vid.modenum.modetype
+                          && dmode.index == vid.modenum.index);
+#endif
+
+            // [Arcade] The mode in use is listed whatever its shape.  It is
+            // the entry drawn highlighted and named in the instruction block,
+            // and a page that cannot show where you already are is worse than
+            // a page with one odd entry on it.
+            int  shape_w, shape_h;
+            vidm_mode_shape( ms.width, ms.height, &shape_w, &shape_h );
+            if( aspect_filtering && ! is_current
+                && ! VID_Aspect_Match( shape_w, shape_h, aspect_w, aspect_h ) )
+            {
+                vidm_aspect_hidden++;
+                continue;
+            }
 
             //when a resolution exists both under VGA and VESA, keep the
             // VESA mode, which is always a higher modenum
@@ -6731,13 +6865,9 @@ void M_DrawVideoMode(void)
 
         detect_current_setting:
             // Detect current setting, for highlight
-#ifdef CONFIG_MENU_PAGE
-            if (dmode.modetype == cfg_vid_mode.modetype
-                && dmode.index == cfg_vid_mode.index )
-#else
-            if (dmode.modetype == vid.modenum.modetype
-                && dmode.index == vid.modenum.index )
-#endif
+            // [Arcade] is_current is worked out above, before the aspect
+            // filter, which has to know it too.
+            if( is_current )
             {
                 current_modedesc = mdp;
                 current_modename = mdp->desc;
@@ -6760,6 +6890,29 @@ void M_DrawVideoMode(void)
     {
         int page = vidm_page_first / MAXMODEDESCS;
 
+        // [Arcade] The aspect filter, always drawn: a filtered list is
+        // indistinguishable from a short one otherwise, and the hidden count
+        // is the only thing that says the missing modes still exist.
+        //
+        // Not while editing a config page -- draw_set_mode_instructions puts
+        // "C to make config" at (2,24) in that mode, which runs through the
+        // middle of a centred line at y=26.
+#ifdef CONFIG_MENU_PAGE
+        if( menu_cfg_editing == 0 )
+#endif
+        {
+            char  asptxt[64], lbl[32];
+
+            vidm_aspect_label( lbl, sizeof(lbl) );
+            if( vidm_aspect_hidden > 0 )
+                snprintf( asptxt, sizeof(asptxt), "Aspect: %s - %d hidden",
+                          lbl, vidm_aspect_hidden );
+            else
+                snprintf( asptxt, sizeof(asptxt), "Aspect: %s", lbl );
+            asptxt[sizeof(asptxt)-1] = '\0';
+            M_CentreText( MODES_ASPECT_Y, asptxt );
+        }
+
         if( vidm_nummodes > MAXMODEDESCS )
         {
             char  pagetxt[64];
@@ -6768,6 +6921,12 @@ void M_DrawVideoMode(void)
                      page + 1, numpages );
             M_CentreText( MODES_PAGE_Y, pagetxt );
         }
+
+        // [Arcade] The filter can empty the list -- the mode in use is exempt
+        // from it, but only when it is in the list being built at all, which
+        // it is not when cv_fullscreen disagrees with the mode actually up.
+        if( vidm_nummodes <= 0 )
+            M_CentreText( MODES_Y, "No modes of this shape" );
 
         // list down col first
         col = MODES_X;
@@ -6874,12 +7033,29 @@ byte  video_test_key_handler( int key )
         req_command_video_settings = 0;  // disable command line video settings
         goto used_key;
 
+      case 'A':
+      case 'a':
+        // [Arcade] Cycle the aspect ratio filter.  Only this page has one --
+        // the drawmode page has its own key handler (drawmode_test_key_handler)
+        // and never reaches here.
+        S_StartSound(menu_sfx_action);
+        CV_SetValue( &cv_vid_aspect,
+                     (cv_vid_aspect.EV + 1) % VIDM_ASPECT_NUM );
+        // The list is rebuilt with different contents, so a position in the
+        // old one means nothing.  Back to the top, which is the largest mode.
+        vidm_current = 0;
+        goto used_key;
+
       default:
         break;
      }
     return 0;
 
  change_mode:
+    // [Arcade] The aspect filter can leave the list empty, and modedescs[] is
+    // then uninitialised.  Before the filter existed an empty list could not
+    // be reached -- the game does not start without a usable mode.
+    if( vidm_nummodes <= 0 )  goto used_key;
     // Change the active video mode.
     vidm_previousmode = vid.modenum;
     if( setmodeneeded.modetype == MODE_NOP ) //in case the previous setmode was not finished
@@ -9693,6 +9869,7 @@ consvar_t * menu_init_cvar_list[] =
   &cv_SV_download_savegame,
   &cv_SV_netrepair,
   &cv_menusound,
+  &cv_vid_aspect,   // [Arcade] video mode list aspect filter
   NULL
 };
 

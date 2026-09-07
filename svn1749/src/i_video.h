@@ -154,6 +154,15 @@ range_t  VID_ModeRange( byte modetype );
 char  *  VID_GetModeName(modenum_t modenum);
 modestat_t  VID_GetMode_Stat(modenum_t modenum);
 
+// [Arcade] Aspect ratio support, for ultrawide (21:9, 32:9) displays.
+// How far two shapes may differ and still count as the same, in percent.
+#define VID_ASPECT_TOLERANCE   3
+// True when w1:h1 and w2:h2 are the same shape to within that tolerance.
+boolean  VID_Aspect_Match( int w1, int h1, int w2, int h2 );
+// The desktop size, which is the shape the software renderer scales into.
+// False when it cannot be determined -- filter nothing out in that case.
+boolean  VID_Display_Size( int * out_w, int * out_h );
+
 // rmodetype is of modetype_e
 // Returns MODE_NOP when none found
 modenum_t  VID_GetModeForSize( int rw, int rh, byte rmodetype );

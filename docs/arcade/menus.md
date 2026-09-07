@@ -740,6 +740,16 @@ Two range checks that look redundant and are not:
   empty mode list, removing *either* guard is harmless and removing *both* is a SIGFPE on the first
   arrow key.
 
+### The aspect ratio filter
+
+The page also filters itself to one screen shape — `vid_aspect`, cycled with **A**, defaulting to
+whatever shape the display is. It is what keeps this list to one page on most machines now that
+ultrawide draw sizes have been added to it, and it is written up in **`ultrawide.md`**, not here,
+along with the rest of the 21:9/32:9 work. Two things about it that belong to *this* page: it is not
+a row on the Video Options menu (that page is full, and its rows are addressed by hardcoded index),
+and it can leave the list **empty**, which nothing else here could — so `change_mode` returns early
+rather than indexing `modedescs[]`, and the page says "No modes of this shape".
+
 ### Testing it without a screen
 
 Nothing drives this menu headlessly, and the failures here — a cursor outside the drawn page, a mode

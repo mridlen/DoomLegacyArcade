@@ -84,8 +84,22 @@ extern int stbar_height;   // status bar, may be scaled
 // we try to re-allocate a minimum of buffers for stability of the memory,
 // so all the small-enough tables based on screen size, are allocated once
 // and for all at the maximum size.
-#define MAXVIDWIDTH    1600
-#define MAXVIDHEIGHT   1200
+// [Arcade] Was 1600x1200.  These bound what the engine can *draw*, and the
+// fullscreen mode list in sdl/i_video.c throws away every display mode bigger
+// than them -- so on a 21:9 (3440x1440) or 32:9 (5120x1440) monitor every
+// native mode was discarded before the menu ever saw it, and the OpenGL
+// renderer, which has no scaling step, could not run at the panel's own shape
+// at all.  5120x2160 covers 32:9 (5120x1440), 21:9 (3440x1440, 3840x1600,
+// 5120x2160) and 4K (3840x2160).
+//
+// The cost is static and small: the width-indexed tables are a few tens of
+// bytes per column, and the one that matters is ffplane[MAXFFLOORS] in
+// r_plane.h, which is R_TLS and so exists once per render thread.  Measured
+// with `readelf -S`, .tbss goes from 320KB to 964KB per thread, and .bss
+// (which holds the main thread's copy plus the shared tables) from 2.5MB to
+// 3.2MB.
+#define MAXVIDWIDTH    5120
+#define MAXVIDHEIGHT   2160
 
 #define BASEVIDWIDTH    320   //NEVER CHANGE THIS! this is the original
 #define BASEVIDHEIGHT   200  // resolution of the graphics.

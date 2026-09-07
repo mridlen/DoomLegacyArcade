@@ -201,17 +201,24 @@ const static Uint32 surface_flags[2] = {
 
 
 // maximum number of windowed modes
+// [Arcade] The widescreen block below is unconditional, so it is counted
+// separately from the FIT_RATIO entries.
+#define NUM_WIDESCREEN_WINMODES  (10)
 #ifdef FIT_RATIO
-#define MAXWINMODES (11)
+#define MAXWINMODES (11 + NUM_WIDESCREEN_WINMODES)
 #else
-#define MAXWINMODES (8)
+#define MAXWINMODES (8 + NUM_WIDESCREEN_WINMODES)
 #endif
 // windowed video modes from which to choose from.
 static int windowedModes[MAXWINMODES+1][2] = {
    // hidden from display
     {INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT},  // initial mode
    // public  1..
-    {MAXVIDWIDTH /*1600*/, MAXVIDHEIGHT/*1200*/},
+   // [Arcade] Was {MAXVIDWIDTH, MAXVIDHEIGHT}, which followed those constants
+   // up to 5120x2160 when they were raised for ultrawide displays -- a window
+   // size no desktop this runs on could show.  The largest *window* worth
+   // offering is not the largest size the engine can draw.
+    {1600, 1200},
 #ifdef FIT_RATIO
     {1600, 1024},
 #endif   
@@ -227,7 +234,26 @@ static int windowedModes[MAXWINMODES+1][2] = {
     {640, 480},
     {512, 384},
     {400, 300},
-    {320, 200}
+    {320, 200},
+   // [Arcade] Widescreen window sizes.  The fullscreen list gets its shapes
+   // from the display (real modes for OpenGL, VID_add_scaled_modes for
+   // software); a *window* has only this table, so without these there was no
+   // way to run a correctly proportioned window on anything but a 4:3 panel.
+   // The Video Mode menu's aspect filter hides the ones that do not match the
+   // display, so these cost nothing on a 4:3 or 16:9 machine.
+   // 16:9
+    {1920, 1080},
+    {1600, 900},
+    {1280, 720},
+    {960, 540},
+    {640, 360},
+   // 21:9  (64:27)
+    {2560, 1080},
+    {1720, 720},
+    {1280, 540},
+   // 32:9
+    {2560, 720},
+    {1920, 540}
 };
 
 
@@ -285,6 +311,26 @@ void  VID_add_scaled_modes( void )
 {
     static const uint16_t scaled_modelist[][2] =
       { {320,200}, {400,300}, {512,384}, {640,480}, {800,600} };
+    // [Arcade] Widescreen draw sizes, added only when they match the shape of
+    // the display.  The present path stretches the drawn frame to fill the
+    // window (software-fullscreen.md), so a 4:3 draw size on a 21:9 panel is
+    // not letterboxed -- it is smeared to two and a half times its width.  The
+    // ladder above is the only thing a software fullscreen could pick from,
+    // which meant every scaled software mode was the wrong shape on anything
+    // but a 4:3 monitor.
+    static const uint16_t wide_modelist[][2] =
+    {
+      // 16:10
+      {1680,1050}, {1440,900}, {1280,800}, {1024,640}, {800,500},
+      // 16:9
+      {1920,1080}, {1600,900}, {1280,720}, {960,540}, {640,360},
+      // 21:9  (64:27)
+      {2560,1080}, {1720,720}, {1280,540}, {860,360},
+      // 32:9
+      {3840,1080}, {2560,720}, {1920,540}, {1280,360},
+    };
+    int dw = 0, dh = 0;
+    boolean have_display = VID_Display_Size( &dw, &dh );
     int m;
 
     if( rendermode != render_soft )  return;
@@ -303,6 +349,62 @@ void  VID_add_scaled_modes( void )
         if( j >= num_vid_mode )
             add_vid_mode( sw, sh );
     }
+
+    // Only the ones shaped like this display.  add_vid_mode already refuses a
+    // duplicate size, so no second search is needed here.
+    if( ! have_display )  return;
+    for( m = 0; m < (int)(sizeof(wide_modelist)/sizeof(wide_modelist[0])); m++ )
+    {
+        int sw = wide_modelist[m][0];
+        int sh = wide_modelist[m][1];
+
+        if( (sw > MAXVIDWIDTH) || (sh > MAXVIDHEIGHT) )  continue;
+        if( VID_Aspect_Match( sw, sh, dw, dh ) )
+            add_vid_mode( sw, sh );
+    }
+}
+
+
+// [Arcade] Do two sizes have the same shape, to within VID_ASPECT_TOLERANCE?
+//
+// Compared as a cross product so there is no division and no rounding.  The
+// products are bounded by MAXVIDWIDTH * MAXVIDHEIGHT (about 11 million) and
+// then scaled by 100, which overflows a 32 bit int -- hence int64_t.
+//
+// The tolerance has to be wide enough to call 1366x768 (1.7786) a 16:9 screen
+// and narrow enough to keep 1280x1024 (5:4, 1.25) out of the 4:3 bucket, which
+// is 6.6% away.  3% sits between them.
+boolean  VID_Aspect_Match( int w1, int h1, int w2, int h2 )
+{
+    int64_t  a, b, diff;
+
+    if( (h1 <= 0) || (h2 <= 0) || (w1 <= 0) || (w2 <= 0) )  return false;
+
+    a = (int64_t)w1 * h2;
+    b = (int64_t)w2 * h1;
+    diff = (a > b) ? (a - b) : (b - a);
+    return ( (diff * 100) <= (b * VID_ASPECT_TOLERANCE) );
+}
+
+
+// [Arcade] The size of the desktop, which is the shape the software renderer
+// scales its frame into and the shape the mode list should be judged against.
+// Return false when it cannot be determined, in which case callers must not
+// filter anything out.
+boolean  VID_Display_Size( int * out_w, int * out_h )
+{
+#ifdef SDL2
+    SDL_DisplayMode  dm;
+
+    if( SDL_GetDesktopDisplayMode( display_index, &dm ) == 0
+        && (dm.w > 0) && (dm.h > 0) )
+    {
+        *out_w = dm.w;
+        *out_h = dm.h;
+        return true;
+    }
+#endif
+    return false;
 }
 
 

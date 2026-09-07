@@ -736,6 +736,24 @@ void R_Init_Tables (void)
 // R_Init_TextureMapping
 //
 // Called by R_ExecuteSetViewSize
+// [Arcade] Was FRACUNIT*2 inline, a tangent of 2.0 -- 63.43 degrees, so no
+// more than 127 degrees of horizontal view could be tabulated no matter what
+// the projection asked for.  Columns past that all resolve to the same entry
+// in x_to_viewangle[] and render as one smeared vertical band at each edge.
+//
+// A 32:9 screen on "fit height" needs a tangent of centerx/focallength =
+// (5120/2) / (0.8 * 1440) = 2.22 and so crossed it; 21:9 needs 1.46 and did
+// not.  4.0 is 75.96 degrees, 152 degrees of view, with room to spare.
+//
+// Raising it changes nothing for a narrow field of view: the tangents between
+// the old limit and the new one map to columns outside the view window, where
+// the clamp just below sends them to the same -1 / viewwidth+1 they had
+// before.  It cannot overflow FixedMul either -- the product is bounded by
+// 4 * focallength, and focallength is at most 0.8 * MAXVIDHEIGHT.
+//
+// Render-only, so it does not touch the simulation or demo compatibility.
+#define TANGENT_CLIP   (FRACUNIT*4)
+
 void R_Init_TextureMapping (void)
 {
     int  i;
@@ -755,9 +773,9 @@ void R_Init_TextureMapping (void)
 
     for (i=0 ; i<FINE_ANG180 ; i++)
     {
-        if (finetangent[i] > FRACUNIT*2)
+        if (finetangent[i] > TANGENT_CLIP)
             t = -1;
-        else if (finetangent[i] < -FRACUNIT*2)
+        else if (finetangent[i] < -TANGENT_CLIP)
             t = rdraw_viewwidth+1;
         else
         {
@@ -985,7 +1003,26 @@ void R_ExecuteSetViewSize (void)
         int r_width = 600 * vid.width / vid.height;
 
         if( vid.width == 320 )  goto std_fit;
-        if( r_width > 840  )  // wide screen
+        // [Arcade] Ultrawide: 21:9 gives r_width 1422, 32:9 gives 2133, and
+        // the threshold of 1200 is an aspect of exactly 2.0 -- clear of 16:9
+        // (1067) and clear of 21:9.
+        //
+        // "Fit width" pins the horizontal field of view at 90 degrees and
+        // derives the vertical from the screen height, so the wider the panel
+        // the *less* of the world is visible: 64 degrees vertical at 4:3, 59
+        // at 16:9, 46 at 21:9 and 31 at 32:9.  On a 32:9 screen that is a slit.
+        // "Fit height" keeps the vertical view of a 4:3 screen and spends the
+        // extra width on horizontal view instead -- 112 degrees at 21:9, 132
+        // at 32:9 -- which is what an ultrawide monitor is for.
+        //
+        // 16:9 and 16:10 keep "fit width", the behaviour every existing
+        // install has been looking at; only the shapes that had no sensible
+        // answer before are changed.
+        if( r_width > 1200 )  // ultrawide
+        {
+            viewfit_ev = 3; // fit height
+        }
+        else if( r_width > 840  )  // wide screen
         {
             viewfit_ev = 2; // fit width
         }
