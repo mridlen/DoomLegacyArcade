@@ -666,3 +666,86 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - **`Control scheme` cannot go in that column**, and this was found by trying it: its label ends
     at x **135**, eighteen pixels past the box's left edge at 117. It stays below the box. Only
     labels shorter than ~90 units fit beside it — `Crosshair` (93) and `Your color` (103) do.
+
+
+## The Video Modes page, and paging a list that used to be truncated
+
+`M_DrawVideoMode` lays the mode list out in three columns, filling down each column in turn, and it
+used to stop dead at `MAXMODEDESCS` entries — `MAXCOLUMNMODES * 3`, with `MAXCOLUMNMODES` at 8, so
+24 modes. Past that the fill loop simply broke. On a display advertising a lot of modes the tail of
+the list was unreachable, and the tail is where `VID_add_scaled_modes` appends the small software
+sizes (`software-fullscreen.md`), so the modes most worth having were the ones that went missing.
+
+The page now holds 30 and pages beyond that.
+
+**The geometry is fixed by the font, and was measured rather than guessed.** `V_StringHeight`
+returns `hu_font[0]->height`, and `hu_font[0]` is `STCFN033`, which measures 7 pixels tall in
+DOOM2.WAD. Rows start at `MODES_Y` (44) and step by `MODES_Y_INC` (8); the instruction block starts
+at `MODETXT_Y` (128):
+
+| rows per column | last row y | bottom y | clear of instructions |
+| --- | --- | --- | --- |
+| 8 (old) | 100 | 107 | 21px |
+| **10 (now)** | **116** | **123** | **5px** |
+| 11 | 124 | 131 | **overlaps** |
+
+So 10 is the most that fits — which is exactly the `//#define MAXCOLUMNMODES 10` upstream left
+commented out beside the 8. Three columns is likewise the most that fits: the widest name the list
+can produce is `win 1600x1200`, 92 pixels in `hu_font`, and the third column already starts at
+x=224 and ends at 316 of a 320-wide base screen. A fourth column at any spacing runs off the edge.
+
+**`vidm_current` indexes the whole list; the page drawn is the one it falls on.** There is no
+separate page variable to keep in step. `vidm_set_page()` settles `vidm_page_first`,
+`vidm_page_count` and `vidm_column_size` around it, the drawer calls that first, and the key handler
+pages simply by moving `vidm_current` across a page boundary. Everything in the key handler works in
+page-local coordinates and reassembles `vidm_current` at the end.
+
+**Left and Right off the edge of a page move between pages**, because that is the only thing the
+cabinet panel can do — four directions and a fire button, no PgUp. PgUp/PgDn work too, for a
+keyboard. A page indicator is drawn at y=34 (between the `M_VIDEO` title, 168x15 at y=2, and the
+first row at 44) and only when there is more than one page.
+
+Two range checks that look redundant and are not:
+
+- `vidm_set_page` resets `vidm_current` to 0 when it is outside the list. **The Drawmode page shares
+  `vidm_current`, `vidm_nummodes` and `vidm_column_size` with this one**, and indexes
+  `vidm_drawmode[]` — `MAXCOLUMNMODES+2` entries — with it. Coming back from a long mode list left it
+  well past the end of that array. `M_Draw_drawmode` clamps for the same reason. This was an out of
+  bounds read before the list got longer; it is worse now.
+- The key handler floors `vidm_column_size` at 1 and `vidm_page_colsize` never returns 0. With an
+  empty mode list, removing *either* guard is harmless and removing *both* is a SIGFPE on the first
+  arrow key.
+
+### Testing it without a screen
+
+Nothing drives this menu headlessly, and the failures here — a cursor outside the drawn page, a mode
+no key sequence can reach — are invisible to a smoke run. **`tools/vidmenu-navtest.py`** covers it.
+It **extracts `vidm_page_modes`, `vidm_page_colsize`, `vidm_set_page` and `M_VideoMode_key_handler`
+verbatim from `m_menu.c` by brace matching**, stubs the handful of things they touch
+(`S_StartSound`, `key_handler2`, `Pop_Menu`, the `KEY_*` values) and drives them. It reads the
+geometry constants out of `m_menu.c` too. Extracting rather than copying matters: a copied test
+drifts, and this one tests the shipped text — run it after any change to that page.
+
+For list sizes 0..128, from every starting position, it walks every state reachable under the arrow
+keys and checks the cursor stays inside the drawn page, the row stays inside the geometry above, the
+page keys land where they are supposed to, and **every mode is reachable using the four arrows
+alone, in both directions**.
+
+That last clause was learned the hard way. The first version only checked reachability *forwards*
+from mode 0, and a mutation that broke Left-edge paging left every mode still reachable by going
+right — the test stayed green on genuinely broken code. Mutation testing is what found that: each
+bug the test claims to catch was reinstated, and two of five were not caught.
+
+So the mutations are part of the tool. **`tools/vidmenu-navtest.py --selfcheck`** reinstates each
+one and reports whether the checks go red:
+
+```
+  11 rows per column (overlaps the instructions)      caught -> FAIL row overlaps instructions
+  left edge stops instead of paging back              caught -> FAIL unreachable: from mode 30 ...
+  right edge stops instead of paging forward          caught -> FAIL unreachable: from mode 0 ...
+  page target not clamped to a short page             caught -> FAIL page forward went astray
+  both divide-by-zero guards removed                  caught -> exit -8
+```
+
+**A clean result from a check that has never been shown to fail is not evidence.** If a mutation
+stops applying because the code moved, the tool says so rather than quietly testing nothing.

@@ -247,6 +247,14 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   bug and the high-score page timing were both pinned down. Remove it before committing.
 - **Before blaming a run for changed files, compare mtimes against the run times.** The cabinet is
   played between turns, and those writes belong to the user, not the test.
+- **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
+  drives the menus headlessly, so `tools/vidmenu-navtest.py` and `tools/vidmodes-deduptest.py` lift
+  the functions they test **verbatim out of the source by brace matching**, stub what those touch,
+  and drive them exhaustively. A copied test drifts away from the code and then passes forever;
+  an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
+  reinstates each bug it claims to catch and reports whether the check goes red — worth doing for
+  any new check, because **a clean result from a check never shown to fail is not evidence**, and
+  two of its five checks were silently useless until this was run. → `menus.md`
 - **A headless run can reach the intermission**, which used to be written off as needing a play
   session. There is a **`wait`** console command (used by the bot code, `d_main.c`), and
   `D_DoomLoop` execs `legacyhome/autoexec.cfg`, so dropping this into the *scratch* home drives a
@@ -520,6 +528,13 @@ written up in full in the doc named beside it.
 - **Returning to the title screen resets very little.** State leaks from the finished game into the
   attract screen. Fix leftover state in `Command_ExitGame_f`, which is the single funnel every
   route back to the title passes through. → `gotchas.md`
+- **A list capped by a constant fails at its far end, and the far end is where anything appended
+  locally lives.** Three stacked caps hid video modes from the menu — a mode list that never
+  deduplicated SDL's per-refresh-rate entries, `VID_GetModeName` returning NULL above
+  `MAX_NUM_VIDMODENAME`, and the menu's own `MAXMODEDESCS` — and not one of them logged anything.
+  The only evidence was a resolution missing from the list, which reads as "not supported" rather
+  than "the list ran out". `VID_add_scaled_modes` appends at the end, so the arcade's own additions
+  were the first things to fall off. → `software-fullscreen.md`, `menus.md`
 - **A binary anyone else will run must not be built with `-march=native`.** It is the build
   scripts' default and it is right only for a machine building for itself: it bakes in whatever the
   *builder's* CPU supports, links and packages without a murmur, and then dies on the target with a
