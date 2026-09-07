@@ -33,6 +33,33 @@ docs/arcade/):
   * localplayers "1", or the cabinet's own config gives you a 2x2 grid.
   * -width/-height, which are exact for the software renderer (i_video.c), so a
     21:9 drawing size can be previewed on a 16:9 monitor.
+  * framerate_cap "35".  r_fps.c sets interp_active from
+    (cv_framerate_cap.value != TICRATE), so at the tic rate the frame is drawn
+    at the tic instead of a wall-clock fraction past it.
+
+REPRODUCIBILITY, which matters if you want to compare two sheets rather than
+only look at them: a shot of a live level is NOT reproducible run to run.  The
+cap above removes the sub-tic interpolation, but monsters are moving and the
+shot can land a tic either side, so the same binary twice gives two different
+pictures.  Pass --nomonsters and it is bit identical run to run (verified: two
+runs, cmp clean).  Then two sheets can be compared mechanically, which narrows
+"look at everything" down to "look at what moved":
+
+    for f in before/*.png; do cmp -s $f after/$(basename $f) \
+      && echo "same    $(basename $f)" || echo "CHANGED $(basename $f)"; done
+
+Without --nomonsters that comparison is pure noise, and the noise looks like a
+regression: the first before/after pair taken here reported four sizes as
+changed that the change under test could not touch, 1024x768 among them, which
+is 4:3 and provably unaffected by an aspect cap.
+
+Even WITH it, a comparison across two different builds is a lead and not a
+proof.  Two runs of one binary are identical, but two binaries start up at
+slightly different speeds, the shot lands a tic either side, and a level's
+animated textures advance per tic -- so a size can come out CHANGED with no
+code path between the two builds that could have done it.  When a diff says a
+resolution changed that arithmetic says cannot have, believe the arithmetic and
+look at the pictures.
 
 The screenshots are the engine's own drawing buffer, which on a real fullscreen
 display is then stretched to fill the monitor.  So a shot's own shape is the
@@ -112,7 +139,7 @@ STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
 def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
-            extra_cvars=()):
+            extra_cvars=(), nomonsters=False):
     """Run the engine once and return (tga_path or None, info dict)."""
     rd = tempfile.mkdtemp(prefix='shotsheet.')
     info = {}
@@ -140,7 +167,19 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
         settings = [('drawmode', '"Software 8bit"'),
                     ('fullscreen', '"Yes"'),
                     ('viewfit', '"AUTO"'),
-                    ('localplayers', '"1"')]
+                    ('localplayers', '"1"'),
+                    # Without this the shots are NOT reproducible, and the way
+                    # they fail is quiet: r_fps.c interpolates the drawn frame
+                    # between tics by a fraction taken from the wall clock, so
+                    # the same binary on a busy machine draws the world a
+                    # fraction of a tic further along.  Two sheets generated
+                    # while the machine was doing different things then differ
+                    # at sizes the change under test never touched, and that
+                    # reads as a regression.  Capped at the tic rate the
+                    # fraction is fixed and the image is bit identical run to
+                    # run -- the same trick render-threads.md uses to compare
+                    # threaded frames against serial ones.
+                    ('framerate_cap', '"35"')]
         settings += [(k, '"%s"' % v) for k, v in extra_cvars]
         for key, val in settings:
             text, n = re.subn(r'(?m)^%s .*$' % key, '%s %s' % (key, val), text)
@@ -156,6 +195,8 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
 
         argv = ['./doomlegacyarcade', '-game', game,
                 '-width', str(w), '-height', str(h)]
+        if nomonsters:
+            argv += ['-nomonsters']
         if scene == 'game':
             argv += ['-skill', '3', '-warp', str(warp)]
         env = dict(os.environ,
@@ -277,6 +318,8 @@ def main():
                          'so nothing on the page is wider than about 1600)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'shotsheet'))
     ap.add_argument('--keep', action='store_true', help='keep the scratch dirs')
+    ap.add_argument('--nomonsters', action='store_true',
+                    help='pass -nomonsters, for a scene that holds still')
     ap.add_argument('--cvar', action='append', default=[], metavar='NAME=VALUE',
                     help='set a cvar in the scratch config, repeatable -- e.g. '
                          '--cvar localplayers=4 --cvar split4="4 Columns". '
@@ -324,7 +367,7 @@ def main():
                       end='', flush=True)
                 tga, info = run_one(args.binary, w, h, scene, args.game,
                                     args.warp, args.wait, args.timeout, args.keep,
-                                    extra)
+                                    extra, args.nomonsters)
                 it = {'w': w, 'h': h,
                       'scene': scene if len(scenes) > 1 else None}
                 if info.get('error'):

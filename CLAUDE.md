@@ -255,6 +255,21 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `legacyhome`, `localplayers "1"`) and reads the size caps out of `screen.h`. The whole 2D scaling
   bug in `ultrawide.md` was found by looking at one 32:9 capture, after four numeric checks had come
   back clean — because none of them was measuring the 2D layer. → `ultrawide.md`
+- **A screenshot of a live level is not reproducible run to run, and the noise looks exactly like a
+  regression in the code under test.** Two causes, and both have to go before two captures can be
+  compared. `r_fps.c` sets `interp_active` from `cv_framerate_cap.value != TICRATE`, so above the
+  tic rate the frame is drawn a wall-clock fraction of a tic ahead of the simulation
+  (`uncapped-framerate.md`) — `framerate_cap "35"` pins that, the same way `render-threads.md` does
+  before checksumming frames. **That alone is not enough**: monsters are moving and the shot can
+  land a tic either side, so the same binary twice still gives two different pictures. `-nomonsters`
+  is what makes it bit identical. A before/after pair taken with neither reported four sizes as
+  changed that the change could not touch — 1024x768 among them, which is 4:3 and provably
+  unaffected by an aspect cap — and re-running either on a quiet machine reproduced the *other*
+  sheet. Leave the monsters in for a capture you are going to look at; take them out for one you
+  are going to `cmp`. **Even then a cross-build diff is a lead, not a proof**: two runs of one
+  binary match, but two binaries start up at different speeds, the shot lands a tic either side and
+  animated textures advance per tic. When a diff says a resolution changed that arithmetic says
+  cannot have, believe the arithmetic. → `ultrawide.md`
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py` and `tools/vidmodes-deduptest.py` lift
   the functions they test **verbatim out of the source by brace matching**, stub what those touch,

@@ -3548,9 +3548,31 @@ void V_Setup_VideoDraw(void)
     vid.dupy = vid.height / BASEVIDHEIGHT;
     vid.fdupy = (float)vid.height / BASEVIDHEIGHT;
 
+    //
+    // The cap is written as one division of the pixel height, not as
+    // fdupy * 10/9, and that is not a style choice.  BASEVIDHEIGHT * 9/10 is
+    // 180, so the two are the same number -- but in float the second form
+    // lands a few parts in a hundred million BELOW the true value at exactly
+    // 16:9 (3.6f * (10.0f/9.0f) is 3.9999998, not 4.0).  vid.dupx is
+    // (int)vid.fdupx, so 4.0 became 3.9999998 became *3*, and the HUD art
+    // dropped a whole scale step at 1280x720 and 2560x1440 -- the two
+    // resolutions the cap is supposed to leave alone.
+    //
+    // Caught by cmp'ing two tools/shotsheet.py runs, which is the only reason
+    // it was noticed at all: it is a one-step change in an integer that
+    // nothing else measures.
+    // Gated on an exact integer test of the screen shape rather than on
+    // comparing the two scales as floats.  "Is this screen wider than 16:9" is
+    // width*9 > height*16 and has no rounding in it at all; comparing the
+    // scales does, and at exactly 16:9 the answer came out wrong in a way that
+    // mattered -- see the note above about (int)3.9999998.  The float form was
+    // still shaving a unit off 2560x1440 after the first fix, which nothing
+    // would ever have noticed except a capture diff.
+    vid.fdupx = vid.fdupx_fill;
+    if( ((int64_t)vid.width * 9) > ((int64_t)vid.height * 16) )
     {
-        float  fdupx_max = vid.fdupy * (10.0f / 9.0f);
-        vid.fdupx = (vid.fdupx_fill > fdupx_max) ? fdupx_max : vid.fdupx_fill;
+        float  fdupx_max = (float)( (double)vid.height / 180.0 );
+        if( vid.fdupx > fdupx_max )   vid.fdupx = fdupx_max;
     }
     vid.dupx = (int)vid.fdupx;   // floor, as width/320 was
     //vid.baseratio = FixedDiv(vid.height << FRACBITS, BASEVIDHEIGHT << FRACBITS); //Hurdler: not used anymore

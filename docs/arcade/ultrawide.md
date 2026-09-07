@@ -145,8 +145,9 @@ proportion all the art was drawn for. At 16:9 the ratio is 1.11, at 21:9 1.48, a
 **`R_ExecuteSetViewSize` does the same thing for the weapon**, `pspritescale` coming off the view
 width and `pspriteyscale` off the height, and works out to exactly the same `0.625 * w/h`.
 
-Both are now **capped at the proportions of a 16:9 screen** — `fdupy * 10/9`, and
-`FixedMul(pspriteyscale, 10*FRACUNIT/9)`. 10/9 is precisely the 16:9 value, so:
+Both are now **capped at the proportions of a 16:9 screen**, and **both caps are gated on an exact
+integer test of the screen shape** — `vid.width * 9 > vid.height * 16` — rather than on comparing
+the two scales:
 
 | screen | ratio | capped? |
 | --- | --- | --- |
@@ -158,7 +159,21 @@ Both are now **capped at the proportions of a 16:9 screen** — `fdupy * 10/9`, 
 
 **16:9 is the cap rather than 4:3 deliberately.** A 4:3 cap would un-stretch every widescreen
 install in existence, which is a different decision from making ultrawide usable — the same call
-made for `viewfit` in part 2. Nothing at 16:9 or narrower changes.
+made for `viewfit` in part 2. Nothing at 16:9 or narrower changes: below the gate the cap does not
+execute at all, so `vid.fdupx` is `vid.fdupx_fill` and `pspritescale` is untouched, which is the
+same arithmetic as before this existed.
+
+**The gate is an integer test because both float and fixed-point forms got it wrong at exactly
+16:9, in ways nothing else would have caught.** Written as `fdupy * (10.0f/9.0f)`, the cap lands
+just *below* the true value — `3.6f * (10.0f/9.0f)` is 3.9999998, not 4.0 — and since
+`vid.dupx = (int)vid.fdupx`, the HUD art scale at 1280x720 and 2560x1440 silently dropped from 4x
+to **3x**, a whole step, at the two resolutions the cap exists to leave alone. Rewriting it as
+`vid.height / 180.0` in double fixed 1280x720 and not 2560x1440, because the psprite cap has the
+same problem from the other direction: `pspriteyscale` is a truncated `fixed_t`, so the comparison
+lands one unit on the wrong side and shaved a unit off `pspritescale`. Only the integer gate makes
+"16:9 and narrower is untouched" true rather than nearly true. Both bugs were found by `cmp`-ing
+two capture sets; neither changes anything a test measures, and on screen the first is just a
+slightly smaller HUD.
 
 Three things this had to get right:
 
@@ -261,6 +276,39 @@ identical pictures. `VID_add_scaled_modes` now puts an explicitly requested size
 The whole 2D scaling bug in part 5 was found this way, in about two seconds of looking at a 32:9
 capture — after four numeric checks had all come back clean, because none of them was measuring the
 2D layer at all.
+
+**A capture of a live level is not reproducible, and the noise looks exactly like a regression.**
+Two separate causes, and both have to go before two sheets can be compared rather than merely
+looked at:
+
+- `r_fps.c` sets `interp_active` from `cv_framerate_cap.value != TICRATE`, so above the tic rate the
+  frame is drawn a wall-clock fraction of a tic ahead of the simulation (`uncapped-framerate.md`).
+  The tool sets `framerate_cap "35"`, which pins it — the same thing `render-threads.md` does before
+  checksumming frames.
+- **That alone is not enough, and believing it was cost an hour here.** Monsters are moving and the
+  shot can land a tic either side, so the same binary twice still gives two different pictures.
+  `--nomonsters` is what makes it bit identical; verified by running the same size twice and
+  `cmp`-ing.
+
+The first before/after pair taken here had neither, and reported 1024x768, 1280x800, 1280x720 and
+2560x1440 as changed — none of which an aspect cap can touch, 1024x768 being 4:3. Two fresh runs on
+a quiet machine were identical to each other **and to the *before* sheet**, which is what identified
+it: the change was innocent and the harness was not. With both settings the comparison is
+mechanical:
+
+```
+for f in before/*.png; do cmp -s $f after/$(basename $f) \
+  && echo "same    $(basename $f)" || echo "CHANGED $(basename $f)"; done
+```
+
+Leave the monsters in for a capture you are going to **look** at — they are what shows the sprite
+scale — and take them out for one you are going to **compare**.
+
+**And even then, a diff across two builds is a lead and not a proof.** Two runs of one binary match;
+two *binaries* start up at slightly different speeds, so the shot lands a tic either side and a
+level's animated textures have advanced a frame. A size can come out CHANGED with no code path
+between the two builds capable of doing it — 1024x768 did exactly that here. When the diff and the
+arithmetic disagree, the arithmetic wins and the pictures settle it.
 
 ## Four players on an ultrawide: `cv_split4`
 

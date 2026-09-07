@@ -1177,8 +1177,15 @@ std_fit:
     //
     // pspriteyscale is deliberately untouched: R_Set_Sky_Scale is
     // FixedDiv(FRACUNIT, pspriteyscale), and the sky must still fill.
+    // Gated on the shape of the screen as an exact integer test -- "wider than
+    // 16:9" is width*9 > height*16 -- rather than on comparing the two scales.
+    // pspriteyscale is a truncated fixed_t, so at exactly 16:9 the comparison
+    // came out one unit on the wrong side and the cap shaved a unit off
+    // 2560x1440, which moved a pixel of the weapon sprite.  Invisible, and
+    // still a change to a resolution this is supposed to leave alone.
+    if( ((int64_t)vid.width * 9) > ((int64_t)vid.height * 16) )
     {
-        fixed_t  psp_x_max = FixedMul( pspriteyscale, (10*FRACUNIT)/9 );
+        fixed_t  psp_x_max = (fixed_t)(( (int64_t)pspriteyscale * 10 ) / 9);
         if( pspritescale > psp_x_max )
         {
             pspritescale  = psp_x_max;
