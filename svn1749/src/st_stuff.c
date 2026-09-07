@@ -1839,7 +1839,17 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     D_View_Cell_Pos( vind, &col, &row );
     x0   = col * (vid.width / cols);
     y0   = row * (vid.height / rows);
-    xdiv = sv_fdupx / cols;
+    // [Arcade] Positions come from the UNCAPPED horizontal scale, the art from
+    // the capped one.  vid.fdupx is limited to 16:9 proportions so the art is
+    // not stretched flat on an ultrawide (ultrawide.md part 5) -- but deriving
+    // the layout from it too shrank the whole 320 unit layout with the art, so
+    // on a 32:9 screen the health sat a third of the way in and the ammo block
+    // landed on top of the weapon instead of out at the edge.
+    //
+    // These are two different questions, which is what the comment on xdiv
+    // above always said: how big to draw a thing, and where to put it.  The
+    // layout spans the cell; the art keeps its shape.
+    xdiv = vid.fdupx_fill / cols;
     ydiv = sv_fdupy / rows;
 
     // Draw screen0, scaled, abs position

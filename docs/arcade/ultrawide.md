@@ -192,9 +192,28 @@ Three things this had to get right:
   the sky still has to fill. Only the horizontal scale is capped, and since the weapon is positioned
   relative to `centerx` a smaller horizontal scale leaves it centred rather than sliding it left.
 
-1366x768 is a hair wider than 16:9 (1366*9 = 12294 against 768*16 = 12288), so the cap does clip the
-cabinet — by 0.05%. `vid.dupx` is an integer and comes out identical; only the hardware renderer's
+1366x768 is a hair wider than 16:9 (1366*9 = 12294 against 768*16 = 12288), so the gate does open on
+the cabinet — but `vid.dupx` is an integer and comes out identical, and only the hardware renderer's
 float scale moves, by a twentieth of a percent.
+
+### Where a thing goes is not how big it is
+
+Capping the scale fixed the *shape* of the HUD and immediately broke its *placement*, and the second
+was worse than the first: `ST_overlayDrawer` derives `xdiv`, the layout scale, from `vid.fdupx`, so
+the whole 320 unit layout shrank along with the art. On a 32:9 screen the health ended up a third of
+the way in and the ammo block landed **on top of the weapon**. Squashed-but-correctly-placed is a
+cosmetic complaint; correctly-shaped-but-overlapping is unreadable.
+
+`xdiv` comes from `vid.fdupx_fill` now — the uncapped `width/320` — divided by the column count,
+while the art keeps the capped `vid.fdupx`. The layout spans the cell, the art keeps its proportions,
+and the two no longer have to agree. That is what the comment above `xdiv` always claimed the code
+did ("so the 320x200 layout spans the cell whichever shape it is... the art scale is a separate
+question"); it was true until the cap made `vid.fdupx` stop meaning "the width of the cell in base
+units".
+
+**The general lesson, and it is the one this whole part keeps teaching: a 2D scale answers two
+questions, and an ultrawide screen is where they stop having the same answer.** Anything that reads
+`vid.dupx`/`vid.fdupx` should be checked for which of the two it wanted.
 
 ## 6. The aspect filter, which is what was actually asked for
 
@@ -358,13 +377,6 @@ there and `/2` is what `>>= 1` was.
 
 ## What is still not done
 
-- **The HUD overlay sits inside the 2D layer's band, not at the screen corners.** The aspect cap in
-  part 5 fixes the *shape* of everything, and positions follow the same scale so the status bar stays
-  coherent — but that means the ammo readout and the kill/item/secret counters move inward on an
-  ultrawide instead of hugging the edges. On a 32:9 screen that is arguably the better place for
-  them; if the corners are wanted, `ST_overlayDrawer` would have to position from the cell edges
-  while keeping the capped scale for the art, which is a real separation of "where" from "how big"
-  and is not there today.
 - **`cv_splitvertical` has no reason to prefer side by side on a wide screen.** Two players on a
   21:9 or 32:9 monitor want it (74 and 90 degrees a player, against 143 and 155 for the stacked
   halves, which are 4.8:1 and 7.1:1 slits) but the default is still Top/Bottom everywhere. An AUTO
