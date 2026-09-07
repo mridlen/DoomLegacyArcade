@@ -3574,7 +3574,36 @@ void V_Setup_VideoDraw(void)
         float  fdupx_max = (float)( (double)vid.height / 180.0 );
         if( vid.fdupx > fdupx_max )   vid.fdupx = fdupx_max;
     }
-    vid.dupx = (int)vid.fdupx;   // floor, as width/320 was
+    // [Arcade] The two whole-number scales are chosen TOGETHER, preserving the
+    // ratio between them, instead of flooring each axis on its own.
+    //
+    // Flooring independently is a long standing bug and it is worst where the
+    // truncation is most lopsided.  At 1366x768 the exact scales are 4.27 and
+    // 3.84 and floor to 4 and 3, so the art is drawn 20% wider than it should
+    // be.  At 640x360 -- the SAME 16:9 shape -- they are 2.00 and 1.80 and
+    // floor to 2 and 1, which is 80% too wide, and menu text is visibly
+    // squashed flat.  That is why two screens of identical proportions look so
+    // different: the distortion is in the rounding, not the aspect.
+    //
+    // vid.dupy stays the floor, because a menu is 200 base units tall and
+    // rounding it up would push the bottom off the screen.  vid.dupx is then
+    // the nearest whole number to whatever keeps the ratio, clamped so the 320
+    // unit layout still fits across.  Everything downstream keeps using whole
+    // numbers, so there is no risk of art at one scale and positions at
+    // another -- the trap that ST_overlayDrawer's xdiv fell into.
+    //
+    // Unchanged at 4:3, at 320x200 and at every resolution where the two
+    // already agreed; 640x360, 1280x720 and 1366x768 are the ones that move.
+    // The hardware renderer is untouched: it scales by the exact fdupx/fdupy
+    // and never had this.
+    {
+        float  ratio = (vid.fdupy > 0.0f) ? (vid.fdupx / vid.fdupy) : 1.0f;
+        int    dx = (int)( (vid.dupy * ratio) + 0.5f );
+
+        if( dx > vid.dupx_fill )  dx = vid.dupx_fill;  // must still fit across
+        if( dx < 1 )  dx = 1;
+        vid.dupx = dx;
+    }
     //vid.baseratio = FixedDiv(vid.height << FRACBITS, BASEVIDHEIGHT << FRACBITS); //Hurdler: not used anymore
     vid.fx_center = (float) vid.width * 0.5f;   
     vid.fx_scale2 = 2.0f / (float)vid.width;

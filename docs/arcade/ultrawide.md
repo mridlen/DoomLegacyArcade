@@ -196,6 +196,41 @@ Three things this had to get right:
 the cabinet — but `vid.dupx` is an integer and comes out identical, and only the hardware renderer's
 float scale moves, by a twentieth of a percent.
 
+### The two whole-number scales were floored independently
+
+A long standing bug, and the reason two screens of *identical* proportions looked completely
+different. The software renderer draws 2D at whole-number scales; those were `floor(width/320)` and
+`floor(height/200)`, taken separately, so what survived the truncation depended on where each axis
+happened to fall:
+
+| screen | exact | floored | drawn aspect vs intended |
+| --- | --- | --- | --- |
+| 640x480 (4:3) | 2.00, 2.40 | 2, 2 | 1.20 |
+| **640x360 (16:9)** | 2.00, 1.80 | **2, 1** | **1.80** |
+| 1280x720 (16:9) | 4.00, 3.60 | 4, 3 | 1.20 |
+| **1366x768 (16:9)** | 4.27, 3.84 | **4, 3** | **1.20** |
+| 1600x1200 (4:3) | 5.00, 6.00 | 5, 6 | 1.00 |
+
+640x360 and 1366x768 are the same shape and the exact scales have the same ratio, but 360/200 floors
+from 1.8 to 1 — losing 44% — while 768/200 floors from 3.84 to 3, losing 22%. **The distortion is in
+the rounding, not the aspect**, which is exactly why it looked arbitrary. At 640x360 menu text is
+drawn twice as wide as it is tall.
+
+`vid.dupy` stays the floor — a menu is 200 base units tall and rounding up pushes it off the bottom
+— and `vid.dupx` is now the nearest whole number that keeps the ratio, clamped so the 320 unit
+layout still fits across. 640x360, 1280x720 and 1366x768 move; 4:3, 320x200 and everything already
+in agreement are bit identical (checked with `cmp`).
+
+**The trade at 16:9 is proportion for size.** 1366x768 goes from 4,3 to 3,3, so the menu is 960
+pixels wide instead of 1280 — correctly proportioned but a step smaller. The alternative is to scale
+2D by the exact fractional value in software, as the hardware renderer already does and as
+`V_SCALEEXACT` already does for whole-screen pages: no size lost and the aspect exact, at the cost
+of uneven pixel widths, and it would mean auditing every place that positions by `vid.dupx` while
+drawing at a fractional scale — `ST_drawOverlayNum`'s digit advance among them. That is the same
+"where versus how big" split as above, and it is not done.
+
+**OpenGL never had any of this** — it scales by the exact `fdupx`/`fdupy` throughout.
+
 ### Where a thing goes is not how big it is
 
 Capping the scale fixed the *shape* of the HUD and immediately broke its *placement*, and the second
