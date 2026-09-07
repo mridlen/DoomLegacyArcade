@@ -111,7 +111,8 @@ def png_bytes(w, h, rows, shrink=1):
 STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
-def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir):
+def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
+            extra_cvars=()):
     """Run the engine once and return (tga_path or None, info dict)."""
     rd = tempfile.mkdtemp(prefix='shotsheet.')
     info = {}
@@ -136,10 +137,12 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir):
 
         cfg = os.path.join(home, 'config.cfg')
         text = open(cfg, encoding='latin-1').read()
-        for key, val in (('drawmode', '"Software 8bit"'),
-                         ('fullscreen', '"Yes"'),
-                         ('viewfit', '"AUTO"'),
-                         ('localplayers', '"1"')):
+        settings = [('drawmode', '"Software 8bit"'),
+                    ('fullscreen', '"Yes"'),
+                    ('viewfit', '"AUTO"'),
+                    ('localplayers', '"1"')]
+        settings += [(k, '"%s"' % v) for k, v in extra_cvars]
+        for key, val in settings:
             text, n = re.subn(r'(?m)^%s .*$' % key, '%s %s' % (key, val), text)
             if not n:
                 text += '\n%s %s\n' % (key, val)
@@ -274,6 +277,10 @@ def main():
                          'so nothing on the page is wider than about 1600)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'shotsheet'))
     ap.add_argument('--keep', action='store_true', help='keep the scratch dirs')
+    ap.add_argument('--cvar', action='append', default=[], metavar='NAME=VALUE',
+                    help='set a cvar in the scratch config, repeatable -- e.g. '
+                         '--cvar localplayers=4 --cvar split4="4 Columns". '
+                         'Applied after the defaults, so it can override them.')
     ap.add_argument('--title', default=None)
     args = ap.parse_args()
 
@@ -293,6 +300,12 @@ def main():
                      % ', '.join(n for n, _ in LADDER))
 
     scenes = [s.strip() for s in args.scenes.split(',') if s.strip()]
+    extra = []
+    for c in args.cvar:
+        if '=' not in c:
+            sys.exit('--cvar wants NAME=VALUE, got %r' % c)
+        k, v = c.split('=', 1)
+        extra.append((k.strip(), v))
     os.makedirs(args.out, exist_ok=True)
 
     total = sum(len(sz) for _, sz in groups) * len(scenes)
@@ -310,7 +323,8 @@ def main():
                 print('  [%d/%d] %dx%d %s ... ' % (done, total, w, h, scene),
                       end='', flush=True)
                 tga, info = run_one(args.binary, w, h, scene, args.game,
-                                    args.warp, args.wait, args.timeout, args.keep)
+                                    args.warp, args.wait, args.timeout, args.keep,
+                                    extra)
                 it = {'w': w, 'h': h,
                       'scene': scene if len(scenes) > 1 else None}
                 if info.get('error'):

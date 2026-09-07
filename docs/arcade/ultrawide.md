@@ -262,28 +262,66 @@ The whole 2D scaling bug in part 5 was found this way, in about two seconds of l
 capture — after four numeric checks had all come back clean, because none of them was measuring the
 2D layer at all.
 
-## What is still not done
+## Four players on an ultrawide: `cv_split4`
 
-**The multiplayer view grid does not know about the screen's shape.** `D_View_Grid`
-(`multiplayer-views.md`) offers 1x2 or 2x1 for two views and 2x2 for four, full stop, and on an
-ultrawide neither of the four-player options is right. Cell shapes, with the field of view each
-would get:
+`D_View_Grid` (`multiplayer-views.md`) offered 1x2 or 2x1 for two views and 2x2 for four, full stop.
+On a 32:9 screen a 2x2 cell is *itself* 32:9 — a letterbox slit — so neither option was right. Cell
+shapes, with the field of view each player gets:
 
 | | 2 stacked | 2 side by side | 3 columns | 4 as 2x2 | 4 columns |
 | --- | --- | --- | --- | --- | --- |
 | 16:9 1920x1080 | 3.56:1, 131 x 64 | 0.89:1, 58 x 64 | 0.59:1, 41 x 64 | **1.78:1, 90 x 59** | 0.44:1, 31 x 64 |
 | 21:9 3440x1440 | 4.78:1, 143 x 64 | **1.19:1, 74 x 64** | 0.80:1, 53 x 64 | **2.39:1, 112 x 64** | 0.60:1, 41 x 64 |
-| 32:9 5120x1440 | 7.11:1, 155 x 64 | **1.78:1, 90 x 59** | **1.18:1, 73 x 64** | 3.56:1, 131 x 64 | **0.89:1, 58 x 64** |
+| 32:9 5120x1440 | 7.11:1, 155 x 64 | **1.78:1, 90 x 59** | 1.18:1, 73 x 64 | 3.56:1, 131 x 64 | **0.89:1, 58 x 64** |
 
-Two conclusions. **Two players on an ultrawide want side by side**, which `cv_splitvertical` already
-does — it just has no reason to prefer it on a wide screen. **Four players on 32:9 want four
-columns**, which nothing can express: `D_View_Grid` never returns more than two columns, and
-`R_ExecuteSetViewSize` halves with `rdraw_scaledviewwidth >>= 1` against a `soft_columns` *boolean*
-rather than dividing by a count. Making that general reaches into `r_draw.c`'s cell tables, the HUD
-placement in `st_stuff.c`/`hu_stuff.c`, `D_View_Squash` for the hardware renderer, and the join
-screen's `(panels == 2) && cv_splitvertical.EV`. It is its own piece of work, and it belongs in
-`multiplayer-views.md` when it happens.
+**The right answer changes sign in the middle of the range**, which is why this is an operator
+setting and not derived from the aspect: 2x2 is right up to *and including* 21:9 (112 degrees a
+player against 41 for four columns) and wrong at 32:9. `cv_split4` — "4 Player Split", `2x2 Grid` or
+`4 Columns` — is on the new Players and Views page. Three players use four cells with one empty, the
+same as the grid does, so this covers "three columns" without a third setting.
 
-Note that 21:9 with four players is the one case where **2x2 is the better answer** — four columns
-there are 0.60:1 and 41 degrees wide. So this is an operator choice, not a rule that can be derived
-from the aspect alone.
+What had to become general for four columns to be possible:
+
+- **`R_ExecuteSetViewSize` halved with `rdraw_scaledviewwidth >>= 1`** against a `soft_columns`
+  *boolean*. It divides by `view_cols` now, which matches `R_View_Cell_Size` (`vid.width / cols`)
+  exactly — and it has to, or `R_View_Fills_Cell` decides the view no longer fills its cell and
+  paints a border round every one of them. `fit_ref_width` multiplies by `view_cols` for the same
+  reason it used to double.
+- **`ST_overlayDrawer` shrank the HUD art by exactly 2** whenever there was more than one column.
+  It is `/ cols` now. Both axes by the same divisor even though a four-column cell is full height:
+  the *width* is what constrains a 320 unit layout, and the art has to stay in proportion to it.
+- **The join screen carried its own copy of the grid.** It has to agree with `D_View_Grid` down to
+  `cv_split4`, or the screen whose entire job is telling each player which part of the screen is
+  theirs points at the wrong one. Its cell width is `BASEVIDWIDTH / gcols` now rather than a
+  hardcoded half.
+- `D_Grid_Cell_Pos` and `D_View_Squash` already generalised: the `cols >= 2, rows == 1` branch maps
+  cell N to column N whatever N is, and a four-column cell squashes the same way a side-by-side half
+  does.
+
+**The Arcade Options page was full** — 16 rows from y=40 reaches the bottom of a 200 unit screen —
+so "4 Player Split" had nowhere to go. Control Panels, 2 Player Split, 4 Player Split, Screen Order
+and Join Time moved to a new **Players and Views** page reached from it, which is a better grouping
+anyway and leaves Arcade Options four rows shorter than it was.
+
+Verified by screenshot rather than by argument, `tools/shotsheet.py --cvar localplayers=4 --cvar
+'split4=4 Columns' --sizes 2560x720`: four distinct views side by side, each 640x720, correct
+geometry and a HUD scaled to its cell. The 2x2 path is arithmetically unchanged — `view_cols` is 2
+there and `/2` is what `>>= 1` was.
+
+## What is still not done
+
+- **The HUD overlay sits inside the 2D layer's band, not at the screen corners.** The aspect cap in
+  part 5 fixes the *shape* of everything, and positions follow the same scale so the status bar stays
+  coherent — but that means the ammo readout and the kill/item/secret counters move inward on an
+  ultrawide instead of hugging the edges. On a 32:9 screen that is arguably the better place for
+  them; if the corners are wanted, `ST_overlayDrawer` would have to position from the cell edges
+  while keeping the capped scale for the art, which is a real separation of "where" from "how big"
+  and is not there today.
+- **`cv_splitvertical` has no reason to prefer side by side on a wide screen.** Two players on a
+  21:9 or 32:9 monitor want it (74 and 90 degrees a player, against 143 and 155 for the stacked
+  halves, which are 4.8:1 and 7.1:1 slits) but the default is still Top/Bottom everywhere. An AUTO
+  value that picked by aspect would be the same shape of change as `cv_split4`'s table above.
+- **Nothing has been run on real ultrawide hardware.** Everything here is a software drawing size
+  scaled into a 16:9 desktop, which exercises the projection, the 2D scale and the view grid, but
+  not an actual OpenGL mode switch to 3440x1440 — the one thing raising `MAXVIDWIDTH` was for. That
+  needs a monitor.

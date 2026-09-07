@@ -1864,10 +1864,15 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     // overlay runs out of room in: the 320 unit layout has to fit across the
     // cell, and at the full scale it is twice as wide as one.  A stacked half
     // is full width and keeps the full size art, as it always has.
+    // [Arcade] By the column count, not always by two: four columns make each
+    // cell a quarter of the width, and the 320 unit layout has to fit across
+    // it.  Both axes by the same divisor, or the art is squashed -- a four
+    // column cell is full height, but the width is what constrains the layout
+    // and the art has to stay in proportion to it.
     if( cols >= 2 )
     {
-        vid.fdupx = sv_fdupx / 2.0f;
-        vid.fdupy = sv_fdupy / 2.0f;
+        vid.fdupx = sv_fdupx / (float)cols;
+        vid.fdupy = sv_fdupy / (float)cols;
         vid.dupx  = (byte)(vid.fdupx + 0.5f);
         vid.dupy  = (byte)(vid.fdupy + 0.5f);
         if( vid.dupx < 1 )  vid.dupx = 1;

@@ -979,8 +979,12 @@ void R_ExecuteSetViewSize (void)
     // follow from it.
     if( view_rows >= 2 )
         rdraw_viewheight >>= 1;
+    // [Arcade] Divide by the column count rather than halving: the grid can be
+    // four columns wide now (cv_split4).  Matches R_View_Cell_Size, which is
+    // vid.width / cols, so a full size view still exactly fills its cell and
+    // R_View_Fills_Cell does not start painting a border round every view.
     if( soft_columns )
-        rdraw_scaledviewwidth >>= 1;
+        rdraw_scaledviewwidth /= view_cols;
 
     detailshift = setdetail;
     rdraw_viewwidth = rdraw_scaledviewwidth>>detailshift;
@@ -1051,7 +1055,7 @@ std_fit:
     // Written as an undo of the halving above rather than as vid.width, so a
     // single view at a reduced cv_viewsize is untouched.
     int  fit_ref_width = (soft_columns && (view_rows < 2))
-                         ? (rdraw_viewwidth * 2) : rdraw_viewwidth;
+                         ? (rdraw_viewwidth * view_cols) : rdraw_viewwidth;
 
 #ifdef FIT_RATIO
 #ifdef DEBUG_FIT_RATIO

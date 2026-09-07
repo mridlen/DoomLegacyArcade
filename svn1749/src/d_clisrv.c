@@ -545,8 +545,18 @@ void  D_View_Grid( byte * out_cols, byte * out_rows )
 
     if( n >= 4 )
     {
-        cols = 2;
-        rows = 2;
+        // [Arcade] Four columns instead of the 2x2, for a screen wide enough
+        // that a quadrant is a letterbox slit.  See cv_split4 (m_menu.c).
+        if( cv_split4.EV )
+        {
+            cols = 4;
+            rows = 1;
+        }
+        else
+        {
+            cols = 2;
+            rows = 2;
+        }
     }
     else if( n >= 2 )
     {

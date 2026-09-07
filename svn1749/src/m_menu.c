@@ -527,6 +527,33 @@ static void CV_Splitvertical_OnChange( void )
     R_SetViewSize();
 }
 
+// [Arcade] How four views are laid out: the 2x2 grid, or four columns side by
+// side.  An operator setting because it cannot be derived from the shape of
+// the screen -- the right answer changes sign in the middle of the range.
+//
+// Each player's cell, and the field of view it gives them:
+//
+//               2x2                4 columns
+//   16:9    1.78:1, 90 x 59      0.44:1, 31 x 64
+//   21:9    2.39:1, 112 x 64     0.60:1, 41 x 64
+//   32:9    3.56:1, 131 x 64     0.89:1, 58 x 64
+//
+// So 2x2 is right up to and including 21:9, and wrong at 32:9, where a cell is
+// itself 32:9 -- a letterbox slit -- while a column is 8:9, near enough the
+// shape of a portrait arcade monitor.  21:9 is the awkward middle and stays on
+// the grid.  See ultrawide.md.
+//
+// Three players use four cells with one empty, the same as the grid does, so
+// this covers "3 columns" as well without a third setting.
+static void CV_Split4_OnChange( void );
+CV_PossibleValue_t split4_cons_t[] = {{0,"2x2 Grid"},{1,"4 Columns"},{0,NULL}};
+consvar_t cv_split4 = {"split4", "0", CV_SAVE | CV_CALL, split4_cons_t, CV_Split4_OnChange };
+
+static void CV_Split4_OnChange( void )
+{
+    R_SetViewSize();
+}
+
 // [Arcade] Which quadrant of the 2x2 grid each control panel drives.
 //
 // The panels stand in a row across the front of the cabinet, so the player at
@@ -737,6 +764,7 @@ static void M_PlayerDirector(int choice);
 menu_t GameSelectDef;   // [Arcade] IWAD switcher
 menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
 menu_t AuditDef;        // [Arcade] operator audit, informational
+menu_t PlayerViewsDef;  // [Arcade] panels, splits, join
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
   PerformanceDef,   // [Arcade] Video Options -> Performance Options
@@ -3384,14 +3412,18 @@ static void  M_Join_Drawer( void )
     // cv_panelorder without this page knowing the rule.  It used to carry its
     // own copy of the arithmetic, which is exactly the duplication that would
     // have left the join screen pointing each player at the wrong quadrant.
+    // [Arcade] Must agree with D_View_Grid, including cv_split4: the boxes
+    // have to be exactly where the views will be, or the screen whose whole
+    // job is telling a player which part of the screen is theirs points at
+    // the wrong one.
     byte  vsplit = (panels == 2) && cv_splitvertical.EV;
-    byte  gcols  = ((panels >= 3) || vsplit) ? 2 : 1;
-    byte  grows  = (panels >= 3) ? 2 : (vsplit ? 1 : panels);
+    byte  gcols  = (panels >= 3) ? (cv_split4.EV ? 4 : 2) : (vsplit ? 2 : 1);
+    byte  grows  = (panels >= 3) ? (cv_split4.EV ? 1 : 2) : (vsplit ? 1 : panels);
 
     for( panel=0; panel < panels; panel++ )
     {
         byte col, row;
-        int  cw  = ((panels >= 3) || vsplit) ? (BASEVIDWIDTH/2) : BASEVIDWIDTH;
+        int  cw  = BASEVIDWIDTH / gcols;
 
         D_Grid_Cell_Pos( panel, gcols, grows, &col, &row );
         int  cx  = col * cw;
@@ -4473,6 +4505,38 @@ void M_DrawSlider (int x, int y, int range)
 }
 
 //===========================================================================
+//                    PLAYERS AND VIEWS MENU  [Arcade]
+//===========================================================================
+
+// [Arcade] Split off the Arcade Options page, which was full -- 16 rows from
+// y=40 reaches the bottom of a 200 unit screen with nothing to spare, and
+// "4 Player Split" had nowhere to go.  These five belong together anyway: how
+// many people can play, and how the screen is divided between them.
+//
+// Operator settings, like the page they came from: Arcade Options is only
+// reachable under -devmode, and this hangs off it.
+menuitem_t PlayerViewsMenu[]=
+{
+    {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
+    {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
+    {IT_STRING | IT_CVAR,0, "4 Player Split"  , &cv_split4        , 0},
+    {IT_STRING | IT_CVAR,0, "Screen Order"    , &cv_panelorder    , 0},
+    {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
+};
+
+menu_t  PlayerViewsDef =
+{
+    "M_OPTTTL",
+    "Players and Views",
+    PlayerViewsMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(PlayerViewsMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+//===========================================================================
 //                        ARCADE OPTIONS MENU  [Arcade]
 //===========================================================================
 
@@ -4483,10 +4547,7 @@ menuitem_t MenuOptionsMenu[]=
     // [Arcade] Operator settings; this whole menu is hidden from players, so
     // they are only reachable under -devmode.  Appended rather than inserted
     // -- the lockdown addresses menu items by hardcoded index.
-    {IT_STRING | IT_CVAR,0, "Control Panels"  , &cv_localplayers  , 0},
-    {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
-    {IT_STRING | IT_CVAR,0, "Screen Order"    , &cv_panelorder    , 0},
-    {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
+    {IT_SUBMENU| IT_WHITESTRING,0, "Players & Views >>", &PlayerViewsDef, 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
     {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
@@ -10717,6 +10778,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_screenslink,
   &cv_localplayers,     // [Arcade]
   &cv_splitvertical,    // [Arcade]
+  &cv_split4,           // [Arcade]
   &cv_panelorder,       // [Arcade]
   &cv_quitmenu,         // [Arcade]
   &cv_jointime,         // [Arcade]
