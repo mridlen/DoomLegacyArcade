@@ -4657,6 +4657,7 @@ enum
 {
     PERF_framerate = 0,
     PERF_threads,
+    PERF_draw8bpp,
     PERF_ticrate,
 } performance_e;
 
@@ -4664,6 +4665,7 @@ menuitem_t PerformanceMenu[]=
 {
     {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
     {IT_STRING | IT_CVAR,0,    "Render Threads"   , &cv_render_threads, 0},
+    {IT_STRING | IT_CVAR,0,    "8bpp Draw"        , &cv_draw8bpp      , 0},
     {IT_STRING | IT_CVAR,0,    "Show Ticrate"     , &cv_ticrate       , 0},
 };
 

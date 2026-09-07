@@ -154,6 +154,55 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## `draw8bpp`: draw at 8bpp, expand at present time
+
+**The biggest single win found, and it is not threading.**
+
+Doom renders palettized. DoomLegacy grew 15/16/24/32-bit drawers, and
+`vid.bitpp` is taken **straight from the SDL texture format**
+(`sdl/i_video.c`) — so on any modern display the software renderer writes
+**four bytes per pixel even in the "Software 8bit" drawmode**. There are no
+8bpp display modes any more; an 8bpp request deliberately takes the native
+depth for the *mode* (`i_video.c:574`), and the draw depth silently followed
+it. The drawmode's name has been a lie on modern hardware for years.
+
+`draw8bpp` keeps `vid.display` at 8bpp — which the engine already supports
+completely, those drawers are the original ones — and expands once through the
+palette into the texture, via `SDL_LockTexture` so there is no intermediate
+buffer and no second copy.
+
+Measured, one player, 1024x768, MAP07:
+
+| threads | draw8bpp | total | views | present |
+| --- | --- | --- | --- | --- |
+| 1 | Off (32bpp) | 12.18 ms (82 fps) | 10.54 | 1.36 |
+| 1 | **On (8bpp)** | **5.93 ms (169 fps)** | **4.48** | 1.32 |
+| 4 | Off | 4.87 ms (205 fps) | 3.20 | 1.39 |
+| 4 | **On** | **3.15 ms (317 fps)** | **1.60** | 1.42 |
+
+**2.1x on its own**, and it stacks with threading: 82 → 317 fps together.
+
+Note `present` did **not** get worse (1.36 → 1.32). The expansion reads a
+quarter as much as the memcpy it replaces, which pays for the palette lookup.
+That is the whole point: it cuts memory traffic at both ends, which is what a
+machine short of bandwidth actually needs.
+
+The palette table is built in `I_SetPalette`, which the engine already calls
+on every palette change while the draw depth is 8 — the damage and bonus
+flashes included, so they keep working with no extra plumbing. It is written
+as arithmetic on a `uint32_t` rather than through `pixel32_t`, which makes it
+correct on both endiannesses.
+
+**Verified the picture is unchanged**: dumping the same frame at 32bpp and at
+8bpp, every one of 262144 sampled pixels maps its palette index to exactly one
+32bpp colour — a clean one-to-one mapping, 0.00% disagreement. The two paths
+draw the same picture.
+
+**What does differ** is translucency: the truecolor drawers blend outside the
+palette, the 8bpp ones use the translucency tables. Fog and translucent
+surfaces will look slightly different — the classic 8bpp-versus-truecolor
+difference, not a bug.
+
 ## When threading does not help: `-frameprofile`
 
 Threading the renderer only helps if rendering is what the frame is made of.

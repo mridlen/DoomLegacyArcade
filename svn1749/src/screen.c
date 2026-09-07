@@ -139,6 +139,17 @@ consvar_t   cv_scr_height = {"scr_height", "200", CV_VALUE|CV_SAVE, CV_uint16};
 consvar_t   cv_scr_depth =  {"scr_depth",  "8 bits",   CV_SAVE, scr_depth_cons_t};
 consvar_t   cv_fullscreen = {"fullscreen",  "Yes",CV_SAVE | CV_CALL, CV_YesNo, SCR_ChangeFullscreen};
 
+// [Arcade] Draw the world at 8bpp and expand through the palette when the
+// frame is handed to SDL, instead of drawing at the display's depth.
+//
+// vid.bitpp is normally taken from the SDL texture format, so on any modern
+// display the software renderer writes four bytes per pixel even in the
+// "Software 8bit" drawmode -- there are no 8bpp display modes any more.  The
+// engine's 8bpp drawers are complete and still used; only the last step, the
+// palette expansion, is new.  Worth it exactly when memory bandwidth is the
+// limit and not otherwise, so it is a setting.  See render-threads.md.
+consvar_t   cv_draw8bpp = {"draw8bpp", "Off", CV_SAVE | CV_CALL, CV_OnOff, SCR_ChangeDraw8bpp};
+
 // =========================================================================
 //                           SCREEN VARIABLES
 // =========================================================================
@@ -652,6 +663,15 @@ void SCR_SetDefaultMode (void)
 }
 
 // Change fullscreen on/off according to cv_fullscreen
+// [Arcade] Changing the draw depth means reallocating the screen buffer and
+// re-picking the drawers, which is a mode change.
+void SCR_ChangeDraw8bpp (void)
+{
+    if( graphics_state >= VGS_startup )
+        SCR_apply_video_settings( 1 );   // setmodeneeded
+}
+
+
 void SCR_ChangeFullscreen (void)
 {
     // Can cancel allow_fullscreen, when past I_RequestFullGraphics.
