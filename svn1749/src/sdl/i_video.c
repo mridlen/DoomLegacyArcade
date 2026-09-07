@@ -1136,6 +1136,16 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
         vid.bytepp = 1;
     }
 
+    // [Arcade] Say why.  "It still says 32bpp" is otherwise three separate
+    // guesses: the cvar not reaching here, the texture not being 32bpp, or a
+    // stale object file -- this tree has no dep files for most objects, so a
+    // header change (cv_draw8bpp lives in screen.h) does NOT rebuild the file
+    // that reads it.  See the stale-objects rule in CLAUDE.md.
+    GenPrintf( EMSG_warn,
+        "draw8bpp: %s (cvar=%d, texture=%d bytes/pixel)\n",
+        draw8_active? "ON, drawing 8bpp" : "off, drawing at display depth",
+        (int)cv_draw8bpp.EV, (int)draw8_texture_bytepp );
+
     if( vidSurface )
     {
         // The video buffer might be padded to power of 2, for some modes (Mac)
