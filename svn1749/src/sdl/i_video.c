@@ -236,6 +236,21 @@ static
 void  add_vid_mode( int w, int h )
 {
     vid_mode_t * vm;
+    int  i;
+
+    // [Arcade] Do not add the same size twice.
+    //
+    // SDL_GetNumDisplayModes reports one mode per (width, height, refresh,
+    // format) combination, and vid_mode_t keeps only width and height -- so a
+    // display offering 60/75/144Hz produced three identical entries, and the
+    // mode list came out several times longer than the number of resolutions
+    // it actually described.  The menu deduplicates by name when it draws, so
+    // this was invisible there, but the surplus entries still consumed mode
+    // indices, and index is what VID_GetModeName's table is sized by.
+    for( i = 0; i < num_vid_mode; i++ )
+    {
+        if( (vid_modelist[i].w == w) && (vid_modelist[i].h == h) )  return;
+    }
 
     if( num_vid_mode >= num_vid_mode_allocated )
     {
@@ -879,7 +894,13 @@ fail:
 }
 
 // Static mode name storage
-#define  MAX_NUM_VIDMODENAME  42
+// [Arcade] Was 42.  This is indexed by mode index, and VID_GetModeName returns
+// NULL above it -- which the menu treats as "no such mode" and skips silently.
+// A modern display can advertise more modes than that on its own, and
+// VID_add_scaled_modes appends the small software sizes at the END of the
+// list, so they were the first thing to fall off the far side of the cap.
+// 2KB of BSS for a list nothing else limits.
+#define  MAX_NUM_VIDMODENAME  128
 #define  MAX_LEN_VIDMODENAME  16
 static char  mode_name_store[MAX_NUM_VIDMODENAME][MAX_LEN_VIDMODENAME];
 
