@@ -912,6 +912,84 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
     return given;
 }
 
+// [Arcade] -frameprofile : a breakdown of where the frame time goes.
+//
+// Threading the renderer only helps if rendering is what the frame is made of.
+// When the frame rate does not move after the renderer got four times faster,
+// the frame is mostly something else -- and guessing which part is a poor use
+// of an evening.  This times the phases separately:
+//
+//   tics     the simulation, TryRunTics
+//   views    drawing the player views -- the part render_threads speeds up
+//   hud      status bar, HUD, menus, console: the 2D drawing after the views
+//   present  I_FinishUpdate, handing the finished frame to SDL
+//
+// "hud" is whatever is left of the frame after the other three, so it also
+// carries anything not separately timed.
+//
+// Off unless -frameprofile is given, and then it is one clock read per phase.
+#include <time.h>
+
+typedef enum { FP_TIC=0, FP_VIEWS, FP_PRESENT, FP_TOTAL, FP_N } fp_bucket_e;
+
+static const char * fp_name[3] = { "tics", "views", "present" };
+static double  fp_acc[FP_N];
+static long    fp_frames = 0;
+static double  fp_report_at = -1.0;
+byte  frameprofile = 0;   // set from the command line in D_DoomMain
+
+double  FP_Now( void )
+{
+    struct timespec ts;
+    clock_gettime( CLOCK_MONOTONIC, &ts );
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
+void  FP_Add( int bucket, double t0 )
+{
+    if( ! frameprofile )  return;
+    fp_acc[bucket] += FP_Now() - t0;
+}
+
+// Called once per loop iteration, with the time that iteration began.
+void  FP_Frame_End( double t0 )
+{
+    double now, tot, rest;
+    char line[256];
+    int  pos = 0, i;
+
+    if( ! frameprofile )  return;
+
+    now = FP_Now();
+    fp_acc[FP_TOTAL] += now - t0;
+    fp_frames++;
+
+    if( fp_report_at < 0.0 )  fp_report_at = now;
+    if( (now - fp_report_at) < 3.0 )  return;
+
+    tot = fp_acc[FP_TOTAL] / fp_frames * 1000.0;
+    pos += snprintf(line+pos, sizeof(line)-pos, "FRAME %.2fms (%.0f fps) =",
+                    tot, (tot > 0.0)? 1000.0/tot : 0.0);
+    rest = tot;
+    for( i = 0; i < 3; i++ )
+    {
+        double ms = fp_acc[i] / fp_frames * 1000.0;
+        rest -= ms;
+        pos += snprintf(line+pos, sizeof(line)-pos, "  %s %.2f (%.0f%%)",
+                        fp_name[i], ms, (tot > 0.0)? (100.0*ms/tot) : 0.0);
+    }
+    snprintf(line+pos, sizeof(line)-pos, "  hud/other %.2f (%.0f%%)",
+             rest, (tot > 0.0)? (100.0*rest/tot) : 0.0);
+
+    GenPrintf( EMSG_warn, "%s\n", line );
+    CONS_Printf( "%s\n", line );
+
+    for( i = 0; i < FP_N; i++ )  fp_acc[i] = 0.0;
+    fp_frames = 0;
+    fp_report_at = now;
+}
+
+
 // [Arcade] Say, once, what the renderer is actually doing -- and say it again
 // whenever that changes.
 //
@@ -1214,6 +1292,8 @@ void D_Display(void)
                 }
             }
 
+            double fp_t = FP_Now();   // [Arcade] -frameprofile
+
             // [Arcade] Both of these are whole-screen state that every view
             // reads or draws through, so they must settle before any view
             // starts.  Inside R_SetupFrame, where they used to live, they ran
@@ -1321,6 +1401,8 @@ void D_Display(void)
                 // else touches the screen buffer -- the cell blanking just
                 // below writes into it, and so do the HUD and status bar.
                 D_Threaded_Views_Wait();
+
+                FP_Add( FP_VIEWS, fp_t );   // [Arcade] -frameprofile
 
                 // [Arcade] Moved out of R_RenderPlayerView: it is a
                 // read-modify-write on a shared mobj, and R_DrawPSprite reads
@@ -1525,7 +1607,11 @@ void D_Display(void)
             // display a graph of ticrate 
             if (cv_ticrate.value )
                 V_Draw_ticrate_graph();
-            I_FinishUpdate();   // page flip or blit buffer
+            {   // [Arcade] -frameprofile
+                double fp_p = FP_Now();
+                I_FinishUpdate();   // page flip or blit buffer
+                FP_Add( FP_PRESENT, fp_p );
+            }
             //debug_Printf("last frame update took %d\n", I_EndProfile());
         }
         return;
@@ -1640,6 +1726,8 @@ void D_DoomLoop(void)
    
     while (1)
     {
+        double fp_frame_t0 = FP_Now();   // [Arcade] -frameprofile
+
         // get real tics
         entertic = I_GetTime();
         realtics = entertic - oldentertics;
@@ -1665,7 +1753,11 @@ void D_DoomLoop(void)
 #endif
 
         // process tics (but maybe not if realtic==0)
-        TryRunTics(realtics);
+        {   // [Arcade] -frameprofile
+            double fp_s = FP_Now();
+            TryRunTics(realtics);
+            FP_Add( FP_TIC, fp_s );
+        }
         {
 #ifdef CLIENTPREDICTION2
         boolean  tic_advanced = (singletics || spirit_update);
@@ -1798,6 +1890,8 @@ void D_DoomLoop(void)
             HW3S_EndFrameUpdate();
 #endif
         }
+
+        FP_Frame_End( fp_frame_t0 );   // [Arcade] -frameprofile
     }
 }
 
@@ -4509,6 +4603,13 @@ fatal_error_action:
          */
     }
 
+    // [Arcade] Frame time breakdown, for working out what a slow frame is
+    // actually made of.  See FP_Frame_End.
+    frameprofile = M_CheckParm("-frameprofile") ? 1 : 0;
+    if( frameprofile )
+        GenPrintf( EMSG_warn,
+            "Frame profiling on: tics / views / hud / present, every 3s.\n" );
+
     // start the apropriate game based on parms
     p = M_CheckParm("-record");
     if (p && (p+1) < myargc)
@@ -4855,6 +4956,7 @@ static void Help( void )
 #endif
         "-nomusic        No music\n"
         "-precachesound  Preload sound effects\n"
+        "-frameprofile   Report where the frame time goes, every 3s\n"
         "-mb num         Pre-allocate num MiB of memory\n"
         "-window         No fullscreen\n"
         "-width num      Video mode width\n"

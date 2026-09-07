@@ -154,6 +154,49 @@ The per-frame pools (`drawsegs`, `vissprites`, `openings`, the visplane pool, th
 memory pools) all use plain `malloc`/`realloc`/`calloc`, which are thread-safe, and they all
 grow on demand from NULL — so a worker allocates its own on first use with no extra code.
 
+## When threading does not help: `-frameprofile`
+
+Threading the renderer only helps if rendering is what the frame is made of.
+It is not, everywhere. Run with **`-frameprofile`** and every three seconds it
+prints where the frame actually went:
+
+```
+FRAME 12.66ms (79 fps) =  tics 0.02 (0%)  views 10.63 (84%)  present 1.71 (13%)  hud/other 0.30 (2%)
+```
+
+- **views** is the part `render_threads` speeds up. If it dominates, threading
+  will help and the numbers should move when you change the setting.
+- **present** is `I_FinishUpdate` -- handing the finished frame to SDL. At
+  1366x768x4 that is a ~4MB copy per frame, and on a machine with slow memory
+  it can be most of the frame. **No amount of render threading touches it.**
+- **tics** is the simulation. Threading never touches this either.
+- **hud/other** is the remainder: status bar, HUD, menus, console, and
+  anything not separately timed.
+
+Measured on the development laptop, one player, software, MAP07:
+
+| | views | present |
+| --- | --- | --- |
+| `render_threads 1` | 10.6 ms (84%) | 1.7 ms (13%) |
+| `render_threads 4` | 5.1 ms (68%) | 2.1 ms (27%) |
+
+Rendering dominates there, which is why threading shows up. Where it does not
+show up, this is the first thing to run -- before changing any more renderer
+code.
+
+There is also a running statement of what the renderer is doing, printed once
+and again whenever it changes, so "is it even on?" never has to be inferred:
+
+```
+Render: single threaded
+Render: 1 view split into 4 column bands
+Render: 4 views on worker threads
+```
+
+**In a hardware drawmode it says `single threaded` whatever `render_threads`
+is set to** -- which is exactly the symptom that otherwise looks identical to
+the feature not working.
+
 ## Demo safety
 
 **Verified, not assumed.** The simulation is untouched, at `render_threads` 1 and 4
