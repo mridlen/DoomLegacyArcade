@@ -121,6 +121,7 @@ extern consvar_t cv_grgammablue;
 extern consvar_t cv_vidwait;
 
 extern consvar_t cv_fullscreen; // for fullscreen support
+extern consvar_t cv_keepaspect; // [Arcade] letterbox rather than stretch
 
 // Return true if engine can draw using the bitpp
 boolean V_CanDraw( byte bitpp );

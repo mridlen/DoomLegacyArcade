@@ -768,6 +768,7 @@ menu_t PlayerViewsDef;  // [Arcade] panels, splits, join
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
   PerformanceDef,   // [Arcade] Video Options -> Performance Options
+  GammaOptionsDef,  // [Arcade] Video Options -> Gamma Options
   PlayerDirectorDef, PlayerOptionsDef,
   SingleMultiDef, TwoPlayerDef, MultiPlayerDef, SetupMultiPlayerDef,
   ReadDef2, ReadDef1, SaveDef, LoadDef, 
@@ -4633,17 +4634,8 @@ menu_t  EffectsOption2Def =
 //                        Video OPTIONS MENU
 //===========================================================================
 
-// Which line to modify for some menu options.
-enum
-{
-#ifdef __DJGPP__
-    VO_gamma = 3,
-#else
-    VO_gamma = 4,  // Index of Gamma
-#endif
-} videooptions_e;
-
-void M_Draw_Performance( void );   // [Arcade] below
+void M_Draw_Performance( void );    // [Arcade] below
+void M_Draw_VideoOptions( void );   // [Arcade] below
 
 menuitem_t VideoOptionsMenu[]=
 {
@@ -4652,20 +4644,24 @@ menuitem_t VideoOptionsMenu[]=
 #ifndef __DJGPP__
     {IT_STRING | IT_CVAR,0,    "Fullscreen"       , &cv_fullscreen    , 0},
 #endif
-// if these are moved then fix MenuGammaFunc_dependencies
-    {IT_STRING | IT_CVAR,0,    "Gamma Function"   , &cv_gammafunc     , 0},
-    {IT_STRING | IT_CVAR
-     | IT_CV_SLIDER     ,0,    "Gamma"            , &cv_usegamma      , 0},
-    {IT_STRING | IT_CVAR
-     | IT_CV_SLIDER     ,0,    "Black level"      , &cv_black         , 0},
-    {IT_STRING | IT_CVAR
-     | IT_CV_SLIDER     ,0,    "Brightness"       , &cv_bright        , 0},
+    // [Arcade] The gamma triple and Gamma Function moved to their own page.
+    // They were four of this page's rows and the only part of it addressed by
+    // hardcoded index (MenuGammaFunc_dependencies greys them as a group), so
+    // moving them both shortens the page and removes its one positional
+    // dependency on the DJGPP conditional above.
+    {IT_STRING | IT_WHITESTRING | IT_SUBMENU,0, "Gamma Options >>", &GammaOptionsDef, 0},
     {IT_STRING | IT_CVAR,0,    "Wait Retrace"     , &cv_vidwait       , 0},
     {IT_STRING | IT_CVAR
      | IT_CV_SLIDER     ,0,    "Screen Size"      , &cv_viewsize      , 0},
 #ifdef FIT_RATIO
     {IT_STRING | IT_CVAR,0,    "View fit"         , &cv_viewfit       , 0},
 #endif
+    // [Arcade] Next to View fit because the two are constantly confused, and
+    // they are two different steps.  View fit decides how much of the world
+    // goes into the frame the engine draws; this decides how that finished
+    // frame is placed on the panel.  View fit never leaves any part of the
+    // frame unpainted, so no setting of it can letterbox.
+    {IT_STRING | IT_CVAR,0,    "Keep aspect"      , &cv_keepaspect    , 0},
     {IT_STRING | IT_CVAR,0,    "Scale Status Bar" , &cv_scalestatusbar, 0},
     {IT_STRING | IT_CVAR,0,    "Dark Back"        , &cv_darkback      , 0},
     {IT_STRING | IT_CVAR,0,    "Console font"     , &cv_con_fontsize  , 0},
@@ -4685,23 +4681,108 @@ menu_t  VideoOptionsDef =
     "M_OPTTTL",
     "Video Options",
     VideoOptionsMenu,
-    M_DrawGenericMenu,
+    M_Draw_VideoOptions,
     NULL,
     sizeof(VideoOptionsMenu)/sizeof(menuitem_t),
-    // [Arcade] Starts at 24, not the usual 40.  This page has 17 rows at
-    // STRINGHEIGHT, which is 170 tall: from y=40 the last row began at
-    // exactly y=200 and was off the bottom of the 200-line screen entirely.
-    // It had been overflowing since before the framerate row was added --
-    // the OpenGL link was simply invisible and there was no way to tell it
-    // was there.  The title patch (M_OPTTTL, 15 tall, drawn at y=2) ends at
-    // y=17, so 24 clears it by 7 and leaves the last row ending at y=194.
-    // Measure before adding another row; there is only room for one more.
+    // [Arcade] Starts at 24, not the usual 40.  This page once held 17 rows
+    // at STRINGHEIGHT: from y=40 the last row began at exactly y=200 and was
+    // off the bottom of the 200-line screen entirely, so the OpenGL link was
+    // invisible with no way to tell it was there.  The title patch (M_OPTTTL,
+    // 15 tall, drawn at y=2) ends at y=17, so 24 clears it by 7.
+    //
+    // It is 14 rows now.  Four gamma rows left for Gamma Options and one link
+    // arrived in their place, and Keep aspect was added: 16 - 4 + 1 + 1.  From
+    // y=24 the last row starts at 24 + (13 * 10) = 154 and ends at 161, so
+    // there is room for three more before the page overflows again.
+    // Measure before adding one -- nothing warns when a row falls off.
     60,24,
     0
 };
 
 
-// Called by CV_gammafunc_OnChange.
+// [Arcade] Keep aspect only does anything in the software renderer.  The
+// OpenGL drawmode goes fullscreen with a real display mode switch, so the
+// black bars there come from the monitor's own scaler and the engine is not
+// placing the picture at all.  Shown greyed rather than hidden, the same
+// choice and the same reason as Render Threads on the Performance page: a
+// row that vanishes is impossible to find, and a row that is greyed says
+// why it is unavailable.
+//
+// The row is found by its cvar rather than by index.  This page is 14 rows
+// with two of them conditionally compiled, and a hardcoded index here would
+// put back exactly the positional dependency that moving the gamma rows off
+// the page removed.
+//
+// In the drawer so it follows a drawmode change with nothing having to
+// notify it; it only ever assigns a freshly computed value, which is what
+// makes it safe to run every frame.
+void M_Draw_VideoOptions( void )
+{
+    int  i;
+    const int  num = sizeof(VideoOptionsMenu)/sizeof(menuitem_t);
+
+    for( i = 0; i < num; i++ )
+    {
+        if( VideoOptionsMenu[i].itemaction == &cv_keepaspect )
+        {
+            VideoOptionsMenu[i].status =
+                (rendermode == render_soft)? (IT_STRING | IT_CVAR)
+                                           : (IT_STRING | IT_DISABLED);
+            break;
+        }
+    }
+    M_DrawGenericMenu();
+}
+
+
+//===========================================================================
+//                     [Arcade] GAMMA OPTIONS MENU
+//===========================================================================
+//
+// Gamma Function, Gamma, Black level and Brightness, moved off Video Options
+// as a group.  They belong together -- the gamma function chooses the curve
+// and the other three are its parameters, which is why they are greyed and
+// ungreyed together by MenuGammaFunc_dependencies -- and taking four rows off
+// Video Options is what made room there for Keep aspect.
+//
+// Reached from Video Options, which the lockdown already hides from players
+// (OptionsMenu[11]), so this page needs no lockdown of its own.  F11 opens it
+// directly; that key has always been "the gamma key" and used to land on
+// Video Options because that is where these rows lived.
+
+enum
+{
+    GO_gammafunc = 0,
+    GO_gamma,        // MenuGammaFunc_dependencies greys GO_gamma .. GO_gamma+2
+    GO_black,
+    GO_bright,
+} gammaoptions_e;
+
+// if these are moved then fix MenuGammaFunc_dependencies
+menuitem_t GammaOptionsMenu[]=
+{
+    {IT_STRING | IT_CVAR,0,    "Gamma Function"   , &cv_gammafunc     , 0},
+    {IT_STRING | IT_CVAR
+     | IT_CV_SLIDER     ,0,    "Gamma"            , &cv_usegamma      , 0},
+    {IT_STRING | IT_CVAR
+     | IT_CV_SLIDER     ,0,    "Black level"      , &cv_black         , 0},
+    {IT_STRING | IT_CVAR
+     | IT_CV_SLIDER     ,0,    "Brightness"       , &cv_bright        , 0},
+};
+
+menu_t  GammaOptionsDef =
+{
+    "M_OPTTTL",
+    "Gamma Options",
+    GammaOptionsMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(GammaOptionsMenu)/sizeof(menuitem_t),
+    60,48,              // x,y
+    0                   // lastOn
+};
+
+
 //===========================================================================
 //                     [Arcade] PERFORMANCE OPTIONS MENU
 //===========================================================================
@@ -4760,20 +4841,25 @@ menu_t  PerformanceDef =
 };
 
 
+// Called by CV_gammafunc_OnChange.
+// [Arcade] These three rows live on GammaOptionsMenu now, not on
+// VideoOptionsMenu.  The indices are GO_gamma .. GO_gamma+2 and they no
+// longer depend on the __DJGPP__ conditional that used to shift the whole
+// Video Options page by one.
 void MenuGammaFunc_dependencies( byte gamma_en,
                                  byte black_en, byte bright_en )
 {
    // Update menu highlights
    // Gamma
-   VideoOptionsMenu[VO_gamma].status = 
+   GammaOptionsMenu[GO_gamma].status =
      ( gamma_en ) ? (IT_STRING | IT_CVAR | IT_CV_SLIDER )
        : (IT_WHITESTRING | IT_SPACE);
    // Black Level
-   VideoOptionsMenu[VO_gamma+1].status = 
+   GammaOptionsMenu[GO_gamma+1].status =
      ( black_en ) ? (IT_STRING | IT_CVAR | IT_CV_SLIDER )
        : (IT_WHITESTRING | IT_SPACE);
    // Brightness
-   VideoOptionsMenu[VO_gamma+2].status = 
+   GammaOptionsMenu[GO_gamma+2].status =
      ( bright_en ) ? (IT_STRING | IT_CVAR | IT_CV_SLIDER )
        : (IT_WHITESTRING | IT_SPACE);
 }
@@ -9301,8 +9387,11 @@ boolean M_Responder (event_t* ev)
           case KEY_F11:
             S_StartSound(menu_sfx_open);
             // bring up the gamma menu
+            // [Arcade] The gamma rows have their own page now, so this lands
+            // on it instead of on Video Options, where it used to have to go
+            // because that is where they lived.
             M_StartControlPanel();
-            Push_Setup_Menu (&VideoOptionsDef);
+            Push_Setup_Menu (&GammaOptionsDef);
             goto ret_true;
 
           // Pop-up menu

@@ -139,6 +139,26 @@ consvar_t   cv_scr_height = {"scr_height", "200", CV_VALUE|CV_SAVE, CV_uint16};
 consvar_t   cv_scr_depth =  {"scr_depth",  "8 bits",   CV_SAVE, scr_depth_cons_t};
 consvar_t   cv_fullscreen = {"fullscreen",  "Yes",CV_SAVE | CV_CALL, CV_YesNo, SCR_ChangeFullscreen};
 
+// [Arcade] Keep the drawn frame's shape when it is put on the panel.
+//
+// The software renderer goes fullscreen with SDL_WINDOW_FULLSCREEN_DESKTOP --
+// no display mode switch -- and the finished frame reaches the screen as a
+// texture that SDL scales into the window.  SDL_RenderCopy with a NULL
+// destination rectangle FILLS that window, so a 4:3 drawing size on a 16:9
+// panel was stretched 33% too wide and nothing anywhere reported it.
+//
+// "Yes" fits the frame inside the panel at its own shape and leaves the rest
+// black: bars down the sides on a landscape panel, along the top and bottom
+// when the frame is proportionally wider than the panel -- a portrait
+// monitor, or any drawing size wider than the screen.  "No" is the old
+// behaviour, for anyone who would rather fill the screen than keep the
+// picture's proportions.
+//
+// No effect in the OpenGL drawmode, which does a real display mode switch and
+// leaves the letterboxing to the monitor's own scaler.  See
+// software-fullscreen.md.
+consvar_t   cv_keepaspect = {"keepaspect", "Yes", CV_SAVE, CV_YesNo};
+
 // [Arcade] Draw the world at 8bpp and expand through the palette when the
 // frame is handed to SDL, instead of drawing at the display's depth.
 //
