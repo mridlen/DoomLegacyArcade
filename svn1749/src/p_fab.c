@@ -96,6 +96,36 @@ CV_PossibleValue_t translucency_cons_t[]={{0,"Off"}, {1,"Auto"}, {2,"Boom"}, {3,
 consvar_t cv_translucency  = {"translucency" ,"1",CV_CALL|CV_SAVE, translucency_cons_t, Translucency_OnChange};
 
 
+// [Arcade] Rocket and lost-soul smoke trails.
+//
+// The trail is a DoomLegacy addition -- vanilla Doom's rocket leaves nothing
+// behind it, and neither does a lost soul's charge -- so it wants a switch.
+//
+// It is a gameplay setting and not a cosmetic one, however much it looks like
+// one.  Every puff below draws PP_Random(pL_smoketrail), and PP_Random ignores
+// its pr argument: it advances the one shared prndindex that every monster
+// decision, shotgun spread and damage roll reads from.  So switching trails
+// off shifts the whole gameplay RNG stream from the first rocket onwards, and
+// a demo recorded with them on desyncs the moment it is replayed with them
+// off.  Hence CV_NETVAR, and hence a byte in the demo header
+// (G_BeginRecording) so that a record demo replays as it was played.
+//
+// It is *not* in the ranked ruleset -- see the note where it would have gone,
+// in hs_ranked_rules (hs_stuff.c).
+//
+// Off is the default because that is vanilla.  Note the compiled default is
+// what a cabinet with an existing config.cfg actually gets, since the config
+// has no line for a cvar that did not exist when it was written.
+CV_PossibleValue_t rockettrails_cons_t[] = {
+   {0, "Off"},
+   {1, "On"},
+   {0, NULL}
+};
+
+consvar_t cv_rocket_trails =
+  {"rockettrails", "0", CV_NETVAR | CV_SAVE, rockettrails_cons_t};
+
+
 //
 // Action routine, for the ROCKET thing.
 // This one adds trails of smoke to the rocket.
@@ -105,6 +135,14 @@ consvar_t cv_translucency  = {"translucency" ,"1",CV_CALL|CV_SAVE, translucency_
 void A_SmokeTrailer (mobj_t* actor)
 {
     mobj_t*     th;
+
+    // [Arcade] Trails off: behave as though the state carried AI_NULL, which
+    // is what G_Downgrade installs for a vanilla demo.  Returning here before
+    // anything is drawn from the RNG is the whole point -- see the note above.
+    // Read .EV, not .value, so a demo's recorded setting wins over the
+    // cabinet's during playback.
+    if( ! cv_rocket_trails.EV )
+        return;
 
     // [Arcade fix] Gate the trail on game_comp_tic, not gametic.
     //
@@ -360,6 +398,8 @@ consvar_t * fab_cvar_list[] =
 
   // BP:not realy in deathmatch but is just here
   &cv_translucency,
+
+  &cv_rocket_trails,   // [Arcade]
 
 #ifdef DOORDELAY_CONTROL
   // [WDJ] 1/15/2009 support control of door and event delay

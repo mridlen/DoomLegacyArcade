@@ -42,6 +42,11 @@ void  DemoAdapt_p_fab(void);  // local enables of p_fab
 // spawn smoke trails behind rockets and skull head attacks
 void A_SmokeTrailer (mobj_t* actor);
 
+// [Arcade] Rocket and lost-soul smoke trails.  0 = Off (vanilla), 1 = On
+// (DoomLegacy).  Read through .EV, because a demo overrides it -- see
+// A_SmokeTrailer and the demo header in g_game.c.
+extern consvar_t cv_rocket_trails;
+
 void Translucency_OnChange(void);  // update translucent info
 
 // hack the states table to set Doom Legacy's default translucency on sprites

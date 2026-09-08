@@ -4586,6 +4586,7 @@ menuitem_t EffectsOption1Menu[]=
     {IT_SUBMENU | IT_WHITESTRING, 0, "Light Options >>"  , &LightingDef  , 'l'},
     {IT_STRING | IT_CVAR,0, "Translucency"    , &cv_translucency  , 0},
     {IT_STRING | IT_CVAR,0, "Spectre Fuzz"    , &cv_fuzzymode     , 0},  // [Arcade] renamed; operator-only, this page is hidden by the lockdown
+    {IT_STRING | IT_CVAR,0, "Rocket Trails"   , &cv_rocket_trails , 0},  // [Arcade]
     {IT_STRING | IT_CVAR,0, "Splats"          , &cv_splats        , 0},
     {IT_STRING | IT_CVAR,0, "Max splats"      , &cv_maxsplats     , 0},
     {IT_STRING | IT_CVAR,0, "BloodTime"       , &cv_bloodtime     , 0},
@@ -4594,6 +4595,12 @@ menuitem_t EffectsOption1Menu[]=
     {IT_STRING | IT_CVAR,0, "Sky"             , &cv_sky_gen       , 0},
     {IT_STRING | IT_CVAR,0, "Water Effect"    , &cv_water_effect  , 0},
     {IT_STRING | IT_CVAR,0, "Fog Effect"      , &cv_fog_effect    , 0},
+    // [Arcade] 12 ordinary rows now, from EffectsOption1Def.y=40 at
+    // STRINGHEIGHT (10) each, so 40..150 -- Rocket Trails above added one.
+    // "Next" is placed by IT_YOFFSET at 40+130=170, clear of them with one
+    // row of slack; nothing warns when two rows land on the same y or when
+    // the bottom of a page runs past the 200-line screen.
+    // See docs/arcade/menus.md.
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0,"Next"  , &EffectsOption2Def,130},
 };
 

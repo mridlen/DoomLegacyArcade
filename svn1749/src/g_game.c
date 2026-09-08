@@ -3958,6 +3958,15 @@ void G_demo_defaults( void )
     // player able to climb on things, so that is what playback has to do.
     // Demos that do carry the field overwrite this from the header below.
     cv_tall_monsters.EV = 0;
+    // [Arcade] Rocket and lost-soul smoke trails ON for playback, whatever the
+    // cabinet's live setting is.  Every demo that predates the setting was
+    // recorded with the trails in, and each puff draws the shared gameplay
+    // RNG (see A_SmokeTrailer), so playing one back without them desyncs at
+    // the first rocket.  Demos that do carry the field overwrite this from the
+    // header below.  Vanilla and Boom demos are unaffected either way --
+    // G_Downgrade leaves AI_NULL in the state for those, so A_SmokeTrailer is
+    // never reached and this value is not consulted.
+    cv_rocket_trails.EV = 1;
     cv_instadeath.EV = 0;  // Die
     cv_monstergravity.EV = 0;
     cv_monbehavior.EV = 0;  // Vanilla
@@ -4644,7 +4653,14 @@ void G_BeginRecording (void)
     // existed was played with -- so older demos in the zero-filled area keep
     // their behavior and need no version test.
     *demo_p++ = cv_tall_monsters.EV;
-    // 45
+    // [Arcade] Rocket and lost-soul smoke trails.  Stored biased by one, so 0
+    // still means "not recorded": a demo from an older build reads 0 here and
+    // keeps the G_demo_defaults() value, which is trails on -- what it was
+    // actually recorded with.  A plain 0/1 could not tell "recorded as off"
+    // apart from "field absent", and would have silently turned the trails off
+    // for every demo already on the cabinet.
+    *demo_p++ = cv_rocket_trails.EV + 1;
+    // 46
 
     // empty space
     while( demo_p < demo_p_next )  *demo_p++ = 0;
@@ -5286,7 +5302,14 @@ void G_DoPlayDemo (const char *defdemoname)
             // recorded before it was added have 0 here, which is over-under
             // and matches the G_demo_defaults() value already applied.
             cv_tall_monsters.EV = *demo_p++;
-            // 45
+            // [Arcade] Rocket and lost-soul smoke trails, biased by one; see
+            // G_BeginRecording.  0 = not recorded, so keep the
+            // G_demo_defaults() value.
+            {
+                byte rt = *demo_p++;
+                if( rt )  cv_rocket_trails.EV = rt - 1;
+            }
+            // 46
         }
 
         demo_p = demo_p_next;  // skip rest of settings

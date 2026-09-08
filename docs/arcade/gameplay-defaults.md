@@ -270,3 +270,86 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     under the old one. Header round-trip proven both directions: `G_BeginRecording` writes the live
     value into byte 44, and playing back demos hand-patched to 0 and to 1 read back
     `cvar=0` / `cvar=1`.
+
+- **Rocket trails** (`cv_rocket_trails`, "rockettrails", `CV_NETVAR | CV_SAVE`, default **`Off`**,
+  defined in `p_fab.c` beside `A_SmokeTrailer`, the routine it gates). Vanilla Doom's rocket leaves
+  nothing behind it and neither does a lost soul's charge; the trail of smoke puffs is a DoomLegacy
+  addition, and until now there was no way to switch it off.
+  - **It covers the lost souls too, not only rockets**, because there is one routine for both:
+    `G_Downgrade` installs `AI_SmokeTrailer` in `S_ROCKET` *and* in `S_SKULL_ATK3`/`S_SKULL_ATK4`.
+    The menu row is called *Rocket Trails* because that is what the feature has always been called
+    (`g_game.c` still carries the 1998 "quick hack test of rocket trails" comment), but an operator
+    who turns it off loses the skull trails as well. There is no separate switch and there was never
+    a separate feature.
+  - **It looks cosmetic and is not.** Each puff draws `PP_Random(pL_smoketrail)`, and **`PP_Random`
+    ignores its `pr` argument** — `m_random.c` implements it as `rndtable[++prndindex]`, the one
+    shared gameplay index that every monster decision, shotgun spread and damage roll reads from.
+    So switching trails off shifts the entire gameplay RNG stream from the first rocket onwards.
+    That is why this is `CV_NETVAR` and why it is in the demo header; treating it as a look-of-the
+    game toggle and leaving it out of both would desync every record demo on the cabinet the moment
+    a rocket flew. (Legacy demos before 1.29 shift *twice* per puff, because `P_SpawnMobj` draws
+    `pr_lastlook` for the smoke mobj as well.)
+  - **The gate is a return at the top of `A_SmokeTrailer`, not a state-table patch.** Writing
+    `AI_NULL` into `states[S_ROCKET].action` is what `G_Downgrade` does for a vanilla demo and would
+    have been the obvious mechanism — but `G_Downgrade` runs on every game start
+    (`G_setup_VERSION` calls it with `VERSION`) and on every demo load, so it would overwrite the
+    setting each time and the cvar would have to be re-applied from several places. Returning early
+    reads `.EV` at the point of use instead, which is also what lets a demo's recorded value win
+    over the cabinet's. Confirmed at runtime that the action really is installed in an ordinary
+    game: `states[S_ROCKET].action == AI_SmokeTrailer == 108`.
+  - **Read `.EV`, never `.value`.** `.EV` is the demo-overridable shadow; `.value` is the operator's
+    setting. Reading `.value` would make playback use the cabinet's current setting instead of the
+    demo's, which is the desync this whole design exists to avoid.
+  - **Demo safe, and no version bump needed.** Recorded into the 64-byte option area of the demo144
+    header at **byte 45**, the first free slot after `cv_tall_monsters` at 44. Stored **biased by
+    one** — `cv_rocket_trails.EV + 1`, so 1 = Off and 2 = On — because 0 has to keep meaning "field
+    absent". A plain 0/1 could not tell "recorded as off" from "not recorded", and since the
+    cabinet's demos are *already* demoversion 148 they fall inside the `demoversion >= 148` block
+    and would have read the zero-filled slot as a genuine "off". Every one of them was recorded
+    with trails on, so they would all have desynced. `G_demo_defaults()` sets
+    `cv_rocket_trails.EV = 1` for that case.
+  - Vanilla and Boom demos need no handling at all: `G_Downgrade` leaves `AI_NULL` in the state for
+    demoversion <= 109 (and clears the skull trails below 125), so `A_SmokeTrailer` is never reached
+    and the value is not consulted.
+  - **Deliberately NOT in `hs_ranked_rules[]`**, unlike `cv_tall_monsters` above and unlike
+    `cv_rndsoundpitch`, which is pinned for exactly the same "perturbs the RNG" reason. The
+    difference is who can reach it: this row lives on **Effects Options**, which the lockdown hides,
+    so the only person who can set it is the operator. Pinning it would mean an operator who turns
+    the trails on gets them turned straight back off in every player session, with nothing on screen
+    to say why — the failure mode `install-config.md` records for the OpenGL texture filtering, and
+    the one thing this ruleset must not do. It is safe to leave out because the setting is in the
+    demo header (so a record demo always replays as it was played) and because trails make the game
+    neither easier nor harder: they shuffle the RNG without biasing it.
+  - **The compiled default is what the cabinet actually gets.** `config.cfg` has no `rockettrails`
+    line, because the cvar did not exist when it was written, so the `"0"` in the declaration is the
+    live value until an operator saves a `-devmode` session. That is the whole reason the default is
+    `Off` rather than `On`: picking `On` "to preserve current behaviour" would have shipped a
+    feature that does nothing until someone finds it.
+  - **Menu placement and geometry.** *Options → Effects Options → Rocket Trails*, third row, next to
+    Translucency and Spectre Fuzz — the other look-of-the-game toggles. It is the only `CV_NETVAR` on
+    that page (`cv_splats` next to it is pointedly *not* one; see the "P_Random hazard" comment in
+    `p_mobj.c`), which is harmless: `CV_Set`'s netvar path is guarded by `if (netgame)` and local
+    cabinet play is not a netgame, so it takes the ordinary single-player branch.
+    - Measured against the real `STCFN` lumps: `"Rocket Trails"` is **95px** — the same width as
+      `"Translucency"`, already on this page — so at x=60 it ends at 155, while the right-justified
+      value `"Off"` (24px) starts at 236. 81px clear.
+    - The added row pushes the ordinary rows to y=40..150 and `"Next"` stays at its `IT_YOFFSET`
+      40+130=170, so the page ends at 177 with room for two more rows. Derived with
+      **`tools/menufit-test.py`**, not by hand — see `menus.md`.
+  - **Savegames are unaffected**, although adding a `CV_NETVAR` sounds like it should break them.
+    `P_LoadNetVars` (`p_saveg.c`) reads netvars until it hits the `SYNC_sync`/`SYNC_misc` marker
+    rather than a fixed count, with a comment saying it is adaptable for exactly this reason. Note
+    that `CV_LoadNetVars` (`command.c`), the *net play* path, is **not** adaptive — it loops once per
+    currently-registered netvar — so builds with different netvar sets cannot play each other. Moot
+    on a single cabinet, but it is the thing that would break. `netid` is hashed from the cvar's
+    *name* (`CV_ComputeNetid`), so no existing netvar's id moves.
+  - **Verified headlessly.** A temporary one-shot in `P_Ticker` spawned an `MT_ROCKET` at the
+    player's feet on tic 100 and counted entries to `A_SmokeTrailer`: **1262 puffs spawned / 0
+    suppressed** with the setting On, **0 / 1266** with it Off. The backward-compatibility case was
+    proven end to end from an install whose `config.cfg` said `rockettrails "Off"`: replaying a real
+    cabinet record demo came back `rockettrails.EV=1` with 346 puffs spawning — the demo's own
+    setting beating the cabinet's, which is the case that matters. Header round trip checked on
+    disk in both directions: demos recorded with the setting Off and On carry byte 45 = **1** and
+    **2** respectively, with the `0x55` sync mark still at option-area byte 64 in both, proving the
+    header length is unchanged. And all **96** demos in `legacyhome/demos` read byte 45 = 0 with a
+    valid sync mark, so every one of them replays with trails on, as recorded.

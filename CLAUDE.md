@@ -282,9 +282,12 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
   finished frame lands on the panel — a thing **screenshots cannot see**, since the capture is of
-  the draw buffer and the placement happens after it) and `tools/vidmodes-deduptest.py` lift
-  the functions they test **verbatim out of the source by brace matching**, stub what those touch,
-  and drive them exhaustively. A copied test drifts away from the code and then passes forever;
+  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py` and
+  `tools/menufit-test.py` (where every generic menu page's rows land: a row past the 200-line
+  screen is silently not drawn, and an `IT_YOFFSET` link can end up sharing a y with a row inserted
+  above it) lift
+  the functions and tables they test **verbatim out of the source by brace matching**, stub what
+  those touch, and drive them exhaustively. A copied test drifts away from the code and then passes forever;
   an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
   reinstates each bug it claims to catch and reports whether the check goes red — worth doing for
   any new check, because **a clean result from a check never shown to fail is not evidence**, and
@@ -491,6 +494,18 @@ written up in full in the doc named beside it.
   started, and diff simulation state rather than pixels. → `gotchas.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
+  - **"Gameplay-affecting" includes settings that look purely cosmetic, and `PP_Random`'s `pr`
+    argument is a lie.** It reads as a per-call-site random class, but `m_random.c` implements
+    `PP_Random(pr)` as `rndtable[++prndindex]` and never looks at `pr` — the one shared gameplay
+    index. So *anything* that draws it, however decorative, shifts every monster decision and
+    damage roll that follows. Rocket trails are the case in point: a switch for a puff of smoke
+    needed `CV_NETVAR` and a demo header byte. Grep for `PP_Random`/`P_Random` under any effect
+    before calling it cosmetic. → `gameplay-defaults.md`
+  - **A header byte cannot be a plain 0/1 when the demos already in the field carry the current
+    demoversion.** They fall *inside* the `demoversion >= 148` block and read the zero-filled slot
+    as a real value, so 0 has to keep meaning "not recorded". Store the setting **biased by one**,
+    as `cv_rocket_trails` does, unless 0 already happens to be the old behaviour (which is what let
+    `cv_tall_monsters` get away with a raw byte). → `gameplay-defaults.md`
 - **Drawers run once per frame, so they must be idempotent.** Anything a drawer mutates changes 35
   times a second — advancing a page cursor in one made the attract page flicker through every map.
   → `high-scores.md`

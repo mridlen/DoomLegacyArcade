@@ -260,6 +260,17 @@ static hs_rule_t  hs_ranked_rules[] =
     { &cv_weapon_recoil,         0 },
     { &cv_allowjump,             0 },   // vanilla Doom has no jumping
     { &cv_rndsoundpitch,         0 },   // consumes M_Random, perturbs the RNG
+    // [Arcade] cv_rocket_trails is deliberately NOT here, though it draws the
+    // shared gameplay RNG exactly as cv_rndsoundpitch above does.  It lives on
+    // Effects Options, which the lockdown hides, so the only person who can
+    // set it is the operator -- and pinning it would mean an operator who
+    // switches the trails on gets them switched straight back off in every
+    // player session, with nothing to say why.  That is the failure this
+    // ruleset must not create (see the GL filtering note in
+    // docs/arcade/install-config.md).  It is safe to leave out because it is
+    // recorded in the demo header, so a record demo always replays exactly as
+    // it was played, and because trails make the game neither easier nor
+    // harder -- they shuffle the RNG without biasing it.
     { &cv_mbf_dogs,              0 },   // no helper dogs fighting for you
     // [Arcade] Bots.  Reachable by a player from Options -> Game Options ->
     // Bot Options, and G_InitNew hands cv_bots straight to B_Regulate_Bots

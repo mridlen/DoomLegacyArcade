@@ -850,3 +850,43 @@ different check than the one you meant to test has not tested anything.**
 
 **A clean result from a check that has never been shown to fail is not evidence.** If a mutation
 stops applying because the code moved, the tool says so rather than quietly testing nothing.
+
+---
+
+- **Page geometry is now measured, not calculated by hand: `tools/menufit-test.py`.** The trap this
+  file opens with — a row past y=200 is simply not drawn, with no clipping mark, no scroll and no
+  warning — was checked by arithmetic in a comment every time, and the arithmetic was sometimes
+  wrong. This file's own note on Game Options put "Adv Options >>" at y=160; it is at **150**
+  (eleven `STRINGHEIGHT` rows from y=40 end at 140, and its `IT_YOFFSET` is 110). Nothing came of
+  that particular slip, because the page has no collision either way, which is the point: a wrong
+  number that happens not to matter is indistinguishable from a right one until the day it does.
+
+  The script lifts every `menuitem_t` array **verbatim out of `m_menu.c` by brace matching** and
+  pairs it with the `menu_t` that draws it with `M_DrawGenericMenu`, the way
+  `tools/vidmenu-navtest.py` and the other extracted tests lift the functions they test — a copied
+  table drifts away from the source and then passes forever. It resolves the `#ifdef` rows against
+  the real `doomdef.h`, replays the drawer's y advance per `IT_DISPLAY` value, and reports two
+  things nothing else does: a row whose bottom runs past the 200-line screen, and **two rows sharing
+  a y**, which is what an `IT_YOFFSET` link left behind by an inserted row above it does.
+
+  ```
+  tools/menufit-test.py                     # every generic page, one line each
+  tools/menufit-test.py EffectsOption1Menu  # one page, with every row's y
+  tools/menufit-test.py --selfcheck         # prove the two checks can go red
+  ```
+
+  All **29** generic pages currently fit. The tightest are Options and Game Options at y 40..187,
+  with room for one more row each. Run it after inserting, removing or reordering any row.
+  - **`--selfcheck` reinstates both bugs** — it drags a page's `IT_YOFFSET` row up onto an ordinary
+    row, and appends twenty rows to run it off the bottom — and reports whether each check goes red.
+    Worth using on any check added to it: a clean result from a check never shown to fail is not
+    evidence, and two of `vidmenu-navtest.py`'s five checks were silently useless until it grew the
+    same option.
+  - It only measures **generic** pages. A page with its own drawer (`M_DrawSetupMultiPlayerMenu`,
+    the Join screen, initials entry) places things outside the item loop and is skipped — the
+    `menu_t` filter on `M_DrawGenericMenu` is what excludes them, so a page is either measured or
+    not listed at all. A symbolic `IT_YOFFSET` (`PLSKINNAMEY+14`) is reported as unmeasured rather
+    than guessed.
+  - **Effects Options gained a row** — *Rocket Trails*, third, beside Translucency and Spectre Fuzz.
+    Ordinary rows now run y=40..150 and `"Next"` keeps its `IT_YOFFSET` at 40+130=170, so the page
+    ends at 177 with two rows to spare. → `gameplay-defaults.md`
