@@ -305,6 +305,14 @@ to anyone else running this port. Each is written up in full in the commit that 
   the world goes into the picture the engine draws; Keep aspect decides how that finished picture
   is placed on the screen. No View fit setting can add black bars.
 
+- **At 800x600 the HUD was drawn a third narrower than it should be.** Only at 800x600 — every
+  other 4:3 resolution was fine, which is what made it odd. The status numbers and icons were the
+  same width as at 640x480 but half again as tall; the health cross, which is square, came out a
+  tall rectangle. The 2D art is drawn at whole-number scales, and 800x600 is the one resolution
+  where the width could not take the scale the height had picked, so it kept a mismatched pair
+  instead of bringing them back together. It now uses the same scale on both axes, as its
+  neighbours do. Nothing else moves — 800x600 is the only resolution affected.
+
 **Smaller things**
 
 - **Gamma settings have their own page.** *Gamma Function*, *Gamma*, *Black level* and

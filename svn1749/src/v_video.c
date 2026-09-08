@@ -3601,7 +3601,46 @@ void V_Setup_VideoDraw(void)
         float  ratio = (vid.fdupy > 0.0f) ? (vid.fdupx / vid.fdupy) : 1.0f;
         int    dx = (int)( (vid.dupy * ratio) + 0.5f );
 
-        if( dx > vid.dupx_fill )  dx = vid.dupx_fill;  // must still fit across
+        if( dx > vid.dupx_fill )
+        {
+            // [Arcade] The width cannot take the scale the ratio asks for.
+            // Bring the HEIGHT down to meet it instead of keeping the
+            // mismatched pair, which is what clamping dx alone used to do.
+            //
+            // 800x600 is the only mode in the whole list where this fires,
+            // and it was visibly wrong.  The exact scales are 2.5 and 3.0, so
+            // the ratio wants dupx 3 to go with dupy 3 -- but 320*3 is 960 and
+            // the screen is 800 wide, so dx was clamped to 2 and the pair left
+            // as 2 by 3.  That is a ratio of 0.667 where 0.833 is wanted: HUD
+            // art a third narrower than it is tall, on the one 4:3 resolution
+            // that is nobody's idea of unusual.  Every other 4:3 mode comes
+            // out with a matched pair (640x480 and 1024x768 are both 1.000),
+            // which is exactly why 800x600 stood out next to them.
+            //
+            // Measured on the status digits: the same glyph is 22x22 at
+            // 640x480, 33x33 at 1024x768 and was 22x33 at 800x600 -- the same
+            // width as the smaller screen with half again the height.
+            //
+            // Taking dupy down to 2 gives 800x600 the 2 by 2 pair its
+            // neighbours have.  The art is shorter than it was; it is also
+            // the right shape, and it matches what the resolutions either
+            // side of it do.  Only ever downward: dupy is the floor of
+            // height/200 and raising it would push a 200 unit menu off the
+            // bottom of the screen.
+            //
+            // Whole screen 2D pages are unaffected -- V_SCALEEXACT scales y by
+            // the exact vid.fdupy, not by this whole number (screen-fill.md).
+            // This reaches the menus, the HUD and the status bar only.
+            dx = vid.dupx_fill;
+
+            if( ratio > 0.0f )
+            {
+                int  dy = (int)( (dx / ratio) + 0.5f );
+
+                if( dy < 1 )  dy = 1;
+                if( dy < vid.dupy )  vid.dupy = dy;
+            }
+        }
         if( dx < 1 )  dx = 1;
         vid.dupx = dx;
     }

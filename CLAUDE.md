@@ -521,6 +521,17 @@ written up in full in the doc named beside it.
   explicit rect (`Present_Fit_Rect`) — **not `SDL_RenderSetLogicalSize`**, which on sdl2-compat put
   the whole bar on one side and at 1024x768 into 1366x768 silently did nothing at all.
   → `software-fullscreen.md`
+- **The 2D whole-number scales are picked as a pair, and the "must still fit across" clamp used to
+  undo that silently.** `vid.dupx`/`vid.dupy` keep the exact ratio between them, but clamping
+  `dupx` to `floor(width/320)` afterwards left the mismatched pair the pairing exists to prevent.
+  It fires at **800x600 alone** of every mode in the list — 2 by 3 where 2 by 2 was wanted, HUD art
+  a third narrower than tall on the least exotic resolution there is. `dupy` now comes down to meet
+  the width. **Both answers are 20% out, in opposite directions, so no tolerance can choose between
+  them**: the rule is that erring *wide* is what every other resolution does and what the art
+  tolerates, and `tools/hudtext-test.py` had to encode that tie-break rather than an error bound.
+  Note this was **hidden by the present-path stretch** — filling a 16:9 panel from a 4:3 frame
+  widened it back to nearly right — so expect other proportions that stretch was quietly correcting
+  to surface now that it letterboxes. → `ultrawide.md`, `software-fullscreen.md`
 - **`SDL_UpdateTexture` takes the pitch of the buffer you hand it, not the pitch of anything on
   screen.** The engine draws into its own buffer (`vid.ybytes` per row); `vidSurface` is the
   window's framebuffer, a different buffer that SDL2 never presents, and `vid.direct_rowbytes` is

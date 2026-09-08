@@ -90,6 +90,7 @@ HARNESS = r'''
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef unsigned char byte;
 typedef int boolean;
@@ -178,6 +179,66 @@ static void fail( const char * what, int w, int h, const char * ren,
     printf("  FAIL  %-26s %4dx%-4d %-8s  %s\n", what, w, h, ren, detail);
     failures++;
 }
+
+// [Arcade] The whole-number pair vid.dupx/vid.dupy must be the closest
+// achievable to the exact fdupx/fdupy ratio -- and where two pairs are equally
+// close, it must not be the NARROWER of them.
+//
+// The tie-break is the whole point.  At 800x600 the exact ratio is 0.833 and
+// both 2x2 (1.000) and 2x3 (0.667) are 0.167 away, so a plain error tolerance
+// cannot tell them apart -- they are wrong by the same amount in opposite
+// directions.  2x3 was what the code picked, and it is the one that looks
+// broken: HUD art a third narrower than it is tall, on the only 4:3 mode in
+// the list that does it, sitting between 640x480 and 1024x768 which both come
+// out 1.000.  Erring wide is what every other resolution already does and what
+// the art tolerates; erring narrow is what someone notices from across a room.
+static void check_scale_pair( int w, int h, const char * ren )
+{
+    float  exact = vid.fdupx / vid.fdupy;
+    float  chosen = (float)vid.dupx / (float)vid.dupy;
+    float  chosen_err = fabsf( chosen - exact );
+    int    maxx = w / BASEVIDWIDTH;      // the floors, before any lowering
+    int    maxy = h / BASEVIDHEIGHT;
+    float  best = 1.0e9f;
+    int    dx, dy;
+    char   buf[160];
+
+    if( maxx < 1 )  maxx = 1;
+    if( maxy < 1 )  maxy = 1;
+
+    for( dy = 1; dy <= maxy; dy++ )
+        for( dx = 1; dx <= maxx; dx++ )
+        {
+            float e = fabsf( ((float)dx / (float)dy) - exact );
+            if( e < best )  best = e;
+        }
+
+    if( chosen_err > best + 1.0e-4f )
+    {
+        snprintf(buf, sizeof buf,
+            "dupx/dupy %d/%d = %.3f, exact %.3f, err %.3f but %.3f was available",
+            vid.dupx, vid.dupy, chosen, exact, chosen_err, best);
+        fail("scale pair not the closest", w, h, ren, buf);
+        return;
+    }
+
+    for( dy = 1; dy <= maxy; dy++ )
+        for( dx = 1; dx <= maxx; dx++ )
+        {
+            float r = (float)dx / (float)dy;
+            float e = fabsf( r - exact );
+            if( e <= best + 1.0e-4f && r > chosen + 1.0e-4f )
+            {
+                snprintf(buf, sizeof buf,
+                    "dupx/dupy %d/%d = %.3f is narrower than %d/%d = %.3f, "
+                    "which is exactly as close to %.3f",
+                    vid.dupx, vid.dupy, chosen, dx, dy, r, exact);
+                fail("narrower of two tied pairs", w, h, ren, buf);
+                return;
+            }
+        }
+}
+
 
 // STTNUM digits are 14x16; STYSNUM (the compact ones) are 4x6.
 static patch_t tallnum[11];
@@ -445,6 +506,8 @@ int main( int argc, char ** argv )
                 printf("  %4dx%-4d  dupx=%d fdupx=%.4f  dupy=%d fdupy=%.4f\n",
                        w, h, vid.dupx, vid.fdupx, vid.dupy, vid.fdupy);
 
+            if( r == 0 )   // integers, so once per mode is enough
+                check_scale_pair( w, h, ren );
             check_digits( w, h, ren, tallnum, "STTNUM" );
             check_digits( w, h, ren, shortnum, "STYSNUM" );
             check_flash( w, h, ren );
