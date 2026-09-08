@@ -286,8 +286,31 @@ to anyone else running this port. Each is written up in full in the commit that 
   the cvar at its default with no indication. `cfgcheck` repeats the check on demand, and every
   save keeps a `config.cfg.bak`.
 
+- **A 4:3 resolution was stretched across a widescreen monitor instead of getting black bars.**
+  In software fullscreen the finished picture was scaled to fill the whole panel whatever shape it
+  was, so 640x480, 800x600 or 1024x768 on a 16:9 screen came out **33% too wide** — and the
+  renderer had drawn that picture *for* a 4:3 frame, so the distortion was real and not a matter
+  of taste. It looked like OpenGL was doing it right, but OpenGL only changes the display mode and
+  lets the monitor's own scaler add the bars; on a monitor set to stretch, it would have looked
+  just as wrong.
+
+  There is a **Keep aspect** setting on Video Options now, on by default. The picture is fitted to
+  the screen at its own shape with black bars filling the rest — down the sides normally, along the
+  top and bottom on a monitor turned on its side. Set it to **No** for the old behaviour if you
+  would rather fill the screen than keep the proportions. It does nothing at a resolution that
+  already matches the monitor's shape, so it changes nothing on a cabinet running at native
+  resolution, and it is greyed out in OpenGL, where the monitor is doing the scaling.
+
+  Note this is **not** what *View fit* does, which is easy to assume. View fit decides how much of
+  the world goes into the picture the engine draws; Keep aspect decides how that finished picture
+  is placed on the screen. No View fit setting can add black bars.
+
 **Smaller things**
 
+- **Gamma settings have their own page.** *Gamma Function*, *Gamma*, *Black level* and
+  *Brightness* moved off Video Options to **Video Options → Gamma Options**, which is also where
+  F11 now takes you. Video Options had run out of room; this made space for Keep aspect and leaves
+  some over.
 - **Low resolutions can be chosen in fullscreen**, not just in a window. 320x200, 400x300, 512x384,
   640x480 and 800x600 are offered fullscreen for the software renderer and scaled up by the GPU with
   nearest-neighbour filtering, so they stay sharp. Previously the fullscreen list held only the modes

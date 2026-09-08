@@ -329,3 +329,135 @@ appears.
 The cost is that a slow load now shows whatever was on screen before rather than a progress
 console. On the Pi the load is a couple of seconds, and the text is still in the terminal and the
 log where it can be read after the fact.
+
+---
+
+## The frame was stretched to the panel, whatever shape it was
+
+*`Present_Fit_Rect` and its call site in `I_FinishUpdate` (`sdl/i_video.c`), `cv_keepaspect`
+(`screen.c`), the "Keep aspect" row on Video Options. Checked by `tools/screenfit-test.py`.*
+
+The question that started this: **should a 4:3 resolution not have black bars down the sides?**
+
+It should, it did not, and it had never done. Every drawing size was stretched to fill the whole
+panel. The observation that pinned it: **OpenGL letterboxes and software does not**, on the same
+machine and the same monitor. That is not a difference in intent, it is a difference in how the two
+renderers go fullscreen:
+
+| | fullscreen flag | who scales | result on a 16:9 panel |
+| --- | --- | --- | --- |
+| OpenGL (`ogl_sdl.c`) | `SDL_WINDOW_FULLSCREEN` | a **real display mode switch**; the monitor's own scaler | bars, if the panel is set to preserve aspect |
+| software (`i_video.c`) | `SDL_WINDOW_FULLSCREEN_DESKTOP` | `SDL_RenderCopy` into the desktop-sized window | **always fills** |
+
+`SDL_RenderCopy( r, tex, NULL, NULL )` — a NULL destination rectangle — means *fill the target*.
+Aspect ratio never enters into it. That one call is the whole bug.
+
+**GL's bars are not the engine's doing and should not be relied on.** They come from the display's
+scaling setting. A monitor set to "full" would stretch the GL path exactly as software did.
+
+### Measured
+
+Replaying the engine's own present call against a simulated 1366x768 panel:
+
+| drawing size | stock | with an explicit destination rect |
+| --- | --- | --- |
+| 640x480 (4:3) | fills, shown aspect **1.78** vs source 1.33 | 1024x768, 171px bars each side |
+| 800x600 (4:3) | fills, **1.78** vs 1.33 | 1024x768, 171px bars |
+| 1024x768 (4:3) | fills, **1.78** vs 1.33 | 1024x768, 171px bars |
+| 640x400 (16:10) | fills, **1.78** vs 1.60 | 1228x768, 69px bars |
+| 1366x768 | correct | unchanged |
+
+**33% too wide at 4:3.** And the renderer is not neutral about it — it is drawing *for* a 4:3
+frame. Printing the projection out of `R_ExecuteSetViewSize` at each size:
+
+| drawing size | viewfit chosen | projection y/x |
+| --- | --- | --- |
+| 640x480, 800x600, 1024x768 | 1 = stretch | **1.2000** — the vanilla non-square-pixel look |
+| 640x400, 1280x720, 1366x768, 1920x1080 | 2 = fit width | **1.0000** — square pixels |
+
+So a 4:3 mode on a 16:9 panel showed 1.2 / 1.333 = **0.90** where the renderer intended 1.20.
+
+### View fit is a different stage, and cannot fix this
+
+They are constantly confused and they are two steps. **`cv_viewfit` composes the world inside the
+frame the engine draws** — how much of it, and what shape — and it never leaves any part of that
+frame unpainted, so no setting of it letterboxes anything. **`cv_keepaspect` places the finished
+frame on the panel.** View fit only ever looks at `vid.width`/`vid.height`; it never learns the
+panel's shape, so when the two disagree it cannot know and cannot compensate. Driven at 4:3 sizes
+against a 1366x768 panel, every option is correct in the frame and wrong on the screen:
+
+| drawing size | View fit | in the frame | on the panel |
+| --- | --- | --- | --- |
+| 1024x768 | Stretch | 1.20 | **0.90** |
+| 1024x768 | Fit width | 1.00 | **0.75** |
+| 1024x768 | Fit height | 1.00 | **0.75** |
+| 800x600 | Stretch | 1.20 | **0.90** |
+| 800x600 | Fit width / height | 1.00 | **0.75** |
+
+Nothing reaches 1.0, let alone 1.2. **When the drawing size already matches the panel's shape the
+present step does nothing and View fit is the only thing that matters** — which is the cabinet at
+1366x768, and why this was invisible there.
+
+### Do not use SDL_RenderSetLogicalSize
+
+It is the obvious one-line fix and it is not usable here. Measured on SDL 2.32 through sdl2-compat,
+identically under both the `x11` and `offscreen` drivers:
+
+- it put the **whole bar on one side** (L 0, R 342) instead of centring;
+- at **1024x768 into 1366x768 it did nothing at all** and stretched anyway, while the same call
+  letterboxed 640x480 and 800x600 correctly.
+
+It also behaves differently again when a render target texture is set, which is what made the first
+probe of it disagree with the second. An explicit destination rect is deterministic and was correct
+and centred in all of it.
+
+### The rule
+
+**`SDL_RenderCopy` with a NULL destination rectangle fills the target — it does not preserve
+aspect.** If bars are wanted, the rectangle has to be computed and passed.
+
+### What it does now
+
+`Present_Fit_Rect( src_w, src_h, out_w, out_h, keep_aspect, &dx,&dy,&dw,&dh )` fits the frame
+inside the output at its own shape and centres it; `I_FinishUpdate` clears to black and passes the
+rect, or keeps the old NULL call when the rect is the whole output.
+
+- **Which axis gets the bars falls out of the comparison** rather than being decided in advance, so
+  a **portrait monitor** letterboxes top and bottom with no separate case. `src_w*out_h >
+  out_w*src_h` means the frame is proportionally the wider, so width is the binding axis.
+- **`PRESENT_FIT_SNAP` is 2 pixels.** 1280x720 inside 1366x768 is a 0.05% mismatch that would
+  otherwise leave a single black column down one side, which reads as a bug rather than a letterbox.
+- **The clear runs every frame while there are bars**, not once. The renderer may be double
+  buffered, so painting the bars into one back buffer leaves the other holding whatever it had.
+- **The output size is asked for every frame** rather than cached at mode set, so a desktop
+  resolution change under a `FULLSCREEN_DESKTOP` window cannot leave the rect describing a panel
+  that is no longer there.
+- `cv_keepaspect` defaults to **Yes**. It is inert wherever the shapes already agree, so the
+  cabinet at 1366x768 is unaffected either way; **No** is the old stretch, for anyone who would
+  rather fill the screen.
+- **No effect in OpenGL**, which is why the menu row is greyed outside the software drawmode — the
+  same choice and reason as Render Threads (`render-threads.md`).
+
+### Verifying it
+
+**A screenshot cannot see any of this.** `M_ScreenShot` writes the engine's own draw buffer, which
+is finished *before* the present step runs, so a rect that is off-centre, off the panel or
+letterboxing the wrong axis looks identical in every capture. Only someone in front of the cabinet
+would see it.
+
+So `tools/screenfit-test.py` lifts `Present_Fit_Rect` out of `sdl/i_video.c` by brace matching and
+drives it over 380 combinations of panel and drawing size, portrait panels included, checking that
+the rect is never off the panel, is centred to within the one pixel integer division can leave, has
+bars on exactly one axis and the correct one, and keeps the shape. `--selfcheck` reinstates five
+bugs — comparison reversed, centring dropped, snap removed, `keep_aspect` ignored, fitted axis
+swapped — and all five go red.
+
+The **wiring** is the part that test cannot see, so it was checked separately with a temporary
+print in `I_FinishUpdate` and a headless run under the offscreen driver, whose output is 1024x768:
+
+```
+draw 640x400  keepaspect=Yes   src=640x400  out=1024x768 -> 0,64 1024x640   (64px bars top and bottom)
+draw 640x400  keepaspect=No    src=640x400  out=1024x768 -> 0,0  1024x768   (old behaviour)
+draw 640x480  keepaspect=Yes   src=640x480  out=1024x768 -> 0,0  1024x768   (shapes agree)
+draw 1024x768 keepaspect=Yes   src=1024x768 out=1024x768 -> 0,0  1024x768
+```

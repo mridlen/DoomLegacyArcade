@@ -461,6 +461,78 @@ void I_UpdateNoBlit(void)
     /* this function intentionally left empty */
 }
 
+// [Arcade] Where the finished frame goes on the panel.
+//
+// src is the drawing size, out is the renderer's output size.  With
+// keep_aspect off, or when the two shapes already agree, this is the whole
+// output and SDL_RenderCopy can be given a NULL rectangle as before.
+// Otherwise the frame is fitted inside the output at its own shape and
+// centred, and the caller paints the leftover black.
+//
+// Which axis gets the bars falls out of the comparison rather than being
+// decided in advance, so a portrait panel letterboxes top and bottom with no
+// separate case: src_w*out_h > out_w*src_h means the frame is proportionally
+// the wider of the two, so width is the binding axis and the bars go above
+// and below.  The cross-multiply keeps it in integers -- these are pixel
+// counts, and a float ratio here would round a 1366 wide panel differently
+// from one run to the next.
+//
+// SNAP is the tolerance for calling two shapes equal.  1280x720 inside
+// 1366x768 is a 0.05% mismatch that would otherwise leave a single black
+// column down one side, which looks like a bug rather than a letterbox.  Two
+// pixels is below anything visible and well under the smallest real aspect
+// step in the mode list.
+//
+// Extracted verbatim by tools/screenfit-test.py -- keep it a plain function
+// over ints, with no SDL types, so that test does not need to stub anything.
+#define PRESENT_FIT_SNAP  2
+
+void Present_Fit_Rect( int src_w, int src_h, int out_w, int out_h,
+                       int keep_aspect,
+                       /*OUT*/ int * dx, int * dy, int * dw, int * dh )
+{
+    int w = out_w, h = out_h;
+
+    if( keep_aspect && src_w > 0 && src_h > 0 && out_w > 0 && out_h > 0 )
+    {
+        // Compare src_w/src_h against out_w/out_h without dividing, so the
+        // decision is exact.  The largest product here is bounded by
+        // MAXVIDWIDTH * MAXVIDHEIGHT, about 1.1e7, so int arithmetic would
+        // do; int64_t costs nothing at this rate and settles the question.
+        if( (int64_t)src_w * out_h > (int64_t)out_w * src_h )
+        {
+            // Frame is proportionally wider: fit the width, bars top/bottom.
+            // This is the portrait monitor case, and the one a landscape
+            // panel reaches when the drawing size is wider than the screen.
+            h = (int)(((int64_t)out_w * src_h) / src_w);
+        }
+        else
+        {
+            // Frame is proportionally taller, or the same shape: fit the
+            // height, bars down the sides.
+            w = (int)(((int64_t)out_h * src_w) / src_h);
+        }
+
+        // No clamp back to out_w/out_h is needed: whichever branch ran, the
+        // fitted axis is the shorter of the two by the comparison above, and
+        // integer division truncates, so w <= out_w and h <= out_h already.
+        // tools/screenfit-test.py checks that over the whole sweep.
+
+        // Close enough to the panel's own shape: fill it and show no bars.
+        if( (out_w - w) <= PRESENT_FIT_SNAP && (out_h - h) <= PRESENT_FIT_SNAP )
+        {
+            w = out_w;
+            h = out_h;
+        }
+    }
+
+    *dw = w;
+    *dh = h;
+    *dx = (out_w - w) / 2;
+    *dy = (out_h - h) / 2;
+}
+
+
 //
 // I_FinishUpdate
 //
@@ -614,9 +686,47 @@ void I_FinishUpdate(void)
         else
         SDL_UpdateTexture( sdl_texture, NULL, vid.display, vid.ybytes );
 
-        // SDL2 docs use RenderClear, but we do not have any conflicting drawers.
-//        SDL_RenderClear( sdl_renderer );
-        SDL_RenderCopy( sdl_renderer, sdl_texture, NULL, NULL );  // to video framebuffer
+        // [Arcade] Put the frame on the panel at its own shape, or stretched
+        // to fill, according to cv_keepaspect.
+        //
+        // A NULL destination rectangle fills the output whatever shape the
+        // frame is, which is what stretched every 4:3 drawing size across a
+        // 16:9 panel.  When bars are wanted the rectangle has to be given
+        // explicitly: SDL_RenderSetLogicalSize is the obvious alternative and
+        // is not usable here -- on SDL 2.32 through sdl2-compat it put the
+        // whole bar on one side instead of centring, and at 1024x768 into
+        // 1366x768 it silently did nothing and stretched anyway.
+        //
+        // The output size is asked for every frame rather than cached at mode
+        // set, so a desktop resolution change underneath a
+        // FULLSCREEN_DESKTOP window cannot leave the rectangle describing a
+        // panel that is no longer there.  It is a struct read on every
+        // backend here, not a round trip.
+        {
+            int out_w = 0, out_h = 0;
+            int dx, dy, dw, dh;
+
+            SDL_GetRendererOutputSize( sdl_renderer, &out_w, &out_h );
+            Present_Fit_Rect( vid.width, vid.height, out_w, out_h,
+                              cv_keepaspect.EV, &dx, &dy, &dw, &dh );
+
+            if( dw < out_w || dh < out_h )
+            {
+                // There are bars.  Clear every frame, not once: the renderer
+                // may be double buffered, so painting the bars into one back
+                // buffer leaves the other one holding whatever it had.
+                SDL_Rect  dest = { dx, dy, dw, dh };
+                SDL_SetRenderDrawColor( sdl_renderer, 0, 0, 0, 255 );
+                SDL_RenderClear( sdl_renderer );
+                SDL_RenderCopy( sdl_renderer, sdl_texture, NULL, &dest );
+            }
+            else
+            {
+                // Fills the output.  No clear needed, and this is the path
+                // every existing install was already taking.
+                SDL_RenderCopy( sdl_renderer, sdl_texture, NULL, NULL );
+            }
+        }
         SDL_RenderPresent( sdl_renderer );  // make it current
 #else
         // SDL 1.2

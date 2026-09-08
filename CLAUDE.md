@@ -280,7 +280,9 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   cannot have, believe the arithmetic. → `ultrawide.md`
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
-  `tools/viewgrid-test.py`, `tools/hudtext-test.py` and `tools/vidmodes-deduptest.py` lift
+  `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
+  finished frame lands on the panel — a thing **screenshots cannot see**, since the capture is of
+  the draw buffer and the placement happens after it) and `tools/vidmodes-deduptest.py` lift
   the functions they test **verbatim out of the source by brace matching**, stub what those touch,
   and drive them exhaustively. A copied test drifts away from the code and then passes forever;
   an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
@@ -367,7 +369,7 @@ are kept below, in this file.
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
 | `docs/arcade/drawmode-switching.md` | Per-drawmode config files, the software-drawmode "lockup", why recovery after teardown is unsafe | `V_switch_drawmode`, `SCR_apply_video_settings`, `SCR_SetMode`, `config8p.cfg`/`configgl.cfg`/`confign.cfg` |
-| `docs/arcade/software-fullscreen.md` | The SDL2 present path: texture pitch versus the window surface, why software fullscreen skewed, the fullscreen mode list and GPU scaling | `VID_SetMode_vid`, `I_FinishUpdate`, `sdl_texture`/`vidSurface`/`vid.direct*` |
+| `docs/arcade/software-fullscreen.md` | The SDL2 present path: texture pitch versus the window surface, why software fullscreen skewed, the fullscreen mode list and GPU scaling, letterboxing versus stretching (`keepaspect`) | `VID_SetMode_vid`, `I_FinishUpdate`, `Present_Fit_Rect`, `sdl_texture`/`vidSurface`/`vid.direct*` |
 | `docs/arcade/ultrawide.md` | 21:9 and 32:9 monitors: the engine size caps, the view fit and field of view, the wide draw sizes, the Video Modes aspect filter | `MAXVIDWIDTH`/`MAXVIDHEIGHT`, `VID_add_scaled_modes`, `windowedModes[]`, the `viewfit` block and `R_Init_TextureMapping` in `r_main.c`, `vid_aspect` |
 | `docs/arcade/screen-fill.md` | Why 2D pages letterboxed in software and fill now (`V_SCALEEXACT`, the fixed-point draw scale), and why the OpenGL resolution could not be changed | `V_SetupDraw`, `drawinfo` scaling in `v_video.c`, `V_SCALEEXACT` call sites, `VID_SetMode`, `OglSdl_SetMode` |
 | `docs/arcade/install-config.md` | Portable `legacyhome`, config verification, command buffer size | `legacyhome` resolution, `m_misc.c`, tracked `config.cfg` |
@@ -399,6 +401,7 @@ everything else is arcade blocks inside an upstream file.
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |
+| Where the frame lands on the panel | `Present_Fit_Rect` and its call site in `I_FinishUpdate` (`sdl/i_video.c`); `cv_keepaspect` (`screen.c`); the greying in `M_Draw_VideoOptions` (`m_menu.c`) |
 | Render threads | `r_threads.c` entire. `R_TLS` in `doomdef.h`; `D_Submit_Threaded_Views`/`D_Threaded_Views_Wait` (`d_main.c`); the seeding of `colfunc`/`spanfunc` and `R_NetUpdate_Main` (`r_main.c`); `R_Cache_Lock` call sites in `w_wad.c`, `r_segs.c`, `r_plane.c`, `r_bsp.c` |
 | Uncapped framerate | `r_fps.c` entire. Per tic: `R_UpdateInterpolations` (`P_Ticker`), `R_ActivateThinkerInterpolations`/`R_StopInterpolationIfNeeded` (`p_tick.c`), `R_Interp_Capture_Mobj` (`P_MobjThinker`, `P_PlayerThink`, `P_MoveChaseCamera`, `P_ThingHeightClip`, `P_BlasterMobjThinker`). Per frame: `R_Interp_Set_Frac` and `R_Interp_Frame_Begin/End` (`D_Display`), the `R_Interp_Fixed`/`R_Interp_View_Angle` calls in `R_SetupFrame`, `R_ProjectSprite`, `HWR_ProjectSprite`. Resets: `R_Interp_Reset_Mobj` (`P_SpawnMobj`, `P_TeleportMove`, `P_ResetCamera`), `R_Interp_Reset_View` |
 | Whole-screen 2D page scale | `v_video.c`: `V_SetupDraw` (`x_scale`/`y_scale`, `x0_scale`/`y0_scale`) and the `V_scale_x`/`V_scale_y` macros in `v_video.h`. Flag set by `D_PageDrawer`, `HS_Draw_AttractTable`, `WI_Drawer`, `F_Drawer` |
@@ -507,6 +510,17 @@ written up in full in the doc named beside it.
 - **When widening a per-player cvar, grep for its `[1]` registration.** The declaration being
   `[MAXSPLITSCREENPLAYERS]` proves nothing — six cvars were widened but still registered only up
   to Player2, so panels 3 and 4 could not save them at all. → `multiplayer-views.md`
+- **`SDL_RenderCopy` with a NULL destination rectangle fills the target; it does not preserve
+  aspect.** Software fullscreen is `FULLSCREEN_DESKTOP` and scales the frame into the window
+  itself, so every drawing size was stretched to the panel — a 4:3 mode came out 33% too wide on
+  16:9, while the renderer was drawing it for a 4:3 frame (projection y/x 1.2). OpenGL looked
+  right only because it does a *real* mode switch and the monitor's scaler adds the bars, which
+  means GL's bars depend on the display's own setting and prove nothing about the engine.
+  **`viewfit` cannot fix this and is a different stage**: it composes the world *inside* the drawn
+  frame and never leaves part of it unpainted, and it never learns the panel's shape. Bars need an
+  explicit rect (`Present_Fit_Rect`) — **not `SDL_RenderSetLogicalSize`**, which on sdl2-compat put
+  the whole bar on one side and at 1024x768 into 1366x768 silently did nothing at all.
+  → `software-fullscreen.md`
 - **`SDL_UpdateTexture` takes the pitch of the buffer you hand it, not the pitch of anything on
   screen.** The engine draws into its own buffer (`vid.ybytes` per row); `vidSurface` is the
   window's framebuffer, a different buffer that SDL2 never presents, and `vid.direct_rowbytes` is

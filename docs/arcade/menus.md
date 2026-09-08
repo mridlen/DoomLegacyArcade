@@ -28,6 +28,34 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   when moving anything on this page; the gamma triple is the only positional dependency and it
   is easy to shift by accident.
 
+  **`VO_gamma` no longer exists, and Video Options no longer has a positional dependency at
+  all.** *Gamma Function*, *Gamma*, *Black level* and *Brightness* moved to their own page,
+  **Video Options → Gamma Options >>** (`GammaOptionsMenu` / `GammaOptionsDef`). They belong
+  together — the gamma function chooses the curve and the other three are its parameters, which
+  is exactly why `MenuGammaFunc_dependencies` greys them as a group — and taking four rows off
+  Video Options is what made room for *Keep aspect* (`software-fullscreen.md`).
+
+  The indices are `GO_gammafunc`/`GO_gamma`/`GO_black`/`GO_bright`, and
+  `MenuGammaFunc_dependencies` now writes `GammaOptionsMenu[GO_gamma .. GO_gamma+2]`. **The
+  move also removed the `__DJGPP__` conditional from the calculation**: `VO_gamma` was 3 or 4
+  depending on whether the *Fullscreen* row was compiled in, on a page where that row sits above
+  it. The new page has nothing conditional above the gamma rows, so the enum is the same
+  everywhere.
+
+  **F11 opens Gamma Options directly.** That key has always been "the gamma key" and used to
+  land on Video Options only because that is where these rows lived.
+
+  Video Options is **14 rows now, ending at y=161**: 16, minus the four gamma rows, plus the
+  Gamma Options link, plus *Keep aspect*. Room for three more. Still measure before adding one —
+  nothing warns when a row falls off the bottom, which is the whole point of this section.
+
+  *Keep aspect* is greyed (`IT_DISABLED`) outside the software drawmode, the same choice and the
+  same reason as *Render Threads*: in OpenGL the black bars come from the monitor's own scaler
+  and the engine is not placing the picture at all. It is found **by its cvar pointer, not by
+  index**, in `M_Draw_VideoOptions` — a hardcoded index there would put straight back the
+  positional dependency this move removed, on a page that still has two conditionally compiled
+  rows.
+
   *Render Threads* is shown **greyed** (`IT_DISABLED`) outside the software drawmode rather than
   hidden, so it stays discoverable and it is obvious why it is unavailable — hiding it is what
   made it impossible to find the first time. → `render-threads.md`
