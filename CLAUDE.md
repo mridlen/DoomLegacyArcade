@@ -434,6 +434,14 @@ written up in full in the doc named beside it.
   default in source does nothing on a machine that already has a config. This has bitten three
   times (overlay element letters, the level clock, weapon switching) and each time read as the
   feature being broken rather than unconfigured. → `install-config.md`, `hud.md`
+  - **The mirror image: a brand-new cvar has no config line, so its compiled default *is* what the
+    cabinet runs** until someone saves a `-devmode` session. That makes the default a behaviour
+    decision, not a formality — and **a switch added so somebody *can* change something defaults to
+    what the thing already did.** Defaulting it to the new behaviour ships a change to how the
+    machine plays for everyone who never opens the menu, disguised as "adding an option". Rocket
+    trails shipped `Off` on that reasoning and had to be corrected to `On`. Default the other way
+    only when the current behaviour is itself the bug being fixed.
+    → `gameplay-defaults.md`
 - **A file rewritten in place is empty on disk for the length of the rewrite, and this cabinet is
   switched off at the wall.** `fopen(name, "w")` truncates before it writes, so a power cut during a
   save loses the entire file rather than the game in progress — and saving *more often* to limit the

@@ -122,12 +122,12 @@ Discord is likely to get you banned.
   buried in 4:3 modes it will never use.
 - **A switch for the rocket trails.** **Options → Effects Options → Rocket Trails** (in a
   `-devmode` session — the Effects page is hidden on a locked cabinet) turns off the trail of smoke
-  behind a rocket, which vanilla Doom does not have — DoomLegacy added it. It ships **off**, so the
-  cabinet looks like Doom out of the box. The same switch also covers the smoke
-  behind a charging lost soul, because the engine draws both from one routine; there is no way to
-  keep one and not the other. Turning it on or off is safe for the high-score board either way:
-  each record demo remembers which way it was set and replays correctly, so old records keep working
-  after you change it.
+  behind a rocket, which vanilla Doom does not have — DoomLegacy added it. It ships **on**, the way
+  DoomLegacy has always drawn it, so nothing changes until you decide you want vanilla. The same
+  switch also covers the smoke behind a charging lost soul, because the engine draws both from one
+  routine; there is no way to keep one and not the other. Turning it on or off is safe for the
+  high-score board either way: each record demo remembers which way it was set and replays
+  correctly, so old records keep working after you change it.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
   readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
   except the position readout, which only shows information.

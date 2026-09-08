@@ -113,9 +113,13 @@ consvar_t cv_translucency  = {"translucency" ,"1",CV_CALL|CV_SAVE, translucency_
 // It is *not* in the ranked ruleset -- see the note where it would have gone,
 // in hs_ranked_rules (hs_stuff.c).
 //
-// Off is the default because that is vanilla.  Note the compiled default is
-// what a cabinet with an existing config.cfg actually gets, since the config
-// has no line for a cvar that did not exist when it was written.
+// The default is On, which is what DoomLegacy has always done: this is a
+// switch for an operator who wants vanilla, not a change of behaviour.  That
+// matters more than it looks, because the compiled default is what the cabinet
+// actually runs -- config.cfg has no rockettrails line, the cvar not having
+// existed when it was written, so nothing overrides this until an operator
+// saves a -devmode session.  Defaulting it Off would have quietly altered how
+// the cabinet plays for everyone who never opens the menu.
 CV_PossibleValue_t rockettrails_cons_t[] = {
    {0, "Off"},
    {1, "On"},
@@ -123,7 +127,7 @@ CV_PossibleValue_t rockettrails_cons_t[] = {
 };
 
 consvar_t cv_rocket_trails =
-  {"rockettrails", "0", CV_NETVAR | CV_SAVE, rockettrails_cons_t};
+  {"rockettrails", "1", CV_NETVAR | CV_SAVE, rockettrails_cons_t};
 
 
 //

@@ -271,7 +271,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     value into byte 44, and playing back demos hand-patched to 0 and to 1 read back
     `cvar=0` / `cvar=1`.
 
-- **Rocket trails** (`cv_rocket_trails`, "rockettrails", `CV_NETVAR | CV_SAVE`, default **`Off`**,
+- **Rocket trails** (`cv_rocket_trails`, "rockettrails", `CV_NETVAR | CV_SAVE`, default **`On`**,
   defined in `p_fab.c` beside `A_SmokeTrailer`, the routine it gates). Vanilla Doom's rocket leaves
   nothing behind it and neither does a lost soul's charge; the trail of smoke puffs is a DoomLegacy
   addition, and until now there was no way to switch it off.
@@ -320,11 +320,19 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the one thing this ruleset must not do. It is safe to leave out because the setting is in the
     demo header (so a record demo always replays as it was played) and because trails make the game
     neither easier nor harder: they shuffle the RNG without biasing it.
-  - **The compiled default is what the cabinet actually gets.** `config.cfg` has no `rockettrails`
-    line, because the cvar did not exist when it was written, so the `"0"` in the declaration is the
-    live value until an operator saves a `-devmode` session. That is the whole reason the default is
-    `Off` rather than `On`: picking `On` "to preserve current behaviour" would have shipped a
-    feature that does nothing until someone finds it.
+  - **The compiled default is what the cabinet actually gets, so it is a behaviour decision and not
+    a formality.** `config.cfg` has no `rockettrails` line, the cvar not having existed when it was
+    written, so the `"1"` in the declaration is the live value until an operator saves a `-devmode`
+    session — nothing overrides it in between.
+    - It ships **`On`**, which is what DoomLegacy has always done. **This was `Off` when the feature
+      first landed and that was wrong**: the request was for a way to turn the trails off, not for
+      the cabinet to stop drawing them. Defaulting a new switch to the non-current behaviour
+      silently changes how the machine plays for everyone who never opens the menu, and the change
+      arrives disguised as "adding an option". The rule that falls out: **a switch added so somebody
+      *can* change something defaults to what the thing already did.** Only default it the other way
+      when the current behaviour is itself the bug being fixed.
+    - The biased header byte is still needed with this default. 0 has to keep meaning "not
+      recorded", so "recorded as Off" needs a value of its own; it is `1`, and `On` is `2`.
   - **Menu placement and geometry.** *Options → Effects Options → Rocket Trails*, third row, next to
     Translucency and Spectre Fuzz — the other look-of-the-game toggles. It is the only `CV_NETVAR` on
     that page (`cv_splats` next to it is pointedly *not* one; see the "P_Random hazard" comment in
