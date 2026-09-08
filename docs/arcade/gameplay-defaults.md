@@ -359,5 +359,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     setting beating the cabinet's, which is the case that matters. Header round trip checked on
     disk in both directions: demos recorded with the setting Off and On carry byte 45 = **1** and
     **2** respectively, with the `0x55` sync mark still at option-area byte 64 in both, proving the
-    header length is unchanged. And all **96** demos in `legacyhome/demos` read byte 45 = 0 with a
-    valid sync mark, so every one of them replays with trails on, as recorded.
+    header length is unchanged. And all **93** demos in `legacyhome/demos` read byte 45 = 0 with a
+    valid sync mark, so every one of them replays with trails on, as recorded. (The commit message
+    and an earlier draft of this note said 96, which was a miscount of the listing rather than a
+    changed tree — worth counting with `wc -l` rather than by eye, since a demo count is exactly
+    the kind of number that later gets treated as evidence that files went missing.)
