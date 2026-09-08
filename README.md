@@ -868,6 +868,21 @@ and `32:9`. When the filter is hiding anything the line says how many, so a mode
 never silently gone. On an ultrawide panel `AUTO` is what stops the list being buried in 4:3 modes
 it will never use.
 
+**Keep aspect**, just under *View fit*, decides what happens when the resolution you picked is not
+the same shape as the monitor. **Yes** (the default) fits the picture to the screen at its own shape
+and fills the rest with black bars — down the sides normally, along the top and bottom on a monitor
+turned on its side. **No** stretches it to fill, which is what the cabinet used to do always: a 4:3
+mode on a 16:9 screen came out a third too wide. It does nothing at a resolution that already
+matches the monitor's shape, and it is greyed out in OpenGL, where the monitor's own scaler places
+the picture rather than the engine.
+
+It is **not** the same thing as *View fit* above it, which is easy to assume. View fit decides how
+much of the world goes into the picture the engine draws; Keep aspect decides how that finished
+picture is placed on the screen. No View fit setting can produce black bars.
+
+**Gamma Options**, higher up the same page, holds *Gamma Function*, *Gamma*, *Black level* and
+*Brightness*. **F11** opens that page directly from anywhere.
+
 **Performance Options**, near the bottom of Video Options, holds the four settings that trade
 picture for speed:
 
