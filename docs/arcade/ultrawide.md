@@ -229,6 +229,54 @@ of uneven pixel widths, and it would mean auditing every place that positions by
 drawing at a fractional scale — `ST_drawOverlayNum`'s digit advance among them. That is the same
 "where versus how big" split as above, and it is not done.
 
+#### The clamp that made 800x600 the odd one out
+
+The pairing above ends `if( dx > vid.dupx_fill ) dx = vid.dupx_fill;` — the layout must still fit
+across. That clamp **silently undid the pairing** at the one resolution where it fires, and left
+exactly the mismatched pair the block exists to prevent.
+
+**800x600 is the only mode in the whole list where it fires.** The exact scales are 2.5 and 3.0, so
+the ratio asks for `dupx` 3 to go with `dupy` 3 — but 320*3 is 960 and the screen is 800 wide, so
+`dx` was clamped to 2 and the pair left as **2 by 3**. That is 0.667 where 0.833 is wanted: HUD art
+a third narrower than it is tall, on the least exotic resolution imaginable, sitting in a menu
+between 640x480 and 1024x768 which both come out 1.000.
+
+Measured on the status digits — the same glyph, captured with `tools/shotsheet.py`:
+
+| mode | dupx, dupy | glyph | ratio |
+| --- | --- | --- | --- |
+| 640x480 | 2, 2 | 22x22 | 1.000 |
+| **800x600** | **2, 3** | **22x33** | **0.667** |
+| 1024x768 | 3, 3 | 33x33 | 1.000 |
+
+The same width as the smaller screen with half again the height. The clearest tell by eye is the
+health cross, a square patch, drawn as a tall rectangle.
+
+**It now takes `dupy` down to meet the width instead**, giving 800x600 the 2 by 2 its neighbours
+have. Only ever downward — `dupy` is the floor of `height/200` and raising it pushes a 200 unit menu
+off the bottom. Whole-screen 2D pages are untouched: `V_SCALEEXACT` scales y by the exact
+`vid.fdupy`, not by this whole number (`screen-fill.md`), so this reaches menus, HUD and status bar
+only.
+
+**Both answers are wrong by the same amount, and that is the whole difficulty.** 2x3 is 0.667 and
+2x2 is 1.000 against an exact 0.833 — 20% out in opposite directions, so no error tolerance can
+choose between them. What settles it is that **erring wide is what every other resolution already
+does** (640x480, 1024x768, 400x300 and 512x384 are all 1.000) and what the art tolerates, while
+erring narrow is what somebody notices from across a room. It was reported from the cabinet, not
+found by a check.
+
+`tools/hudtext-test.py` checks it now, and the check had to be built around that tie rather than
+around a tolerance: the chosen pair must be the closest achievable to the exact ratio **and, where
+two pairs are equally close, must not be the narrower of them**. Reinstating the old clamp turns it
+red at 800x600 and nowhere else.
+
+**This was invisible until software fullscreen stopped stretching** (`software-fullscreen.md`).
+Filling a 1366x768 panel from an 800x600 frame widens everything by 1.33, which took the glyph from
+0.667 to 0.889 — close enough to 0.833 to pass unnoticed. Pillarboxing showed the real number. **A
+bug hidden by a second bug is not a reason to keep either**, but it is a reason to expect a few
+more: anything whose proportions were being quietly corrected by that stretch is now showing its
+true shape for the first time.
+
 **OpenGL never had any of this** — it scales by the exact `fdupx`/`fdupy` throughout.
 
 ### Where a thing goes is not how big it is
