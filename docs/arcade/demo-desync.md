@@ -113,35 +113,100 @@ the recorded level sequence caught independently. The mutation was then
 reverted, the tree rebuilt, and the same command over four demos reported
 `4 compared, 0 desynced`, exit 0.
 
-Green, red at the right tic, green again. **This was done twice**: once when
-the harness was first written, and again after the map check was rewritten
-from prediction to comparison, because the rewrite changed exactly the code
-the self-check exercises and a green result that has not been re-earned is not
-worth anything.
+Green, red at the right tic, green again. **This has been done three times**:
+when the harness was first written, again after the map check was rewritten
+from prediction to comparison, and again after the switch to `-timedemo` — each
+time because the change touched exactly the code the self-check exercises, and
+a green result that has not been re-earned is not worth anything.
+
+The last of those is the one to copy, because the suite is fast enough now to
+do it over everything:
+
+    94 compared, 94 desynced, 1 quarantined, 40s
+    doomu_ep1_sk3_speed.lmp: DESYNC at log line 102 (leveltime 101), and the level sequence changed
+    doomu_E2M7_sk0_speed.lmp: DESYNC at log line 102 (leveltime 101), and the level sequence changed
+    ...
+
+Every demo in the corpus, all at leveltime 101, one tic after the injected
+draw. Revert, rebuild, and it reports `94 compared, 0 desynced`.
 
 Redo it whenever the harness changes. Insert the line above into
-`P_MobjThinker`, `make`, run the harness over two short demos, then revert and
-rebuild. It is the only thing that distinguishes a working check from a check
-that always passes.
+`P_MobjThinker`, `make`, run the harness, then revert and rebuild — about four
+minutes, nearly all of it compiling. It is the only thing that distinguishes a
+working check from a check that always passes.
 
 ## Cost, and why there is a `--quick`
 
-Demos replay at wall-clock speed. `-timedemo` does **not** help: `I_GetTime`
-(`sdl/i_system.c`) has no `singletics` fast path, so it measures real-time
-playback rather than running flat out, and it never quits either — the
-`timingdemo` branch of `G_CheckDemoStatus` calls `D_AdvanceDemo()` and falls
-into the attract cycle before it ever reaches the `singledemo` test. Both are
-worth fixing; neither is fixed here, because **the safety net must not depend
-on changing the thing it exists to protect.** The harness needs no engine
-changes at all.
+`-playdemo` replays at wall-clock speed: 35 tics a second, exactly as if
+somebody were playing. About 425,000 tics across the 95 demos is roughly 200
+minutes of that, and even spread over every core it measured **48 minutes**,
+with a floor of about 16 set by the single longest demo.
 
-So the cost is arithmetic: about 425,000 tics across the 95 demos, at 35 tics a
-second, is roughly 200 minutes serially. The script runs `nproc` demos at once
-in separate scratch directories; **measured, that is about 48 minutes** on the
-cabinet. The floor is the single longest demo, `doomu_ep1_sk3_speed.lmp`, at
-about 16 minutes on its own, and the rest is imperfect packing — demos are
-dealt longest-first over the slots to keep that down. It saturates the CPU
-while it runs, so it is a job to start and walk away from.
+`-timedemo` replays flat out instead, and the harness uses it.
+
+**It always could have.** `TryRunTics` (`d_clisrv.c`) has had
+`if(singletics) realtics = 1;` all along — one tic per pass of the main loop,
+whatever the clock says — and the frame limiter in `D_DoomLoop` is explicitly
+skipped under `singletics` too. Nothing paced the playback. What made
+`-timedemo` *look* slower than `-playdemo` was that it never ended: the
+`timingdemo` branch of `G_CheckDemoStatus` printed its result and called
+`D_AdvanceDemo()`, dropping into the attract cycle, so the demo was replayed
+over and over with **real-time attract pages between the passes**. A fixed
+timeout caught a couple of fast passes separated by long idle stretches, which
+reads exactly like slow playback.
+
+That is now fixed: a `-timedemo` named on the command line sets `singledemo`
+and quits when the timing is printed, the way `-playdemo` does.
+
+Note `I_GetTime` (`sdl/i_system.c`) genuinely has no `singletics` fast path,
+unlike vanilla Doom — but that only affects what the timing *measurement*
+reports, not how fast the demo runs, because the loop never consults it for
+pacing. It was tempting to "fix" that and it would have been the wrong change.
+
+**That the two modes agree is checked, not assumed.** The baseline was recorded
+with `-playdemo`, over 47 minutes, and the whole suite then re-run with
+`-timedemo`: **94 of 95 byte-identical, in 40 seconds.** The manifest records
+which mode a baseline used and the comparison says when it crosses modes.
+`--playdemo` forces the old path, both to re-check that equivalence and as an
+escape hatch if it ever stops holding.
+
+    -playdemo   2846s   (47 minutes)
+    -timedemo     40s   (~70x)
+
+The 95th demo is the subject of the next section.
+
+It still saturates the CPU while it runs, but 40 seconds is short enough that
+the suite is worth running on anything, rather than saved for big changes.
+
+## The one quarantined demo
+
+`doomu_ep1_sk0_max.lmp` is listed in `tools/demotest-ignore.txt` and is not
+tested. It is worth understanding why, because the reasoning decides what else
+belongs on that list.
+
+Under `-timedemo` it does not terminate reproducibly. The demo's end marker is
+never reached — `G_CheckDemoStatus` never prints its timing line — so the
+engine keeps simulating past the end of the demo, the player coasting to a halt
+on no input, until the process exits for some other reason. How many extra tics
+that adds varies: 1720, 1967 and 2355 were all observed from the same binary
+and the same file. Under `-playdemo` it ends cleanly at 1720 every time.
+
+**It is not a desync.** The first 1720 tics are byte-identical between the two
+modes. It is a termination bug, and very likely the same never-quits family as
+the `-timedemo` attract-cycle bug above, which was found in the same session.
+Not yet investigated.
+
+The distinction that matters for the ignore list: **quarantine is for a demo
+whose playback is not reproducible, not for a demo that desyncs against the run
+it originally recorded.** This harness compares one playback against another
+playback of the same file. A demo that no longer reproduces the run a player
+actually had is still a perfectly good regression fixture — it only has to
+replay the same way twice. Dropping demos because they "already desync" would
+throw away coverage for nothing.
+
+Every quarantined demo is one that has stopped watching for regressions, so the
+list is printed on every run rather than hidden, and each entry carries its
+reason.
 
 `--quick` caps each demo at 60 seconds and compares only the tics both runs
 reached. It takes a few minutes and catches anything that goes wrong early,

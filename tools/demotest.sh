@@ -47,6 +47,10 @@ LEVELDIR=""                      # defaults to <legacyhome>/levels
 WADDIR="${DOOMWADDIR:-$HOME/games/doom}"
 
 MODE=compare
+# How the engine is asked to replay.  Both produce the same simulation -- that
+# is checked, see below -- but -timedemo replays flat out instead of pacing to
+# 35 tics a second, which is most of what the suite costs.
+PLAYMODE=timedemo
 JOBS=$( nproc 2>/dev/null || echo 4 )
 PERDEMO_TIMEOUT=1800
 QUICK=0
@@ -67,6 +71,10 @@ Options:
                     reached.  Minutes instead of half an hour, but it does not
                     see a divergence that happens late in a long demo.
   --timeout N       Per-demo wall clock limit, seconds (default 1800).
+  --playdemo        Replay with -playdemo, at the normal 35 tics a second,
+                    instead of -timedemo which replays flat out.  Both give
+                    the same simulation; this is here to check that they still
+                    do, and as an escape hatch if they ever stop.
   -b PATH           Engine binary (default svn1749/bin/doomlegacyarcade).
   --home DIR        legacyhome to take the demos, level packs and config from
                     (default: the one beside the binary).  Use this to test a
@@ -91,6 +99,8 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --baseline) MODE=baseline ;;
+        --playdemo) PLAYMODE=playdemo ;;
+        --timedemo) PLAYMODE=timedemo ;;
         -j) JOBS="$2"; shift ;;
         --quick) QUICK=1 ;;
         --timeout) PERDEMO_TIMEOUT="$2"; shift ;;
@@ -215,8 +225,21 @@ if [ ${#ALL[@]} -eq 0 ]; then
     exit 2
 fi
 
+# Demos declared unusable as fixtures, with a reason, in tools/demotest-ignore.txt.
+# Counted and reported separately rather than failed on -- but reported, so the
+# list cannot quietly grow into "the suite passes because it tests nothing".
+IGNORE_FILE="$SELF_DIR/demotest-ignore.txt"
+declare -A IGNORED
+if [ -f "$IGNORE_FILE" ]; then
+    while read -r name _rest; do
+        case "$name" in ''|'#'*) continue ;; esac
+        IGNORED["$name"]=1
+    done < "$IGNORE_FILE"
+fi
+
 DEMOS=()
 SKIPPED=()
+QUARANTINED=()
 for d in "${ALL[@]}"; do
     if [ ${#FILTERS[@]} -gt 0 ]; then
         local_match=0
@@ -224,6 +247,10 @@ for d in "${ALL[@]}"; do
             case "$d" in *"$f"*) local_match=1 ;; esac
         done
         [ "$local_match" = 1 ] || continue
+    fi
+    if [ -n "${IGNORED[$d]:-}" ]; then
+        QUARANTINED+=( "$d" )
+        continue
     fi
     if demo_args "$d" >/dev/null; then
         DEMOS+=( "$d" )
@@ -314,7 +341,7 @@ run_demo()   # $1 = slot dir, $2 = demo file
     ( cd "$s" && \
       SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_NO_SIGNAL_HANDLERS=1 \
       timeout "$PERDEMO_TIMEOUT" ./doomlegacyarcade $args \
-          -playdemo "$DEMODIR/$d" -synclog > out.txt 2>&1 )
+          "-$PLAYMODE" "$DEMODIR/$d" -synclog -nodraw > out.txt 2>&1 )
     rc=$?
 
     demo_maps "$s/out.txt" > "$OUTDIR/$d.maps"
@@ -388,6 +415,7 @@ if [ "$MODE" = baseline ]; then
         echo "commit  $DESCRIBE"
         echo "binary  $( sha256sum "$BINARY" | cut -c1-12 )"
         echo "config  $CONFIG_HASH"
+        echo "mode    $PLAYMODE"
         echo "demos   ${#DEMOS[@]}"
         for d in "${DEMOS[@]}"; do
             printf '%s %s %s\n' \
@@ -417,6 +445,7 @@ fi
 
 base_commit=$( awk '$1=="commit"{print $2}' "$BASEDIR/manifest.txt" )
 base_config=$( awk '$1=="config"{print $2}' "$BASEDIR/manifest.txt" )
+base_mode=$( awk '$1=="mode"{print $2}' "$BASEDIR/manifest.txt" )
 
 fails=0; missing=0; checked=0
 FAILLINES=()
@@ -481,12 +510,22 @@ for d in "${DEMOS[@]}"; do
     fi
 done
 
-echo "demotest: $checked compared, $fails desynced, ${ELAPSED}s"
+echo "demotest: $checked compared, $fails desynced,$( [ ${#QUARANTINED[@]} -gt 0 ] && echo " ${#QUARANTINED[@]} quarantined," ) ${ELAPSED}s"
+if [ ${#QUARANTINED[@]} -gt 0 ]; then
+    # Named every run on purpose.  A quarantined demo is one that has stopped
+    # watching for regressions, so the list should stay visible and short.
+    echo "  not tested (see tools/demotest-ignore.txt): ${QUARANTINED[*]}"
+fi
 if [ "$missing" -gt 0 ]; then
     echo "  $missing demo(s) have no baseline entry -- re-record with --baseline"
 fi
 if [ "$base_config" != "$CONFIG_HASH" ]; then
     echo "  note: config.cfg has changed since the baseline ($base_config -> $CONFIG_HASH)"
+fi
+if [ -n "$base_mode" ] && [ "$base_mode" != "$PLAYMODE" ]; then
+    # Not a problem: the two replay modes are supposed to produce the same
+    # simulation, and comparing across them is how that gets checked.
+    echo "  note: baseline was recorded with -$base_mode, this run used -$PLAYMODE"
 fi
 
 if [ "$fails" -gt 0 ]; then

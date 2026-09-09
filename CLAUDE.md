@@ -512,11 +512,11 @@ written up in full in the doc named beside it.
 - **There is a demo desync regression test now: run it, do not reason about it.** `make demotest`
   from `svn1749/src` replays all 95 record demos and compares the simulation tic by tic, via the
   `-synclog` switch; `make demotest_baseline` records the reference first, on known-good code.
-  Success is three lines, failure names the demo and the tic. About 25 minutes, or a few minutes
-  with `DEMOTEST_ARGS="--quick"`. **Run it after anything that could affect gameplay** — a wider net
-  than it looks, since `PP_Random` is one shared index. It has been shown to fail (an injected
-  `P_Random()` was caught one tic later, in every demo) as well as to pass. Note `-timedemo` is
-  *not* a fast path here and never quits — see the doc. → `demo-desync.md`
+  Success is three lines, failure names the demo and the tic. **About 40 seconds**, so there is no
+  reason not to run it. **Run it after anything that could affect gameplay** — a wider net than it
+  looks, since `PP_Random` is one shared index. It has been shown to fail as well as to pass: an
+  injected `P_Random()` was caught one tic later in all 94 demos. One demo is quarantined
+  (`tools/demotest-ignore.txt`) and the run says so every time. → `demo-desync.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
   - **"Gameplay-affecting" includes settings that look purely cosmetic, and `PP_Random`'s `pr`

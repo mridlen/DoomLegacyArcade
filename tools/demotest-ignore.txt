@@ -1,0 +1,18 @@
+# Demos that are not usable as regression fixtures.
+#
+# One name per line, then whitespace, then the reason.  Blank lines and lines
+# starting with # are ignored.  tools/demotest.sh counts these separately and
+# does not fail on them.
+#
+# Quarantine is for a demo whose *playback is not reproducible*.  It is NOT for
+# a demo that desyncs against the run it originally recorded: this harness
+# compares one playback against another playback of the same file, so a demo
+# that no longer reproduces its original run is still a perfectly good fixture
+# -- it just has to replay the same way twice.  Deciding a demo is unusable
+# because it "already desyncs" would throw away coverage for no reason.
+#
+# Keep this list short and keep the reasons specific.  Every name here is a
+# demo that is no longer watching for regressions, so an entry is a real cost,
+# not a tidy-up.
+
+doomu_ep1_sk0_max.lmp   Does not terminate reproducibly under -timedemo: the demo's end marker is never reached (G_CheckDemoStatus never prints its timing line), so the engine keeps simulating past the end of the demo -- the player coasting to a halt on no input -- until the process exits for some other reason. How many extra tics that adds varies run to run (1720 / 1967 / 2355 observed). Under -playdemo it ends cleanly at 1720 every time, and the first 1720 tics are byte-identical between the two modes, so this is a termination bug and not a desync. Worth investigating: it is very likely the same never-quits family as the -timedemo attract-cycle bug.

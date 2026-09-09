@@ -4662,6 +4662,13 @@ fatal_error_action:
 
         if( p == 2500 )
         {  // timedemo
+            // [Arcade] Quit when the timing is done, exactly as -playdemo
+            // does.  Without this the engine printed its result and then fell
+            // into the attract cycle, so a -timedemo named on the command line
+            // never ended and a script got no exit code from it.  See
+            // G_CheckDemoStatus.
+            singledemo = true;  // quit after one demo
+            HS_Clear_DemoLabel();
             G_TimeDemo(demo_name);
         }
         else

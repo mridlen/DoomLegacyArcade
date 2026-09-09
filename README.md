@@ -550,7 +550,8 @@ binary headlessly and exercises startup, level setup, a level exit and the OpenG
 unchanged tic by tic. Run the second after **anything that could affect how the game plays** — the
 demos on the cabinet are people's high scores, and a gameplay change does not just alter them, it
 invalidates them. Record the reference once with `make demotest_baseline` while the code is known
-good; after that `make demotest` answers in three lines. See `docs/arcade/demo-desync.md`.
+good; after that `make demotest` answers in three lines, in about forty seconds. See
+`docs/arcade/demo-desync.md`.
 
 ### The manual way
 
