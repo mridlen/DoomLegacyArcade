@@ -55,12 +55,35 @@ Three things, and all three are needed:
 
 - **`synclog_play.txt` exists and is non-empty.** A demo that did not load
   writes nothing.
-- **The engine reported the map the filename claims**, from the `Level:` line
-  that every level load prints. A demo replayed under the wrong IWAD loads a
-  different map and this catches it.
-- **That line says `demo`.** It names what is driving the level — demo, or a
-  live player. Without this, a run that fell through to the attract cycle and
-  played *some other* demo would pass.
+- **A `Level:` line says `demo`.** Every level load prints one, and it names
+  what is driving the level — a demo, or a live player. Without this, a run
+  that fell through to the attract cycle and played *some other* demo would
+  pass.
+- **The levels it loaded are the ones it loaded last time.** The map and skill
+  of every level load are recorded in the baseline (`<demo>.maps`) and compared,
+  so a demo that starts loading a different map is caught.
+
+That last one is deliberately a comparison and not a prediction, and the
+first version of this got it wrong in an instructive way. It predicted the
+start map from the filename — and was wrong for 18 of the 95 demos, because
+**the map in the name is the map the record is _for_, not where the demo
+begins**. `HS_BuildDemoPath` (`hs_stuff.c`) names a per-map split record after
+the map the run *reached*, so `doomu_E2M7_sk0_speed.lmp` is a campaign run that
+starts at E2M1. The other scheme, `HS_BuildSurvivalDemoPath`, writes `ep<N>`
+in that field and names no map at all.
+
+Reading the start map out of the demo header instead is no better. The
+offsets are right there (`DEMOHDR_skill = 7`, `episode = 8`, `map = 9`,
+matching `G_BeginRecording`), but the header is patched after recording by
+`G_Update_Demo_Header`, and a number of the demos on the cabinet have bytes
+there that disagree with what the engine actually loads from them — they
+predate a header change. **Whether that is worth fixing is an open question
+and has not been investigated**; it is noted here only as the reason the
+harness does not trust those bytes.
+
+The general lesson is worth keeping: when a check needs to know what the
+answer should be, and the convention that decides it lives somewhere else and
+has changed over time, record the answer instead of predicting it.
 
 The colour escapes are stripped before matching. ENDOOM interleaves them per
 character, so a plain grep on the raw output finds nothing and hands back a
@@ -81,16 +104,25 @@ An extra `P_Random()` guarded by `leveltime == 100` was added to
 `P_MobjThinker`, the tree rebuilt, and the harness run against the clean
 baseline. It reported:
 
+    doom2_MAP03_sk0_speed.lmp: DESYNC at log line 102 (leveltime 101), and the level sequence changed
     doomu_E1M1_sk0_speed.lmp: DESYNC at log line 102 (leveltime 101)
-    doom2_MAP01_sk0_speed.lmp: DESYNC at log line 102 (leveltime 101)
 
-One tic after the injected draw, in both demos, exit code 1. The mutation was
-then reverted, the tree rebuilt, and the same command reported 0 desynced.
-Green, red at the right tic, green again.
+One tic after the injected draw, in both demos, exit code 1 — and on the
+multi-level one the divergence also sent the run down a different path, which
+the recorded level sequence caught independently. The mutation was then
+reverted, the tree rebuilt, and the same command over four demos reported
+`4 compared, 0 desynced`, exit 0.
 
-Redo this whenever the harness changes. It takes about four minutes and it is
-the only thing that distinguishes a working check from a check that always
-passes.
+Green, red at the right tic, green again. **This was done twice**: once when
+the harness was first written, and again after the map check was rewritten
+from prediction to comparison, because the rewrite changed exactly the code
+the self-check exercises and a green result that has not been re-earned is not
+worth anything.
+
+Redo it whenever the harness changes. Insert the line above into
+`P_MobjThinker`, `make`, run the harness over two short demos, then revert and
+rebuild. It is the only thing that distinguishes a working check from a check
+that always passes.
 
 ## Cost, and why there is a `--quick`
 
@@ -105,10 +137,11 @@ changes at all.
 
 So the cost is arithmetic: about 425,000 tics across the 95 demos, at 35 tics a
 second, is roughly 200 minutes serially. The script runs `nproc` demos at once
-in separate scratch directories, which brings it to around 25 minutes — with a
-floor set by the single longest demo, `doomu_ep1_sk3_speed.lmp`, at about 16
-minutes on its own. Demos are dealt longest-first over the slots so they all
-finish together.
+in separate scratch directories; **measured, that is about 48 minutes** on the
+cabinet. The floor is the single longest demo, `doomu_ep1_sk3_speed.lmp`, at
+about 16 minutes on its own, and the rest is imperfect packing — demos are
+dealt longest-first over the slots to keep that down. It saturates the CPU
+while it runs, so it is a job to start and walk away from.
 
 `--quick` caps each demo at 60 seconds and compares only the tics both runs
 reached. It takes a few minutes and catches anything that goes wrong early,

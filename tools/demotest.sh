@@ -174,23 +174,35 @@ demo_args()   # $1 = demo basename -> echoes engine args, or nothing
     fi
 }
 
-demo_expect_map()   # $1 = demo basename -> the map the engine should report
+# Which maps a demo loads is RECORDED, not predicted.
+#
+# The first version of this predicted the start map from the filename and got
+# it wrong for 18 of the 95 demos, because the map in the name is the map the
+# record is *for* -- where the run reached -- and not where the demo begins
+# (HS_BuildDemoPath, hs_stuff.c).  A campaign record at E2M7 is a demo that
+# starts at E2M1.  The other scheme, HS_BuildSurvivalDemoPath, puts "ep<N>"
+# there instead and names no map at all.
+#
+# Reading the start map out of the demo header instead is no better: the
+# header is patched after recording (G_Update_Demo_Header), and some demos on
+# the cabinet have skill/episode/map bytes that disagree with what the engine
+# actually loads from them -- they predate a header change.
+#
+# So the baseline records the maps each demo really loaded, and the comparison
+# requires them to be unchanged.  That is a stronger check than the prediction
+# ever was: it catches a demo that starts loading a different map without
+# anyone having to know the naming convention, and it cannot be wrong about
+# what the convention is.
+
+# Each level load prints
+#     Level: E1M1  skill 1  demo  chasecam off  views 1
+# so this records the map, the skill and what drove the level, once per load.
+demo_maps()   # $1 = engine output file
 {
-    local base map
-    base="${1%.lmp}"
-    map=$( echo "$base" | cut -d_ -f2 )
-    case "$map" in
-        # A whole-episode run starts at map 1 of that episode.  Doom II has
-        # one episode, so its "ep1" starts at MAP01.
-        ep[0-9]*)
-            local n="${map#ep}"
-            case "$base" in
-                doom2*|tnt*|plutonia*) echo "MAP01" ;;
-                *) echo "E${n}M1" ;;
-            esac
-            ;;
-        *) echo "$map" ;;
-    esac
+    # Colour escapes first: ENDOOM interleaves them per character, so a plain
+    # grep on the raw output finds nothing and hands back a false pass.
+    sed 's/\x1b\[[0-9;]*m//g' "$1" | grep -a '^Level:' \
+        | awk '{print $2, "skill", $4, $5}'
 }
 
 #---------------------------------------------------------------------------
@@ -222,7 +234,7 @@ done
 
 if [ "$LISTONLY" = 1 ]; then
     for d in "${DEMOS[@]}"; do
-        printf '%-46s %-8s %s\n' "$d" "$(demo_expect_map "$d")" "$(demo_args "$d")"
+        printf '%-46s %s\n' "$d" "$(demo_args "$d")"
     done
     for d in "${SKIPPED[@]}"; do
         printf '%-46s %s\n' "$d" "SKIPPED - game id or level pack not recognised"
@@ -294,9 +306,8 @@ setup_slot()   # $1 = slot dir
 
 run_demo()   # $1 = slot dir, $2 = demo file
 {
-    local s="$1" d="$2" args rc want got
+    local s="$1" d="$2" args rc
     args=$( demo_args "$d" ) || { echo "badargs" > "$OUTDIR/$d.status"; return 1; }
-    want=$( demo_expect_map "$d" )
 
     rm -f "$s/synclog_play.txt" "$s/out.txt"
 
@@ -306,20 +317,18 @@ run_demo()   # $1 = slot dir, $2 = demo file
           -playdemo "$DEMODIR/$d" -synclog > out.txt 2>&1 )
     rc=$?
 
-    # A demo that failed to load still produces a plausible looking run, so
-    # this checks the demo actually drove a level -- the startup line names
-    # both the map and what is driving it.  Colour escapes are stripped first;
-    # ENDOOM interleaves them per character and a plain grep finds nothing.
-    got=$( sed 's/\x1b\[[0-9;]*m//g' "$s/out.txt" \
-           | grep -a '^Level:' | head -1 | awk '{print $2}' )
+    demo_maps "$s/out.txt" > "$OUTDIR/$d.maps"
 
+    # A demo that failed to load still produces a plausible looking run -- two
+    # runs that both loaded nothing agree perfectly -- so prove a demo really
+    # drove a level before believing anything the run produced.
     if [ ! -s "$s/synclog_play.txt" ]; then
         echo "nosynclog" > "$OUTDIR/$d.status"; return 1
     fi
-    if [ "$got" != "$want" ]; then
-        echo "wrongmap:$got!=$want" > "$OUTDIR/$d.status"; return 1
-    fi
-    if ! grep -qa "^Level: $want .*demo" "$s/out.txt"; then
+    # The Level: line names what is driving the level.  Without this, a run
+    # that fell through to the attract cycle and played some *other* demo
+    # would pass.
+    if ! grep -qa ' demo$' "$OUTDIR/$d.maps"; then
         echo "notdemodriven" > "$OUTDIR/$d.status"; return 1
     fi
     # Under --quick the timeout is expected to fire; otherwise it is a hang.
@@ -424,6 +433,18 @@ for d in "${DEMOS[@]}"; do
     fi
     checked=$(( checked + 1 ))
 
+    # Did it still load the same levels, at the same skill, still driven by
+    # the demo?  This is the wrong-IWAD / wrong-demo check, done by comparison
+    # rather than by predicting what the answer ought to be.
+    #
+    # Noted but not reported yet: when the simulation diverged as well, the tic
+    # it diverged on is the more useful fact and a changed level list is a
+    # consequence of it, so the tic is reported first and this is appended.
+    mapsdiff=""
+    if [ -f "$BASEDIR/$d.maps" ] && ! cmp -s "$BASEDIR/$d.maps" "$OUTDIR/$d.maps"; then
+        mapsdiff="$( tr '\n' '/' < "$OUTDIR/$d.maps" ) vs baseline $( tr '\n' '/' < "$BASEDIR/$d.maps" )"
+    fi
+
     if [ "$QUICK" = 1 ]; then
         # Both runs were cut short at an arbitrary point, so only the tics
         # they both reached can be compared.
@@ -450,7 +471,13 @@ for d in "${DEMOS[@]}"; do
         # The first field of a synclog line is leveltime, which restarts at 1
         # on each level of a multi-level demo, so report both.
         btic=$( sed -n "${diffline}p" "$BASEDIR/$d.log" | awk '{print $1}' )
-        FAILLINES+=( "$d: DESYNC at log line $diffline (leveltime $btic)" )
+        FAILLINES+=( "$d: DESYNC at log line $diffline (leveltime $btic)$( [ -n "$mapsdiff" ] && echo ", and the level sequence changed" )" )
+    elif [ -n "$mapsdiff" ]; then
+        # The simulation matched as far as it goes but the run did not visit
+        # the same levels -- a different IWAD or level pack, or a demo that
+        # stopped early.
+        fails=$(( fails + 1 ))
+        FAILLINES+=( "$d: loaded different levels ($mapsdiff)" )
     fi
 done
 
