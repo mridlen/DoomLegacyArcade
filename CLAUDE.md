@@ -286,6 +286,17 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   binary match, but two binaries start up at different speeds, the shot lands a tic either side and
   animated textures advance per tic. When a diff says a resolution changed that arithmetic says
   cannot have, believe the arithmetic. → `ultrawide.md`
+  - **`-nomonsters` does not stop the clock or the pickups, and a same-config control does not
+    prove the method.** Comparing `render_threads` 1 against 4 this way showed 6531 pixels changed
+    and read as a threading race; the 1-vs-1 control came back identical, which looked like proof
+    the capture was deterministic. It was not — the serial path just happens to be timing-stable,
+    while a 4-thread run lands the `wait 105` screenshot on tic 104 *or* 105, and one tic is enough
+    for an animated armour bonus and the level clock to change. **Same tic, the images are
+    byte-identical, threaded or not.** Before reading anything into a pixel diff, check the shots
+    came from the same tic: set `screenshot` from an autoexec, and have the engine say which tic it
+    fired on (`M_ScreenShot` reports `leveltime` at `EMSG_ver`). The person looking at the picture
+    spotted this instantly from *what* had changed, which is the argument for handing over the
+    image rather than only the number.
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the

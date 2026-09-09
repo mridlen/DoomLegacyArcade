@@ -1138,7 +1138,7 @@ void M_ScreenShot (void)
         if( ! M_Make_Screenshot_Filename( filename, "pcx" ) )
             return;
 
-        GenPrintf( EMSG_ver, "Save PCX: %s\n", filename );
+        GenPrintf( EMSG_ver, "Save PCX: %s (leveltime %u)\n", filename, (unsigned)leveltime );
        
         // save the pcx file
         br = Write_PCXfile ( filename, vid.width, vid.height, bufs,
@@ -1153,7 +1153,7 @@ void M_ScreenShot (void)
     if( ! M_Make_Screenshot_Filename( filename, "tga" ) )
         return;
 
-    GenPrintf( EMSG_ver, "Save Targa: %s\n", filename );
+    GenPrintf( EMSG_ver, "Save Targa: %s (leveltime %u)\n", filename, (unsigned)leveltime );
 //    printf("Write Targa %s, drawmode=%i, wr_bytepp= %i, bitpp= %i\n", filename, vid.drawmode, wr_bytepp, wr_bytepp*8 );
     bufsize = (size_t)num_pixels * wr_bytepp;
     bufw = malloc( bufsize );
