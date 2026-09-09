@@ -89,8 +89,16 @@ are the separate `NBOBJS:=` list, built by a `$(SD)nodebuild/%.cpp` rule with `$
 and linked via `-lstdc++`. → `docs/arcade/gotchas.md`
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
-`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`, and
-`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset).
+`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`,
+`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset),
+and `make demotest` / `make demotest_baseline` (demo desync regression test — see
+`docs/arcade/demo-desync.md`).
+
+Note `BUILD=<dir>` relocates **`make_options` too** (`MAKE_OPTIONS = $(BUILD_DIR)make_options`), so
+an alternate build directory needs its own copy of it or the build dies with `"Unknown OS: "`. The
+same trap catches a fresh worktree: copy `svn1749/make_options`, **not** the stale top-level
+`make_options`, which is leftover scaffolding still set up for SDL 1.2 and fails in the dependency
+phase with `missing binary operator before token '('` from `SDL_VERSION_ATLEAST`.
 
 **`make -j` races in the dependency phase**, and the error points nowhere near the cause: every
 `../dep/*.dep` rule pipes through the *same* intermediate `../dep/sed.dep` and then `mv`s it, so two
@@ -381,6 +389,7 @@ are kept below, in this file.
 | `docs/arcade/ci-releases.md` | GitHub Actions: the build-on-push workflow, the release button, the `-march` baseline | `.github/workflows/`, the `--arch`/`-Arch` options |
 | `docs/arcade/branding.md` | Fork identity, `VERSION_BANNER`, `DLA_VERSION` from tags, the executable name, what must NOT be renamed | any string that names the program, the version, `EXENAME` |
 | `docs/arcade/endoom.md` | The exit text screen: lump format, why SLADE will not edit it, `tools/endoom.py` | the `ENDOOM` lump, `endtxt.c`, `I_Show_EndText` |
+| `docs/arcade/demo-desync.md` | The demo desync regression test: `-synclog`, `tools/demotest.sh`, what proves a demo really ran, the self-check | any gameplay-affecting change; `G_Synclog_Tic`, `tools/demotest.sh` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -500,6 +509,14 @@ written up in full in the doc named beside it.
 - **`-playdemo` plays an external *file*, never an internal lump, and a failed demo run looks like
   a passing test.** Two runs that both failed to load compare 100% identical. Confirm the demo
   started, and diff simulation state rather than pixels. → `gotchas.md`
+- **There is a demo desync regression test now: run it, do not reason about it.** `make demotest`
+  from `svn1749/src` replays all 95 record demos and compares the simulation tic by tic, via the
+  `-synclog` switch; `make demotest_baseline` records the reference first, on known-good code.
+  Success is three lines, failure names the demo and the tic. About 25 minutes, or a few minutes
+  with `DEMOTEST_ARGS="--quick"`. **Run it after anything that could affect gameplay** — a wider net
+  than it looks, since `PP_Random` is one shared index. It has been shown to fail (an injected
+  `P_Random()` was caught one tic later, in every demo) as well as to pass. Note `-timedemo` is
+  *not* a fast path here and never quits — see the doc. → `demo-desync.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
   - **"Gameplay-affecting" includes settings that look purely cosmetic, and `PP_Random`'s `pr`

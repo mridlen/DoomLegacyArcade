@@ -1487,8 +1487,9 @@ all:	 $(BIN)/$(EXENAME)  $(SUPPORT_EXE)  cabinet_home
 CABINET_HOME := ../../cabinet/legacyhome
 
 SMOKE_SH := ../../tools/smoke.sh
+DEMOTEST_SH := ../../tools/demotest.sh
 
-.PHONY: cabinet_home cabinet_save smoke
+.PHONY: cabinet_home cabinet_save smoke demotest demotest_baseline
 
 # Stage the tracked config beside the binary, without ever clobbering a live
 # one.  cp -n leaves an existing config.cfg alone, so a running cabinet does
@@ -1509,6 +1510,21 @@ cabinet_home:
 # IWADs are not in one of the usual places.
 smoke:
 	@$(SMOKE_SH) $(SMOKE_ARGS)
+
+# [Arcade] Demo desync regression test.  Replays every record demo on the
+# cabinet and checks the simulation is unchanged, tic by tic.  Run it after
+# anything that could affect gameplay -- which is a wider net than it looks,
+# because PP_Random is one shared index.  See tools/demotest.sh and
+# docs/arcade/demo-desync.md.
+#
+# "make demotest_baseline" first, on known-good code, then "make demotest"
+# to compare.  DEMOTEST_ARGS passes options through, e.g.
+#   make demotest DEMOTEST_ARGS="--quick"
+demotest:
+	@$(DEMOTEST_SH) $(DEMOTEST_ARGS)
+
+demotest_baseline:
+	@$(DEMOTEST_SH) --baseline $(DEMOTEST_ARGS)
 
 # Copy the live config back over the tracked one, for committing.
 cabinet_save:
