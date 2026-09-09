@@ -811,6 +811,53 @@ geometry and must be cut from the tree the renderer walks). Everything else -- `
 `P_Remove_Slime_Trails`, the whole simulation -- sees the WAD's own tree, so gameplay is identical
 to stock **by construction**, not by luck.
 
+#### ...except that the renderers ran simulation code inside the swap
+
+"By construction" was not quite true, and stayed untrue for a while. Both renderers service the
+network while they draw, so a slow frame does not stall the client/server tick -- and every one of
+those calls sits *inside* the swap window:
+
+| | calls | how |
+| --- | --- | --- |
+| `R_RenderPlayerView` (`r_main.c`) | 4 | via `R_NetUpdate_Main` |
+| `HWR_RenderPlayerView` (`hw_main.c`) | 3 | bare `NetUpdate()`, no guard at all |
+
+`NetUpdate` runs `D_Process_Events` -- the menu, console and game responders. That is simulation
+code, running with the rebuilt tree in the globals, in flat contradiction of the rule above. The
+hardware path is the one the cabinet runs.
+
+**Measured** on the GL path (`SDL_VIDEODRIVER=offscreen`, one 454-frame demo), with a counter on
+the swap flag at each call:
+
+    1362 of 1362 in-frame NetUpdate calls had the rebuilt tree swapped in
+
+All of them, about 105 times a second. Nothing had gone visibly wrong -- a responder has to actually
+reach `R_PointInSubsector` or `p_sight.c` for it to matter, and menus mostly do not -- but the
+window was wide open every frame the machine was on.
+
+The fix is `R_NetUpdate_In_Frame()` (`p_setup.c`): put the play tree back, call `NetUpdate`, swap
+the render tree in again. Use it instead of `NetUpdate` anywhere between `R_Use_Render_BSP` and
+`R_Use_Play_BSP`.
+
+**Not** by skipping the call. Those `NetUpdate`s carry tic timing, and a frame must make exactly the
+ones it always made -- one fewer is as much a gameplay change as one more, and would reject every
+record demo on the cabinet just as surely.
+
+The other half was `P_SetupLevel`'s own defensive `R_Use_Play_BSP()`, which sat **after** every node
+loader had already written the new level's `nodes`/`segs`/`subsectors`/`vertexes`. Had the swap ever
+still been in force on entry, that call would have pasted the *previous* level's saved pointers --
+freed `PU_LEVEL` memory by then -- over the level just loaded. A guard that corrupts the thing it
+guards is worse than no guard. It now runs at the top of the function, before the loaders, where
+"put the globals back" and "the globals describe the old level" are still the same statement.
+
+**A caution about how this was verified.** `make demotest` stayed green across all 94 demos, which
+says the change altered no gameplay -- but it does **not** say the fixed path was exercised. The
+demo harness runs with `-nodraw`, and under `SDL_VIDEODRIVER=dummy` the player-view render is never
+reached at all: `D_Display` was entered 457 times in that same run and `R_RenderPlayerView` zero.
+The renderer is only exercised headlessly under `SDL_VIDEODRIVER=offscreen`, which is what produced
+the 1362 above and what `make smoke`'s `opengl` check uses. Green demos plus green smoke is the
+right pair here; neither alone would have covered it.
+
 **Measured**, same binary, on the E1M6 ITYTD speed record demo to tic 3900, 112 samples of the
 player's position, angle and health:
 

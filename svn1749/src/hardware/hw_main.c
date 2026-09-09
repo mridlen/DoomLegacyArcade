@@ -4611,7 +4611,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     //HWR_Clear_Sprites ( );
 
     // check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     gr_viewx = FIXED_TO_FLOAT( viewx );
     gr_viewy = FIXED_TO_FLOAT( viewy );
@@ -4723,7 +4723,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
 #endif
 
     // Check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     //14/11/99: Hurdler: moved here because it doesn't work with
     // subsector, see other comments;
@@ -4740,7 +4740,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     HWD.pfnSetTransform(NULL);
 
     // Check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     if( view_fogfloor
         && ( view_fogfloor->flags & FF_FOGFACE  ) )

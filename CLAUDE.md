@@ -501,6 +501,18 @@ written up in full in the doc named beside it.
   cabinet's `Z_ChangeTag: free block has corrupt ZONEID`. Inside the parallel section a drawer
   pins its lump with `R_DRAW_LUMP_TAG` and `R_Threads_Wait` releases them all after the join.
   → `render-threads.md`
+- **Never call `NetUpdate` between `R_Use_Render_BSP` and `R_Use_Play_BSP` — use
+  `R_NetUpdate_In_Frame()`.** Both renderers service the network while drawing (four calls in
+  `R_RenderPlayerView`, three in `HWR_RenderPlayerView`), and `NetUpdate` runs `D_Process_Events`,
+  which is the menu, console and game responders — simulation code, running with the *rebuilt* tree
+  in the globals. Measured on the GL path the cabinet uses: **1362 of 1362** such calls had the
+  rebuilt tree swapped in. Do not "fix" it by skipping the call; those carry tic timing and one
+  fewer is as much a gameplay change as one more. → `gotchas.md`
+- **A headless run under `SDL_VIDEODRIVER=dummy` never reaches `R_RenderPlayerView`.** `D_Display`
+  is entered every tic but the player view is not drawn, so `make demotest` (which also passes
+  `-nodraw`) exercises *no* renderer code. Anything touching the renderer needs
+  `SDL_VIDEODRIVER=offscreen` — `make smoke`'s `opengl` check, or `tools/shotsheet.py`. A green demo
+  suite after a renderer change means "no gameplay regression", not "the change was tested".
 - **The BSP the renderer walks must not be the one the simulation walks.** `p_sight.c` traverses
   the nodes for line-of-sight and `R_PointInSubsector` is used across the play code, so swapping in
   a rebuilt tree changes gameplay and desyncs demos — rarely enough to pass a careless test, which

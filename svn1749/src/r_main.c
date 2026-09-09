@@ -1858,7 +1858,7 @@ static void  R_NetUpdate_Main( void )
     // NetUpdate once the views are joined.
     if( r_threads_active )  return;
 #endif
-    NetUpdate ();
+    R_NetUpdate_In_Frame ();   // [Arcade] with the play BSP restored
 }
 
 

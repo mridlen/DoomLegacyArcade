@@ -162,6 +162,13 @@ extern uint32_t         rbsp_numvertexes;
 void R_Use_Render_BSP( void );
 void R_Use_Play_BSP( void );
 
+// [Arcade] NetUpdate called from inside a frame.  Both renderers service the
+// network while drawing, and every one of those calls runs the menu, console
+// and game responders with the rebuilt tree swapped in -- which the rule above
+// forbids.  This puts the play tree back for the duration.  Use it instead of
+// NetUpdate anywhere between R_Use_Render_BSP and R_Use_Play_BSP.
+void R_NetUpdate_In_Frame( void );
+
 extern uint32_t         numlines;
 extern line_t*          lines;
 
