@@ -871,6 +871,15 @@ static void HS_Load( void )
             {
                 if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
             }
+            // [Arcade] Say so rather than filing it under speed in silence.
+            // These files are plain text an operator may edit, and a typo in
+            // the category otherwise moves a record onto a board it does not
+            // belong to with nothing said.
+            if( i >= HS_NUMCAT )
+                GenPrintf(EMSG_warn,
+                          "High scores: unknown category \"%s\" for %s %s,"
+                          " filed under %s.\n",
+                          catname, game, mapname, hs_catname[HS_CAT_speed]);
         }
 
         hs_maprecord_t * rec = HS_FindOrAddRecord(game, mapname);
@@ -1043,6 +1052,12 @@ static void HS_Runs_Load( void )
         {
             if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
         }
+        // [Arcade] As in HS_Load: name a category we do not recognise.
+        if( i >= HS_NUMCAT )
+            GenPrintf(EMSG_warn,
+                      "Run board: unknown category \"%s\" for %s %s,"
+                      " filed under %s.\n",
+                      catname, game, endmap, hs_catname[HS_CAT_speed]);
 
         // "---" is the placeholder written for a run nobody claimed, and "-"
         // the one for an unknown start map; read both back as empty so one

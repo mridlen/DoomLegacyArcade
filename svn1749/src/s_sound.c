@@ -77,7 +77,7 @@
 //
 // Revision 1.8  2000/04/22 16:16:50  emanne
 // Correction de l'interface.
-// Une erreur s'y était glissé, d'où un segfault si on compilait sans SDL.
+// Une erreur s'y Ã©tait glissÃ©, d'oÃ¹ un segfault si on compilait sans SDL.
 //
 // Revision 1.7  2000/04/21 08:23:47  emanne
 // To have SDL working.

@@ -4683,6 +4683,18 @@ void G_BeginRecording (void)
     *demo_p++ = cv_rocket_trails.EV + 1;
     // 46
 
+    // [Arcade] The option area is 64 bytes and 46 are in use.  Overrunning it
+    // walks straight over the sync mark below, and the only symptom is that
+    // every demo recorded afterwards is rejected on playback with no clue why.
+    //
+    // Same reasoning as the DEMOHDR_playeringame check further up: the offsets
+    // and the writes are maintained by hand in two places, so say so at the
+    // moment they stop agreeing rather than leaving it to be discovered.
+    if( demo_p > demo_p_next )
+        I_SoftError("Demo option area overrun by %d byte(s); the sync mark and"
+                    " every demo recorded now are corrupt\n",
+                    (int)(demo_p - demo_p_next));
+
     // empty space
     while( demo_p < demo_p_next )  *demo_p++ = 0;
 

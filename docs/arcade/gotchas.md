@@ -987,3 +987,56 @@ in the same way, and a corrupted library gives a perfectly plausible stack point
 code. `sudo debsums -s` audits every installed file; a couple of `rpi-*` config files reported as
 changed is normal (the Pi's own first-boot scripts rewrite them), flagged binaries or libraries are
 not.
+
+## The encoding trap, and how it was closed
+
+Fourteen files in this tree were not valid UTF-8, and **plain `grep` skips such
+a file silently** — no match, no warning, no non-zero exit. A sweep for
+`R_Cache_Lock` during a review came back with four of its six call sites,
+because `r_segs.c` was one of the fourteen. Nothing in the output said so.
+
+`file` does not reliably identify them either. It called `hardware/hw_main.c`
+and `p_map.c` plain "ASCII text", and `r_segs.c` "ASCII text, with NEL line
+terminators" — that NEL is a stray `0x85`, and it is exactly what makes grep
+treat the file as binary.
+
+The reliable detection is to ask grep itself, by comparing a normal count with
+a forced-text one:
+
+    for f in $(find svn1749/src -name '*.c' -o -name '*.h'); do
+        [ "$(grep -c "" $f)" = "$(grep -ac "" $f)" ] || echo "SKIPPED: $f"
+    done
+
+### Why iconv was the wrong tool
+
+All 33 offending bytes were inside comments — French notes from the original
+Legacy authors — and none were in a string literal or in code, which is what
+made a conversion safe at all. But they came from **three different legacy
+encodings**, so converting the lot from any single one would have turned the
+other two into mojibake:
+
+| byte | meant | encoding | seen in |
+| --- | --- | --- | --- |
+| `0xE0 0xE7 0xE8 0xE9 0xEA 0xF4 0xF9` | `à ç è é ê ô ù` | latin-1 | `déterminée`, `carré`, `intéressantes` |
+| `0xB0 0xB7` | `° ·` | latin-1 | `90°`, a fog formula |
+| `0x82` | `é` | **cp437** | `supporté`, `numéro`, `portée`, `départ` |
+| `0x85` | `à` | **cp437** | `à la 4dos`, `à la Boom` |
+| `0x96` | `–` | **cp1252** | `(1e–kw)` in the Glide fog notes |
+
+The cp437 ones are DOS-era files; `0x82` in latin-1 is a control character, and
+would have produced an invisible byte where an `é` belongs. Each one was read
+from the surrounding French rather than guessed.
+
+### How it was verified
+
+Comments do not reach the compiler, so a correct conversion must leave the
+output bit-identical. Object files were saved before and compared after:
+
+**124 of 125 identical.** The one that differed was `d_main.o`, which was not
+among the converted files — it embeds `DLA_VERSION` from the version-describe
+step, and the working tree had gone from clean to dirty. Confirmed by reading
+the strings out of both objects.
+
+That is the check to repeat if this is ever done again: convert, rebuild,
+compare objects. Anything that differs beyond the version string means a byte
+was changed somewhere the compiler could see it.

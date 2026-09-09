@@ -3076,10 +3076,10 @@ static void HWR_Subsector(int num)
     }
 #endif
 
-// Hurder ici se passe les choses intéressantes!
+// Hurder ici se passe les choses intÃ©ressantes!
 // on vient de tracer le sol et le plafond
-// on trace à présent d'abord les sprites et ensuite les murs
-// hurdler: faux: on ajoute seulement les sprites, le murs sont tracés d'abord
+// on trace Ã  prÃ©sent d'abord les sprites et ensuite les murs
+// hurdler: faux: on ajoute seulement les sprites, le murs sont tracÃ©s d'abord
     if (lineseg != NULL)
     {
         // draw sprites first , coz they are clipped to the solidsegs of

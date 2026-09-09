@@ -756,7 +756,7 @@ static int     comskips,varskips;
         //
         // sequential command completion forward and backward
 
-        // remember typing for several completions (…-la-4dos)
+        // remember typing for several completions (Ã -la-4dos)
         if (inputlines[inputline][input_cx-1] != ' ')
         {
             if (strlen (inputlines[inputline]+1)<80)

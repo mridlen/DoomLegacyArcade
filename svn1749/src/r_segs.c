@@ -582,7 +582,7 @@ void R_Clear_backscale_ref( void )
 // DrawSegs
 //faB:  very ugly realloc() of drawsegs at run-time, I upped it to 512
 //      instead of 256.. and someone managed to send me a level with 896 drawsegs!
-//      So too bad here's a limit removal …-la-Boom
+//      So too bad here's a limit removal Ã -la-Boom
 //Hurdler: with Legacy 1.43, drawseg_t is 6780 bytes and thus if having 512 segs, it will take 3.3 Mb of memory
 //         default is 128 segs, so it means nearly 1Mb allocated
 // Drawsegs set by R_StoreWallRange, used by R_Create_DrawNodes

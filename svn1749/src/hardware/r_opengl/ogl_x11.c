@@ -188,7 +188,7 @@ EXPORT Window HWRAPI( HookXwin ) (Display *dsp,int width,int height, boolean vid
     // we need to clear the depth buffer. Very important!!!
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
-    //VIDGL_Flush_GL_textures(); // peut être qu'il faut mettre çà dans resize ou create
+    //VIDGL_Flush_GL_textures(); // peut Ãªtre qu'il faut mettre Ã§Ã  dans resize ou create
 
     //lvid->buffer = NULL;   // unless we use the software view
     //lvid->direct = NULL;   // direct access to video memory, old DOS crap
@@ -242,6 +242,6 @@ EXPORT void HWRAPI( SetPalette ) ( RGBA_t *pal, RGBA_t *gamma )
         myPaletteData[i].s.blue  = MIN((pal[i].s.blue*gamma->s.blue)/127,   255);
         myPaletteData[i].s.alpha = pal[i].s.alpha;
     }
-    // on a changé de palette, il faut recharger toutes les textures
+    // on a changÃ© de palette, il faut recharger toutes les textures
     VIDGL_Flush_GL_textures();
 }

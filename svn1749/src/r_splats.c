@@ -557,7 +557,7 @@ static void R_RenderFloorSplat (floorsplat_t* pSplat, vertex_t* verts, byte* pTe
 
         x = (x2-x1) + 1;
 
-        //point de d‚part dans la texture
+        //point de dÃ©part dans la texture
         tx = rastertab[y].tx1;
         ty = rastertab[y].ty1;
 
@@ -575,7 +575,7 @@ static void R_RenderFloorSplat (floorsplat_t* pSplat, vertex_t* verts, byte* pTe
              }
         }
 
-        // r‚initialise les minimus maximus pour le prochain appel
+        // rÃ©initialise les minimus maximus pour le prochain appel
         rastertab[y].minx = FIXED_MAX;
         rastertab[y].maxx = FIXED_MIN;
     }

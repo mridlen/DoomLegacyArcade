@@ -1750,7 +1750,7 @@ void R_SetupFrame( byte pind, player_t* player )
 
     if ( rendermode == render_soft )
     {
-        // clip it in the case we are looking a hardware 90° full aiming
+        // clip it in the case we are looking a hardware 90Â° full aiming
         // (lmps, nework and use F12...)
         aimingangle = G_ClipAimingPitch(aimingangle);	// limit aimingangle
 

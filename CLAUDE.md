@@ -657,9 +657,15 @@ written up in full in the doc named beside it.
   it moves polygon corners now, so T-joins solved first get stranded. Both report counts on every
   level load; the "still not flush" count must stay 0. Check seams over the whole map, not
   through a screenshot: count gap-producing T-junctions. → `gotchas.md`
-- **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
-  warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
-  symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
+- **Every source file is UTF-8 now; keep it that way.** Fourteen of them were not, and plain `grep`
+  skipped them entirely — no match, no warning — including `r_main.c`, `p_map.c`, `console.c` and
+  `hardware/hw_main.c`. That silently hid four of six `R_Cache_Lock` call sites during a review, and
+  `file` is no help: it reported two of the offenders as plain "ASCII text". They have been
+  converted (33 bytes, all inside French comments, three different legacy encodings between them).
+  **A new file with a stray high byte puts the trap straight back**, so if a grep says a symbol is
+  never written, still confirm with `nm ../objs/*.o`, and check with:
+  `for f in $(find svn1749/src -name '*.c' -o -name '*.h'); do [ "$(grep -c "" $f)" = "$(grep -ac "" $f)" ] || echo "SKIPPED: $f"; done`
+  → `gotchas.md`
 - **There are no dep files for most objects, so editing a header does not trigger a rebuild.**
   After changing any header, `make clean && make`. `tools/build.sh` now does this for you — it
   forces a clean when any header is newer than the oldest object — but plain `make` still will not.
