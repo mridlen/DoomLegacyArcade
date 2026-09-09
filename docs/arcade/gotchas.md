@@ -873,3 +873,70 @@ believing the shot.
 `localangle` on the very next tic and an angle written straight to the mobj is silently discarded —
 the player moves, the view keeps pointing the old way, and the screenshot looks like the wrong
 place. `p_telept.c` sets both for the same reason.
+
+### Reading a crash log: the level names itself now
+
+`P_SetupLevel` prints one line per level load, before any of the work that might crash:
+
+```
+Level: E1M7  skill 4  play  chasecam off  views 1
+Level: E1M1  skill 1  demo E1M1  ITYTD  SPEED  1:11.05  AAA  chasecam on  views 1
+```
+
+It carries the five things a backtrace cannot recover: the map, the skill, whether a demo is
+driving it (and *which* record, via `HS_DemoLabel`), whether the chase camera is on, and how many
+views are being drawn -- which is what selects the threading mode. It goes out through
+`GenPrintf(EMSG_all, ...)`, so it reaches the **terminal**; a `CONS_Printf` would only reach the
+in-game console, which is exactly the wrong place for something you read after the process is gone.
+
+**It is printed as soon as `level_mapname` is known, not at the end of setup**, so a crash *during*
+level setup still has the level named above it.
+
+**Why it exists.** A cabinet crash log used to be a column of these and nothing else:
+
+```
+Nodes rebuilt for rendering: 1433 segs, 482 subsectors, 481 nodes.
+Segmentation fault
+```
+
+Placing that crash meant loading every map of the IWAD headlessly and building a table of seg
+counts to match against. It works -- the counts are deterministic for a given map, and identical on
+ARM and x86 -- but it is a measuring run per IWAD before the investigation can even start. The table
+for Ultimate Doom episode 1, since it has been measured once:
+
+| segs | level | segs | level | segs | level |
+| --- | --- | --- | --- | --- | --- |
+| 785 | E1M1 | 1221 | E1M4 | 1433 | E1M7 |
+| 1525 | E1M2 | 1184 | E1M5 | 634 | E1M8 |
+| 1495 | E1M3 | 1909 | E1M6 | 1023 | E1M9 |
+
+**A repeated sequence in that column is a level progression, and the shape of it is evidence.** The
+crash it was built for read E1M1..E1M8 complete, then E1M1..E1M7 and back to E1M1, then E1M1..E1M7
+and dead -- three runs, the last two both ending at E1M7. That narrows a "random" segfault to one
+level and one transition before anyone has looked at a backtrace.
+
+### Getting a backtrace on the Pi is not the same as on the cabinet
+
+The cabinet is Fedora, where `systemd-coredump` is installed by default and has quietly kept every
+crash -- that is how the chase-camera use-after-free was found, with no new logging. **None of that
+is true on Raspberry Pi OS**, and each difference fails silently:
+
+- **`systemd-coredump` is not installed.** `core_pattern` is a bare `core`, `coredumpctl` does not
+  exist, and nothing is kept. `sudo apt install systemd-coredump gdb`.
+- **The journal is in RAM.** Debian ships no `/var/log/journal`, so `journalctl -b -1` has nothing
+  and a reboot erases the evidence. `sudo mkdir -p /var/log/journal && sudo systemctl restart
+  systemd-journald`.
+- **The kernel does not use the word "segfault" on ARM.** x86 prints `segfault at 0 ip ...`;
+  arm64 prints `unhandled level 3 translation fault (11) at 0x0, esr 0x92000007, in <object>`.
+  Grepping `dmesg` for "segfault" on a Pi finds nothing and reads as "the kernel logged no crash".
+  Grep for `unhandled|fault|<binary name>`, and check `/proc/sys/debug/exception-trace` is 1.
+
+With no core, the `dmesg` line is still worth having: subtract the mapped base from the `ip` and
+`addr2line -e ./doomlegacyarcade -fCi <offset>` gives file and line, because `tools/build.sh` puts
+`-g` in `ENV_CFLAGS`.
+
+**And check the storage before believing any backtrace on that rig.** Two SD cards have died there
+in the same way, and a corrupted library gives a perfectly plausible stack pointing at innocent
+code. `sudo debsums -s` audits every installed file; a couple of `rpi-*` config files reported as
+changed is normal (the Pi's own first-boot scripts rewrite them), flagged binaries or libraries are
+not.

@@ -188,6 +188,8 @@
 #include "hu_stuff.h"
 #include "console.h"
 #include "nodebuild/nb_build.h"   // [Arcade]
+#include "hs_stuff.h"          // [Arcade] HS_DemoLabel
+#include "d_clisrv.h"          // [Arcade] D_NumViews
 #include "m_argv.h"
 
 
@@ -2696,6 +2698,34 @@ boolean P_SetupLevel (int      to_episode,
     if(level_mapname)   Z_Free(level_mapname);
     level_mapname = Z_Strdup(sl_mapname, PU_STATIC, 0);  // MAP01 or E1M1, etc.
     level_lumpnum = W_GetNumForName(sl_mapname);
+
+    // [Arcade] Say which level this is, and what is driving it.
+    //
+    // A crash log from the cabinet is a column of "Nodes rebuilt for
+    // rendering: ..." lines and nothing else, so working out where it died
+    // means matching seg counts against a table that has to be measured, per
+    // iwad, by loading every map.  That is how the E1M7 crash was placed, and
+    // it should not have taken a measuring run to do it.
+    //
+    // Print what a backtrace cannot recover: the map, the skill, whether a
+    // demo is driving it (and which record it is replaying), whether the
+    // chase camera is on -- that has already caused one use-after-free crash
+    // here, see attract.md -- and how many views are being drawn, which is
+    // what selects the threading mode.  Printed here rather than at the end
+    // of the setup so the level is named *before* the work that might crash.
+    {
+        extern consvar_t  cv_chasecam;   // r_main.c, in no header
+        const char * demolabel = demoplayback ? HS_DemoLabel() : NULL;
+
+        GenPrintf( EMSG_all,
+                   "Level: %s  skill %d  %s%s%s  chasecam %s  views %d\n",
+                   level_mapname, gameskill + 1,
+                   demoplayback ? "demo"
+                     : (single_level_mode ? "single level" : "play"),
+                   demolabel ? " " : "",  demolabel ? demolabel : "",
+                   cv_chasecam.EV ? "on" : "off",
+                   D_NumViews() );
+    }
 
     leveltime = 0;
 

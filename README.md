@@ -1225,6 +1225,24 @@ genuinely unavailable.
 That will be **Framerate Cap**, which now draws frames between tics and interpolates them. Setting
 it to `35` gives the exact old behaviour. It changes nothing about the simulation either way.
 
+**The game crashed, and I want to report it usefully.**
+The terminal log names the level. Every level load prints a line like
+`Level: E1M7  skill 4  play  chasecam off  views 1`, and during the attract cycle it also names the
+record being replayed — `demo E1M1  ITYTD  SPEED  1:11.05  AAA`. That line, plus the handful before
+it, usually says what was on screen without anyone having to reproduce it.
+
+For a backtrace as well, install the crash catcher once — `sudo apt install systemd-coredump gdb` on
+Raspberry Pi OS, `sudo dnf install systemd-coredump gdb` on Fedora — and then after a crash run:
+
+```
+coredumpctl list
+coredumpctl debug doomlegacyarcade --debugger=gdb \
+    --debugger-arguments="-batch -ex 'thread apply all bt full'"
+```
+
+On a Pi, also run `sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald`, or
+the next reboot erases the logs.
+
 **The game won't build.**
 Almost always one of the three `make_options` edits above. `-march=i686` and the default `gnu23`
 standard both produce errors that don't obviously point at the cause.
