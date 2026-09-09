@@ -346,6 +346,16 @@ run_demo()   # $1 = slot dir, $2 = demo file
 
     demo_maps "$s/out.txt" > "$OUTDIR/$d.maps"
 
+    # [Arcade] Fingerprint the demo file itself.
+    #
+    # The cabinet rewrites a demo whenever somebody beats that record, so a
+    # .lmp can be replaced under the baseline's feet between one run and the
+    # next.  The log then differs for a reason that has nothing to do with the
+    # code, and it looks exactly like a desync -- three of them did, the first
+    # time the suite ran after a play session.  It cuts the other way too: a
+    # replaced demo could just as easily hide a real regression.
+    sha256sum "$DEMODIR/$d" | cut -d' ' -f1 > "$OUTDIR/$d.sha"
+
     # A demo that failed to load still produces a plausible looking run -- two
     # runs that both loaded nothing agree perfectly -- so prove a demo really
     # drove a level before believing anything the run produced.
@@ -372,7 +382,14 @@ run_demo()   # $1 = slot dir, $2 = demo file
 #  Go
 #---------------------------------------------------------------------------
 
-rm -rf "$OUTDIR"
+# Clear the output directory only for a whole-corpus run.  With a filter this
+# must NOT wipe everything: re-baselining the one demo whose record was just
+# beaten would otherwise throw away the other ninety-odd baselines and quietly
+# leave the suite testing nothing until somebody noticed.  Filtered runs
+# overwrite the entries they touch and leave the rest alone.
+if [ ${#FILTERS[@]} -eq 0 ]; then
+    rm -rf "$OUTDIR"
+fi
 mkdir -p "$OUTDIR" "$SLOTDIR"
 
 START=$( date +%s )
@@ -416,19 +433,24 @@ if [ "$MODE" = baseline ]; then
         echo "binary  $( sha256sum "$BINARY" | cut -c1-12 )"
         echo "config  $CONFIG_HASH"
         echo "mode    $PLAYMODE"
-        echo "demos   ${#DEMOS[@]}"
-        for d in "${DEMOS[@]}"; do
+        # Enumerated from what is on disk, not from the list this run drove:
+        # a filtered re-baseline touches a few entries and must leave the
+        # manifest describing all of them.
+        allst=( "$BASEDIR"/*.status )
+        echo "demos   ${#allst[@]}"
+        for f in "${allst[@]}"; do
+            d=$( basename "$f" .status )
             printf '%s %s %s\n' \
-                "$( cat "$OUTDIR/$d.status" )" \
-                "$( [ -f "$OUTDIR/$d.log" ] && wc -l < "$OUTDIR/$d.log" || echo 0 )" \
+                "$( cat "$f" )" \
+                "$( [ -f "$BASEDIR/$d.log" ] && wc -l < "$BASEDIR/$d.log" || echo 0 )" \
                 "$d"
         done
     } > "$BASEDIR/manifest.txt"
 
-    bad=$( grep -acv '^ok ' "$BASEDIR/manifest.txt" 2>/dev/null )
+    nall=$( grep -ac '\.lmp$' "$BASEDIR/manifest.txt" )
     nok=$( grep -ac '^ok ' "$BASEDIR/manifest.txt" )
-    echo "baseline recorded: $nok/${#DEMOS[@]} demos, ${ELAPSED}s, commit $DESCRIBE"
-    if [ "$nok" != "${#DEMOS[@]}" ]; then
+    echo "baseline recorded: $nok/$nall demos, ${ELAPSED}s, commit $DESCRIBE"
+    if [ "$nok" != "$nall" ]; then
         echo "WARNING: these did not replay cleanly and are NOT in the baseline:"
         grep -av '^ok ' "$BASEDIR/manifest.txt" | grep -a '\.lmp$' | sed 's/^/  /'
         exit 1
@@ -447,12 +469,25 @@ base_commit=$( awk '$1=="commit"{print $2}' "$BASEDIR/manifest.txt" )
 base_config=$( awk '$1=="config"{print $2}' "$BASEDIR/manifest.txt" )
 base_mode=$( awk '$1=="mode"{print $2}' "$BASEDIR/manifest.txt" )
 
-fails=0; missing=0; checked=0
+fails=0; missing=0; checked=0; rerecorded=0; lengths=0
 FAILLINES=()
+RERECORDED=()
+LENGTHNOTES=()
 for d in "${DEMOS[@]}"; do
     st=$( cat "$OUTDIR/$d.status" 2>/dev/null || echo "norun" )
     if [ ! -f "$BASEDIR/$d.log" ]; then
         missing=$(( missing + 1 ))
+        continue
+    fi
+
+    # Is this still the same demo file the baseline was taken from?  If the
+    # player beat that record since, it is not, and nothing below can mean
+    # anything.  Reported as its own category: it is not a desync, and telling
+    # the two apart is the whole point of keeping the hash.
+    if [ -f "$BASEDIR/$d.sha" ] \
+       && [ "$( cat "$BASEDIR/$d.sha" )" != "$( cat "$OUTDIR/$d.sha" )" ]; then
+        rerecorded=$(( rerecorded + 1 ))
+        RERECORDED+=( "$d" )
         continue
     fi
     if [ "$st" != ok ]; then
@@ -474,26 +509,39 @@ for d in "${DEMOS[@]}"; do
         mapsdiff="$( tr '\n' '/' < "$OUTDIR/$d.maps" ) vs baseline $( tr '\n' '/' < "$BASEDIR/$d.maps" )"
     fi
 
-    if [ "$QUICK" = 1 ]; then
-        # Both runs were cut short at an arbitrary point, so only the tics
-        # they both reached can be compared.
-        n=$( wc -l < "$BASEDIR/$d.log" )
-        m=$( wc -l < "$OUTDIR/$d.log" )
-        [ "$m" -lt "$n" ] && n="$m"
-        head -n "$n" "$BASEDIR/$d.log" > "$OUTDIR/.b.$$"
-        head -n "$n" "$OUTDIR/$d.log"  > "$OUTDIR/.c.$$"
-        diffline=$( cmp "$OUTDIR/.b.$$" "$OUTDIR/.c.$$" 2>&1 | sed -n 's/.*line \([0-9]*\).*/\1/p' )
-        rm -f "$OUTDIR/.b.$$" "$OUTDIR/.c.$$"
-    else
-        diffline=$( cmp "$BASEDIR/$d.log" "$OUTDIR/$d.log" 2>&1 | sed -n 's/.*line \([0-9]*\).*/\1/p' )
-        if [ -z "$diffline" ] && ! cmp -s "$BASEDIR/$d.log" "$OUTDIR/$d.log"; then
-            # Same prefix, different length: one run ended early.
-            diffline=$(( $( wc -l < "$BASEDIR/$d.log" ) ))
-            FAILLINES+=( "$d: log length differs (baseline $diffline tics, now $( wc -l < "$OUTDIR/$d.log" ))" )
-            fails=$(( fails + 1 ))
-            continue
-        fi
+    # Compare the tics both runs reached, and only those.
+    #
+    # Where a demo *stops* is not reproducible, so it is not a signal.  A demo
+    # that ends with the player standing still keeps being simulated after its
+    # input runs out, and the point at which the engine finally quits moves
+    # with how loaded the machine is -- measured on one demo, six runs of one
+    # binary: 1570, 1214, 1656, 1238, 1555, 1365 tics, the short ones being the
+    # runs with eight busy cores alongside.  The demo-end path is never
+    # reached in any of them (the -timedemo timing line is never printed), so
+    # the run is ending by some other, wall-clock-dependent route.  That is a
+    # pre-existing engine wart in the same never-quits family as the -timedemo
+    # attract-cycle bug; see docs/arcade/demo-desync.md.
+    #
+    # So a length difference is reported, and counted, but it is not a failure:
+    # it carries no information. A difference *within* the shared prefix is a
+    # real desync and is what this exists to catch.
+    #
+    # The cost of that is honest and worth stating: a change that made a demo
+    # genuinely end earlier would show up here as a length note rather than a
+    # failure.  Nothing is lost that was previously reliable -- that signal was
+    # already noise -- but it is not free either.
+    n=$( wc -l < "$BASEDIR/$d.log" )
+    m=$( wc -l < "$OUTDIR/$d.log" )
+    shortest=$n
+    [ "$m" -lt "$shortest" ] && shortest="$m"
+    if [ "$n" != "$m" ]; then
+        lengths=$(( lengths + 1 ))
+        LENGTHNOTES+=( "$d: baseline $n tics, now $m (compared the first $shortest)" )
     fi
+    head -n "$shortest" "$BASEDIR/$d.log" > "$OUTDIR/.b.$$"
+    head -n "$shortest" "$OUTDIR/$d.log"  > "$OUTDIR/.c.$$"
+    diffline=$( cmp "$OUTDIR/.b.$$" "$OUTDIR/.c.$$" 2>&1 | sed -n 's/.*line \([0-9]*\).*/\1/p' )
+    rm -f "$OUTDIR/.b.$$" "$OUTDIR/.c.$$"
 
     if [ -n "$diffline" ]; then
         fails=$(( fails + 1 ))
@@ -510,11 +558,24 @@ for d in "${DEMOS[@]}"; do
     fi
 done
 
-echo "demotest: $checked compared, $fails desynced,$( [ ${#QUARANTINED[@]} -gt 0 ] && echo " ${#QUARANTINED[@]} quarantined," ) ${ELAPSED}s"
+echo "demotest: $checked compared, $fails desynced,$( [ "$lengths" -gt 0 ] && echo " $lengths ended at a different tic," )$( [ ${#QUARANTINED[@]} -gt 0 ] && echo " ${#QUARANTINED[@]} quarantined," ) ${ELAPSED}s"
+if [ "$lengths" -gt 0 ]; then
+    # Not a failure: where a demo stops is not reproducible.  Listed so the
+    # count cannot drift upwards unnoticed.
+    echo "  ended at a different tic than the baseline (not a desync; the shared prefix matched):"
+    printf '    %s\n' "${LENGTHNOTES[@]}"
+fi
 if [ ${#QUARANTINED[@]} -gt 0 ]; then
     # Named every run on purpose.  A quarantined demo is one that has stopped
     # watching for regressions, so the list should stay visible and short.
     echo "  not tested (see tools/demotest-ignore.txt): ${QUARANTINED[*]}"
+fi
+if [ "$rerecorded" -gt 0 ]; then
+    # Not a failure.  Somebody beat these records and the cabinet rewrote the
+    # .lmp, so the baseline describes a demo that no longer exists.
+    echo "  $rerecorded demo(s) re-recorded since the baseline (a record was beaten):"
+    printf '    %s\n' "${RERECORDED[@]}"
+    echo "    re-baseline just these:  tools/demotest.sh --baseline ${RERECORDED[*]%.lmp}"
 fi
 if [ "$missing" -gt 0 ]; then
     echo "  $missing demo(s) have no baseline entry -- re-record with --baseline"

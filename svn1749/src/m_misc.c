@@ -727,7 +727,19 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
         }
     }
 
-    fw = fopen (cfgfile, "w");
+    // [Arcade] Atomic, so a power cut cannot leave the config truncated.
+    //
+    // This is the same rule the score, run board and audit files already
+    // followed, and the config is the one that could least afford to be the
+    // exception: it is hand-tuned, only a -devmode session writes it, and it
+    // exists nowhere else on the machine.  fopen(name, "w") truncates before
+    // it writes, so the cabinet being switched off at the wall during a save
+    // lost the whole file rather than the one setting being changed.
+    //
+    // The .bak copy above stays -- it keeps a generation, which this does not
+    // -- but it was never a substitute: recovering from it means an operator
+    // noticing and renaming a file, and M_Verify_Config only warns.
+    fw = M_Atomic_Write_Open(cfgfile);
     if (!fw)
     {
         I_SoftError("Could not save game config file %s\n", cfgfile);
@@ -768,7 +780,8 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
     if( cfg == CFG_main )
         G_SaveKeySetting(fw);
 
-    fclose (fw);
+    if( ! M_Atomic_Write_Close(fw, cfgfile) )
+        I_SoftError("Could not save game config file %s\n", cfgfile);
 }
 
 //  Save all game config here

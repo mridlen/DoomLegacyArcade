@@ -3,7 +3,7 @@
 Read this before changing anything that could affect gameplay, and before
 changing `tools/demotest.sh`, `G_Synclog_Tic` or the `-synclog` switch.
 
-The cabinet keeps 95 record demos. Every one of them is a player's high score,
+The cabinet keeps 97 record demos. Every one of them is a player's high score,
 and the engine refuses a demo whose recorded settings do not match what it is
 about to replay it with — so a gameplay change does not merely alter them, it
 **invalidates the board**. This is the check that says whether that happened.
@@ -113,22 +113,23 @@ the recorded level sequence caught independently. The mutation was then
 reverted, the tree rebuilt, and the same command over four demos reported
 `4 compared, 0 desynced`, exit 0.
 
-Green, red at the right tic, green again. **This has been done three times**:
+Green, red at the right tic, green again. **This has been done four times**:
 when the harness was first written, again after the map check was rewritten
-from prediction to comparison, and again after the switch to `-timedemo` — each
+from prediction to comparison, again after the switch to `-timedemo`, and
+again after the comparison moved to the shared prefix — each
 time because the change touched exactly the code the self-check exercises, and
 a green result that has not been re-earned is not worth anything.
 
 The last of those is the one to copy, because the suite is fast enough now to
 do it over everything:
 
-    94 compared, 94 desynced, 1 quarantined, 40s
+    97 compared, 97 desynced, 28 ended at a different tic, 83s
     doomu_ep1_sk3_speed.lmp: DESYNC at log line 102 (leveltime 101), and the level sequence changed
     doomu_E2M7_sk0_speed.lmp: DESYNC at log line 102 (leveltime 101), and the level sequence changed
     ...
 
 Every demo in the corpus, all at leveltime 101, one tic after the injected
-draw. Revert, rebuild, and it reports `94 compared, 0 desynced`.
+draw. Revert, rebuild, and it reports `97 compared, 0 desynced`.
 
 Redo it whenever the harness changes. Insert the line above into
 `P_MobjThinker`, `make`, run the harness, then revert and rebuild — about four
@@ -178,23 +179,70 @@ The 95th demo is the subject of the next section.
 It still saturates the CPU while it runs, but 40 seconds is short enough that
 the suite is worth running on anything, rather than saved for big changes.
 
-## The one quarantined demo
+## Two things that look like desyncs and are not
 
-`doomu_ep1_sk0_max.lmp` is listed in `tools/demotest-ignore.txt` and is not
-tested. It is worth understanding why, because the reasoning decides what else
-belongs on that list.
+Both were found the first time the suite ran after somebody actually played the
+cabinet, and both would have been read as regressions.
 
-Under `-timedemo` it does not terminate reproducibly. The demo's end marker is
-never reached — `G_CheckDemoStatus` never prints its timing line — so the
-engine keeps simulating past the end of the demo, the player coasting to a halt
-on no input, until the process exits for some other reason. How many extra tics
-that adds varies: 1720, 1967 and 2355 were all observed from the same binary
-and the same file. Under `-playdemo` it ends cleanly at 1720 every time.
+### The demo file was replaced
 
-**It is not a desync.** The first 1720 tics are byte-identical between the two
-modes. It is a termination bug, and very likely the same never-quits family as
-the `-timedemo` attract-cycle bug above, which was found in the same session.
-Not yet investigated.
+The cabinet **rewrites a demo whenever that record is beaten**. Play a better
+run and the `.lmp` under that name is a different file, so the baseline log
+describes a demo that no longer exists — and the comparison fails on three
+demos with no code change at all. That is what happened: three "desyncs", all
+with mtimes minutes after the baseline was taken, from one play session.
+
+It cuts the other way too, which is the dangerous direction: a replaced demo
+could equally have *hidden* a real regression.
+
+So the baseline stores the sha256 of each `.lmp` and the comparison checks it
+first. A changed file is reported as its own thing, with the command to
+re-record just those entries. **Before blaming a run for changed files, compare
+mtimes against the run times** — the general rule is already in CLAUDE.md, and
+this is it in a new place.
+
+A filtered `--baseline` therefore had to stop wiping the whole directory, which
+it used to do: re-recording the one demo whose record was beaten would have
+thrown away the other ninety-odd baselines and left the suite testing nothing.
+
+### The demo stopped at a different tic
+
+Where a demo *stops* is not reproducible, so it is not a signal.
+
+A demo whose input runs out while the player is standing still keeps being
+simulated — monsters still think, `prnd` still advances — and the point at
+which the engine finally quits moves with how loaded the machine is. Six runs
+of one binary on one demo, alternating an idle machine with eight busy cores:
+
+    idle    1570   1656   1555
+    loaded  1214   1238   1365
+
+The `-timedemo` timing line is never printed in **any** of them, so the demo-end
+path is never reached at all; the run is ending by some other, wall-clock
+dependent route. That is a pre-existing engine wart in the same never-quits
+family as the `-timedemo` attract-cycle bug above, and it has not been chased
+down.
+
+So the comparison checks the tics both runs reached, and a length difference is
+counted and listed but is not a failure. A difference *within* the shared
+prefix is a real desync and is what the suite exists to catch.
+
+**The cost is worth stating plainly:** a change that made a demo genuinely end
+earlier would now show up as a length note rather than a failure. Nothing that
+was previously reliable is lost — that signal was already noise, and it was
+producing false failures — but it is not free either. If the engine's demo-end
+path is ever fixed, this should be tightened back up.
+
+## The quarantine list
+
+`tools/demotest-ignore.txt` names demos that are not usable as fixtures. **It is
+currently empty, which is where it should stay.**
+
+`doomu_ep1_sk0_max.lmp` lived there for a while, for the variable-termination
+behaviour described above, before the comparison learned to handle that
+generically. Returning it to the suite restored 1720 tics of real coverage that
+were being thrown away, which is the argument against quarantining anything
+that can be handled instead.
 
 The distinction that matters for the ignore list: **quarantine is for a demo
 whose playback is not reproducible, not for a demo that desyncs against the run

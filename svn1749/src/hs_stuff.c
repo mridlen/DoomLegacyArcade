@@ -1044,6 +1044,19 @@ static void HS_Runs_Load( void )
             if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
         }
 
+        // "---" is the placeholder written for a run nobody claimed, and "-"
+        // the one for an unknown start map; read both back as empty so one
+        // code path covers them.  A placeholder taken literally becomes a
+        // value, which is how "--E4M1" happened in the split table.
+        //
+        // Both of these must happen BEFORE the copies below.  The start map
+        // one used to sit ten lines further down, after its own dl_strncpy had
+        // already run, so it cleared a local nothing read again and the "-"
+        // reached the record verbatim -- the exact bug the comment above
+        // describes, fixed in HS_Load and missed here.
+        if( strcmp(initials, "---") == 0 )  initials[0] = 0;
+        if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
+
         hs_run_t * r = &hs_runs[hs_runs_count++];
         memset(r, 0, sizeof(*r));
         dl_strncpy(r->game, game, HS_GAMEID_LEN-1);
@@ -1052,12 +1065,6 @@ static void HS_Runs_Load( void )
         r->skill = (byte) skillnum;
         r->cat   = (byte) cat;
         r->tics  = (tic_t) tics;
-        // "---" is the placeholder written for a run nobody claimed, and "-"
-        // the one for an unknown start map; read both back as empty so one
-        // code path covers them.  A placeholder taken literally becomes a
-        // value, which is how "--E4M1" happened in the split table.
-        if( strcmp(initials, "---") == 0 )  initials[0] = 0;
-        if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
         dl_strncpy(r->initials, initials, HS_INITIALS_LEN);
     }
 
