@@ -21,7 +21,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
   So the performance settings moved off instead. **Video Options -> Performance Options >>**
   (`PerformanceMenu` / `PerformanceDef`) holds *Framerate Cap*, *Render Threads* and *Show
-  Ticrate* — everything that trades picture for speed. Two rows left Video Options and one link
+  Ticrate* — everything that trades picture for speed. (*8bpp Draw* and *Row Padding* were
+  added later; the page is five `STRINGHEIGHT` rows at y=48..88, the last glyph ending at y=95. *Row Padding* went in after
+  *8bpp Draw* as `PERF_rowpad`, and only `PERF_threads` and `PERF_rowpad` are indexed, both by
+  `M_Draw_Performance`, which greys them outside the software renderer. The page uses its own
+  drawer, so `tools/menufit-test.py` does not measure it.) Two rows left Video Options and one link
   arrived, so that page is **16 rows now, ending at y=181**: shorter than it was, with room again.
 
   `VO_gamma` is unaffected — it is index 4 and both rows that left were below it. Check that

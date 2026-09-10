@@ -950,7 +950,7 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
 // Off unless -frameprofile is given, and then it is one clock read per phase.
 #include <time.h>
 
-typedef enum { FP_TIC=0, FP_VIEWS, FP_PRESENT, FP_TOTAL, FP_N } fp_bucket_e;
+// fp_bucket_e is in d_main.h: I_FinishUpdate adds to FP_EXPAND.
 
 static const char * fp_name[3] = { "tics", "views", "present" };
 static double  fp_acc[FP_N];
@@ -984,12 +984,13 @@ void  FP_Run_Report( void )
     if( ! frameprofile || fp_run_frames == 0 )  return;
     f = 1000.0 / fp_run_frames;
     GenPrintf( EMSG_errlog,
-        "timedemo profile: %ld frames, ms per frame: tics %.3f views %.3f present %.3f hud/other %.3f total %.3f\n",
+        "timedemo profile: %ld frames, ms per frame: tics %.3f views %.3f present %.3f hud/other %.3f total %.3f expand %.3f\n",
         fp_run_frames, fp_run_acc[FP_TIC] * f, fp_run_acc[FP_VIEWS] * f,
         fp_run_acc[FP_PRESENT] * f,
         (fp_run_acc[FP_TOTAL] - fp_run_acc[FP_TIC] - fp_run_acc[FP_VIEWS]
          - fp_run_acc[FP_PRESENT]) * f,
-        fp_run_acc[FP_TOTAL] * f );
+        fp_run_acc[FP_TOTAL] * f,
+        fp_run_acc[FP_EXPAND] * f );   // part of present, not in the sum
 }
 
 double  FP_Now( void )

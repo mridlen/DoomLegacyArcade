@@ -286,6 +286,8 @@ extern consvar_t cv_keepaspect;  // [Arcade] letterbox rather than stretch
 extern consvar_t cv_fuzzymode;
 extern consvar_t cv_draw8bpp;   // [Arcade] 8bpp draw buffer
 void SCR_ChangeDraw8bpp( void );
+extern consvar_t cv_row_padding;   // [Arcade] odd-cache-line row pitch
+void SCR_ChangeRowPadding( void );
 boolean SCR_Draw8bpp_Active( void );
 
 // quick fix for tall/short skies, depending on bytesperpixel

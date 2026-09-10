@@ -1027,6 +1027,7 @@ consvar_t * video_cvar_list[] =
   &cv_scr_height,
   &cv_fuzzymode,
   &cv_draw8bpp,       // [Arcade] 8bpp draw buffer, expanded at present time
+  &cv_row_padding,    // [Arcade] odd-cache-line row pitch for the draw buffer
   &cv_keepaspect,     // [Arcade] letterbox rather than stretch to the panel
   NULL
 };

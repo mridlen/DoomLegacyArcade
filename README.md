@@ -392,6 +392,21 @@ to anyone else running this port. Each is written up in full in the commit that 
   spent drawing the 3D view went from 3.38 ms to 2.97 ms a frame; the picture is identical, checked
   frame by frame. The same change at 32 bits per pixel measured slightly *slower*, so the higher
   colour depths were left as they were.
+- **Getting the picture onto the screen is faster in the software renderer.** On a Pi 3 that last
+  step was more than half of every frame, bigger than drawing the 3D view. Two changes. With
+  **Render Threads** above 1, the 8bpp palette expansion is now shared across the cores instead of
+  being done by one; on the laptop that halved its cost. And the screen is now cleared before the
+  picture is drawn onto it even when the picture fills the screen: the Pi's graphics chip works in
+  tiles, and a frame that does not start with a clear makes it read the previous frame back before
+  drawing over it. That was the likely cause of 640x360 and 864x486 — sizes that fill a 16:9 panel
+  exactly, and so were never cleared — taking about a third longer to present than their
+  neighbours. The picture itself is unchanged.
+- **Clearing HUD messages erased the wrong part of the screen at 16 and 32 bits per pixel**, and
+  would have at any depth with a padded screen buffer; **screenshots** would have come out
+  scrambled with a padded buffer at 16 and 32 bits. Both stepped through the screen by the width in
+  pixels where the engine's own rule is the row length in bytes. Nobody saw either: nothing padded
+  the buffer, and the message clearing only runs with a reduced view size. Found while adding
+  **Row Padding**, and fixed.
 
 **Smaller things**
 
@@ -948,15 +963,16 @@ picture is placed on the screen. No View fit setting can produce black bars.
 **Gamma Options**, higher up the same page, holds *Gamma Function*, *Gamma*, *Black level* and
 *Brightness*. **F11** opens that page directly from anywhere.
 
-**Performance Options**, near the bottom of Video Options, holds the four settings that trade
-picture for speed:
+**Performance Options**, near the bottom of Video Options, holds the settings that trade picture —
+or memory — for speed:
 
 | Setting | What it does |
 | --- | --- |
 | **Framerate Cap** | `Uncapped`, or 35 / 60 / 75 / 100 / 120 / 144 / 165 / 240. Default **60**. |
 | **Render Threads** | `Auto`, or 1 to 4. Default **1**. Software renderer only. |
 | **8bpp Draw** | Draw the world at 8 bits and expand it through the palette at the last moment. Default **Off**. |
-| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the other three. |
+| **Row Padding** | Lay the picture out in memory with a little spare space at the end of each row. Default **Off**. Software renderer only. |
+| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the others. |
 
 **Framerate Cap** is how many frames a second are drawn. The simulation is not affected by it in any
 way: it still runs at exactly 35 tics a second, and every recorded demo plays back identically at
@@ -987,6 +1003,17 @@ if you need the speed — which on a Pi you will — and set it to 1 if you ever
 display modes any more, so even in the software drawmode the renderer normally writes four bytes per
 pixel; this makes it write one and expand at the end. Worth a lot on a Pi, usually nothing on a
 desktop. Try it with **Show Ticrate** on.
+
+**Row Padding** is for the sizes that run oddly slowly for their size. On a Pi 3 the two 1024-wide
+sizes took about twice as long to draw as their neighbours: at exactly 1024 pixels a row, a column
+of the picture lands in the same few slots of the processor's cache, so drawing a wall keeps
+throwing its own data out. Padding each row by a little breaks that pattern. It changes nothing
+you can see — the picture is identical, checked frame by frame — only where it sits in memory, and
+whether that helps depends on the processor: on the development laptop it made no measurable
+difference at all. So it is off unless you turn it on. Measure it on your own machine, with
+`tools/perfchart.py --compare` against a run with it off (see below), rather than taking it on
+trust; it takes effect straight away, with a moment's blank screen while the video mode is set
+again.
 
 **On a Pi, use the software renderer** — see [Performance](#performance) for the measured numbers.
 The Pi's GPU has no fast path for this engine's fixed-function OpenGL, so the hardware renderer goes

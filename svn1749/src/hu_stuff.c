@@ -1366,15 +1366,21 @@ void HU_Erase (void)
     {
         // software mode copies view border pattern & beveled edges from the backbuffer
         topline = 0;
-        for (y=topline,yoffset=y*vid.width; y<bottomline ; y++,yoffset+=vid.width)
+        // [Arcade] R_VideoErase takes a byte offset and a byte count.  This
+        // stepped rows by vid.width pixels, which is only right at 8bpp with
+        // an unpadded buffer: at 16/32bpp it erased the wrong bytes, and with
+        // row padding (cv_row_padding) every row after the first is off.
+        // Rows are vid.ybytes apart; widths are pixels times vid.bytepp.
+        for (y=topline,yoffset=y*vid.ybytes; y<bottomline ; y++,yoffset+=vid.ybytes)
         {
             if (y < view_window_y || y >= view_window_y + rdraw_viewheight)
-                R_VideoErase(yoffset, vid.width); // erase entire line
+                R_VideoErase(yoffset, vid.widthbytes); // erase entire line
             else
             {
-                R_VideoErase(yoffset, view_window_x); // erase left border
+                R_VideoErase(yoffset, view_window_x * vid.bytepp); // erase left border
                 // erase right border
-                R_VideoErase(yoffset + view_window_x + rdraw_viewwidth, view_window_x);
+                R_VideoErase(yoffset + (view_window_x + rdraw_viewwidth) * vid.bytepp,
+                             view_window_x * vid.bytepp);
             }
         }
         con_hudupdate = false;      // if it was set..

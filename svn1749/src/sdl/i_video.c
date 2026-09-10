@@ -93,6 +93,8 @@ static int testbpp = 0;
 #include "console.h"
 #include "hwsym_sdl.h" // For dynamic referencing of HW rendering functions
 #include "ogl_sdl.h"
+#include "r_threads.h"
+  // [Arcade] R_Threads_Parallel, for the draw8bpp expansion
 
 
 //Hudler: 16/10/99: added for OpenGL gamma correction
@@ -147,6 +149,29 @@ static  byte       draw8_texture_bytepp = 0;   // what the texture really is
 static  uint32_t   draw8_to32[256];
 static  uint32_t * draw8_staging = NULL;       // cached expansion buffer
 static  size_t     draw8_staging_size = 0;
+
+// [Arcade] One share of the draw8bpp expansion: rows y0..y1 of vid.display
+// through the palette into draw8_staging.  R_Threads_Parallel runs part 0 on
+// the main thread and the rest on the render workers, which are idle by the
+// time a frame is presented.  Each row is independent and each part writes
+// only its own rows, so the result is the same bytes as the serial loop.
+// Reads vid, draw8_to32 and draw8_staging, none of which changes during a
+// present: the palette is only rebuilt by I_SetPalette, on the main thread.
+static void Draw8_Expand_Rows( int part, int nparts, void * ctx )
+{
+    int y0 = (vid.height * part) / nparts;
+    int y1 = (vid.height * (part + 1)) / nparts;
+    int y;
+
+    for( y = y0; y < y1; y++ )
+    {
+        byte     * src = vid.display + (y * vid.ybytes);
+        uint32_t * dst = draw8_staging + ((size_t)y * vid.width);
+        int x = vid.width;
+        while( x-- )
+            *dst++ = draw8_to32[ *src++ ];
+    }
+}
 
 // indexed by fullscreen
 const char * fullscreen_str[2] = {
@@ -670,15 +695,13 @@ void I_FinishUpdate(void)
             }
             else if( draw8_staging )
             {
-                int y;
-                for( y = 0; y < vid.height; y++ )
-                {
-                    byte     * src = vid.display + (y * vid.ybytes);
-                    uint32_t * dst = draw8_staging + ((size_t)y * vid.width);
-                    int x = vid.width;
-                    while( x-- )
-                        *dst++ = draw8_to32[ *src++ ];
-                }
+                // [Arcade] Split by rows across the render workers.  On a
+                // Pi 3 the present was more than half of every frame, and
+                // this was the one part of it on our side of SDL.  At
+                // render_threads 1 R_Threads_Parallel is a plain call.
+                double fp_e = frameprofile ? FP_Now() : 0.0;
+                R_Threads_Parallel( Draw8_Expand_Rows, NULL );
+                FP_Add( FP_EXPAND, fp_e );   // -frameprofile: part of present
                 SDL_UpdateTexture( sdl_texture, NULL, draw8_staging,
                                    vid.width * 4 );
             }
@@ -722,8 +745,25 @@ void I_FinishUpdate(void)
             }
             else
             {
-                // Fills the output.  No clear needed, and this is the path
-                // every existing install was already taking.
+                // Fills the output, so a clear is not needed for the picture.
+                //
+                // [Arcade] Clear anyway.  On a Pi 3 the sizes that fill a
+                // 16:9 panel exactly -- the only ones that reach this branch
+                // there -- took about 30% longer to present than their
+                // letterboxed neighbours (640x360 against 640x350).  The Pi's
+                // GPU renders in tiles, and a frame that does not start with
+                // a clear makes the driver load the previous frame back into
+                // every tile before drawing over it; a clear tells it not to
+                // bother.  On any other GPU a clear is a cheap fill.
+                // DL_PRESENT_NOCLEAR=1 restores the old path, for measuring
+                // one against the other with tools/perfchart.py.
+                static int noclear = -1;
+                if( noclear < 0 )  noclear = getenv("DL_PRESENT_NOCLEAR")? 1 : 0;
+                if( ! noclear )
+                {
+                    SDL_SetRenderDrawColor( sdl_renderer, 0, 0, 0, 255 );
+                    SDL_RenderClear( sdl_renderer );
+                }
                 SDL_RenderCopy( sdl_renderer, sdl_texture, NULL, NULL );
             }
         }
@@ -1561,7 +1601,21 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
     // Have option to change this for special cases,
     // most code uses vid.ybytes now, and is padded video safe.
     vid.ybytes = vid.width * vid.bytepp;
+    // [Arcade] Row Padding: an odd number of 64-byte cache lines per row, so
+    // the rows of a column spread over every cache set instead of piling
+    // into a few.  WDJ kept the engine safe for a pitch wider than the row
+    // (the "padded video buffer" paths, and the debug #else below); what
+    // was not is fixed alongside -- see render-threads.md.
+    if( cv_row_padding.EV )
+    {
+        int lines = (vid.ybytes + 63) / 64;
+        if( (lines & 1) == 0 )  lines++;
+        vid.ybytes = lines * 64;
+    }
     vid.screen_size = vid.ybytes * vid.height;
+    GenPrintf( EMSG_ver, "Draw buffer: %dx%d, %d bytes per row%s\n",
+               vid.width, vid.height, vid.ybytes,
+               cv_row_padding.EV ? " (row padding)" : "" );
 #else
  // DEBUG padded video buffer code
     vid.ybytes = vid.width * vid.bytepp + 8;  // force odd size

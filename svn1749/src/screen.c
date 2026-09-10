@@ -170,6 +170,17 @@ consvar_t   cv_keepaspect = {"keepaspect", "Yes", CV_SAVE, CV_YesNo};
 // limit and not otherwise, so it is a setting.  See render-threads.md.
 consvar_t   cv_draw8bpp = {"draw8bpp", "Off", CV_SAVE | CV_CALL, CV_OnOff, SCR_ChangeDraw8bpp};
 
+// [Arcade] Pad each row of the software draw buffer to an odd number of cache
+// lines (sdl/i_video.c, where the buffer is sized).  A column is drawn one row
+// apart, and when a row is a power-of-two number of bytes -- 1024 wide at
+// 8bpp -- every pixel of it lands in the same few cache sets, so a wall
+// column evicts itself.  On a Pi 3 that doubled the view time at 1024x576 and
+// 1024x768.  Off by default: it only changes where the rows sit in memory,
+// and whether that helps depends on the CPU's caches, so it is a setting to
+// measure with tools/perfchart.py rather than a fix to impose.  Takes effect
+// at the next mode set, like 8bpp Draw.  See render-threads.md.
+consvar_t   cv_row_padding = {"row_padding", "Off", CV_SAVE | CV_CALL, CV_OnOff, SCR_ChangeRowPadding};
+
 // =========================================================================
 //                           SCREEN VARIABLES
 // =========================================================================
@@ -686,6 +697,14 @@ void SCR_SetDefaultMode (void)
 // [Arcade] Changing the draw depth means reallocating the screen buffer and
 // re-picking the drawers, which is a mode change.
 void SCR_ChangeDraw8bpp (void)
+{
+    if( graphics_state >= VGS_startup )
+        SCR_apply_video_settings( 1 );   // setmodeneeded
+}
+
+// [Arcade] The pitch is fixed when the buffer is allocated, so a change needs
+// a mode set, exactly as for 8bpp Draw.
+void SCR_ChangeRowPadding (void)
 {
     if( graphics_state >= VGS_startup )
         SCR_apply_video_settings( 1 );   // setmodeneeded

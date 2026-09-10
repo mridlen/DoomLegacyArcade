@@ -1197,7 +1197,12 @@ void M_ScreenShot (void)
         I_ReadScreen (bufs);
         src_bitpp = vid.bitpp;
    
-        if( vid.ybytes != vid.width )
+        // [Arcade] Compared against, and copying, vid.widthbytes -- the row in
+        // BYTES.  It used vid.width, pixels: harmless while the pitch was
+        // exactly the row (the loop then moved every row onto itself), but
+        // with row padding (cv_row_padding) at 16/32bpp it kept a quarter of
+        // each row.  I_ReadScreen hands back the screen at its own pitch.
+        if( vid.ybytes != vid.widthbytes )
         {
             // eliminate padding in the buffer
             byte *dest, *src;
@@ -1207,7 +1212,7 @@ void M_ScreenShot (void)
                 src += vid.ybytes;
                 dest += vid.widthbytes;
                 // overlapping copy
-                memmove(dest, src, vid.width);
+                memmove(dest, src, vid.widthbytes);
             }
         }
     }

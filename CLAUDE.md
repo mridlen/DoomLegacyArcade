@@ -530,6 +530,13 @@ written up in full in the doc named beside it.
   declared types* took 12% off the 8bpp 3D view with a bit-identical picture. **But measure it**:
   the identical change to the 32bpp drawers was 2.5% slower, so it stays out of them. Count the
   `%fs:` loads in the loop with `objdump -d` before and after. → `render-threads.md`
+- **Rows of the software screen are `vid.ybytes` apart, and that can be more than the row.**
+  *Row Padding* (`row_padding`) pads the pitch to an odd number of cache lines, so `vid.ybytes >
+  vid.widthbytes`, and a pixel count is not a byte count at 16/32bpp. Step rows by `vid.ybytes` and
+  copy `vid.widthbytes`; never step by `vid.width`. WDJ built the engine for padded buffers and it
+  was nearly right. `HU_Erase` and `M_ScreenShot`'s de-padding were the exceptions, fixed when the
+  option went in. Check any new screen-walking code with padding on: a row-content hash must not
+  change. → `render-threads.md`
 - **`W_CacheLumpNum` mutates shared state on a cache hit, not just a miss** -- it re-tags the
   zone block. Anything called per visplane or per sprite from a render thread has to be
   serialised with `R_Cache_Lock`. **Serialising the call is not enough on its own**: a drawer

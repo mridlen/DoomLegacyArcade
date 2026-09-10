@@ -641,34 +641,138 @@ wipe's fixed second landing on a mid-speed size.
   same shape as 640x360, is normal. On the laptop, headless, nothing stands
   out, which fits a display-side cause. **Cause unknown.** Candidates are the texture upload
   (Mesa's vc4 driver retiles on the CPU, and the tiling depends on the texture
-  dimensions) and the scale onto the panel.
+  dimensions) and the scale onto the panel. **Update:** the exact-fit sizes
+  were the only ones the present never cleared, which is now the leading
+  suspect -- see the next section.
+
+### Cutting the present, and Row Padding (2026-09-10)
+
+Three changes, written for the two causes above. **Numbers from the Pi are
+still to come**; the laptop cannot tell us much about a VideoCore IV or an
+A53's caches.
+
+**1. The `draw8bpp` expansion is split across the render workers.**
+`R_Threads_Parallel` (`r_threads.c`) runs `fn(part, nparts, ctx)` with part 0
+on the calling thread and the rest on idle workers, then waits. It is
+deliberately separate from `R_Threads_Wait`, which also releases the lumps the
+drawers pinned (`R_DRAW_LUMP_TAG`) -- right at the end of the view drawing,
+not at present time. It uses `R_Thread_Workers()`, so at `render_threads 1`
+it is a plain call and the stock serial path is untouched. It also runs
+inline if any views are still in flight. `Draw8_Expand_Rows`
+(`sdl/i_video.c`) takes rows `height*part/nparts` to `height*(part+1)/nparts`,
+and each row is independent.
+
+The expansion now has its own profile bucket, `FP_EXPAND`, timed inside
+`I_FinishUpdate`. It is a **part** of present, printed as `expand` at the end
+of the `timedemo profile:` line and never added to the frame sum. perfchart
+shows it as "(of Present) Expand ms", so a chart says how much of the present
+is ours and how much is SDL and the driver.
+
+**2. The present always clears, even when the frame fills the panel.** Before,
+only the letterboxed path called `SDL_RenderClear`, and the exact-fit path went
+straight to `SDL_RenderCopy`. The Pi's GPU is tile based, and without a clear
+the driver has to load the previous frame into each tile before drawing over
+it. That fits the Pi data: the sizes that fill a 16:9 panel exactly are the
+ones never cleared, and 640x360 and 864x486 paid about 30% extra present.
+**This is a hypothesis until the Pi chart comes back.** `DL_PRESENT_NOCLEAR=1`
+restores the old path, so perfchart can A/B it on the same binary
+(`DL_PRESENT_NOCLEAR=1 tools/perfchart.py ...`: the environment passes through
+to the engine).
+
+**3. Row Padding (`row_padding`, Performance Options, default Off).** When On,
+`vid.ybytes` is rounded up to whole 64-byte cache lines and then to an odd
+number of them (1024 -> 1088 bytes at 8bpp, 4096 -> 4160 at 32bpp, 640 ->
+704). An odd stride in lines sends consecutive rows of a column to different
+cache sets. It is **off by default and a setting**, not a fix, because it
+trades memory layout against a particular cache: on the laptop it made no
+measurable difference, and nobody has measured it on a Pi yet. It takes effect at
+the next mode set (`SCR_ChangeRowPadding` -> `SCR_apply_video_settings`,
+the same as `draw8bpp`). Toggling it mid-level was checked: 1024 -> 1088 ->
+1024 bytes per row, the game carries on, clean quit.
+
+WDJ built the engine to tolerate a pitch wider than the row ("padded video
+buffer"). The allocation comment says "most code uses vid.ybytes now, and is
+padded video safe", and a debug `#else` pads every row by 8 bytes. **"Most"
+was right.** Two places were not, and both are fixed:
+
+- `HU_Erase` (`hu_stuff.c`) stepped rows by `vid.width` and passed pixel counts
+  to `R_VideoErase`, which takes bytes. With padding every row after the first
+  was off. It was also already wrong at 16/32bpp. It only runs with a reduced
+  view size (`view_window_x != 0`), which is why nobody saw it.
+- `M_ScreenShot` (`m_misc.c`) stripped padding by comparing and copying
+  `vid.width`, pixels, where it meant `vid.widthbytes`. That is harmless
+  unpadded (every row moves onto itself) and scrambled with padding at 16/32bpp.
+
+`I_ReadScreen` looks like a third and is not: it copies `widthbytes` per row
+but advances both pointers by `ybytes`, so it returns the screen at its own
+pitch, which is what the wipe and the screenshot expect. Also noted, not
+changed: `wipe_EndScreen` restores the start screen with
+`VID_BlitLinearScreen(..., vid.width, ...)`, a pixel count where bytes are
+meant. That only copies part of each row at 16/32bpp. The melt then redraws
+everything, so it is not visible, and it has nothing to do with padding.
+
+**Verified**, with an instrumented copy of the final source:
+
+| check | result |
+| --- | --- |
+| threaded expansion against a serial re-expansion, every frame, 3 workers | 0 of 400 frames differ, at 1024x768 and 640x350 |
+| same, with part 1 told to skip its rows | 388 of 400 flagged: the check can fail |
+| screen hash, Row Padding Off vs On, `render_threads 1` | identical at 1024x768, 1024x576, 640x480 and 800x600, 8bpp and 32bpp |
+| same with viewsize 7, so `HU_Erase` runs (counted) | identical; **old `HU_Erase` code differs** at 8bpp |
+| screenshots Off vs On, 32bpp | an On shot byte-identical to two Off shots; the other runs differ between themselves by one tic of the level clock |
+| `make demotest` / `make smoke` | 102/102 no desync / 5/5 |
+
+The screenshot row needed a control. Off against On differed by 420 bytes,
+all in 12 rows at the bottom of the screen. Three shots of each showed Off
+differing from Off in the same way, and one On matching two Offs exactly: the
+shot lands on tic 104 or 105, and the HUD clock moves. That is the trap
+described under "A pixel diff that was not a race", again.
+
+**Laptop** (Ryzen 5 2500U, headless, 3 runs, `render_threads Auto`):
+
+| size | present before | present after | expand serial | expand threaded | fps change |
+| --- | --- | --- | --- | --- | --- |
+| 640x480 | 0.95 ms | 0.77 | 0.38 | 0.20 | +11% |
+| 800x600 | 1.64 | 1.31 | 0.62 | 0.31 | +12% |
+| 1024x576 | 2.06 | 1.75 | 0.76 | 0.43 | +6% |
+| 1024x768 | 2.68 | 2.11 | 0.96 | 0.57 | +13% |
+
+The expansion speeds up about 1.7-1.9x on four threads, not 4x. It is memory
+traffic (read one byte, write four), and more cores add little memory
+bandwidth. Row Padding on the laptop was within the run-to-run noise either
+way.
+
+**For the Pi**, one chart each way on the same build:
+
+```
+tools/perfchart.py --out base
+tools/perfchart.py --set row_padding=On --compare base/*.csv
+DL_PRESENT_NOCLEAR=1 tools/perfchart.py --compare base/*.csv
+```
+
+What to look for: Views at 1024x576 and 1024x768 with padding (was 17.4 and
+26.3 ms), Present at 640x360 and 864x486 against the no-clear run (was 9.9 and
+13.8), and the Expand column against the rest of Present.
 
 ### Not done yet
 
 Ranked by expected payoff on the Pi. None is started. Measure each with
 `tools/perfchart.py --compare`.
 
-1. **The present is the biggest cost on the Pi, not the drawing.** It is more
-   than half of every frame at every size (see the correction under "How it
-   ended on the Pi"). It is three things: the `draw8bpp` palette expansion
-   (single threaded, on the main thread), `SDL_UpdateTexture`, and the scale to
-   the panel. Split the expansion by rows across the worker pool. Then measure
-   what is left before touching the upload, because that is inside SDL and
-   Mesa. A 16-bit (RGB565) texture would halve the bytes uploaded at the cost of
-   colour precision. Doing the palette lookup on the GPU needs a GL path of our
-   own rather than the SDL renderer.
-2. **Pad the row pitch for the 1024-wide sizes.** See "Five sizes that are slow
-   on the Pi": probably cache aliasing, about 2x the view time at 1024x576 and
-   1024x768. Small if the pitch is honoured everywhere, and the chart shows at
-   once whether it worked.
-3. **Idle cores with two or three players.** More than one view means one view
+1. **The rest of the present.** After the threaded expansion and the clear,
+   what remains is `SDL_UpdateTexture` and the scale to the panel, inside SDL
+   and Mesa. A 16-bit (RGB565) texture would halve the bytes uploaded at the
+   cost of colour precision. Doing the palette lookup on the GPU needs a GL path
+   of our own rather than the SDL renderer. Wait for the Pi's Expand column
+   before choosing.
+2. **Idle cores with two or three players.** More than one view means one view
    per thread and no bands, so two players on four cores leave two idle. Split
    each view into bands as well.
-4. **Equal-width bands make the frame wait for the busiest one.** A band
+3. **Equal-width bands make the frame wait for the busiest one.** A band
    looking into an open room does far more work than one facing a wall. Size the
    bands from the previous frame's per-band times. Bands are already not
    bit-identical to serial, so this does not change their acceptance test.
-5. **`R_Clear_Planes` resets 40 3D-floor clip rows per column, every frame, on
+4. **`R_Clear_Planes` resets 40 3D-floor clip rows per column, every frame, on
    every thread**, on maps with no 3D floors, where nothing reads them. 2% of
    the profile. The same waste is in `R_RenderSegLoop`, which steps all 40
    `ffplane[]` slots on every wall column. Both were written and then dropped at
@@ -680,15 +784,15 @@ Ranked by expected payoff on the Pi. None is started. Measure each with
    has one. Setting special 281 on a one-sided line of DOOM2 MAP01 and tagging
    the other sectors makes one without touching the geometry, so the stock
    nodes stay valid.
-6. **Profile-guided optimisation**, using the timedemo as the training run.
+5. **Profile-guided optimisation**, using the timedemo as the training run.
    Cheap to try, gain unknown.
-7. **`framerate_cap 35` spins a core between tics.** The default, 60, sleeps.
+6. **`framerate_cap 35` spins a core between tics.** The default, 60, sleeps.
    It costs no frame time, but heat throttles a Pi.
-8. **A column-major draw buffer.** Columns are 36% of the time and each pixel
+7. **A column-major draw buffer.** Columns are 36% of the time and each pixel
    written is a whole row away from the last. The flip back could be folded into
    the `draw8bpp` expansion, which already touches every pixel. A large change
    with an uncertain gain, so measure on the Pi before starting.
-9. **Sprite sorting and clipping are O(n^2)** (`R_NewVisSprite`'s insertion
+8. **Sprite sorting and clipping are O(n^2)** (`R_NewVisSprite`'s insertion
    sort, and `R_DrawSprite` scanning every drawseg per sprite). This only
    matters on crowded maps.
 

@@ -69,6 +69,19 @@ boolean  R_Thread_Submit_Band( byte vind, struct player_s * vpl,
 // nothing was submitted.
 void   R_Threads_Wait( void );
 
+// [Arcade] Run fn( part, nparts, ctx ) for every part 0 .. nparts-1 -- part 0
+// on the calling thread, the rest on idle workers -- and return once all of
+// them have finished.  For whole-frame work outside the view drawing: the
+// draw8bpp expansion at present time.
+//
+// nparts follows R_Thread_Workers(), so at render_threads 1 it is 1 and fn
+// runs inline exactly as a plain call would.  It is also 1 if views are
+// still in flight, because the workers are not free.  Deliberately NOT
+// R_Threads_Wait: that also releases the lumps the drawers pinned, which is
+// only right at the end of the view drawing.
+typedef void (*r_parallel_fn_t)( int part, int nparts, void * ctx );
+void   R_Threads_Parallel( r_parallel_fn_t fn, void * ctx );
+
 // True only while workers are dispatched.  Read by the cache lock below so
 // that everything outside a threaded frame -- startup, level load, the whole
 // play side -- pays a single boolean test and never touches a mutex.
@@ -95,6 +108,8 @@ void   R_Cache_Unlock( void );
 #define R_Threads_Init()        do {} while(0)
 #define R_Threads_Shutdown()    do {} while(0)
 #define R_Threads_Wait()        do {} while(0)
+typedef void (*r_parallel_fn_t)( int part, int nparts, void * ctx );
+#define R_Threads_Parallel( fn, ctx )   ((fn)( 0, 1, (ctx) ))
 #define R_Cache_Lock()          do {} while(0)
 #define R_Cache_Unlock()        do {} while(0)
 #define R_Threads_Drawing()     false

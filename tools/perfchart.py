@@ -110,7 +110,8 @@ STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 RESULT = re.compile(r'timedemo: (\d+) gametics in (\d+) realtics, ([0-9.]+) avg fps'
                     r'(?:, (\d+)x(\d+) (\d+)bpp (\w+))?')
 PROFILE = re.compile(r'timedemo profile: (\d+) frames, ms per frame: tics ([0-9.]+) '
-                     r'views ([0-9.]+) present ([0-9.]+) hud/other ([0-9.]+) total ([0-9.]+)')
+                     r'views ([0-9.]+) present ([0-9.]+) hud/other ([0-9.]+) total ([0-9.]+)'
+                     r'(?: expand ([0-9.]+))?')
 RENDER = re.compile(r'^Render: (.*)$', re.M)
 VERSION = re.compile(r'Doom Legacy Arcade (v\S+)')
 
@@ -285,6 +286,10 @@ def run_one(rd, game, w, h, headless, timeout, extra):
     if m:
         tics, views, present, hud, total = (float(m.group(i)) for i in range(2, 7))
         r['views'], r['present'], r['other'], r['total'] = views, present, tics + hud, total
+        # The draw8bpp expansion, a part of present; absent from older engines
+        # and zero when 8bpp Draw is off.
+        if m.group(7) is not None:
+            r['expand'] = float(m.group(7))
     m = RENDER.search(log)
     if m:
         r['render'] = m.group(1).strip()
@@ -401,11 +406,11 @@ def main():
     cw = csv.writer(csvf)
     cw.writerow(['size', 'width', 'height', 'shape', 'fps_min', 'fps_median',
                  'fps_max', 'runs', 'gametics', 'drew', 'temp_c',
-                 'views_ms', 'present_ms', 'other_ms', 'note'])
+                 'views_ms', 'present_ms', 'other_ms', 'expand_ms', 'note'])
     try:
         for (w, h) in sizes:
             fps, tics, notes, drew, temp = [], set(), [], None, None
-            split = {'views': [], 'present': [], 'other': []}
+            split = {'views': [], 'present': [], 'other': [], 'expand': []}
             for n in range(a.runs):
                 r = run_one(rd, game, w, h, a.headless, a.timeout, extra)
                 for k in ('render', 'version', 'renderer', 'bpp'):
@@ -430,7 +435,8 @@ def main():
                 tics.add(r['tics'])
                 if 'total' in r:
                     for k in split:
-                        split[k].append(r[k])
+                        if k in r:
+                            split[k].append(r[k])
                     # Does the time add up?  The profile covers the frames the
                     # fps figure counts, so its total must be 1000/fps.  If the
                     # fps figure is lower, wall time went somewhere no frame
@@ -445,8 +451,10 @@ def main():
                 temp = pi_temp()
                 print('  %5dx%-4d  %7.1f fps  %5.1fs%s%s' % (
                     w, h, r['fps'], r['wall'],
-                    ('   views %.2f  present %.2f  other %.2f ms'
-                     % (r['views'], r['present'], r['other'])) if 'total' in r else '',
+                    ('   views %.2f  present %.2f  other %.2f ms%s'
+                     % (r['views'], r['present'], r['other'],
+                        ('  (expand %.2f)' % r['expand']) if r.get('expand') else ''))
+                    if 'total' in r else '',
                     ('   %.0f°C' % temp) if temp is not None else ''))
             if drew and drew != (w, h):
                 fps = []            # measured something else: do not credit it
@@ -462,7 +470,7 @@ def main():
                          '%dx%d' % drew if drew else '',
                          '%.1f' % temp if temp is not None else '',
                          ] + ['%.3f' % med[k] if med[k] is not None else ''
-                              for k in ('views', 'present', 'other')] + [
+                              for k in ('views', 'present', 'other', 'expand')] + [
                          '; '.join(row['notes'])])
             csvf.flush()
     except KeyboardInterrupt:
@@ -494,9 +502,12 @@ def main():
     lines.append('')
     has_temp = any(r['temp'] is not None for r in rows)
     has_split = any(r['split']['views'] is not None for r in rows)
+    has_expand = any(r['split']['expand'] for r in rows)
     head = ['Resolution', 'Shape', 'FPS']
     if has_split:
         head += ['Views ms', 'Present ms', 'Other ms']
+    if has_expand:
+        head += ['(of Present) Expand ms']
     if compare:
         head += ['Before', 'Change']
     if has_temp:
@@ -510,6 +521,8 @@ def main():
         if has_split:
             cells += ['%.2f' % r['split'][k] if r['split'][k] is not None else '—'
                       for k in ('views', 'present', 'other')]
+        if has_expand:
+            cells.append('%.2f' % r['split']['expand'] if r['split']['expand'] is not None else '—')
         if compare:
             old = compare.get(r['size'])
             new = statistics.median(r['fps']) if r['fps'] else None
@@ -524,7 +537,11 @@ def main():
                      'spreads over the cores). **Present** is getting the finished frame '
                      'onto the screen: the 8bpp palette expansion, the upload and the '
                      'scale to the display. **Other** is the game logic and the HUD. '
-                     'They add up to 1000 / FPS.')
+                     'They add up to 1000 / FPS.'
+                     + (' **Expand** is the part of Present that is the 8bpp palette '
+                        'expansion, which Render Threads splits across the cores; the rest of '
+                        'Present is the upload and the scale, inside SDL and the driver.'
+                        if has_expand else ''))
 
     warnings = []
     if rows and not all_tics:

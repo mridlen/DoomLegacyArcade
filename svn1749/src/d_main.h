@@ -114,6 +114,14 @@ void D_Demo_Advance_Retry( void );
 void D_StartTitle (void);
 void D_End_commandline(void);
 
+// [Arcade] -frameprofile buckets (d_main.c).  FP_EXPAND is the draw8bpp
+// palette expansion, timed inside I_FinishUpdate: it is a PART of
+// FP_PRESENT, reported alongside it and never added to the frame sum.
+typedef enum { FP_TIC=0, FP_VIEWS, FP_PRESENT, FP_TOTAL, FP_EXPAND, FP_N } fp_bucket_e;
+extern byte  frameprofile;
+double FP_Now( void );
+void   FP_Add( int bucket, double t0 );
+
 // [Arcade] -frameprofile totals over one timedemo.  Reset when the timedemo's
 // clock restarts (G_DoneLevelLoad), reported with its result
 // (G_CheckDemoStatus).  Both do nothing without -frameprofile.

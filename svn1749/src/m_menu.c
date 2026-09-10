@@ -4807,6 +4807,7 @@ enum
     PERF_framerate = 0,
     PERF_threads,
     PERF_draw8bpp,
+    PERF_rowpad,      // [Arcade] Row Padding
     PERF_ticrate,
 } performance_e;
 
@@ -4815,6 +4816,7 @@ menuitem_t PerformanceMenu[]=
     {IT_STRING | IT_CVAR,0,    "Framerate Cap"    , &cv_framerate_cap , 0},
     {IT_STRING | IT_CVAR,0,    "Render Threads"   , &cv_render_threads, 0},
     {IT_STRING | IT_CVAR,0,    "8bpp Draw"        , &cv_draw8bpp      , 0},
+    {IT_STRING | IT_CVAR,0,    "Row Padding"      , &cv_row_padding   , 0},
     {IT_STRING | IT_CVAR,0,    "Show Ticrate"     , &cv_ticrate       , 0},
 };
 
@@ -4830,6 +4832,10 @@ menuitem_t PerformanceMenu[]=
 void M_Draw_Performance( void )
 {
     PerformanceMenu[PERF_threads].status =
+        (rendermode == render_soft)? (IT_STRING | IT_CVAR)
+                                   : (IT_STRING | IT_DISABLED);
+    // [Arcade] Row Padding sizes the software draw buffer; OpenGL has none.
+    PerformanceMenu[PERF_rowpad].status =
         (rendermode == render_soft)? (IT_STRING | IT_CVAR)
                                    : (IT_STRING | IT_DISABLED);
     M_DrawGenericMenu();

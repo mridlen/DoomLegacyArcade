@@ -69,6 +69,10 @@ typedef struct
     player_t   *  vpl;         // player of that view
     int           bx1, bx2;    // column band, or 0,0 for the whole view
     boolean       busy;        // submitted and not yet waited for
+    // [Arcade] R_Threads_Parallel job, or NULL for a view/band job.
+    r_parallel_fn_t  job;
+    void *        job_ctx;
+    int           job_part, job_nparts;
 } render_worker_t;
 
 static render_worker_t  worker[MAX_RENDER_WORKERS];
@@ -147,6 +151,15 @@ static int  R_Worker_Main( void * arg )
     {
         SDL_SemWait( w->go );
         if( threads_quit )  break;
+
+        // [Arcade] A generic job from R_Threads_Parallel: no view, no draw
+        // tables, just the function over its share.
+        if( w->job )
+        {
+            w->job( w->job_part, w->job_nparts, w->job_ctx );
+            SDL_SemPost( worker_done );
+            continue;
+        }
 
         // Place this thread's own draw tables on the view's cell, then draw
         // it.  Both write thread-local state only, so nothing here is shared
@@ -255,6 +268,7 @@ boolean  R_Thread_Submit_View( byte vind, player_t * vpl )
         worker[i].vpl  = vpl;
         worker[i].bx1  = 0;      // whole view
         worker[i].bx2  = 0;
+        worker[i].job  = NULL;   // [Arcade] a view, not a parallel job
         worker[i].busy = true;
         num_submitted++;
         __atomic_store_n( &r_threads_active, true, __ATOMIC_RELAXED );
@@ -282,6 +296,7 @@ boolean  R_Thread_Submit_Band( byte vind, player_t * vpl, int x1, int x2 )
         worker[i].vpl  = vpl;
         worker[i].bx1  = x1;
         worker[i].bx2  = x2;
+        worker[i].job  = NULL;   // [Arcade] a band, not a parallel job
         worker[i].busy = true;
         num_submitted++;
         __atomic_store_n( &r_threads_active, true, __ATOMIC_RELAXED );
@@ -289,6 +304,55 @@ boolean  R_Thread_Submit_Band( byte vind, player_t * vpl, int x1, int x2 )
         return true;
     }
     return false;
+}
+
+
+// [Arcade] See r_threads.h.  Only the main thread calls this, and only when
+// no views are in flight, so worker_done counts nothing but these parts.
+void  R_Threads_Parallel( r_parallel_fn_t fn, void * ctx )
+{
+    byte  avail = R_Thread_Workers();
+    byte  idle = 0, i;
+    int   nparts, part;
+
+    if( avail && num_submitted == 0 )
+    {
+        for( i = 0; i < num_workers; i++ )
+            if( ! worker[i].busy )  idle++;
+        if( idle > avail )  idle = avail;
+    }
+    if( idle == 0 )
+    {
+        fn( 0, 1, ctx );    // serial: exactly a plain call
+        return;
+    }
+
+    nparts = idle + 1;
+    part = 1;
+    for( i = 0; i < num_workers && part < nparts; i++ )
+    {
+        if( worker[i].busy )  continue;
+        worker[i].job = fn;
+        worker[i].job_ctx = ctx;
+        worker[i].job_part = part++;
+        worker[i].job_nparts = nparts;
+        worker[i].busy = true;
+        SDL_SemPost( worker[i].go );
+    }
+
+    fn( 0, nparts, ctx );   // the main thread's share
+
+    // The semaphore orders the workers' writes before our reads.
+    for( part = 1; part < nparts; part++ )
+        SDL_SemWait( worker_done );
+    for( i = 0; i < num_workers; i++ )
+    {
+        if( worker[i].job )
+        {
+            worker[i].job = NULL;
+            worker[i].busy = false;
+        }
+    }
 }
 
 
