@@ -378,14 +378,14 @@ to anyone else running this port. Each is written up in full in the commit that 
 
 **Software renderer speed**
 
-- **The game hitched every time you were hurt or picked something up, with 8bpp Draw on.** Every
-  step of the red damage flash and the gold pickup flash rebuilt a 4,096-entry colour table from
-  scratch: about a million colour comparisons, 3.6 ms on a laptop and several times that on a Pi,
-  which is a dropped frame per step. The table depends only on the normal palette, never on the
+- **Wasted work on every damage and pickup flash, with 8bpp Draw on.** Every step of the red damage
+  flash and the gold pickup flash rebuilt a 4,096-entry colour table from scratch: about a million
+  colour comparisons, 3.6 ms on a laptop. The table depends only on the normal palette, never on the
   flash, so every rebuild produced exactly the table that was already there. It is now rebuilt only
   when the normal colours really change (a gamma change, a different palette): once per game
-  instead of 85 times in a three-level run. Software renderer with 8bpp Draw on only, which is how
-  a Pi runs.
+  instead of 85 times in a three-level run. Nobody noticed it in play, even on the Pi, but it was a
+  spike on exactly the frames where the most is happening. Software renderer with 8bpp Draw on
+  only, which is how a Pi runs.
 - **Walls, floors and ceilings draw about 12% faster with 8bpp Draw on.** The drawing loops re-read
   their settings from memory on every pixel instead of once per line, because the compiler could
   not prove that writing a pixel had not changed them. Measured at 1024x768 on a laptop, the time

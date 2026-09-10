@@ -402,9 +402,11 @@ At 8bpp `V_SetPalette` calls `R_Init_color12_translate` on every palette
 change, and that means every step of every damage and bonus flash. It fills
 `color12_to_8`, the 4096-entry table the alpha drawer (coronas) uses, with 4096
 nearest-colour searches over 256 entries. That is **3.6 ms per call** measured
-on the laptop and 85 calls in the three-level timedemo: a hitch on the frame
-where the player is hurt or picks something up, and on a Pi core several times
-longer, so a dropped frame.
+on the laptop and 85 calls in the three-level timedemo: extra time on the frame
+where the player is hurt or picks something up. On a Pi core it should be
+several times longer, but that was never measured, and Mark had not noticed a
+stutter on the Pi before the fix or after it. Call it wasted work on the busiest
+frames, not a visible bug.
 
 **It never needed doing.** `NearestColor` searches `pLocalPalette[0..255]`,
 palette 0, whatever palette is passed in, so the table depends on palette 0
