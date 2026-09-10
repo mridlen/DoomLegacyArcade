@@ -473,23 +473,45 @@ a fanless machine in a sealed cabinet won't thermally throttle.
 ### Performance
 
 **A Raspberry Pi 3B+ is enough**, and that is the point of the threaded renderer. Measured on a Pi
-3B+ — quad-core Cortex-A53 — with the **software** renderer, **Render Threads** on and **8bpp Draw**
-on. Fastest first, which is not quite pixel order — 800x600 has more pixels than 864x486:
+3B+ — quad-core Cortex-A53 — with the **software** renderer, **Render Threads** on, **8bpp Draw**
+on, and **Framerate Cap** set to `Uncapped` so the numbers show what the board can do rather than
+what the cap allows. Smallest first (September 2026):
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
-| 512x384 | 4:3 | **~60** — the sweet spot on this board |
-| 640x350 | ~16:9 | ~55 |
-| 720x400 | ~16:9 | ~49–51 |
-| 640x480 | 4:3 | ~45–47 |
-| 864x486 | 16:9 | ~38–40 |
-| 800x600 | 4:3 | 35+ |
-| 928x580 | 16:10 | ~33–36 |
-| 1024x576 | 16:9 | ~22–27 |
+| 320x200 | 16:10 | 111–122 |
+| 320x240 | 4:3 | 102–111 |
+| 400x300 | 4:3 | 81–87 |
+| 512x384 | 4:3 | 68–72 |
+| 640x350 | ~16:9 | **61–64** — the biggest that holds 60 |
+| 640x360 | 16:9 | 53–55 |
+| 640x400 | 16:10 | 53–55 |
+| 720x400 | ~16:9 | 51–53 |
+| 640x480 | 4:3 | 51–53 |
+| 720x480 | 3:2 | 47–49 |
+| 768x480 | 16:10 | 43–45 |
+| 800x500 | 16:10 | 42–43 |
+| 864x486 | 16:9 | 38–39 |
+| 800x600 | 4:3 | 37–38 |
+| 960x540 | 16:9 | 34–35 |
+| 928x580 | 16:10 | 35–36 |
+| 960x600 | 16:10 | 31–33 |
+| 1024x576 | 16:9 | 28–29 |
+| 1024x768 | 4:3 | 24 |
+| 1152x720 | 16:10 | 23–25 |
+| 1280x720 | 16:9 | 21 |
+| 1152x864 | 4:3 | 20–21 |
+| 1280x800 | 16:10 | 19–20 |
+| 1280x960 | 4:3 | 15–17 |
 
-**Four players cost about the same as one** — within a couple of FPS across that whole table. With
-one player the renderer cuts the single view into vertical bands, one per core; with four it gives
-each player's view its own core. Either way the work is spread over all four, so the numbers above
+**On a 60 Hz panel, 640x350 is the sweet spot**: the biggest size that stays above 60. 512x384 does
+it with room to spare for busier levels. Anything above the panel's refresh rate is never shown, so
+for play set **Framerate Cap** to the panel's rate (60) rather than leaving it uncapped. Uncapped is
+for measuring, and on a Pi it only adds heat.
+
+**Four players cost about the same as one** — within a couple of FPS at every size it was checked
+at. With one player the renderer cuts the single view into vertical bands, one per core; with four
+it gives each player's view its own core. Either way the work is spread over all four, so the numbers above
 are what the cabinet does *full*, not what it does empty. That was not true before: the old figures
 here were 35 FPS at 640x480 and ~30 at 800x600 for a four-way split, single-threaded.
 
@@ -1239,8 +1261,9 @@ Its IWAD wasn't found. Run with `-v` and check the search paths reported at star
 **The game runs slowly, or the frame rate is choppy.**
 Options → Video Options → **Performance Options**, with **Show Ticrate** on so you can see what each
 change does. On a Pi or another low-power board: use the **software** drawmode, turn **Render
-Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — 512x384 is the sweet spot on a
-Pi 3B+. See [Performance](#performance) for measured numbers. On a desktop, use OpenGL and check
+Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — on a Pi 3B+, 640x350 is the
+biggest that holds 60 FPS and 512x384 holds it with room to spare. See [Performance](#performance)
+for measured numbers. On a desktop, use OpenGL and check
 **Framerate Cap** matches the panel's refresh rate.
 
 **My monitor's resolution isn't in the Video Modes list.**

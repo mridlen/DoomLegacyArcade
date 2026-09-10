@@ -463,6 +463,35 @@ What works:
    attribution for inlined code: it blamed `D_PageDrawer` for 39 million
    `I_GetTime` calls that came from the main loop.
 
+### On the Pi
+
+Mark measured the Pi 3B+ after these two changes (2026-09-10): software,
+Render Threads on, 8bpp Draw on, Framerate Cap uncapped. The full table is in
+the README under Performance. Against the previous README table:
+
+| resolution | before | after |
+| --- | --- | --- |
+| 512x384 | ~60 | 68-72 |
+| 640x350 | ~55 | 61-64 |
+| 720x400 | ~49-51 | 51-53 |
+| 640x480 | ~45-47 | 51-53 |
+| 864x486 | ~38-40 | 38-39 |
+| 800x600 | 35+ | 37-38 |
+| 928x580 | ~33-36 | 35-36 |
+| 1024x576 | ~22-27 | 28-29 |
+
+**Read it with care.** The earlier table was probably taken with Framerate Cap
+at 60, so the 512x384 "~60" was the cap, not the board. Rows well below 60 were
+never limited by it and are the fair comparison. They moved by 0-15%, which is
+the size you would expect from a 12% cut in view drawing when drawing is only
+part of the frame. How the old figures were read is not known exactly, though,
+so no single row proves anything. For the next speed change, re-measure a fixed
+handful of these sizes (512x384, 640x480, 800x600, 1024x576) uncapped, before
+and after, on the same build of everything else.
+
+640x360 (53-55) against 640x350 (61-64) is a bigger drop than 3% more pixels
+explains. The counter was hard to read at that size, so treat it as unconfirmed.
+
 ### Not done yet
 
 Ranked by expected payoff on the Pi. None is started.
