@@ -195,6 +195,18 @@ budget, not a cost: `SDL_RenderPresent` is blocking for the 60Hz refresh, and
 **Real work per frame is `tics + views + hud` — about 6.5ms, roughly 150fps of
 capability**, displayed at 57 because the panel is 60Hz.
 
+> **Corrected 2026-09-10: the conclusion above is only half right.** The
+> anti-correlation is real, and with vsync on `present` does absorb the slack.
+> But it is **not only a wait**. perfchart times the present with vsync off
+> (`-timedemo` clears `cv_vidwait`), and on the Pi 3 it is still the largest
+> part of every frame: 7.5 ms of 13.8 at 640x350 against 5.0 for the views,
+> and 28 ms of 46 at 1280x960. That covers the `draw8bpp` expansion, the texture
+> upload and the scale to the panel. So the "150fps of capability" above was
+> never there. The Pi draws 640x350 at about 72 fps with nothing waiting at
+> all. **Cutting the present is the biggest untried speed-up on the Pi**; see
+> "Not done yet". The mistake was reading one measurement, taken with vsync on,
+> as if it described the machine with vsync off.
+
 Two wrong turns were taken before seeing this, both worth remembering:
 
 - *"The SDL renderer must be software, that's why the scale is expensive."*
@@ -596,29 +608,67 @@ should rise smoothly with size:
 | 1024x768 | 19.7 | 15.5 | 1152x720: 23.5, 1152x864: 24.2 |
 
 640x360 matches what Mark read by hand, so it is not the wipe or a misreading.
-Four of the five are exact 16:9, but 1280x720 is 16:9 and normal. On the
-laptop, headless, none of these sizes stands out, which points at the Pi's
-display path (the scale onto the screen) rather than at the drawing. **Not
-diagnosed yet.** The Views/Present split from the next Pi chart says which
-side they lose time on: slow Views means the renderer (a cache effect of the
-row length would be the first suspect for the two 1024-wide ones), slow
-Present means the SDL scale to the panel.
+
+**The second Pi chart (wipe off, with the split) shows two separate causes**,
+ms per frame:
+
+| size | views | present | neighbour for comparison |
+| --- | --- | --- | --- |
+| 640x360 | 5.62 | **9.89** | 640x350: 5.01 / 7.47, 640x400: 5.27 / 8.03 |
+| 864x486 | 7.47 | **13.78** | 800x600: 7.42 / 12.70 |
+| 1024x576 | **17.44** | 17.01 | 960x600: 8.54 / 16.13, 1152x720: 11.04 / 19.77 |
+| 1024x768 | **26.26** | 21.26 | 1152x864: 12.82 / 23.30 |
+
+960x540 no longer stands out (38.5 fps against 37.9 at 960x600). It was the
+wipe's fixed second landing on a mid-speed size.
+
+- **The 1024-wide sizes lose it in the views: about 2x the drawing time.**
+  Present is normal. The leading suspect is cache aliasing on a power-of-two
+  row. At 8bpp a 1024-pixel row is exactly 1024 bytes, 16 cache lines, so every
+  pixel of a column falls in 1 of 32 sets of the Pi 3's 512 KB, 16-way shared
+  L2. 576 rows need 18 lines per set and 768 need 24, both more than 16 ways,
+  so a wall column evicts itself, and the next column, which touches the same
+  lines, starts from DRAM. The suspect fits all three points: 512-wide
+  (8 lines, 64 sets, 384 rows = 6 per set) should be fine and is; 768 rows
+  should be worse than 576 and is (2.5x against 2x); and 1152 or 1280 wide
+  spread over far more sets. **Not yet proven.** The test is to pad the row
+  pitch (`vid.ybytes`) past a power of two, say width + 64, and re-run those
+  two sizes. `I_FinishUpdate` already passes the pitch it is given to SDL, but
+  everything that assumes `ybytes == width` has to be found first.
+- **640x360 and 864x486 lose it in the present: about +30%.** Views is normal.
+  Both are exact 16:9, but the pattern is not clean: 1280x720 (16:9) and
+  1280x800 (16:10) are both somewhat high per pixel, and 640x350, almost the
+  same shape as 640x360, is normal. On the laptop, headless, nothing stands
+  out, which fits a display-side cause. **Cause unknown.** Candidates are the texture upload
+  (Mesa's vc4 driver retiles on the CPU, and the tiling depends on the texture
+  dimensions) and the scale onto the panel.
 
 ### Not done yet
 
-Ranked by expected payoff on the Pi. None is started.
+Ranked by expected payoff on the Pi. None is started. Measure each with
+`tools/perfchart.py --compare`.
 
-1. **Idle cores with two or three players.** More than one view means one view
+1. **The present is the biggest cost on the Pi, not the drawing.** It is more
+   than half of every frame at every size (see the correction under "How it
+   ended on the Pi"). It is three things: the `draw8bpp` palette expansion
+   (single threaded, on the main thread), `SDL_UpdateTexture`, and the scale to
+   the panel. Split the expansion by rows across the worker pool. Then measure
+   what is left before touching the upload, because that is inside SDL and
+   Mesa. A 16-bit (RGB565) texture would halve the bytes uploaded at the cost of
+   colour precision. Doing the palette lookup on the GPU needs a GL path of our
+   own rather than the SDL renderer.
+2. **Pad the row pitch for the 1024-wide sizes.** See "Five sizes that are slow
+   on the Pi": probably cache aliasing, about 2x the view time at 1024x576 and
+   1024x768. Small if the pitch is honoured everywhere, and the chart shows at
+   once whether it worked.
+3. **Idle cores with two or three players.** More than one view means one view
    per thread and no bands, so two players on four cores leave two idle. Split
    each view into bands as well.
-2. **Equal-width bands make the frame wait for the busiest one.** A band
+4. **Equal-width bands make the frame wait for the busiest one.** A band
    looking into an open room does far more work than one facing a wall. Size the
    bands from the previous frame's per-band times. Bands are already not
    bit-identical to serial, so this does not change their acceptance test.
-3. **The `draw8bpp` expansion is single threaded.** 0.86 ms a frame at
-   1024x768, about as long as the whole four-thread render. Split it by rows
-   across the worker pool.
-4. **`R_Clear_Planes` resets 40 3D-floor clip rows per column, every frame, on
+5. **`R_Clear_Planes` resets 40 3D-floor clip rows per column, every frame, on
    every thread**, on maps with no 3D floors, where nothing reads them. 2% of
    the profile. The same waste is in `R_RenderSegLoop`, which steps all 40
    `ffplane[]` slots on every wall column. Both were written and then dropped at
@@ -630,15 +680,15 @@ Ranked by expected payoff on the Pi. None is started.
    has one. Setting special 281 on a one-sided line of DOOM2 MAP01 and tagging
    the other sectors makes one without touching the geometry, so the stock
    nodes stay valid.
-5. **Profile-guided optimisation**, using the timedemo as the training run.
+6. **Profile-guided optimisation**, using the timedemo as the training run.
    Cheap to try, gain unknown.
-6. **`framerate_cap 35` spins a core between tics.** The default, 60, sleeps.
+7. **`framerate_cap 35` spins a core between tics.** The default, 60, sleeps.
    It costs no frame time, but heat throttles a Pi.
-7. **A column-major draw buffer.** Columns are 36% of the time and each pixel
+8. **A column-major draw buffer.** Columns are 36% of the time and each pixel
    written is a whole row away from the last. The flip back could be folded into
    the `draw8bpp` expansion, which already touches every pixel. A large change
    with an uncertain gain, so measure on the Pi before starting.
-8. **Sprite sorting and clipping are O(n^2)** (`R_NewVisSprite`'s insertion
+9. **Sprite sorting and clipping are O(n^2)** (`R_NewVisSprite`'s insertion
    sort, and `R_DrawSprite` scanning every drawseg per sprite). This only
    matters on crowded maps.
 

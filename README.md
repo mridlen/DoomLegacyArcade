@@ -473,43 +473,50 @@ a fanless machine in a sealed cabinet won't thermally throttle.
 ### Performance
 
 **A Raspberry Pi 3 is enough**, and that is the point of the threaded renderer. Measured on a Pi 3
-Model B — quad-core Cortex-A53 at 1.2 GHz — with the **software** renderer, **Render Threads** on, **8bpp Draw**
-on, and **Framerate Cap** set to `Uncapped` so the numbers show what the board can do rather than
-what the cap allows. Smallest first (September 2026). To make the same table for your own machine,
-see `tools/perfchart.py` under [Choosing a resolution, and tuning
-performance](#choosing-a-resolution-and-tuning-performance):
+Model B — quad-core Cortex-A53 at 1.2 GHz — with the **software** renderer, **Render Threads** on
+(`Auto`) and **8bpp Draw** on, by `tools/perfchart.py`: the UV speed demo of E1M1 played flat out at
+each size, vsync off, so the numbers are what the board can draw rather than what the screen shows.
+Smallest first (September 2026). To make the same table for your own machine, see
+[Choosing a resolution, and tuning performance](#choosing-a-resolution-and-tuning-performance):
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
-| 320x200 | 16:10 | 111–122 |
-| 320x240 | 4:3 | 102–111 |
-| 400x300 | 4:3 | 81–87 |
-| 512x384 | 4:3 | 68–72 |
-| 640x350 | ~16:9 | **61–64** — the biggest that holds 60 |
-| 640x360 | 16:9 | 53–55 |
-| 640x400 | 16:10 | 53–55 |
-| 720x400 | ~16:9 | 51–53 |
-| 640x480 | 4:3 | 51–53 |
-| 720x480 | 3:2 | 47–49 |
-| 768x480 | 16:10 | 43–45 |
-| 800x500 | 16:10 | 42–43 |
-| 864x486 | 16:9 | 38–39 |
-| 800x600 | 4:3 | 37–38 |
-| 960x540 | 16:9 | 34–35 |
-| 928x580 | 16:10 | 35–36 |
-| 960x600 | 16:10 | 31–33 |
-| 1024x576 | 16:9 | 28–29 |
-| 1024x768 | 4:3 | 24 |
-| 1152x720 | 16:10 | 23–25 |
-| 1280x720 | 16:9 | 21 |
-| 1152x864 | 4:3 | 20–21 |
-| 1280x800 | 16:10 | 19–20 |
-| 1280x960 | 4:3 | 15–17 |
+| 320x200 | 16:10 | 108 |
+| 320x240 | 4:3 | 113 |
+| 400x300 | 4:3 | 98 |
+| 512x384 | 4:3 | 79 |
+| 640x350 | ~16:9 | **72** |
+| 640x360 | 16:9 | 59 — slow for its size, see below |
+| 640x400 | 16:10 | 68 |
+| 720x400 | ~16:9 | 63 |
+| 640x480 | 4:3 | 58 |
+| 720x480 | 3:2 | 57 |
+| 768x480 | 16:10 | 55 |
+| 800x500 | 16:10 | 50 |
+| 864x486 | 16:9 | 44 — slow for its size, see below |
+| 800x600 | 4:3 | 46 |
+| 960x540 | 16:9 | 39 |
+| 928x580 | 16:10 | 43 |
+| 960x600 | 16:10 | 38 |
+| 1024x576 | 16:9 | 28 — slow for its size, see below |
+| 1024x768 | 4:3 | 20 — slow for its size, see below |
+| 1152x720 | 16:10 | 31 |
+| 1280x720 | 16:9 | 24 |
+| 1152x864 | 4:3 | 26 |
+| 1280x800 | 16:10 | 23 |
+| 1280x960 | 4:3 | 22 |
 
-**On a 60 Hz panel, 640x350 is the sweet spot**: the biggest size that stays above 60. 512x384 does
-it with room to spare for busier levels. Anything above the panel's refresh rate is never shown, so
-for play set **Framerate Cap** to the panel's rate (60) rather than leaving it uncapped. Uncapped is
-for measuring, and on a Pi it only adds heat.
+**These are benchmark numbers; a busy fight runs slower.** The demo is the opening of E1M1, and in
+play the same Pi read lower at the middle and large sizes: 640x350 gave 61–64 with **Framerate Cap**
+`Uncapped`, against 72 here. **On a 60 Hz panel, 640x350 is the sweet spot**: in play it is the
+biggest size that stayed above 60, and 512x384 does it with room to spare. Anything above the panel's
+refresh rate is never shown, so for play set **Framerate Cap** to the panel's rate (60) rather than
+leaving it uncapped. Uncapped is for measuring, and on a Pi it only adds heat.
+
+**Four sizes are slower than their size suggests on a Pi, for two different reasons.** The two
+1024-wide sizes take about twice as long to *draw* as their neighbours. 640x360 and 864x486 take
+about a third longer to get onto the *screen*. Neither is understood yet, so pick a neighbour: 640x350
+rather than 640x360, 1152x720 rather than 1024x576 (it is both bigger and faster).
 
 **Four players cost about the same as one** — within a couple of FPS at every size it was checked
 at. With one player the renderer cuts the single view into vertical bands, one per core; with four
