@@ -3156,6 +3156,30 @@ void R_Init_color8_translate ( RGBA_t * palette )
 void R_Init_color12_translate ( RGBA_t * palette )
 {
     unsigned int i;
+    // [Arcade] The base palette this table was last built from.
+    static RGBA_t  built_from[256];
+    static boolean built = false;
+
+    // [Arcade] Rebuild only when the base palette's colours have changed.
+    //
+    // NearestColor searches pLocalPalette[0..255] -- palette 0 -- whatever
+    // palette is passed in here, so this table depends on palette 0 alone.
+    // But V_SetPalette calls this on every palette change, which at 8bpp
+    // (draw8bpp, the Pi's setup) means every step of every damage and bonus
+    // flash, and each rebuild is 4096 nearest-colour searches over 256
+    // entries: 3.6ms measured on the development laptop, several times that
+    // on a Pi core -- a dropped frame each time the player is hurt or picks
+    // something up, to produce a table identical to the one already there.
+    //
+    // Palette 0 does change: LoadPalette rewrites it on a gamma change, a new
+    // PLAYPAL, or the Heretic finale's palette lump.  Comparing the colours
+    // themselves catches every one of those without trusting each caller.
+    // The table's contents are exactly what they would have been.
+    // See docs/arcade/render-threads.md, "Palette flashes at 8bpp".
+    if( built && memcmp( built_from, pLocalPalette, sizeof(built_from) ) == 0 )
+        return;
+    memcpy( built_from, pLocalPalette, sizeof(built_from) );
+    built = true;
 
 #ifdef COLOR12_QUALITY_CHECK
     printf(" color12 quality check:\n" );

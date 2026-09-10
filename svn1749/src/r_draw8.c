@@ -142,6 +142,8 @@ void R_DrawColumn_8(void)
         register const byte *source = dc_source;
         register const lighttable_t *colormap = dc_colormap;
         register int heightmask = dc_texheight - 1;
+        // [Arcade] Read once, not per pixel -- see R_DrawSpan_8.
+        register const int ybytes = vid.ybytes;
         if (dc_texheight & heightmask)
         {
             heightmask++;
@@ -160,7 +162,7 @@ void R_DrawColumn_8(void)
                 // heightmask is the Tutti-Frutti fix -- killough
 
                 *dest = colormap[source[frac >> FRACBITS]];
-                dest += vid.ybytes;
+                dest += ybytes;
                 if ((frac += fracstep) >= heightmask)
                     frac -= heightmask;
             }
@@ -171,10 +173,10 @@ void R_DrawColumn_8(void)
             while ((count -= 2) >= 0)   // texture height is a power of 2 -- killough
             {
                 *dest = colormap[source[(frac >> FRACBITS) & heightmask]];
-                dest += vid.ybytes;
+                dest += ybytes;
                 frac += fracstep;
                 *dest = colormap[source[(frac >> FRACBITS) & heightmask]];
-                dest += vid.ybytes;
+                dest += ybytes;
                 frac += fracstep;
             }
             if (count & 1)
@@ -970,7 +972,23 @@ void R_DrawSpan_8(void)
     }
 #endif
 
-    xfrac = ds_xfrac & flat_imask;
+    // [Arcade] Everything the loop reads, copied once.  Written as globals,
+    // these were re-read on every pixel: the store through dest is a byte
+    // store, which may alias anything, and the build has -fno-strict-aliasing,
+    // so the compiler has to assume each pixel written could have changed
+    // them.  With R_TLS each re-read is a thread-local load as well.  Same
+    // types as the globals, so every expression computes exactly what it did.
+    // 8bpp only, deliberately: the same change to the 32bpp drawers measured
+    // 2.5% slower.  See docs/arcade/render-threads.md, "The drawers' inner loops".
+    const fixed_t        imask = flat_imask;
+    const unsigned int   ymask = flat_ymask;
+    const unsigned int   fbits = flatfracbits;
+    const fixed_t        xstep = ds_xstep;
+    const fixed_t        ystep = ds_ystep;
+    const byte *         source = ds_source;
+    const lighttable_t * colormap = ds_colormap;
+
+    xfrac = ds_xfrac & imask;
     yfrac = ds_yfrac;
 
     dest = ylookup[ds_y] + columnofs[ds_x1];
@@ -983,13 +1001,13 @@ void R_DrawSpan_8(void)
     {
         // Lookup pixel from flat texture tile,
         //  re-index using light/colormap.
-        *dest = ds_colormap[ds_source[((yfrac >> flatfracbits) & (flat_ymask)) | (xfrac >> FRACBITS)]];
+        *dest = colormap[source[((yfrac >> fbits) & (ymask)) | (xfrac >> FRACBITS)]];
         dest++;
 
         // Next step in u,v.
-        xfrac += ds_xstep;
-        yfrac += ds_ystep;
-        xfrac &= flat_imask;
+        xfrac += xstep;
+        yfrac += ystep;
+        xfrac &= imask;
     }
     while (count--);
 }

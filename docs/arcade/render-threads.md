@@ -2,7 +2,10 @@
 
 **Read this before touching** `r_threads.c`/`.h`, the `R_TLS` macro in `doomdef.h`, any
 file-scope variable in `r_main.c`, `r_bsp.c`, `r_segs.c`, `r_plane.c`, `r_things.c` or
-`r_draw.c`, the view loop in `D_Display`, or `R_Use_Render_BSP` / `R_Use_Play_BSP`.
+`r_draw.c`, the view loop in `D_Display`, or `R_Use_Render_BSP` / `R_Use_Play_BSP` -- and
+before trying to make the software renderer faster: the drawers' inner loops in `r_draw8.c`,
+`R_Init_color12_translate`, and the ranked list of what is still untried are under
+"Single-thread speed".
 
 The cabinet draws one viewport per panel — up to four a frame — and each writes into its own
 cell of the screen. They share nothing but read-only level data, so they can be drawn at the
@@ -331,6 +334,172 @@ Render: 4 views on worker threads
 **In a hardware drawmode it says `single threaded` whatever `render_threads`
 is set to** -- which is exactly the symptom that otherwise looks identical to
 the feature not working.
+
+## Single-thread speed: what a profile says
+
+`-frameprofile` splits a frame into four buckets. A function-level profile says
+what is inside them. Taken 2026-09-10 with gprof: `-timedemo` of
+`doom2_MAP03_sk0_speed.lmp` (MAP01 to MAP03), 1024x768, software, `draw8bpp`
+on, `render_threads 1`. These are shares of the time spent **inside the game
+binary** -- gprof cannot see into libSDL or the GL driver:
+
+| function | share | what it is |
+| --- | --- | --- |
+| `R_DrawColumn_8` | 36% | walls and sprites |
+| `I_FinishUpdate` | 23% | the `draw8bpp` palette expansion loop alone, 0.86 ms a frame |
+| `R_DrawSpan_8` | 17% | floors and ceilings |
+| `R_RenderSegLoop` | 7% | per-column wall setup |
+| `V_BlitScalePic` | 3% | attract pages |
+| `R_Clear_Planes` | 2% | see "Not done yet" |
+
+### The drawers' inner loops
+
+`R_DrawSpan_8` re-read **seven** globals on every pixel -- `ds_source`,
+`ds_colormap`, `ds_xstep`, `ds_ystep`, `flat_imask`, `flat_ymask`,
+`flatfracbits` -- where two loads and a store are all a pixel needs.
+`R_DrawColumn_8` re-read `vid.ybytes`. Nothing in the loop changes them; the
+compiler simply cannot prove it:
+
+- the store is `*dest = ...` through a `byte *`, and a character type may
+  alias anything, so each pixel written might have changed any global;
+- the build has `-fno-strict-aliasing` anyway, which makes that true of every
+  store;
+- and with `RENDER_THREADS` the drawer state is `R_TLS`, so every one of those
+  reloads is a thread-local load.
+
+Copying them into locals before the loop fixes it: the span loop went from 20
+instructions with 7 `%fs:` loads to 14 with none. The locals have **exactly the
+declared types of the globals**, so every expression computes what it did --
+that is what makes the picture identical rather than "the same up to
+rounding".
+
+Measured, same timedemo, three runs each, in-level frames only:
+
+| 8bpp | views | whole frame |
+| --- | --- | --- |
+| before | 3.38 ms | 5.90 ms |
+| after | 2.97 ms | 5.61 ms |
+
+**12% off the 3D view.** This was measured on an out-of-order x86. The Pi's
+Cortex-A53 is in order and usually pays more for redundant loads, but that has
+not been measured.
+
+**Deliberately 8bpp only.** The identical change to `R_DrawColumn_32` and
+`R_DrawSpan_32` measured **2.5% slower** over five runs (views 8.02 -> 8.22 ms):
+at four bytes a pixel those loops are bound by the writes, not by these reads,
+and the compiler laid the new loop out slightly worse. The 16 and 24 bpp
+drawers were not changed either; this machine cannot run them, since a 16 or
+24 bit drawmode request comes back at 32. Do not "finish the job" on them
+without measuring.
+
+The same pattern is still in the translucent and translated drawers
+(`R_DrawTranslucentSpan_8` reloads six globals per pixel). They are a small
+share of any frame, so they were left alone.
+
+### Palette flashes at 8bpp
+
+At 8bpp `V_SetPalette` calls `R_Init_color12_translate` on every palette
+change, and that means every step of every damage and bonus flash. It fills
+`color12_to_8`, the 4096-entry table the alpha drawer (coronas) uses, with 4096
+nearest-colour searches over 256 entries. That is **3.6 ms per call** measured
+on the laptop and 85 calls in the three-level timedemo: a hitch on the frame
+where the player is hurt or picks something up, and on a Pi core several times
+longer, so a dropped frame.
+
+**It never needed doing.** `NearestColor` searches `pLocalPalette[0..255]`,
+palette 0, whatever palette is passed in, so the table depends on palette 0
+alone and every flash rebuilt the identical table. It now keeps a copy of the
+256 colours it was built from and returns if they have not changed. Comparing
+the colours rather than tracking the callers catches every way palette 0 really
+changes -- `LoadPalette` on a gamma change, a new `PLAYPAL`, the Heretic
+finale's palette lump -- without having to trust that each one is accounted for.
+
+Verified both ways, with a hash of the table printed after every palette change
+in an instrumented copy of the old and new code:
+
+| run | rebuilds before | rebuilds after | table after every change |
+| --- | --- | --- | --- |
+| timedemo, 85 palette changes | 85 | **1** | identical |
+| `gamma 3`, then `gamma 0` | 7 | **3** | identical, including the new gamma-3 table |
+
+The second row is the one that matters: it is the check that a real change of
+palette 0 still rebuilds.
+
+### How these were verified
+
+The software renderer is integer throughout, so both changes must leave every
+pixel exactly as it was. An instrumented copy of the old and of the new source
+hashed the whole of `screens[0]` (FNV-1a) at every 35th gametic of the same
+`-timedemo`. A timedemo draws exactly one frame per tic, so the two builds draw
+the same frames:
+
+| depth | frames compared | identical | distinct hashes |
+| --- | --- | --- | --- |
+| 8bpp | 209 | 209 | 209 |
+| 32bpp | 209 | 209 | 209 |
+
+"Distinct hashes" is the control: all 209 frames differ from each other, so the
+check was hashing real, changing pictures and not a blank or frozen screen.
+`make demotest` 102/102 with no desync, `make smoke` 5/5.
+
+### Profiling recipe
+
+There is no `perf` or `valgrind` on the development laptop, and the Makefile's
+own `PROFILEMODE=1` does not build on modern GCC (`-pg and -fomit-frame-pointer
+are incompatible`, and it drops `-O3`, so it would profile unoptimised code).
+What works:
+
+1. A copy of `svn1749/make_options` in a scratch directory, with
+   `ENV_CFLAGS=-std=gnu17 -g -pg` and `CC_EXPLICIT_CMD=<wrapper>`, where the
+   wrapper is a bash script that drops `-fomit-frame-pointer` from its
+   arguments and execs `gcc`. A second one for `g++`, passed as `CXX=` on the
+   make line, covers ZDBSP.
+2. `make MAIN_BUILD_DIR=/abs/scratch/dir/ depend`, then `-j8`. The path must be
+   absolute with a trailing slash. Nothing lands in the tree.
+3. Run it as any headless test (a *copy* of `legacyhome`, `offscreen`,
+   `SDL_NO_SIGNAL_HANDLERS=1`), software drawmode, `render_threads "1"` since
+   gprof samples one thread, with `-timedemo <record demo> -frameprofile`.
+4. `gprof -b -p` for the flat profile. Distrust the call graph's caller
+   attribution for inlined code: it blamed `D_PageDrawer` for 39 million
+   `I_GetTime` calls that came from the main loop.
+
+### Not done yet
+
+Ranked by expected payoff on the Pi. None is started.
+
+1. **Idle cores with two or three players.** More than one view means one view
+   per thread and no bands, so two players on four cores leave two idle. Split
+   each view into bands as well.
+2. **Equal-width bands make the frame wait for the busiest one.** A band
+   looking into an open room does far more work than one facing a wall. Size the
+   bands from the previous frame's per-band times. Bands are already not
+   bit-identical to serial, so this does not change their acceptance test.
+3. **The `draw8bpp` expansion is single threaded.** 0.86 ms a frame at
+   1024x768, about as long as the whole four-thread render. Split it by rows
+   across the worker pool.
+4. **`R_Clear_Planes` resets 40 3D-floor clip rows per column, every frame, on
+   every thread**, on maps with no 3D floors, where nothing reads them. 2% of
+   the profile. The same waste is in `R_RenderSegLoop`, which steps all 40
+   `ffplane[]` slots on every wall column. Both were written and then dropped at
+   Mark's request (2026-09-10). The analysis they rested on: the rows are written
+   only for slots `R_StoreWallRange` marks `valid_mark`, read only for
+   `i < numffplane`, and reset to values that move with the view size and
+   `con_clipviewtop`, so the reset can be skipped when none of those changed.
+   Testing it needs a map with Legacy 3D floors, and none of the cabinet's wads
+   has one. Setting special 281 on a one-sided line of DOOM2 MAP01 and tagging
+   the other sectors makes one without touching the geometry, so the stock
+   nodes stay valid.
+5. **Profile-guided optimisation**, using the timedemo as the training run.
+   Cheap to try, gain unknown.
+6. **`framerate_cap 35` spins a core between tics.** The default, 60, sleeps.
+   It costs no frame time, but heat throttles a Pi.
+7. **A column-major draw buffer.** Columns are 36% of the time and each pixel
+   written is a whole row away from the last. The flip back could be folded into
+   the `draw8bpp` expansion, which already touches every pixel. A large change
+   with an uncertain gain, so measure on the Pi before starting.
+8. **Sprite sorting and clipping are O(n^2)** (`R_NewVisSprite`'s insertion
+   sort, and `R_DrawSprite` scanning every drawseg per sprite). This only
+   matters on crowded maps.
 
 ## Demo safety
 

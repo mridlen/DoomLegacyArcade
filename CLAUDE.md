@@ -384,7 +384,7 @@ are kept below, in this file.
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
 | `docs/arcade/attract.md` | Attract cycle, menu-over-attract backdrop, idle timeout, arcade death | `D_AdvanceDemo`, `G_Idle_Timeout_Check`, `G_Arcade_Death_Check` |
-| `docs/arcade/render-threads.md` | Drawing the views on several cores: the `R_TLS` rule, the thread pool, the shared caches that had to be locked | `r_threads.c`, `R_TLS`, any file-scope variable in `r_main.c`/`r_bsp.c`/`r_segs.c`/`r_plane.c`/`r_things.c`/`r_draw.c`, the view loop in `D_Display` |
+| `docs/arcade/render-threads.md` | Drawing the views on several cores: the `R_TLS` rule, the thread pool, the shared caches that had to be locked. Also single-thread speed: the profile, the drawer inner loops, the palette-flash table, the ranked list of untried speedups, and how to get a gprof profile | `r_threads.c`, `R_TLS`, any file-scope variable in `r_main.c`/`r_bsp.c`/`r_segs.c`/`r_plane.c`/`r_things.c`/`r_draw.c`, the view loop in `D_Display`, the drawers in `r_draw8.c`, `R_Init_color12_translate`, or before any renderer speed work |
 | `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `framerate_cap` cvar, the frame limiter, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
@@ -512,6 +512,13 @@ written up in full in the doc named beside it.
   When they differ, run each view on a worker but one at a time: still wrong means the `R_TLS`
   split is wrong, right means the threads are racing on something shared.
   → `render-threads.md`
+- **A global read inside a per-pixel loop is re-read on every pixel.** Every store through a
+  `byte *` may alias anything, and the build has `-fno-strict-aliasing`, so the compiler cannot
+  keep a global in a register across a pixel write; with `R_TLS` each re-read is a thread-local
+  load too. `R_DrawSpan_8` was doing seven per pixel, and copying them into locals of the *same
+  declared types* took 12% off the 8bpp 3D view with a bit-identical picture. **But measure it**:
+  the identical change to the 32bpp drawers was 2.5% slower, so it stays out of them. Count the
+  `%fs:` loads in the loop with `objdump -d` before and after. → `render-threads.md`
 - **`W_CacheLumpNum` mutates shared state on a cache hit, not just a miss** -- it re-tags the
   zone block. Anything called per visplane or per sprite from a render thread has to be
   serialised with `R_Cache_Lock`. **Serialising the call is not enough on its own**: a drawer

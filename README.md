@@ -376,6 +376,23 @@ to anyone else running this port. Each is written up in full in the commit that 
   instead of bringing them back together. It now uses the same scale on both axes, as its
   neighbours do. Nothing else moves — 800x600 is the only resolution affected.
 
+**Software renderer speed**
+
+- **The game hitched every time you were hurt or picked something up, with 8bpp Draw on.** Every
+  step of the red damage flash and the gold pickup flash rebuilt a 4,096-entry colour table from
+  scratch: about a million colour comparisons, 3.6 ms on a laptop and several times that on a Pi,
+  which is a dropped frame per step. The table depends only on the normal palette, never on the
+  flash, so every rebuild produced exactly the table that was already there. It is now rebuilt only
+  when the normal colours really change (a gamma change, a different palette): once per game
+  instead of 85 times in a three-level run. Software renderer with 8bpp Draw on only, which is how
+  a Pi runs.
+- **Walls, floors and ceilings draw about 12% faster with 8bpp Draw on.** The drawing loops re-read
+  their settings from memory on every pixel instead of once per line, because the compiler could
+  not prove that writing a pixel had not changed them. Measured at 1024x768 on a laptop, the time
+  spent drawing the 3D view went from 3.38 ms to 2.97 ms a frame; the picture is identical, checked
+  frame by frame. The same change at 32 bits per pixel measured slightly *slower*, so the higher
+  colour depths were left as they were.
+
 **Smaller things**
 
 - **Gamma settings have their own page.** *Gamma Function*, *Gamma*, *Black level* and
