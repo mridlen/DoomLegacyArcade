@@ -487,12 +487,65 @@ at 60, so the 512x384 "~60" was the cap, not the board. Rows well below 60 were
 never limited by it and are the fair comparison. They moved by 0-15%, which is
 the size you would expect from a 12% cut in view drawing when drawing is only
 part of the frame. How the old figures were read is not known exactly, though,
-so no single row proves anything. For the next speed change, re-measure a fixed
-handful of these sizes (512x384, 640x480, 800x600, 1024x576) uncapped, before
-and after, on the same build of everything else.
+so no single row proves anything. That is what the next section is for.
 
 640x360 (53-55) against 640x350 (61-64) is a bigger drop than 3% more pixels
 explains. The counter was hard to read at that size, so treat it as unconfirmed.
+
+### Measuring: `tools/perfchart.py`
+
+The table above was read off the ticrate counter by eye. `tools/perfchart.py`
+does the same job repeatably: it plays one fixed demo with `-timedemo` at each
+resolution and writes the README table, plus a `.csv` that `--compare` reads
+back to make a before/after. **Use it for any speed change**:
+`--quick --compare <before.csv>` on the Pi, before and after.
+
+Design points, each forced by a way the measurement could lie:
+
+- **The demo lives in the repo** (`tools/bench/doomu_E1M1_sk3_speed.lmp`, 446
+  tics, UV speed E1M1). The cabinet rewrites its record demos whenever a
+  record is beaten, so pointing at `legacyhome/demos` would change the workload
+  under the benchmark.
+- **`-timedemo`, not play.** It draws one frame per tic as fast as it can, and
+  the engine turns vsync off for it (`cv_vidwait`), so a 60 Hz panel cannot cap
+  the result. It is not identical to `Framerate Cap Uncapped` in play: there the
+  simulation runs 35 tics a second whatever the frame rate, and here it runs
+  once per frame. On a Pi, where a tic is about 0.6 ms of a 15-20 ms frame,
+  that should be a few percent at most. **Not yet confirmed on the Pi**: the
+  first perfchart run there, against the hand-read table above, settles it.
+- **The engine's result line says what it drew** (`timedemo: 446 gametics in
+  64 realtics, 244.45 avg fps, 640x480 8bpp software`), and a size that came out
+  different is reported, not credited. Asking for 200x150 draws 320x200, and
+  the tool says so.
+- **Every size must play the same number of tics.** Drawing cannot change the
+  simulation, so a different count means a run did not play the whole demo.
+- **On a Pi it records the temperature per size and `vcgencmd get_throttled`
+  at the end.** Its "has occurred" flags stick from boot, so the tool compares
+  against the value it read before starting and reports only what happened
+  during the chart.
+- **If the first run gives no result, it stops** and prints the end of the
+  engine's output. A broken demo does not end on its own (the random-bytes one
+  ran until the timeout), so otherwise every size would sit out the whole
+  timeout.
+
+Each check was shown to fail before it was trusted: 200x150 for the size check,
+a stand-in engine that played 300 tics at one size for the tic check, and a
+random-bytes demo for the early stop.
+
+**The timedemo result line did not reach the terminal until this tool
+needed it.** An `[Arcade]` comment beside it said it went through `GenPrintf`
+"so a headless timedemo can be measured", but it used `EMSG_info`, which takes
+the default `EOUT_flags`. Once graphics are up those are log and console only,
+and the log is not compiled in. It is `EMSG_errlog` now, the category meant for
+terminal and log. The lesson generalises: **a message category is not a
+promise about where it ends up**. `EOUT_flags` changes during startup, so check
+the routing in `GenPrintf_va` before relying on an `EMSG_info` line from a
+script.
+
+On a fast machine each size is over in 1-2 seconds, and `realtics` are whole
+35ths of a second, so a single run carries a couple of percent of noise there.
+On a Pi a size takes around ten seconds. Use `--runs 3` whenever the
+difference being looked for is small.
 
 ### Not done yet
 

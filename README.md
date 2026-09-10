@@ -475,7 +475,9 @@ a fanless machine in a sealed cabinet won't thermally throttle.
 **A Raspberry Pi 3B+ is enough**, and that is the point of the threaded renderer. Measured on a Pi
 3B+ — quad-core Cortex-A53 — with the **software** renderer, **Render Threads** on, **8bpp Draw**
 on, and **Framerate Cap** set to `Uncapped` so the numbers show what the board can do rather than
-what the cap allows. Smallest first (September 2026):
+what the cap allows. Smallest first (September 2026). To make the same table for your own machine,
+see `tools/perfchart.py` under [Choosing a resolution, and tuning
+performance](#choosing-a-resolution-and-tuning-performance):
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
@@ -982,6 +984,26 @@ desktop. Try it with **Show Ticrate** on.
 **On a Pi, use the software renderer** — see [Performance](#performance) for the measured numbers.
 The Pi's GPU has no fast path for this engine's fixed-function OpenGL, so the hardware renderer goes
 through a slow compatibility layer and is the worse of the two there.
+
+**To measure your own machine, run `tools/perfchart.py`** from the top of the source tree. It plays
+a short fixed demo (UV speed on E1M1) once at each resolution in the table under
+[Performance](#performance) and prints the same table for your machine, frame rates and all. It
+uses a copy of the cabinet's settings folder, so it never touches the real config, scores or demos.
+The whole list should take under ten minutes on a Pi 3B+, going by the frame rates above.
+
+```
+tools/perfchart.py                   # every size in the Performance table
+tools/perfchart.py --quick           # four sizes, a minute or two
+tools/perfchart.py --runs 3          # each size three times, shown as a range like 61–64
+tools/perfchart.py --compare perfchart-<host>-<date>.csv   # add a "before" column
+```
+
+Each run leaves a `.md` file, which is the table ready to paste, and a `.csv` that `--compare` reads
+back, so measuring before and after a change is two commands. On a Pi it also shows the board's
+temperature after each size and warns if the Pi slowed itself down during the run. A Pi that runs
+hot or on a weak power supply throttles its CPU, which looks exactly like the game being slow.
+The windows it opens go fullscreen one after another; from SSH, set `DISPLAY=:0` first to use the
+Pi's real screen, or pass `--headless` to measure without one.
 
 ### Cheats
 

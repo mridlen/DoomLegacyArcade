@@ -5505,11 +5505,20 @@ boolean G_CheckDemoStatus (void)
         // measured: CONS_Printf reaches the in-game console and the log file
         // only, and LOGMESSAGES is not compiled in, so the result of a
         // -timedemo run was invisible from a script.
+        //
+        // EMSG_errlog, not EMSG_info.  Info takes the default EOUT_flags, and
+        // once graphics are up that is log and console only -- so the line
+        // this comment promised never reached the terminal either, and nobody
+        // noticed until tools/perfchart.py went looking for it.  errlog is
+        // the category for exactly this: terminal and log, not the console.
+        // It also says what was drawn, so a result can never be credited to
+        // a size the engine did not actually use.
         CONS_Printf ("timed %i gametics in %i realtics\n"
                      "%f seconds, %f avg fps\n"
                      ,leveltime,time,f1/TICRATE,f2/f1);
-        GenPrintf (EMSG_info, "timedemo: %i gametics in %i realtics, %f avg fps\n",
-                   leveltime, time, f2/f1);
+        GenPrintf (EMSG_errlog, "timedemo: %i gametics in %i realtics, %f avg fps, %ix%i %ibpp %s\n",
+                   leveltime, time, f2/f1, vid.width, vid.height, vid.bitpp,
+                   (rendermode == render_soft)? "software" : "hardware" );
         if( EV_restore_cv_vidwait != cv_vidwait.EV )
             CV_SetValue(&cv_vidwait, EV_restore_cv_vidwait);
 

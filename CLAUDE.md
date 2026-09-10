@@ -263,6 +263,12 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   `legacyhome`, `localplayers "1"`) and reads the size caps out of `screen.h`. The whole 2D scaling
   bug in `ultrawide.md` was found by looking at one 32:9 capture, after four numeric checks had come
   back clean — because none of them was measuring the 2D layer. → `ultrawide.md`
+- **Frame rates come from `tools/perfchart.py`, not from reading Show Ticrate by eye.** It plays the
+  fixed demo in `tools/bench/` with `-timedemo` at each resolution and writes the README's
+  Performance table plus a `.csv`; `--quick --compare <before.csv>` is the before/after for any
+  speed change. It refuses to credit a size the engine did not draw, checks every size played the
+  same tics, and on a Pi reports throttling. Do not benchmark against `legacyhome/demos`: the
+  cabinet rewrites those when a record falls. → `render-threads.md`
 - **A layout verified in one renderer is not verified.** The software and hardware paths place their
   views by completely different code — draw tables (`R_Set_View_Window`) against GL viewport
   (`HWR_RenderPlayerView`) — so a view-grid change has to be looked at in both. The three and four
@@ -384,7 +390,7 @@ are kept below, in this file.
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
 | `docs/arcade/attract.md` | Attract cycle, menu-over-attract backdrop, idle timeout, arcade death | `D_AdvanceDemo`, `G_Idle_Timeout_Check`, `G_Arcade_Death_Check` |
-| `docs/arcade/render-threads.md` | Drawing the views on several cores: the `R_TLS` rule, the thread pool, the shared caches that had to be locked. Also single-thread speed: the profile, the drawer inner loops, the palette-flash table, the ranked list of untried speedups, and how to get a gprof profile | `r_threads.c`, `R_TLS`, any file-scope variable in `r_main.c`/`r_bsp.c`/`r_segs.c`/`r_plane.c`/`r_things.c`/`r_draw.c`, the view loop in `D_Display`, the drawers in `r_draw8.c`, `R_Init_color12_translate`, or before any renderer speed work |
+| `docs/arcade/render-threads.md` | Drawing the views on several cores: the `R_TLS` rule, the thread pool, the shared caches that had to be locked. Also single-thread speed: the profile, the drawer inner loops, the palette-flash table, the ranked list of untried speedups, how to get a gprof profile, and measuring frame rates with `tools/perfchart.py` | `r_threads.c`, `R_TLS`, any file-scope variable in `r_main.c`/`r_bsp.c`/`r_segs.c`/`r_plane.c`/`r_things.c`/`r_draw.c`, the view loop in `D_Display`, the drawers in `r_draw8.c`, `R_Init_color12_translate`, or before any renderer speed work |
 | `docs/arcade/uncapped-framerate.md` | Drawing more frames than there are tics: render-time interpolation, the `framerate_cap` cvar, the frame limiter, vsync in OpenGL | `r_fps.c`, the render gate in `D_DoomLoop`, `R_SetupFrame`, the sprite projectors, `R_Interp_*` call sites |
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
