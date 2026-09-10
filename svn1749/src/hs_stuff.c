@@ -399,6 +399,23 @@ boolean  HS_Ruleset_Is_Ranked( void )
 }
 
 
+// [Arcade] Does the ranked ruleset pin this cvar, and to what?  See hs_stuff.h.
+boolean  HS_Ruleset_Pins( struct consvar_s * cv, int * out_val )
+{
+    unsigned int i;
+
+    for( i = 0; i < HS_NUM_RULES; i++ )
+    {
+        if( hs_ranked_rules[i].cv == (consvar_t*) cv )
+        {
+            if( out_val )  *out_val = hs_rule_expected( &hs_ranked_rules[i] );
+            return true;
+        }
+    }
+    return false;
+}
+
+
 static tic_t   hs_cumulative_time = 0;
 // Is each category still achievable this run?  Latched false and never set
 // true again until HS_NewGame.  Indexed by HS_CAT_*; speed stays true.

@@ -257,7 +257,13 @@ quit
         note "this is how the 8 KB command buffer bug presented: 28 of 188 settings lost per load"
     else
         pass config
-        note "$n config complaint line(s); a healthy cabinet reports about four"
+        # The cabinet itself now reports zero.  This scratch run forces
+        # "Software 8bit" while config.cfg asks for a 32-bit OpenGL mode, so a
+        # couple of video lines legitimately differ here and not on the real
+        # machine.  Four of the old complaints were the checker's own fault --
+        # three gameplay cvars the ranked ruleset pins on purpose, and botrandom
+        # read through the byte-wide .EV -- see M_Verify_Config.
+        note "$n config complaint line(s); the cabinet reports none, this scratch run a couple of video ones"
     fi
 }
 

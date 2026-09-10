@@ -1728,8 +1728,30 @@ ifdef UMAPINFO_DIR
 # DISABLE_SSE keeps it on the portable scalar classifier, so the same source
 # builds on every target instead of needing ZDBSP's runtime SSE dispatch (whose
 # selector lives in its command-line main.cpp).  NB_QUIET drops its progress bar.
+# [Arcade] Vendored ZDBSP (nodebuild/) warnings are silenced here rather than
+# patched away in its source.  It accounted for 14 of the 16 warnings in a
+# clean build -- and a build that always prints 14 warnings is a build in which
+# the fifteenth, in our own code, goes unread.
+#
+# Nothing to do with its licence: it is GPLv2+, as is this program, and the
+# GPL exists precisely to permit modification.  The reasons are practical.
+# Every local edit to vendored code has to be re-applied by hand the next time
+# ZDBSP is updated, and edits made only to quiet a warning are the ones most
+# likely to be lost or to conflict.  And these particular warnings are about
+# realloc/memset on non-trivially-copyable types -- changing that in a node
+# builder nothing here tests directly, purely for tidiness, trades a warning
+# for the risk of a real bug.
+#
+#   -Wno-class-memaccess  realloc/memset on non-trivially-copyable structs,
+#                         which is how TArray and FLevel have always worked
+#   -Wno-template-id-cdtor  "template-id not allowed for destructor in C++20"
+#   -Wno-unused-but-set-variable  one in nodebuild_extract.cpp
+#
+# Anything ZDBSP warns about that is NOT one of these still gets through.
+NBWARN:= -Wno-class-memaccess -Wno-template-id-cdtor -Wno-unused-but-set-variable
+
 $(O)/%.o: $(SD)nodebuild/%.cpp
-	$(CXX) $(CXXFLAGS) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(NBWARN) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
 
 $(O)/%.o: $(SD)umapinfo/%.c
 	$(CC) $(CFLAGS) -Iumapinfo/ -c $< -o $@
