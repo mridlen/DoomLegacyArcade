@@ -454,6 +454,14 @@ written up in full in the doc named beside it.
   default in source does nothing on a machine that already has a config. This has bitten three
   times (overlay element letters, the level clock, weapon switching) and each time read as the
   feature being broken rather than unconfigured. → `install-config.md`, `hud.md`
+  - **`tools/cfgaudit.py` answers "what is this cabinet actually playing under".** It lists the
+    gameplay settings in a config that are not pinned by the ranked ruleset and differ from the
+    compiled default -- the few that genuinely shape every scored run. `M_Verify_Config` cannot tell
+    you this: it only checks a setting *loaded*, never whether it is one you still mean to keep.
+    Running it found rocket trails still `Off` on the cabinet months after the default was
+    deliberately corrected to `On`, which is this rule biting a fourth time. Resolve values through
+    the cvar's PossibleValue table before comparing, or "On" and "2" read as a difference and the
+    real finding drowns in 33 false ones.
   - **The mirror image: a brand-new cvar has no config line, so its compiled default *is* what the
     cabinet runs** until someone saves a `-devmode` session. That makes the default a behaviour
     decision, not a formality — and **a switch added so somebody *can* change something defaults to
