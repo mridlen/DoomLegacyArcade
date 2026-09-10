@@ -28,3 +28,8 @@ objs/
 # Release staging built by the GitHub Actions workflow (and by anyone reproducing
 # its packaging step locally)
 /dist/
+
+# [Arcade] Demo desync baselines and per-run logs (tools/demotest.sh).
+# Machine-local and large: the baseline is recorded from the cabinet's own
+# binary and demos, so it cannot be shared between checkouts.
+/.demotest/

@@ -178,6 +178,12 @@ void  R_Threads_Init( void )
         GenPrintf( EMSG_warn,
                    "Render threads: no semaphore (%s); drawing serially.\n",
                    SDL_GetError() );
+        // [Arcade] Release whichever one did get created.  Only one of the two
+        // has to fail to reach here, and leaving the other behind leaks it for
+        // the life of the process -- and, worse, leaves a non-NULL cache_mutex
+        // that R_Cache_Lock would happily use with no pool behind it.
+        if( cache_mutex )  { SDL_DestroyMutex( cache_mutex );      cache_mutex = NULL; }
+        if( worker_done )  { SDL_DestroySemaphore( worker_done );  worker_done = NULL; }
         return;
     }
 

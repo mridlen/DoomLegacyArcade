@@ -3076,10 +3076,10 @@ static void HWR_Subsector(int num)
     }
 #endif
 
-// Hurder ici se passe les choses intéressantes!
+// Hurder ici se passe les choses intÃ©ressantes!
 // on vient de tracer le sol et le plafond
-// on trace à présent d'abord les sprites et ensuite les murs
-// hurdler: faux: on ajoute seulement les sprites, le murs sont tracés d'abord
+// on trace Ã  prÃ©sent d'abord les sprites et ensuite les murs
+// hurdler: faux: on ajoute seulement les sprites, le murs sont tracÃ©s d'abord
     if (lineseg != NULL)
     {
         // draw sprites first , coz they are clipped to the solidsegs of
@@ -3637,18 +3637,33 @@ sprite_drawn:
 // --------------------------------------------------------------------------
 static gr_vissprite_t gr_vsprsortedhead;
 
+// [Arcade] The sentinel for the unsorted list, file scope rather than a local.
+//
+// It is the head of a circular list whose other nodes live in gr_vissprites[],
+// which is file scope, so linking them stores the address of a local into a
+// global and GCC reports it: "storing the address of local variable 'unsorted'
+// in gr_vissprites[0].prev" (-Wdangling-pointer).  Harmless in practice --
+// every one of those links is rewritten before the next traversal -- but it
+// is a real dangling pointer for as long as the function is not running, and
+// two warnings a build is two warnings in which a new one can hide.
+//
+// gr_vsprsortedhead directly above is the same kind of sentinel and has always
+// been file scope; this just makes the pair consistent.  Safe because the
+// hardware renderer is never threaded: render_threads only splits the software
+// renderer, and a GL session reports "Render: single threaded".
+static gr_vissprite_t gr_vsp_unsorted;
+
 static void HWR_SortVisSprites(void)
 {
     int i;
     int count;
     gr_vissprite_t * ds;
     gr_vissprite_t * best = NULL;        //shut up compiler
-    gr_vissprite_t unsorted;
     float bestdist;
 
     count = gr_vissprite_p - gr_vissprites;
 
-    unsorted.next = unsorted.prev = &unsorted;
+    gr_vsp_unsorted.next = gr_vsp_unsorted.prev = &gr_vsp_unsorted;
 
     if (!count)
         return;
@@ -3659,17 +3674,17 @@ static void HWR_SortVisSprites(void)
         ds->prev = ds - 1;
     }
 
-    gr_vissprites[0].prev = &unsorted;
-    unsorted.next = &gr_vissprites[0];
-    (gr_vissprite_p - 1)->next = &unsorted;
-    unsorted.prev = gr_vissprite_p - 1;
+    gr_vissprites[0].prev = &gr_vsp_unsorted;
+    gr_vsp_unsorted.next = &gr_vissprites[0];
+    (gr_vissprite_p - 1)->next = &gr_vsp_unsorted;
+    gr_vsp_unsorted.prev = gr_vissprite_p - 1;
 
     // pull the vissprites out by scale
     gr_vsprsortedhead.next = gr_vsprsortedhead.prev = &gr_vsprsortedhead;
     for (i = 0; i < count; i++)
     {
         bestdist = SPRITE_NEAR_CLIP_DIST - 1;
-        for (ds = unsorted.next; ds != &unsorted; ds = ds->next)
+        for (ds = gr_vsp_unsorted.next; ds != &gr_vsp_unsorted; ds = ds->next)
         {
             if (ds->tz > bestdist)
             {
@@ -4611,7 +4626,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     //HWR_Clear_Sprites ( );
 
     // check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     gr_viewx = FIXED_TO_FLOAT( viewx );
     gr_viewy = FIXED_TO_FLOAT( viewy );
@@ -4723,7 +4738,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
 #endif
 
     // Check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     //14/11/99: Hurdler: moved here because it doesn't work with
     // subsector, see other comments;
@@ -4740,7 +4755,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     HWD.pfnSetTransform(NULL);
 
     // Check for new console commands.
-    NetUpdate();
+    R_NetUpdate_In_Frame();   // [Arcade] with the play BSP restored
 
     if( view_fogfloor
         && ( view_fogfloor->flags & FF_FOGFACE  ) )

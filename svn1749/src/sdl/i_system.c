@@ -125,8 +125,17 @@ extern SDL_Window * sdl_window;
 extern void D_PostEvent(event_t*);
 
 #ifdef JOYSTICK_SUPPORT
-// 4 joysticks should be enough for most purposes
-#define MAX_JOYSTICKS 4
+// [Arcade] MAX_JOYSTICKS comes from i_joy.h, included above.  It used to be
+// re-defined here as well, identically, which is the kind of duplicate that
+// only shows up when somebody changes one of them.
+//
+// There is a third name for the same limit: MAXJOYSTICKS, an enum in keys.h,
+// which is what the KEY_JOY* code ranges are laid out from and what
+// Translate_Joybutton and friends clamp against.  They must agree or a pad in
+// the last slot types key codes belonging to something else.
+_Static_assert( MAX_JOYSTICKS == MAXJOYSTICKS,
+                "MAX_JOYSTICKS (i_joy.h) and MAXJOYSTICKS (keys.h) disagree" );
+
 int num_joysticks = 0;
 SDL_Joystick *joysticks[MAX_JOYSTICKS]; 
 

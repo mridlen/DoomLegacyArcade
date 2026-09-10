@@ -27,6 +27,14 @@
 #define AU_KEY_LEN      48
 #define AU_MAP_LEN      12
 
+// [Arcade] AU_Load's sscanf field widths are written out literally ("%47s",
+// "%11s"), because a scanf width cannot be a macro without stringify
+// gymnastics that make the format unreadable.  That means changing a buffer
+// above would silently leave the width behind -- and a width one too large is
+// a stack overwrite from a file an operator can edit.  Fail the build instead.
+_Static_assert( AU_KEY_LEN == 48, "AU_Load's \"%47s\" must match AU_KEY_LEN-1" );
+_Static_assert( AU_MAP_LEN == 12, "AU_Load's \"%11s\" must match AU_MAP_LEN-1" );
+
 typedef struct {
     char          game[AU_KEY_LEN];   // wad combination, as high scores key it
     char          map[AU_MAP_LEN];

@@ -595,7 +595,7 @@ void OglSdl_SetPalette(RGBA_t *palette, RGBA_t *gamma)
         myPaletteData[i].s.blue  = MIN((palette[i].s.blue  * gamma->s.blue) /127, 255);
         myPaletteData[i].s.alpha = palette[i].s.alpha;
     }
-    // on a changé de palette, il faut recharger toutes les textures
+    // on a changÃ© de palette, il faut recharger toutes les textures
     // jaja, und noch viel mehr ;-)
     VIDGL_Flush_GL_textures();
 }

@@ -60,6 +60,7 @@
 #include "i_video.h"
 #include "d_main.h"
 #include "m_argv.h"
+#include "hs_stuff.h"   // [Arcade] HS_Ruleset_Pins
 #include "m_swap.h"
 
 #ifdef HWRENDER
@@ -552,6 +553,27 @@ void  M_Verify_Config( const char * cfgfile )
             continue;
         if( name[0] == '/' || name[0] == '#' )  continue;   // comment
 
+        // [Arcade] Some CV_SAVE cvars are runtime state, not operator
+        // settings: the engine writes them itself, so the file is stale by
+        // definition and "did not take" says nothing about the config.
+        //
+        // botrandom is the case in point.  It is a bot RNG seed, and b_game.c
+        // adds a prime to it every time bots are generated -- which happens
+        // once during startup, before this check runs -- so it is always
+        // exactly one increment ahead of the file it was just loaded from.
+        // It also grows without bound and is written back every session, which
+        // is why it is the one line that keeps changing in config.cfg.
+        {
+            static const char * const runtime_state[] = { "botrandom", NULL };
+            int  k;
+            boolean skip = false;
+            for( k = 0; runtime_state[k]; k++ )
+            {
+                if( strcasecmp( name, runtime_state[k] ) == 0 )  { skip = true; break; }
+            }
+            if( skip )  continue;
+        }
+
         cv = CV_FindVar( name );
         if( ! cv )
         {
@@ -604,11 +626,71 @@ void  M_Verify_Config( const char * cfgfile )
             if( ! M_Config_Resolve( cv, value, &want ) )
                 continue;   // cannot resolve: not something to judge
 
-            have = ( cv->flags & (CV_FLOAT | CV_VALUE) ) ? cv->value : (int) cv->EV;
+            // [Arcade] .EV is a byte, so it cannot answer for a cvar whose
+            // range runs past 255.  botrandom is CV_Unsigned (0..999999999)
+            // *and* a running seed -- b_game.c adds a prime to it every time
+            // bots are generated, and it is CV_SAVE, so it grows every session
+            // -- and reading it through .EV reported a nonsense "value is 60"
+            // on every boot while the setting had loaded perfectly.
+            //
+            // This is the rule already in CLAUDE.md ("use .value for any cvar
+            // that can exceed 255") being broken by the very checker written
+            // to police the config.  Decide by the cvar's declared range, not
+            // by its flags.
+            {
+                boolean wide = false;
+                CV_PossibleValue_t * pv;
+                for( pv = cv->PossibleValue; pv && pv->strvalue; pv++ )
+                {
+                    if( pv->value > 255 )  { wide = true; break; }
+                }
+                have = ( cv->flags & (CV_FLOAT | CV_VALUE) || wide )
+                       ? cv->value : (int) cv->EV;
+            }
             if( cv->flags & CV_FLOAT )
                 want = want * FRACUNIT;
 
             if( want == have )  continue;
+
+            // [Arcade] Overridden on purpose by the per-drawmode config?
+            //
+            // legacyhome keeps one config per drawmode and those execute after
+            // config.cfg, so a setting they carry legitimately replaces the
+            // main file's -- scr_depth is the standing example.  The main file
+            // did not "fail to take"; it was superseded on purpose.
+            {
+                const char * dm = CV_Get_Config_string( cv, CFG_drawmode );
+                if( dm && dm[0] )
+                {
+                    GenPrintf( EMSG_info,
+                        "config line %d: \"%s\" is \"%s\" in the file but the"
+                        " drawmode config sets \"%s\"; the drawmode config"
+                        " wins.\n",
+                        lineno, name, value, dm );
+                    continue;   // not a problem
+                }
+            }
+
+            // [Arcade] Overridden on purpose by the ranked ruleset?
+            //
+            // The ruleset pins a handful of gameplay cvars so every scored run
+            // plays under the same vanilla physics (hs_stuff.c), which means
+            // the operator's setting genuinely does not take -- by design, and
+            // three of these were being reported as broken settings on every
+            // boot.  Say which of the two it is: a setting the machine chose
+            // to override is not a setting that failed.
+            {
+                int pinned;
+                if( HS_Ruleset_Pins( cv, &pinned ) && have == pinned )
+                {
+                    GenPrintf( EMSG_info,
+                        "config line %d: \"%s\" is \"%s\" in the file but the"
+                        " ranked ruleset pins it; scored play uses the"
+                        " ruleset value.\n",
+                        lineno, name, value );
+                    continue;   // not a problem
+                }
+            }
 
             // Name the value it actually holds, by label where there is one.
             {
@@ -727,7 +809,19 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
         }
     }
 
-    fw = fopen (cfgfile, "w");
+    // [Arcade] Atomic, so a power cut cannot leave the config truncated.
+    //
+    // This is the same rule the score, run board and audit files already
+    // followed, and the config is the one that could least afford to be the
+    // exception: it is hand-tuned, only a -devmode session writes it, and it
+    // exists nowhere else on the machine.  fopen(name, "w") truncates before
+    // it writes, so the cabinet being switched off at the wall during a save
+    // lost the whole file rather than the one setting being changed.
+    //
+    // The .bak copy above stays -- it keeps a generation, which this does not
+    // -- but it was never a substitute: recovering from it means an operator
+    // noticing and renaming a file, and M_Verify_Config only warns.
+    fw = M_Atomic_Write_Open(cfgfile);
     if (!fw)
     {
         I_SoftError("Could not save game config file %s\n", cfgfile);
@@ -768,7 +862,8 @@ void M_SaveConfig( byte cfg, const char * cfgfile )
     if( cfg == CFG_main )
         G_SaveKeySetting(fw);
 
-    fclose (fw);
+    if( ! M_Atomic_Write_Close(fw, cfgfile) )
+        I_SoftError("Could not save game config file %s\n", cfgfile);
 }
 
 //  Save all game config here
@@ -1125,7 +1220,7 @@ void M_ScreenShot (void)
         if( ! M_Make_Screenshot_Filename( filename, "pcx" ) )
             return;
 
-        GenPrintf( EMSG_ver, "Save PCX: %s\n", filename );
+        GenPrintf( EMSG_ver, "Save PCX: %s (leveltime %u)\n", filename, (unsigned)leveltime );
        
         // save the pcx file
         br = Write_PCXfile ( filename, vid.width, vid.height, bufs,
@@ -1140,7 +1235,7 @@ void M_ScreenShot (void)
     if( ! M_Make_Screenshot_Filename( filename, "tga" ) )
         return;
 
-    GenPrintf( EMSG_ver, "Save Targa: %s\n", filename );
+    GenPrintf( EMSG_ver, "Save Targa: %s (leveltime %u)\n", filename, (unsigned)leveltime );
 //    printf("Write Targa %s, drawmode=%i, wr_bytepp= %i, bitpp= %i\n", filename, vid.drawmode, wr_bytepp, wr_bytepp*8 );
     bufsize = (size_t)num_pixels * wr_bytepp;
     bufw = malloc( bufsize );

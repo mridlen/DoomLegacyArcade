@@ -1832,6 +1832,27 @@ void G_Synclog_Tic( void )
                 "# leveltime prnd x y angle momx momy fwd side aturn btn tflags\n");
     }
 
+    // [Arcade] Stop when the demo stops.
+    //
+    // Without this, the tics the engine runs between the end of the demo and
+    // the process actually exiting are logged as well -- the player coasting
+    // to a halt on no input, which looks exactly like more demo.  How many of
+    // those there are depends on shutdown timing, and under a loaded machine
+    // that varies: a parallel run of the whole suite produced 267 extra
+    // trailing lines on one demo of 95, about one run in three.  The prefix
+    // was identical, so it was not a desync -- but it was reported as one,
+    // and a check that cries wolf gets ignored.
+    //
+    // Also closes the file, which nothing did before.
+    if( (synclog_mode == 3 && ! demoplayback)
+     || (synclog_mode == 2 && ! demorecording) )
+    {
+        fclose( synclog_fp );
+        synclog_fp = NULL;
+        synclog_mode = 1;   // done; do not reopen
+        return;
+    }
+
     if( p->mo )
     {
         ticcmd_t * c = &p->cmd;
@@ -4662,6 +4683,18 @@ void G_BeginRecording (void)
     *demo_p++ = cv_rocket_trails.EV + 1;
     // 46
 
+    // [Arcade] The option area is 64 bytes and 46 are in use.  Overrunning it
+    // walks straight over the sync mark below, and the only symptom is that
+    // every demo recorded afterwards is rejected on playback with no clue why.
+    //
+    // Same reasoning as the DEMOHDR_playeringame check further up: the offsets
+    // and the writes are maintained by hand in two places, so say so at the
+    // moment they stop agreeing rather than leaving it to be discovered.
+    if( demo_p > demo_p_next )
+        I_SoftError("Demo option area overrun by %d byte(s); the sync mark and"
+                    " every demo recorded now are corrupt\n",
+                    (int)(demo_p - demo_p_next));
+
     // empty space
     while( demo_p < demo_p_next )  *demo_p++ = 0;
 
@@ -5479,6 +5512,21 @@ boolean G_CheckDemoStatus (void)
                    leveltime, time, f2/f1);
         if( EV_restore_cv_vidwait != cv_vidwait.EV )
             CV_SetValue(&cv_vidwait, EV_restore_cv_vidwait);
+
+        // [Arcade] A -timedemo named on the command line is a measurement, not
+        // the start of a session, so quit once the result has been printed --
+        // the way -playdemo has always done a few lines below.
+        //
+        // This branch returned before ever reaching that test, so -timedemo
+        // dropped into the attract cycle instead of ending.  That made it
+        // useless from a script (no exit code, no end) and, less obviously,
+        // made it look *slower* than -playdemo: the demo was replayed over and
+        // over with real-time attract pages between the passes, so a fixed
+        // timeout caught a few fast passes separated by long idle stretches.
+        // See docs/arcade/demo-desync.md.
+        if( singledemo )
+            I_Quit();   // No return
+
         D_AdvanceDemo ();
         return true;
     }

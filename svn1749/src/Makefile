@@ -1487,8 +1487,9 @@ all:	 $(BIN)/$(EXENAME)  $(SUPPORT_EXE)  cabinet_home
 CABINET_HOME := ../../cabinet/legacyhome
 
 SMOKE_SH := ../../tools/smoke.sh
+DEMOTEST_SH := ../../tools/demotest.sh
 
-.PHONY: cabinet_home cabinet_save smoke
+.PHONY: cabinet_home cabinet_save smoke demotest demotest_baseline
 
 # Stage the tracked config beside the binary, without ever clobbering a live
 # one.  cp -n leaves an existing config.cfg alone, so a running cabinet does
@@ -1509,6 +1510,21 @@ cabinet_home:
 # IWADs are not in one of the usual places.
 smoke:
 	@$(SMOKE_SH) $(SMOKE_ARGS)
+
+# [Arcade] Demo desync regression test.  Replays every record demo on the
+# cabinet and checks the simulation is unchanged, tic by tic.  Run it after
+# anything that could affect gameplay -- which is a wider net than it looks,
+# because PP_Random is one shared index.  See tools/demotest.sh and
+# docs/arcade/demo-desync.md.
+#
+# "make demotest_baseline" first, on known-good code, then "make demotest"
+# to compare.  DEMOTEST_ARGS passes options through, e.g.
+#   make demotest DEMOTEST_ARGS="--quick"
+demotest:
+	@$(DEMOTEST_SH) $(DEMOTEST_ARGS)
+
+demotest_baseline:
+	@$(DEMOTEST_SH) --baseline $(DEMOTEST_ARGS)
 
 # Copy the live config back over the tracked one, for committing.
 cabinet_save:
@@ -1712,8 +1728,30 @@ ifdef UMAPINFO_DIR
 # DISABLE_SSE keeps it on the portable scalar classifier, so the same source
 # builds on every target instead of needing ZDBSP's runtime SSE dispatch (whose
 # selector lives in its command-line main.cpp).  NB_QUIET drops its progress bar.
+# [Arcade] Vendored ZDBSP (nodebuild/) warnings are silenced here rather than
+# patched away in its source.  It accounted for 14 of the 16 warnings in a
+# clean build -- and a build that always prints 14 warnings is a build in which
+# the fifteenth, in our own code, goes unread.
+#
+# Nothing to do with its licence: it is GPLv2+, as is this program, and the
+# GPL exists precisely to permit modification.  The reasons are practical.
+# Every local edit to vendored code has to be re-applied by hand the next time
+# ZDBSP is updated, and edits made only to quiet a warning are the ones most
+# likely to be lost or to conflict.  And these particular warnings are about
+# realloc/memset on non-trivially-copyable types -- changing that in a node
+# builder nothing here tests directly, purely for tidiness, trades a warning
+# for the risk of a real bug.
+#
+#   -Wno-class-memaccess  realloc/memset on non-trivially-copyable structs,
+#                         which is how TArray and FLevel have always worked
+#   -Wno-template-id-cdtor  "template-id not allowed for destructor in C++20"
+#   -Wno-unused-but-set-variable  one in nodebuild_extract.cpp
+#
+# Anything ZDBSP warns about that is NOT one of these still gets through.
+NBWARN:= -Wno-class-memaccess -Wno-template-id-cdtor -Wno-unused-but-set-variable
+
 $(O)/%.o: $(SD)nodebuild/%.cpp
-	$(CXX) $(CXXFLAGS) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(NBWARN) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
 
 $(O)/%.o: $(SD)umapinfo/%.c
 	$(CC) $(CFLAGS) -Iumapinfo/ -c $< -o $@

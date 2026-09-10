@@ -3428,7 +3428,7 @@ fixed_t P_AimLineAttack ( mobj_t*       atkr, // attacker
 //added:16-02-98: Fab comments...
 //                atkr       est l'attaquant (player ou monstre)
 //                angle    est l'angle de tir sur le plan x,y (orientation)
-//                distance est la port‚e maximale de la balle
+//                distance est la portÃ©e maximale de la balle
 //                slope    est la pente vers la destination (up/down)
 //                damage   est les degats infliges par la balle
 void P_LineAttack ( mobj_t*       atkr,   // attacker

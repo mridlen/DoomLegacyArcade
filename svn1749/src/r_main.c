@@ -1471,7 +1471,21 @@ void R_SetupFrame( byte pind, player_t* player )
         // script_camera.aiming is set by FraggleScript, not per tic, so it
         // has no history to interpolate from.
         aimingangle=script_camera.aiming;
-        ST_Palette0();  // Doom and Heretic
+        // [Arcade] Main thread only.  ST_Palette0 -> V_SetPalette rebuilds
+        // the shared color8 translation tables that every software drawer
+        // reads, so it cannot run while other threads are drawing.  The
+        // per-view palette flash was hoisted out to R_Update_View_Palette for
+        // exactly this reason; these two calls were left behind inside
+        // R_SetupFrame, which runs on the workers too.
+        //
+        // Reachable in both threading modes: script_camera_on is one global,
+        // so with a script camera every view takes the branch above -- and in
+        // band mode a worker runs R_RenderPlayerView(0, ...) for a column
+        // band of view 0, which puts the chase camera branch on a worker as
+        // well.  The main thread draws a band of view 0 itself, so it still
+        // makes this call exactly once and the palette ends up the same.
+        if( ! R_On_Render_Worker() )
+            ST_Palette0();  // Doom and Heretic
         fixedcolormap_num = camera.fixedcolormap;
     }
     else
@@ -1495,7 +1509,9 @@ void R_SetupFrame( byte pind, player_t* player )
 #endif
 #if 1
         // Player cam does not see player status palette.
-        ST_Palette0();   // Doom and Heretic
+        // [Arcade] Main thread only; see the note in the script camera branch.
+        if( ! R_On_Render_Worker() )
+            ST_Palette0();   // Doom and Heretic
 #else
         // Player cam sees player status palette.
         // Can now handle splitplayer flashes.
@@ -1734,7 +1750,7 @@ void R_SetupFrame( byte pind, player_t* player )
 
     if ( rendermode == render_soft )
     {
-        // clip it in the case we are looking a hardware 90° full aiming
+        // clip it in the case we are looking a hardware 90Â° full aiming
         // (lmps, nework and use F12...)
         aimingangle = G_ClipAimingPitch(aimingangle);	// limit aimingangle
 
@@ -1858,7 +1874,7 @@ static void  R_NetUpdate_Main( void )
     // NetUpdate once the views are joined.
     if( r_threads_active )  return;
 #endif
-    NetUpdate ();
+    R_NetUpdate_In_Frame ();   // [Arcade] with the play BSP restored
 }
 
 

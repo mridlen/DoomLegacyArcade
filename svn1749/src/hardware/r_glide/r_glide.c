@@ -1362,7 +1362,7 @@ static void ComputeFogTable(void)
     }
 
     // the table is an exponential fog table. It computes q from i using guFogTableIndexToW()
-    // and then computes the fog table entries as fog[i]=(1–e -kw )·255 where k is a user-defined
+    // and then computes the fog table entries as fog[i]=(1â€“e -kw )Â·255 where k is a user-defined
     // constant, FOG_DENSITY.
     for (i=0; i<nFog; i++) {
         // remove (float) to see original doom bands
@@ -1431,7 +1431,7 @@ static Glide_SetSpecialState( hwd_specialstate_e IdState, int value )
             break;
 
         case HWD_SET_FOV:
-            //can't be implementd until we find a "Liang-Barsky" algo for non 90°
+            //can't be implementd until we find a "Liang-Barsky" algo for non 90Â°
             break;
 
         case HWD_SET_POLYGON_SMOOTH:

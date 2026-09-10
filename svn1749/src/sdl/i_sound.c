@@ -562,7 +562,7 @@ void I_UpdateSound(void)
 
     /*
        Pour une raison que j'ignore, la version SDL n'appelle jamais
-       ce truc directement. Fonction vide pour garder une compatibilité
+       ce truc directement. Fonction vide pour garder une compatibilitÃ©
        avec le point de vue de legacy...
      */
 

@@ -23,6 +23,16 @@
 // session that changes any of it plays on but scores and records nothing.
 void      HS_Apply_Ranked_Ruleset(void);
 boolean   HS_Ruleset_Is_Ranked(void);   // do the cvars match right now?
+
+// [Arcade] Does the ranked ruleset pin this cvar, and to what?
+//
+// The ruleset deliberately overrides a handful of gameplay cvars so every
+// scored run plays under the same vanilla physics, which means the operator's
+// config.cfg genuinely does not take for those -- by design.  M_Verify_Config
+// asks this so it can say which of the two it is looking at instead of
+// reporting a working feature as four broken settings every boot.
+struct consvar_s;
+boolean   HS_Ruleset_Pins( struct consvar_s * cv, int * out_val );
 // Is this a game the high score system scores at all?  False for anything
 // multiplayer -- including a local two or four player game, which sets
 // netgame.  Every scoring path and the HUD's UNRANKED marker ask this.

@@ -180,9 +180,9 @@ extern  float   gr_viewludcos;
 static void  HWR_SetLight( void );
 
 // --------------------------------------------------------------------------
-// calcul la projection d'un point sur une droite (determinée par deux 
-// points) et ensuite calcul la distance (au carré) de ce point au point
-// projecté sur cette droite
+// calcul la projection d'un point sur une droite (determinÃ©e par deux 
+// points) et ensuite calcul la distance (au carrÃ©) de ce point au point
+// projectÃ© sur cette droite
 // --------------------------------------------------------------------------
 static float HWR_DistP2D(vxtx3d_t *p1, vxtx3d_t *p2, v3d_t *p3, /*OUT*/ v3d_t *inter)
 {
@@ -776,7 +776,7 @@ void HWR_Create_WallLightmaps(v3d_t *p1, v3d_t *p2, int lightnum, seg_t *line)
     lp->next = line->lightmaps;
     line->lightmaps = lp;
     
-    // (...) encore des bô calcul bien lourd et on stock tout sa dans la lightmap
+    // (...) encore des bÃ´ calcul bien lourd et on stock tout sa dans la lightmap
 }
 
 static void HWR_AddLightMapForLine( int lightnum, seg_t *line)
@@ -955,7 +955,7 @@ void HWR_Create_StaticLightmaps( void )
 /*
 TODO:
 
-  - Les coronas ne sont pas gérer avec le nouveau systeme, seul le dynamic lighting l'est
+  - Les coronas ne sont pas gÃ©rer avec le nouveau systeme, seul le dynamic lighting l'est
   - calculer l'offset des coronas au chargement du level et non faire la moyenne
     au moment de l'afficher
      BP: euh non en fait il faux encoder la position de la light dans le sprite

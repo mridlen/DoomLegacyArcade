@@ -89,8 +89,16 @@ are the separate `NBOBJS:=` list, built by a `$(SD)nodebuild/%.cpp` rule with `$
 and linked via `-lstdc++`. → `docs/arcade/gotchas.md`
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
-`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`, and
-`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset).
+`make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`,
+`make smoke` (headless smoke test — see below; `make smoke SMOKE_ARGS="warp opengl"` for a subset),
+and `make demotest` / `make demotest_baseline` (demo desync regression test — see
+`docs/arcade/demo-desync.md`).
+
+Note `BUILD=<dir>` relocates **`make_options` too** (`MAKE_OPTIONS = $(BUILD_DIR)make_options`), so
+an alternate build directory needs its own copy of it or the build dies with `"Unknown OS: "`. The
+same trap catches a fresh worktree: copy `svn1749/make_options`, **not** the stale top-level
+`make_options`, which is leftover scaffolding still set up for SDL 1.2 and fails in the dependency
+phase with `missing binary operator before token '('` from `SDL_VERSION_ATLEAST`.
 
 **`make -j` races in the dependency phase**, and the error points nowhere near the cause: every
 `../dep/*.dep` rule pipes through the *same* intermediate `../dep/sed.dep` and then `mv`s it, so two
@@ -278,6 +286,17 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   binary match, but two binaries start up at different speeds, the shot lands a tic either side and
   animated textures advance per tic. When a diff says a resolution changed that arithmetic says
   cannot have, believe the arithmetic. → `ultrawide.md`
+  - **`-nomonsters` does not stop the clock or the pickups, and a same-config control does not
+    prove the method.** Comparing `render_threads` 1 against 4 this way showed 6531 pixels changed
+    and read as a threading race; the 1-vs-1 control came back identical, which looked like proof
+    the capture was deterministic. It was not — the serial path just happens to be timing-stable,
+    while a 4-thread run lands the `wait 105` screenshot on tic 104 *or* 105, and one tic is enough
+    for an animated armour bonus and the level clock to change. **Same tic, the images are
+    byte-identical, threaded or not.** Before reading anything into a pixel diff, check the shots
+    came from the same tic: set `screenshot` from an autoexec, and have the engine say which tic it
+    fired on (`M_ScreenShot` reports `leveltime` at `EMSG_ver`). The person looking at the picture
+    spotted this instantly from *what* had changed, which is the argument for handing over the
+    image rather than only the number.
 - **Logic a headless run never reaches can still be tested — extract it, don't copy it.** Nothing
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
@@ -381,6 +400,7 @@ are kept below, in this file.
 | `docs/arcade/ci-releases.md` | GitHub Actions: the build-on-push workflow, the release button, the `-march` baseline | `.github/workflows/`, the `--arch`/`-Arch` options |
 | `docs/arcade/branding.md` | Fork identity, `VERSION_BANNER`, `DLA_VERSION` from tags, the executable name, what must NOT be renamed | any string that names the program, the version, `EXENAME` |
 | `docs/arcade/endoom.md` | The exit text screen: lump format, why SLADE will not edit it, `tools/endoom.py` | the `ENDOOM` lump, `endtxt.c`, `I_Show_EndText` |
+| `docs/arcade/demo-desync.md` | The demo desync regression test: `-synclog`, `tools/demotest.sh`, what proves a demo really ran, the self-check | any gameplay-affecting change; `G_Synclog_Tic`, `tools/demotest.sh` |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -434,6 +454,14 @@ written up in full in the doc named beside it.
   default in source does nothing on a machine that already has a config. This has bitten three
   times (overlay element letters, the level clock, weapon switching) and each time read as the
   feature being broken rather than unconfigured. → `install-config.md`, `hud.md`
+  - **`tools/cfgaudit.py` answers "what is this cabinet actually playing under".** It lists the
+    gameplay settings in a config that are not pinned by the ranked ruleset and differ from the
+    compiled default -- the few that genuinely shape every scored run. `M_Verify_Config` cannot tell
+    you this: it only checks a setting *loaded*, never whether it is one you still mean to keep.
+    Running it found rocket trails still `Off` on the cabinet months after the default was
+    deliberately corrected to `On`, which is this rule biting a fourth time. Resolve values through
+    the cvar's PossibleValue table before comparing, or "On" and "2" read as a difference and the
+    real finding drowns in 33 false ones.
   - **The mirror image: a brand-new cvar has no config line, so its compiled default *is* what the
     cabinet runs** until someone saves a `-devmode` session. That makes the default a behaviour
     decision, not a formality — and **a switch added so somebody *can* change something defaults to
@@ -492,6 +520,18 @@ written up in full in the doc named beside it.
   cabinet's `Z_ChangeTag: free block has corrupt ZONEID`. Inside the parallel section a drawer
   pins its lump with `R_DRAW_LUMP_TAG` and `R_Threads_Wait` releases them all after the join.
   → `render-threads.md`
+- **Never call `NetUpdate` between `R_Use_Render_BSP` and `R_Use_Play_BSP` — use
+  `R_NetUpdate_In_Frame()`.** Both renderers service the network while drawing (four calls in
+  `R_RenderPlayerView`, three in `HWR_RenderPlayerView`), and `NetUpdate` runs `D_Process_Events`,
+  which is the menu, console and game responders — simulation code, running with the *rebuilt* tree
+  in the globals. Measured on the GL path the cabinet uses: **1362 of 1362** such calls had the
+  rebuilt tree swapped in. Do not "fix" it by skipping the call; those carry tic timing and one
+  fewer is as much a gameplay change as one more. → `gotchas.md`
+- **A headless run under `SDL_VIDEODRIVER=dummy` never reaches `R_RenderPlayerView`.** `D_Display`
+  is entered every tic but the player view is not drawn, so `make demotest` (which also passes
+  `-nodraw`) exercises *no* renderer code. Anything touching the renderer needs
+  `SDL_VIDEODRIVER=offscreen` — `make smoke`'s `opengl` check, or `tools/shotsheet.py`. A green demo
+  suite after a renderer change means "no gameplay regression", not "the change was tested".
 - **The BSP the renderer walks must not be the one the simulation walks.** `p_sight.c` traverses
   the nodes for line-of-sight and `R_PointInSubsector` is used across the play code, so swapping in
   a rebuilt tree changes gameplay and desyncs demos — rarely enough to pass a careless test, which
@@ -500,6 +540,15 @@ written up in full in the doc named beside it.
 - **`-playdemo` plays an external *file*, never an internal lump, and a failed demo run looks like
   a passing test.** Two runs that both failed to load compare 100% identical. Confirm the demo
   started, and diff simulation state rather than pixels. → `gotchas.md`
+- **There is a demo desync regression test now: run it, do not reason about it.** `make demotest`
+  from `svn1749/src` replays all 95 record demos and compares the simulation tic by tic, via the
+  `-synclog` switch; `make demotest_baseline` records the reference first, on known-good code.
+  Success is three lines, failure names the demo and the tic. **About 40 seconds**, so there is no
+  reason not to run it. **Run it after anything that could affect gameplay** — a wider net than it
+  looks, since `PP_Random` is one shared index. It has been shown to fail as well as to pass: an
+  injected `P_Random()` was caught one tic later in all 97 demos. **Playing the cabinet invalidates
+  part of the baseline**: beating a record rewrites that `.lmp`, so the run reports those demos as
+  re-recorded and prints the command to re-baseline just them. → `demo-desync.md`
 - **A new gameplay-affecting cvar must go into the demo header *or* `G_demo_defaults()`**, or demos
   desync. Recording and playback do not otherwise agree on it. → `gotchas.md`
   - **"Gameplay-affecting" includes settings that look purely cosmetic, and `PP_Random`'s `pr`
@@ -616,9 +665,15 @@ written up in full in the doc named beside it.
   it moves polygon corners now, so T-joins solved first get stranded. Both report counts on every
   level load; the "still not flush" count must stay 0. Check seams over the whole map, not
   through a screenshot: count gap-producing T-junctions. → `gotchas.md`
-- **15 source files are ISO-8859, not UTF-8, and grep silently skips them** — no match, no
-  warning. Includes `r_main.c`, `p_map.c`, `console.c`, `hardware/hw_main.c`. If a grep says a
-  symbol is never written, re-check with `nm ../objs/*.o` before believing it. → `gotchas.md`
+- **Every source file is UTF-8 now; keep it that way.** Fourteen of them were not, and plain `grep`
+  skipped them entirely — no match, no warning — including `r_main.c`, `p_map.c`, `console.c` and
+  `hardware/hw_main.c`. That silently hid four of six `R_Cache_Lock` call sites during a review, and
+  `file` is no help: it reported two of the offenders as plain "ASCII text". They have been
+  converted (33 bytes, all inside French comments, three different legacy encodings between them).
+  **A new file with a stray high byte puts the trap straight back**, so if a grep says a symbol is
+  never written, still confirm with `nm ../objs/*.o`, and check with:
+  `for f in $(find svn1749/src -name '*.c' -o -name '*.h'); do [ "$(grep -c "" $f)" = "$(grep -ac "" $f)" ] || echo "SKIPPED: $f"; done`
+  → `gotchas.md`
 - **There are no dep files for most objects, so editing a header does not trigger a rebuild.**
   After changing any header, `make clean && make`. `tools/build.sh` now does this for you — it
   forces a clean when any header is newer than the oldest object — but plain `make` still will not.

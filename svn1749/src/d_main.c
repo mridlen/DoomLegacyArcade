@@ -875,22 +875,40 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
         nbands--;
     if( nbands < 2 )  return 0;
 
-    // The main thread takes band 0; the workers take the rest.  Split by
-    // rounding so the bands tile the view exactly with no seam and no
-    // overlap -- a column drawn twice is a torn sprite, a column drawn by
+    // Split by rounding so the bands tile the view exactly with no seam and
+    // no overlap -- a column drawn twice is a torn sprite, a column drawn by
     // nobody is a black stripe.
-    band_main_x1 = 0;
-    band_main_x2 = (width * 1) / nbands;
+    //
+    // [Arcade] The workers take bands 0 .. nbands-2 and the MAIN THREAD TAKES
+    // THE LAST ONE.  That ordering is not cosmetic: it is what makes the
+    // fallback below safe.  It used to be the other way round, main thread
+    // first, and a submit that failed part way through set band_main_x2 to the
+    // full width -- so the main thread redrew columns a worker was drawing at
+    // that moment.  Two threads writing the same pixels, which is the torn
+    // sprite the comment above warns about.
+    //
+    // It was unreachable, because nbands is never more than workers+1 and the
+    // only other failure needs x2 <= x1.  But it was one edit from reachable
+    // and the failure would have been blamed on the drawers.  With the main
+    // thread last, everything already submitted lies to the LEFT of the failed
+    // band, so the main thread can simply extend its own band leftwards to the
+    // failure point and the tiling stays exact.
+    band_main_x1 = (width * (nbands - 1)) / nbands;
+    band_main_x2 = width;
 
-    for( b = 1; b < nbands; b++ )
+    // ##BANDSERIAL## bisection: draw every band on this thread, one after
+    // another, so "is the band clipping right?" can be told apart from "do the
+    // band threads race?".  Read once -- this is per frame, and getenv walks
+    // the environment.
+    static int band_serial = -1;
+    if( band_serial < 0 )  band_serial = (getenv("DL_BAND_SERIAL") != NULL);
+
+    for( b = 0; b < nbands - 1; b++ )
     {
         int x1 = (width * b) / nbands;
         int x2 = (width * (b + 1)) / nbands;
 
-        // ##BANDSERIAL## bisection: draw every band on this thread, one after
-        // another, so "is the band clipping right?" can be told apart from
-        // "do the band threads race?".
-        if( getenv("DL_BAND_SERIAL") )
+        if( band_serial )
         {
             R_Set_View_Window( 0 );
             R_Set_Render_Band( x1, x2 );
@@ -904,8 +922,10 @@ static byte  D_Submit_Threaded_Bands( player_t * vpl )
         }
         else
         {
-            // No worker took it, so the main thread must cover it too.
-            band_main_x2 = width;
+            // No worker took this one.  Bands 0 .. b-1 are in flight and cover
+            // [0, x1); the main thread takes [x1, width) and the view is still
+            // tiled exactly once.
+            band_main_x1 = x1;
             break;
         }
     }
@@ -1078,7 +1098,12 @@ static void  D_Submit_Threaded_Views( void )
             submitted_views++;
             threaded_view_mask |= (1 << vind);
             // ##BENCH## bisection: one view at a time, still on a worker.
-            if( getenv("DL_RTHREAD_SERIAL") )
+            // Read once; this is per view per frame and getenv walks the
+            // environment.
+            static int rthread_serial = -1;
+            if( rthread_serial < 0 )
+                rthread_serial = (getenv("DL_RTHREAD_SERIAL") != NULL);
+            if( rthread_serial )
                 R_Threads_Wait();
         }
     }
@@ -4662,6 +4687,13 @@ fatal_error_action:
 
         if( p == 2500 )
         {  // timedemo
+            // [Arcade] Quit when the timing is done, exactly as -playdemo
+            // does.  Without this the engine printed its result and then fell
+            // into the attract cycle, so a -timedemo named on the command line
+            // never ended and a script got no exit code from it.  See
+            // G_CheckDemoStatus.
+            singledemo = true;  // quit after one demo
+            HS_Clear_DemoLabel();
             G_TimeDemo(demo_name);
         }
         else

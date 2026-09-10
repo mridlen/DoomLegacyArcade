@@ -544,6 +544,15 @@ runtime DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer p
 longer list than anyone guesses. **The resulting binary has not been played**, only started, so
 treat the first real session as the shakedown.
 
+There is no unit test suite. The two checks that exist are `make smoke`, which starts the built
+binary headlessly and exercises startup, level setup, a level exit and the OpenGL path, and
+`make demotest`, which replays all of the cabinet's record demos and verifies the simulation is
+unchanged tic by tic. Run the second after **anything that could affect how the game plays** — the
+demos on the cabinet are people's high scores, and a gameplay change does not just alter them, it
+invalidates them. Record the reference once with `make demotest_baseline` while the code is known
+good; after that `make demotest` answers in three lines, in about forty seconds. See
+`docs/arcade/demo-desync.md`.
+
 ### The manual way
 
 Build from `svn1749/src`. First time only, copy the platform options file and make three edits:
@@ -1111,6 +1120,8 @@ like any other, so they only stick from a `-devmode` session.
 | `-v` | Verbose startup, showing which files were found |
 | `-nonodebuild` | Don't rebuild the level's BSP nodes at load — the slime-trail fix, off |
 | `-frameprofile` | Print a breakdown of where each frame's time actually goes |
+| `-playdemo <file>` | Replay a record demo from `legacyhome/demos`, then quit |
+| `-synclog` | While recording or replaying a demo, write one line of simulation state per tic to `synclog_rec.txt` / `synclog_play.txt`. Diff the two and the first differing line is where a demo went out of sync |
 | `-noendtext` | Skip the exit text screen |
 | `--version` | Print the version and what it is a fork of, and exit |
 

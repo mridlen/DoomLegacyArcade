@@ -324,7 +324,7 @@ int VIDGL_SetVidMode( viddef_t *lvid, vmode_t *pcurrentmode )
 
     WasFullScreen = WantFullScreen;
 
-    return 1;               // on renvoie une valeur pour dire que cela s'est bien passé
+    return 1;               // on renvoie une valeur pour dire que cela s'est bien passÃ©
 }
 
 
@@ -473,7 +473,7 @@ EXPORT void HWRAPI( FinishUpdate ) ( int waitvbl )
 {
     // DBG_Printf ("FinishUpdate()\n");
 #ifdef DEBUG_OGL_TO_FILE
-    if( (++nb_frames)==2 )  // on ne commence pas à la première frame
+    if( (++nb_frames)==2 )  // on ne commence pas Ã  la premiÃ¨re frame
         my_clock = clock();
 #endif
     // TODO: implement waitvbl
@@ -511,7 +511,7 @@ EXPORT void HWRAPI( SetPalette ) ( RGBA_t* pal, RGBA_t *gamma )
         glColorTableEXT(GL_TEXTURE_2D, GL_RGB8, 256, GL_RGB, GL_UNSIGNED_BYTE, palette_tex);
     }
 #endif
-    // on a changé de palette, il faut recharger toutes les textures
+    // on a changÃ© de palette, il faut recharger toutes les textures
     Flush_GL_textures();
 }
 

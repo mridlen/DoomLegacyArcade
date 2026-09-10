@@ -122,8 +122,8 @@ vmode_t * currentmode_p = NULL; // the current active videomode.
 
 
 // table des modes videos.
-// seul le mode 320x200x256c standard VGA est support‚ sans le VESA.
-// ce mode est le mode num‚ro 0 dans la liste.
+// seul le mode 320x200x256c standard VGA est supportÃ© sans le VESA.
+// ce mode est le mode numÃ©ro 0 dans la liste.
 typedef struct
 {
     int modenum;            // vesa vbe2.0 modenum

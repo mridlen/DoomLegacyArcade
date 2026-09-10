@@ -1,0 +1,22 @@
+# Demos that are not usable as regression fixtures.
+#
+# One name per line, then whitespace, then the reason.  Blank lines and lines
+# starting with # are ignored.  tools/demotest.sh counts these separately and
+# does not fail on them.
+#
+# Quarantine is for a demo whose *playback is not reproducible*.  It is NOT for
+# a demo that desyncs against the run it originally recorded: this harness
+# compares one playback against another playback of the same file, so a demo
+# that no longer reproduces its original run is still a perfectly good fixture
+# -- it just has to replay the same way twice.  Deciding a demo is unusable
+# because it "already desyncs" would throw away coverage for no reason.
+#
+# Nor is it for a demo that merely *stops* at a different tic each run: that is
+# common (any demo ending with the player standing still does it) and the
+# comparison handles it by checking the shared prefix.  doomu_ep1_sk0_max.lmp
+# was quarantined for exactly that before the prefix comparison existed, and
+# has been returned to the suite.
+#
+# Keep this list short and keep the reasons specific.  Every name here is a
+# demo that is no longer watching for regressions, so an entry is a real cost,
+# not a tidy-up.  It is currently empty, which is where it should stay.

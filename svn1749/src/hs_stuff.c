@@ -399,6 +399,23 @@ boolean  HS_Ruleset_Is_Ranked( void )
 }
 
 
+// [Arcade] Does the ranked ruleset pin this cvar, and to what?  See hs_stuff.h.
+boolean  HS_Ruleset_Pins( struct consvar_s * cv, int * out_val )
+{
+    unsigned int i;
+
+    for( i = 0; i < HS_NUM_RULES; i++ )
+    {
+        if( hs_ranked_rules[i].cv == (consvar_t*) cv )
+        {
+            if( out_val )  *out_val = hs_rule_expected( &hs_ranked_rules[i] );
+            return true;
+        }
+    }
+    return false;
+}
+
+
 static tic_t   hs_cumulative_time = 0;
 // Is each category still achievable this run?  Latched false and never set
 // true again until HS_NewGame.  Indexed by HS_CAT_*; speed stays true.
@@ -871,6 +888,15 @@ static void HS_Load( void )
             {
                 if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
             }
+            // [Arcade] Say so rather than filing it under speed in silence.
+            // These files are plain text an operator may edit, and a typo in
+            // the category otherwise moves a record onto a board it does not
+            // belong to with nothing said.
+            if( i >= HS_NUMCAT )
+                GenPrintf(EMSG_warn,
+                          "High scores: unknown category \"%s\" for %s %s,"
+                          " filed under %s.\n",
+                          catname, game, mapname, hs_catname[HS_CAT_speed]);
         }
 
         hs_maprecord_t * rec = HS_FindOrAddRecord(game, mapname);
@@ -1043,6 +1069,25 @@ static void HS_Runs_Load( void )
         {
             if( strcasecmp(catname, hs_catname[i]) == 0 )  { cat = i; break; }
         }
+        // [Arcade] As in HS_Load: name a category we do not recognise.
+        if( i >= HS_NUMCAT )
+            GenPrintf(EMSG_warn,
+                      "Run board: unknown category \"%s\" for %s %s,"
+                      " filed under %s.\n",
+                      catname, game, endmap, hs_catname[HS_CAT_speed]);
+
+        // "---" is the placeholder written for a run nobody claimed, and "-"
+        // the one for an unknown start map; read both back as empty so one
+        // code path covers them.  A placeholder taken literally becomes a
+        // value, which is how "--E4M1" happened in the split table.
+        //
+        // Both of these must happen BEFORE the copies below.  The start map
+        // one used to sit ten lines further down, after its own dl_strncpy had
+        // already run, so it cleared a local nothing read again and the "-"
+        // reached the record verbatim -- the exact bug the comment above
+        // describes, fixed in HS_Load and missed here.
+        if( strcmp(initials, "---") == 0 )  initials[0] = 0;
+        if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
 
         hs_run_t * r = &hs_runs[hs_runs_count++];
         memset(r, 0, sizeof(*r));
@@ -1052,12 +1097,6 @@ static void HS_Runs_Load( void )
         r->skill = (byte) skillnum;
         r->cat   = (byte) cat;
         r->tics  = (tic_t) tics;
-        // "---" is the placeholder written for a run nobody claimed, and "-"
-        // the one for an unknown start map; read both back as empty so one
-        // code path covers them.  A placeholder taken literally becomes a
-        // value, which is how "--E4M1" happened in the split table.
-        if( strcmp(initials, "---") == 0 )  initials[0] = 0;
-        if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
         dl_strncpy(r->initials, initials, HS_INITIALS_LEN);
     }
 

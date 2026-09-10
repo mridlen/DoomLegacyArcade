@@ -632,3 +632,46 @@ see below.
 - Single player: **no change is expected.** One view is one thread. Splitting a single view into
   column bands across cores is the obvious next step and is not done yet; the `R_TLS` groundwork
   is what it needs, and that is now in place.
+
+## A pixel diff that was not a race
+
+Worth recording, because the method looked sound and was not.
+
+Comparing `render_threads` 1 against 4 with `tools/shotsheet.py` reported 6531
+of 921600 pixels different (0.7%), scattered over most of the frame. The
+control — the same 1-thread configuration captured twice — came back
+byte-identical, which appeared to establish that the capture was deterministic
+and therefore that threading was changing the picture. Two runs at 4 threads
+then differed from *each other* by 585 pixels, which looked like the clinching
+evidence of a race.
+
+All of it was one tic of timing.
+
+`--nomonsters` removes monsters. It does not stop an animated pickup cycling
+its frames, and it does not stop the level clock. The screenshot is triggered
+by `wait 105` from an autoexec, and the command lands on tic 104 or tic 105
+depending on how the loop happened to schedule — the serial path is stable
+enough to always land on 104, which is exactly why the 1-vs-1 control passed
+and gave false confidence in the method.
+
+Measured, with the engine reporting the tic it captured on:
+
+| threads | capture tic | image |
+| --- | --- | --- |
+| 1 | 104 | `befdbd36ab6f` |
+| 1 | 104 | `befdbd36ab6f` |
+| 4 | **105** | `b590c816de43` |
+| 4 | 104 | `befdbd36ab6f` |
+| 4 | 104 | `befdbd36ab6f` |
+
+**At the same tic the threaded frame is byte-identical to the serial one**, which
+is what the rule at the top of this file requires and what the threading work
+was built to guarantee. There was no race.
+
+Two things to take from it. First, **a control that only varies the thing you
+are not testing proves nothing about your method** — the 1-vs-1 control varied
+nothing that mattered. Pin the tic and compare that, or compare nothing.
+Second, this was caught by a person looking at the picture and saying "that's
+the armour bonus, it has glowing eyes, and that's the clock" — the numeric
+comparison had no way to say *what* had changed, only how much. Hand over the
+image.

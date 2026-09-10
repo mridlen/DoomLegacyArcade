@@ -283,6 +283,43 @@ void R_Use_Play_BSP( void )
     render_bsp_active = false;
 }
 
+
+// [Arcade] NetUpdate from inside a frame, with the wad's own BSP in force.
+//
+// Both renderers service the network as they draw, so a slow frame does not
+// stall the client/server tick: R_RenderPlayerView calls NetUpdate four times
+// on the way past (r_main.c), HWR_RenderPlayerView three (hw_main.c).  Every
+// one of those sits inside the window where R_Use_Render_BSP has the *rebuilt*
+// tree swapped into nodes/segs/subsectors/vertexes.
+//
+// And NetUpdate runs D_Process_Events -- the menu, console and game
+// responders.  That is simulation code, and the rule right above says nothing
+// outside rendering may run while the swap is in force, because p_sight.c and
+// the R_PointInSubsector callers are spread across the play side and must
+// always see the wad's own tree or gameplay and recorded demos change.  The
+// invariant was stated here and then broken by calls the renderers were
+// already making, in both of them, with the hardware path -- the one the
+// cabinet actually runs -- calling NetUpdate directly rather than through any
+// guard at all.
+//
+// Putting the tree back for the duration is the fix, rather than skipping the
+// call: these NetUpdate calls carry tic timing, and a frame must make exactly
+// the ones it always made.  One fewer is as much of a gameplay change as one
+// more, and would reject every record demo on the cabinet just as surely.
+void  R_NetUpdate_In_Frame( void )
+{
+    boolean  swapped = render_bsp_active;
+
+    if( swapped )  R_Use_Play_BSP();
+
+    NetUpdate();
+
+    // If NetUpdate loaded a level, rbsp_* now belongs to the new one and
+    // P_SetupLevel has already cleared the swap; R_Use_Render_BSP declines
+    // when there is no rebuilt tree, so this is safe in that case too.
+    if( swapped )  R_Use_Render_BSP();
+}
+
 uint32_t        numlines;
 line_t*         lines;
 
@@ -2571,6 +2608,20 @@ boolean P_SetupLevel (int      to_episode,
     GenPrintf( (verbose? EMSG_ver : EMSG_console),
                "Setup Level\n" );
 
+    // [Arcade] Drop any render BSP swap before anything touches the level.
+    //
+    // This used to sit further down, just above P_Rebuild_Nodes -- which is
+    // *after* every node loader has already written the new level's
+    // nodes/segs/subsectors/vertexes.  If the swap had still been in force on
+    // entry, restoring it there would have overwritten the level just loaded
+    // with the previous level's saved pointers, which by then are freed
+    // PU_LEVEL memory.  A guard that corrupts the thing it is guarding is
+    // worse than no guard.
+    //
+    // It has to be here, before the loaders, where "put the globals back" and
+    // "the globals describe the old level" are still the same statement.
+    R_Use_Play_BSP();
+
     //Initialize Boom sector node list.
     P_Init_Secnode();
 
@@ -2840,7 +2891,9 @@ boolean P_SetupLevel (int      to_episode,
     // [Arcade] Build the rendering BSP.  Everything below (P_GroupLines,
     // HWR_SetupLevel) still works from the wad's own tree, which stays in
     // nodes/segs/subsectors; only the renderer swaps to the rebuilt one.
-    R_Use_Play_BSP();   // in case a previous level left it swapped
+    // (The "in case a previous level left it swapped" restore that used to be
+    // here has moved to the top of this function, above the node loaders --
+    // here it would have put the *old* level's pointers over the new level's.)
     rbsp_nodes = NULL;  rbsp_subsectors = NULL;
     rbsp_segs = NULL;   rbsp_vertexes = NULL;
     rbsp_numnodes = rbsp_numsubsectors = rbsp_numsegs = rbsp_numvertexes = 0;

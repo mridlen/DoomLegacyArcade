@@ -811,6 +811,53 @@ geometry and must be cut from the tree the renderer walks). Everything else -- `
 `P_Remove_Slime_Trails`, the whole simulation -- sees the WAD's own tree, so gameplay is identical
 to stock **by construction**, not by luck.
 
+#### ...except that the renderers ran simulation code inside the swap
+
+"By construction" was not quite true, and stayed untrue for a while. Both renderers service the
+network while they draw, so a slow frame does not stall the client/server tick -- and every one of
+those calls sits *inside* the swap window:
+
+| | calls | how |
+| --- | --- | --- |
+| `R_RenderPlayerView` (`r_main.c`) | 4 | via `R_NetUpdate_Main` |
+| `HWR_RenderPlayerView` (`hw_main.c`) | 3 | bare `NetUpdate()`, no guard at all |
+
+`NetUpdate` runs `D_Process_Events` -- the menu, console and game responders. That is simulation
+code, running with the rebuilt tree in the globals, in flat contradiction of the rule above. The
+hardware path is the one the cabinet runs.
+
+**Measured** on the GL path (`SDL_VIDEODRIVER=offscreen`, one 454-frame demo), with a counter on
+the swap flag at each call:
+
+    1362 of 1362 in-frame NetUpdate calls had the rebuilt tree swapped in
+
+All of them, about 105 times a second. Nothing had gone visibly wrong -- a responder has to actually
+reach `R_PointInSubsector` or `p_sight.c` for it to matter, and menus mostly do not -- but the
+window was wide open every frame the machine was on.
+
+The fix is `R_NetUpdate_In_Frame()` (`p_setup.c`): put the play tree back, call `NetUpdate`, swap
+the render tree in again. Use it instead of `NetUpdate` anywhere between `R_Use_Render_BSP` and
+`R_Use_Play_BSP`.
+
+**Not** by skipping the call. Those `NetUpdate`s carry tic timing, and a frame must make exactly the
+ones it always made -- one fewer is as much a gameplay change as one more, and would reject every
+record demo on the cabinet just as surely.
+
+The other half was `P_SetupLevel`'s own defensive `R_Use_Play_BSP()`, which sat **after** every node
+loader had already written the new level's `nodes`/`segs`/`subsectors`/`vertexes`. Had the swap ever
+still been in force on entry, that call would have pasted the *previous* level's saved pointers --
+freed `PU_LEVEL` memory by then -- over the level just loaded. A guard that corrupts the thing it
+guards is worse than no guard. It now runs at the top of the function, before the loaders, where
+"put the globals back" and "the globals describe the old level" are still the same statement.
+
+**A caution about how this was verified.** `make demotest` stayed green across all 94 demos, which
+says the change altered no gameplay -- but it does **not** say the fixed path was exercised. The
+demo harness runs with `-nodraw`, and under `SDL_VIDEODRIVER=dummy` the player-view render is never
+reached at all: `D_Display` was entered 457 times in that same run and `R_RenderPlayerView` zero.
+The renderer is only exercised headlessly under `SDL_VIDEODRIVER=offscreen`, which is what produced
+the 1362 above and what `make smoke`'s `opengl` check uses. Green demos plus green smoke is the
+right pair here; neither alone would have covered it.
+
 **Measured**, same binary, on the E1M6 ITYTD speed record demo to tic 3900, 112 samples of the
 player's position, angle and health:
 
@@ -940,3 +987,56 @@ in the same way, and a corrupted library gives a perfectly plausible stack point
 code. `sudo debsums -s` audits every installed file; a couple of `rpi-*` config files reported as
 changed is normal (the Pi's own first-boot scripts rewrite them), flagged binaries or libraries are
 not.
+
+## The encoding trap, and how it was closed
+
+Fourteen files in this tree were not valid UTF-8, and **plain `grep` skips such
+a file silently** — no match, no warning, no non-zero exit. A sweep for
+`R_Cache_Lock` during a review came back with four of its six call sites,
+because `r_segs.c` was one of the fourteen. Nothing in the output said so.
+
+`file` does not reliably identify them either. It called `hardware/hw_main.c`
+and `p_map.c` plain "ASCII text", and `r_segs.c` "ASCII text, with NEL line
+terminators" — that NEL is a stray `0x85`, and it is exactly what makes grep
+treat the file as binary.
+
+The reliable detection is to ask grep itself, by comparing a normal count with
+a forced-text one:
+
+    for f in $(find svn1749/src -name '*.c' -o -name '*.h'); do
+        [ "$(grep -c "" $f)" = "$(grep -ac "" $f)" ] || echo "SKIPPED: $f"
+    done
+
+### Why iconv was the wrong tool
+
+All 33 offending bytes were inside comments — French notes from the original
+Legacy authors — and none were in a string literal or in code, which is what
+made a conversion safe at all. But they came from **three different legacy
+encodings**, so converting the lot from any single one would have turned the
+other two into mojibake:
+
+| byte | meant | encoding | seen in |
+| --- | --- | --- | --- |
+| `0xE0 0xE7 0xE8 0xE9 0xEA 0xF4 0xF9` | `à ç è é ê ô ù` | latin-1 | `déterminée`, `carré`, `intéressantes` |
+| `0xB0 0xB7` | `° ·` | latin-1 | `90°`, a fog formula |
+| `0x82` | `é` | **cp437** | `supporté`, `numéro`, `portée`, `départ` |
+| `0x85` | `à` | **cp437** | `à la 4dos`, `à la Boom` |
+| `0x96` | `–` | **cp1252** | `(1e–kw)` in the Glide fog notes |
+
+The cp437 ones are DOS-era files; `0x82` in latin-1 is a control character, and
+would have produced an invisible byte where an `é` belongs. Each one was read
+from the surrounding French rather than guessed.
+
+### How it was verified
+
+Comments do not reach the compiler, so a correct conversion must leave the
+output bit-identical. Object files were saved before and compared after:
+
+**124 of 125 identical.** The one that differed was `d_main.o`, which was not
+among the converted files — it embeds `DLA_VERSION` from the version-describe
+step, and the working tree had gone from clean to dirty. Confirmed by reading
+the strings out of both objects.
+
+That is the check to repeat if this is ever done again: convert, rebuild,
+compare objects. Anything that differs beyond the version string means a byte
+was changed somewhere the compiler could see it.
