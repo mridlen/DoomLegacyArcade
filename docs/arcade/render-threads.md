@@ -812,6 +812,42 @@ cost of that size, regardless of the picture, points at the part that does
 not scale with the picture: the scale to the full panel, the clear, and the
 swap, all at the desktop's resolution.
 
+#### The desktop resolution: the biggest single lever on the Pi
+
+That fixed cost suggested one experiment that needed no code: Mark moved the
+Pi's desktop from 1920x1080 to 1280x720 and ran the same build again (Row
+Padding On both times). Every size got faster:
+
+| size | 1920x1080 desktop | 1280x720 desktop | views | present | expand |
+| --- | --- | --- | --- | --- | --- |
+| 320x200 | 114 fps | **166** | 3.50 -> 2.81 | 4.33 -> 2.32 | 0.50 -> 0.42 |
+| 640x350 | 75 | **93** | 4.77 -> 4.29 | 7.32 -> 5.38 | 1.41 -> 0.95 |
+| 640x480 | 62 | **77** | 5.54 -> 4.99 | 9.03 -> 6.74 | 2.12 -> 1.20 |
+| 800x600 | 48 | **56** | 7.28 -> 6.89 | 12.18 -> 9.68 | 3.39 -> 1.87 |
+| 1024x768 | 31 | **35** | 10.36 -> 9.47 | 20.11 -> 17.25 | 4.66 -> 2.95 |
+
+(The 320x200 "before" is from the Row-Padding-Off chart, because the On
+chart's first size ran cold. Padding does not change 320x200.)
+
+Two effects, and the second is the more interesting one:
+
+- **The GPU has 2.25x fewer pixels to fill.** The present's fixed part
+  (present minus expand at 320x200) went from 3.8 to 1.9 ms, close to the
+  pixel ratio.
+- **The CPU got faster at things the change did not touch.** Views fell about
+  10%, and the expansion, which is pure memory traffic, fell by up to 45%. The
+  Pi 3's CPU and VideoCore share one LPDDR2 bus. Scanning a 1080p framebuffer
+  out to the monitor alone is 1920x1080x4x60, about 500 MB/s, before any
+  scaling. At 720p it is about 220 MB/s. What the display stops using, the
+  CPU gets.
+
+So on a Pi the desktop resolution is a performance setting, and a big one.
+The README now says to set it to 1280x720, and perfchart's header records the
+size frames are scaled to (`SDL renderer: ..., output WxH`, printed by the
+engine at renderer creation), because two charts that differ only in this
+look identical otherwise. It also means drawing sizes taller than the desktop
+are pure waste there: they are drawn and then shrunk.
+
 ### Not done yet
 
 Ranked by expected payoff on the Pi. None is started. Measure each with
@@ -819,13 +855,13 @@ Ranked by expected payoff on the Pi. None is started. Measure each with
 
 1. **The rest of the present, which on the Pi is GPU work.** See "What the Pi
    said": the present waits on the VideoCore, so CPU savings before it do not
-   show. Cut what the GPU does per frame instead. The fixed ~4 ms even at
-   320x200 is the scale, the clear and the swap at the desktop's resolution, so
-   first try a lower desktop resolution on the Pi (1280x720 instead of 1920x1080
-   is 2.25x fewer pixels to fill). If that helps, a real mode switch for
-   software fullscreen would do it without touching the desktop. The per-pixel
-   part is the texture upload, which Mesa's vc4 driver retiles on the CPU. A
-   16-bit (RGB565) texture would halve it, at the cost of colour precision.
+   show. The desktop resolution was the first lever and is done, as an
+   operator setting (1280x720; see "The desktop resolution"). A real mode
+   switch for software fullscreen would get the same without the operator
+   changing the desktop, and would let a 1920x1080 desktop run the game at
+   720p. The per-pixel part left is the texture upload, which Mesa's vc4
+   driver retiles on the CPU. A 16-bit (RGB565) texture would halve it, at the
+   cost of colour precision.
 2. **Idle cores with two or three players.** More than one view means one view
    per thread and no bands, so two players on four cores leave two idle. Split
    each view into bands as well.

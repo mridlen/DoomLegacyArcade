@@ -490,50 +490,62 @@ a fanless machine in a sealed cabinet won't thermally throttle.
 ### Performance
 
 **A Raspberry Pi 3 is enough**, and that is the point of the threaded renderer. Measured on a Pi 3
-Model B — quad-core Cortex-A53 at 1.2 GHz — with the **software** renderer, **Render Threads** on
-(`Auto`) and **8bpp Draw** on, by `tools/perfchart.py`: the UV speed demo of E1M1 played flat out at
-each size, vsync off, so the numbers are what the board can draw rather than what the screen shows.
+Model B — quad-core Cortex-A53 at 1.2 GHz — set up the way this section recommends: the **software**
+renderer, **Render Threads** `Auto`, **8bpp Draw** on, **Row Padding** on, and the Pi's desktop at
+**1280x720**. Measured by `tools/perfchart.py`: the UV speed demo of E1M1 played flat out at each
+size, vsync off, so the numbers are what the board can draw rather than what the screen shows.
 Smallest first (September 2026). To make the same table for your own machine, see
 [Choosing a resolution, and tuning performance](#choosing-a-resolution-and-tuning-performance):
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
-| 320x200 | 16:10 | 114 |
-| 320x240 | 4:3 | 113 |
-| 400x300 | 4:3 | 99 |
-| 512x384 | 4:3 | 78 |
-| 640x350 | ~16:9 | **73** |
-| 640x360 | 16:9 | 72 |
-| 640x400 | 16:10 | 68 |
-| 720x400 | ~16:9 | 62 |
-| 640x480 | 4:3 | 62 |
-| 720x480 | 3:2 | 58 |
-| 768x480 | 16:10 | 55 |
-| 800x500 | 16:10 | 53 |
-| 864x486 | 16:9 | 51 |
-| 800x600 | 4:3 | 46 |
-| 960x540 | 16:9 | 45 |
-| 928x580 | 16:10 | 43 |
-| 960x600 | 16:10 | 39 |
-| 1024x576 | 16:9 | 33 — **38** with Row Padding |
-| 1024x768 | 4:3 | 21 — **31** with Row Padding |
-| 1152x720 | 16:10 | 32 |
-| 1280x720 | 16:9 | 27 |
-| 1152x864 | 4:3 | 25 |
-| 1280x800 | 16:10 | 27 |
-| 1280x960 | 4:3 | 23 |
+| 320x200 | 16:10 | 166 |
+| 320x240 | 4:3 | 158 |
+| 400x300 | 4:3 | 135 |
+| 512x384 | 4:3 | 105 |
+| 640x350 | ~16:9 | 93 |
+| 640x360 | 16:9 | 94 |
+| 640x400 | 16:10 | 86 |
+| 720x400 | ~16:9 | 80 |
+| 640x480 | 4:3 | 77 |
+| 720x480 | 3:2 | 71 |
+| 768x480 | 16:10 | 68 |
+| 800x500 | 16:10 | 63 |
+| 864x486 | 16:9 | 61 |
+| 800x600 | 4:3 | 56 |
+| 960x540 | 16:9 | 53 |
+| 928x580 | 16:10 | 51 |
+| 960x600 | 16:10 | 48 |
+| 1024x576 | 16:9 | 44 |
+| 1024x768 | 4:3 | 35 |
+| 1152x720 | 16:10 | 34 |
+| 1280x720 | 16:9 | 33 |
+| 1152x864 | 4:3 | 32 — taller than the desktop, see below |
+| 1280x800 | 16:10 | 31 — taller than the desktop |
+| 1280x960 | 4:3 | 27 — taller than the desktop |
 
-**These are benchmark numbers; a busy fight runs slower.** The demo is the opening of E1M1, and in
-play the same Pi read lower at the middle and large sizes: 640x350 gave 61–64 with **Framerate Cap**
-`Uncapped`, against 73 here. **On a 60 Hz panel, 640x350 is the sweet spot**: in play it is the
-biggest size that stayed above 60, and 512x384 does it with room to spare. Anything above the panel's
-refresh rate is never shown, so for play set **Framerate Cap** to the panel's rate (60) rather than
-leaving it uncapped. Uncapped is for measuring, and on a Pi it only adds heat.
+**On a Pi, set the desktop to 1280x720.** The game draws at whatever size you pick, then the Pi's
+graphics chip scales that picture up to the full desktop every frame — and with the desktop at
+1920x1080 the chip was filling, and sending to the monitor, 2.25 times as many pixels. Worse, the
+graphics chip and the processor share one memory bus, so all that traffic slowed the processor's own
+drawing as well. Dropping the desktop from 1920x1080 to 1280x720 made every size faster, by 14% at
+1024x768 up to 46% at 320x200: 640x480 went from 62 fps to 77, 640x350 from 75 to 93. There is no
+point drawing more lines than the desktop has, so on a 720p desktop leave the three sizes taller than
+720 lines alone; they are drawn big and then shrunk.
+
+**These are benchmark numbers; play runs slower.** The demo is the opening of E1M1, and in play the
+same Pi read about 15% lower: with the desktop at 1920x1080, 640x350 gave 61–64 in play against 72–75
+in the benchmark. **On a 60 Hz panel, aim for about 75 here to hold 60 in play** — 640x480 or smaller
+on a 1280x720 desktop, and 512x384 if you want room to spare in the busiest fights — and check it with
+**Show Ticrate** on in the busiest level you have. Anything above the panel's refresh rate is
+never shown, so for play set **Framerate Cap** to the panel's rate (60) rather than leaving it
+uncapped. Uncapped is for measuring, and on a Pi it only adds heat.
 
 **On a Pi, turn Row Padding on** (Performance Options). Without it the two 1024-wide sizes take
-about twice as long to draw as their neighbours; with it 1024x768 goes from 21 fps to 31 and
-1024x576 from 33 to 38. At every other size it made no difference beyond the run-to-run noise.
-(640x360 and 864x486 used to be slow for their size as well. That was the engine, and is fixed.)
+about twice as long to draw as their neighbours: with the desktop at 1920x1080, 1024x768 went from
+21 fps to 31 with it on, and 1024x576 from 33 to 38. At every other size it made no difference
+beyond the run-to-run noise. (640x360 and 864x486 used to be slow for their size as well. That was
+the engine, and is fixed.)
 
 **Four players cost about the same as one** — within a couple of FPS at every size it was checked
 at. With one player the renderer cuts the single view into vertical bands, one per core; with four
@@ -1323,9 +1335,9 @@ Its IWAD wasn't found. Run with `-v` and check the search paths reported at star
 **The game runs slowly, or the frame rate is choppy.**
 Options → Video Options → **Performance Options**, with **Show Ticrate** on so you can see what each
 change does. On a Pi or another low-power board: use the **software** drawmode, turn **Render
-Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — on a Pi 3 Model B, 640x350 is the
-biggest that holds 60 FPS and 512x384 holds it with room to spare. See [Performance](#performance)
-for measured numbers. On a desktop, use OpenGL and check
+Threads** to `Auto`, turn **8bpp Draw** and **Row Padding** on, set the Pi's desktop to 1280x720,
+and drop the resolution — on a Pi 3 Model B with a 1280x720 desktop, 640x480 or smaller should hold
+60 FPS in play and 512x384 has room to spare. See [Performance](#performance) for measured numbers. On a desktop, use OpenGL and check
 **Framerate Cap** matches the panel's refresh rate.
 
 **My monitor's resolution isn't in the Video Modes list.**

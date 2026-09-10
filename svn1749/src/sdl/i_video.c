@@ -1382,10 +1382,19 @@ void  VID_SetMode_vid( int req_width, int req_height, int req_fullscreen )
         SDL_RendererInfo ri;
         if( SDL_GetRendererInfo( sdl_renderer, &ri ) == 0 )
         {
-            GenPrintf( EMSG_warn, "SDL renderer: %s (%s%s)\n",
+            // [Arcade] And the size every frame is scaled to.  On a Pi 3
+            // dropping the desktop from 1920x1080 to 1280x720 was worth
+            // 15-45% at every drawing size -- the GPU fills and scans out
+            // fewer pixels, and it shares the memory bus with the CPU -- so a
+            // benchmark that does not say which it ran on cannot be compared.
+            // tools/perfchart.py reads this line.
+            int out_w = 0, out_h = 0;
+            SDL_GetRendererOutputSize( sdl_renderer, &out_w, &out_h );
+            GenPrintf( EMSG_warn, "SDL renderer: %s (%s%s), output %dx%d\n",
                 ri.name ? ri.name : "?",
                 (ri.flags & SDL_RENDERER_ACCELERATED)? "accelerated" : "SOFTWARE",
-                (ri.flags & SDL_RENDERER_PRESENTVSYNC)? ", vsync" : "" );
+                (ri.flags & SDL_RENDERER_PRESENTVSYNC)? ", vsync" : "",
+                out_w, out_h );
         }
     }
 #endif

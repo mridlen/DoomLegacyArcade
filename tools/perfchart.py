@@ -39,7 +39,9 @@ worse than none:
     first run of a chart starts cold and read up to a quarter slow on the Pi.
   * The header lists the settings that change the numbers -- the ones the
     chart forces, and the ones it takes from the config (Row Padding, view
-    size, frame cap), so two charts can always be told apart.
+    size, frame cap), so two charts can always be told apart.  And the size
+    the frames are scaled to, which is the desktop in software fullscreen: on
+    a Pi 3, 1280x720 instead of 1920x1080 was worth 15-45% at every size.
   * The engine's result line says what it drew ("640x480 8bpp software").  A
     size the engine did not actually use is reported, not credited.
   * Every size must play the same number of game tics.  Drawing cannot change
@@ -113,6 +115,8 @@ SETTINGS = [('drawmode', 'Software 8bit'),
 # two charts of one build, one with Row Padding and one without, looked
 # identical at the top until this was added.
 REPORTED = ('row_padding', 'viewsize', 'framerate_cap')
+# Their compiled defaults, for a config that has no line for one yet.
+REPORTED_DEFAULT = {'row_padding': 'Off', 'viewsize': '10', 'framerate_cap': '60'}
 
 GAMES = ('doom1', 'doomu', 'doom2', 'tnt', 'plutonia', 'heretic', 'hexen',
          'freedoom1', 'freedoom2', 'freedm', 'chex')
@@ -124,6 +128,9 @@ PROFILE = re.compile(r'timedemo profile: (\d+) frames, ms per frame: tics ([0-9.
                      r'views ([0-9.]+) present ([0-9.]+) hud/other ([0-9.]+) total ([0-9.]+)'
                      r'(?: expand ([0-9.]+))?')
 RENDER = re.compile(r'^Render: (.*)$', re.M)
+# The size SDL scales each frame to -- the desktop, for software fullscreen.
+# The last one wins: the renderer is made again at the mode set.
+OUTPUT = re.compile(r'^SDL renderer: .*, output (\d+)x(\d+)\s*$', re.M)
 VERSION = re.compile(r'Doom Legacy Arcade (v\S+)')
 
 SHAPES = [('4:3', 4 / 3), ('16:10', 16 / 10), ('16:9', 16 / 9), ('3:2', 3 / 2),
@@ -278,7 +285,8 @@ def config_values(rd, keys):
     out = []
     for k in keys:
         m = re.search(r'(?m)^%s\s+"?([^"\n]*)"?\s*$' % re.escape(k), text)
-        out.append((k, m.group(1) if m else 'default'))
+        out.append((k, m.group(1) if m else
+                    '%s (default)' % REPORTED_DEFAULT.get(k, '?')))
     return out
 
 
@@ -317,6 +325,9 @@ def run_one(rd, game, w, h, headless, timeout, extra):
     m = RENDER.search(log)
     if m:
         r['render'] = m.group(1).strip()
+    outs = OUTPUT.findall(log)
+    if outs:
+        r['output'] = '%sx%s' % outs[-1]
     m = VERSION.search(log)
     if m:
         r['version'] = m.group(1)
@@ -448,7 +459,7 @@ def main():
             split = {'views': [], 'present': [], 'other': [], 'expand': []}
             for n in range(a.runs):
                 r = run_one(rd, game, w, h, a.headless, a.timeout, extra)
-                for k in ('render', 'version', 'renderer', 'bpp'):
+                for k in ('render', 'version', 'renderer', 'bpp', 'output'):
                     if k in r and k not in info:
                         info[k] = r[k]
                 if 'error' in r:
@@ -534,7 +545,9 @@ def main():
                               + reported),
                     ', headless' if a.headless else ''))
     if info.get('render'):
-        lines.append('Renderer: %s.' % info['render'])
+        lines.append('Renderer: %s.%s' % (info['render'],
+                     (' Frames scaled to %s (the display).' % info['output'])
+                     if info.get('output') else ''))
     lines.append('')
     has_temp = any(r['temp'] is not None for r in rows)
     has_split = any(r['split']['views'] is not None for r in rows)
