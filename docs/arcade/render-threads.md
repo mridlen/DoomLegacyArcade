@@ -609,6 +609,10 @@ should rise smoothly with size:
 
 640x360 matches what Mark read by hand, so it is not the wipe or a misreading.
 
+**Resolved, 2026-09-10.** The two causes worked out below are both fixed: the
+1024-wide sizes by Row Padding, and 640x360 / 864x486 by clearing before every
+present. See "Cutting the present, and Row Padding" for the Pi numbers.
+
 **The second Pi chart (wipe off, with the split) shows two separate causes**,
 ms per frame:
 
@@ -647,9 +651,9 @@ wipe's fixed second landing on a mid-speed size.
 
 ### Cutting the present, and Row Padding (2026-09-10)
 
-Three changes, written for the two causes above. **Numbers from the Pi are
-still to come**; the laptop cannot tell us much about a VideoCore IV or an
-A53's caches.
+Three changes, written for the two causes above. The Pi's verdict is under
+"What the Pi said" at the end of this section: Row Padding and the clear
+worked, and the threaded expansion made no visible difference there.
 
 **1. The `draw8bpp` expansion is split across the render workers.**
 `R_Threads_Parallel` (`r_threads.c`) runs `fn(part, nparts, ctx)` with part 0
@@ -674,7 +678,7 @@ straight to `SDL_RenderCopy`. The Pi's GPU is tile based, and without a clear
 the driver has to load the previous frame into each tile before drawing over
 it. That fits the Pi data: the sizes that fill a 16:9 panel exactly are the
 ones never cleared, and 640x360 and 864x486 paid about 30% extra present.
-**This is a hypothesis until the Pi chart comes back.** `DL_PRESENT_NOCLEAR=1`
+**Confirmed on the Pi**; see "What the Pi said". `DL_PRESENT_NOCLEAR=1`
 restores the old path, so perfchart can A/B it on the same binary
 (`DL_PRESENT_NOCLEAR=1 tools/perfchart.py ...`: the environment passes through
 to the engine).
@@ -685,7 +689,7 @@ number of them (1024 -> 1088 bytes at 8bpp, 4096 -> 4160 at 32bpp, 640 ->
 704). An odd stride in lines sends consecutive rows of a column to different
 cache sets. It is **off by default and a setting**, not a fix, because it
 trades memory layout against a particular cache: on the laptop it made no
-measurable difference, and nobody has measured it on a Pi yet. It takes effect at
+measurable difference; on the Pi it made 1024x768 50% faster. It takes effect at
 the next mode set (`SCR_ChangeRowPadding` -> `SCR_apply_video_settings`,
 the same as `draw8bpp`). Toggling it mid-level was checked: 1024 -> 1088 ->
 1024 bytes per row, the game carries on, clean quit.
@@ -754,17 +758,74 @@ What to look for: Views at 1024x576 and 1024x768 with padding (was 17.4 and
 26.3 ms), Present at 640x360 and 864x486 against the no-clear run (was 9.9 and
 13.8), and the Expand column against the rest of Present.
 
+#### What the Pi said (a36b7a6, two full charts, Row Padding On then Off)
+
+**Row Padding: the aliasing theory holds.** Views, ms per frame:
+
+| size | Off | On | predicted from neighbours |
+| --- | --- | --- | --- |
+| 1024x576 | 13.58 | **8.34** | ~9 |
+| 1024x768 | 27.36 | **10.36** | ~10.5 |
+| 1280x960 | 15.94 | 13.66 | |
+| 1280x800 | 13.38 | 12.52 | |
+| 640x480 | 5.88 | 5.54 | |
+| 800x600 | 7.27 | 7.28 | |
+
+1024x768 went from 20.7 to 31.0 fps and 1024x576 from 32.6 to 37.7. Padded,
+both land where their neighbours said they should. The large even-line widths
+gain a little. Everything else sits within run-to-run noise. One exception
+needs a repeat before anyone believes it: 928x580 read 43.3 fps Off and 38.1
+On. Its Present rose too in that run, and padding cannot touch Present, so it
+is probably noise; `--runs 3` at that size would settle it. The README
+recommends Row Padding On for a Pi. The default stays Off, because the laptop
+showed nothing and it is still a cache-dependent trade.
+
+**The clear: confirmed without needing the no-clear run.** Compared with the
+previous chart (754b035, no clear), the sizes that fill the 16:9 panel exactly
+lost 2-3 ms of Present, and the letterboxed sizes, which were already cleared,
+did not move:
+
+| size | fills panel | present before | present after |
+| --- | --- | --- | --- |
+| 640x360 | yes | 9.89 | 7.54 |
+| 864x486 | yes | 13.78 | 11.23 |
+| 960x540 | yes | 15.68 | 12.88 |
+| 1280x720 | yes | 26.14 | 23.73 |
+| 640x350 | no | 7.47 | 7.41 |
+| 640x400 | no | 8.03 | 7.86 |
+| 800x600 | no | 12.70 | 13.10 |
+
+640x360 is now level with 640x350: 72 fps against 73. Before the clear it was
+59.
+
+**The threaded expansion: no visible gain on the Pi.** It should have taken
+something like the parallel Expand figure off the present (1.45 ms at 640x350).
+Present at the letterboxed sizes did not move, and at small sizes, where run
+noise is a tenth of a millisecond, the saving is plainly absent. The
+reading that fits: on the Pi, `SDL_RenderPresent` waits for the GPU to finish,
+so the present is bound by the VideoCore, not by our CPU work, and CPU time
+saved before the wait becomes more waiting. It still helps where the CPU is
+the limit (the laptop, 6-13%), and it costs nothing here.
+
+The present even at 320x200 is about 4.3 ms, of which Expand is 0.5. A fixed
+cost of that size, regardless of the picture, points at the part that does
+not scale with the picture: the scale to the full panel, the clear, and the
+swap, all at the desktop's resolution.
+
 ### Not done yet
 
 Ranked by expected payoff on the Pi. None is started. Measure each with
 `tools/perfchart.py --compare`.
 
-1. **The rest of the present.** After the threaded expansion and the clear,
-   what remains is `SDL_UpdateTexture` and the scale to the panel, inside SDL
-   and Mesa. A 16-bit (RGB565) texture would halve the bytes uploaded at the
-   cost of colour precision. Doing the palette lookup on the GPU needs a GL path
-   of our own rather than the SDL renderer. Wait for the Pi's Expand column
-   before choosing.
+1. **The rest of the present, which on the Pi is GPU work.** See "What the Pi
+   said": the present waits on the VideoCore, so CPU savings before it do not
+   show. Cut what the GPU does per frame instead. The fixed ~4 ms even at
+   320x200 is the scale, the clear and the swap at the desktop's resolution, so
+   first try a lower desktop resolution on the Pi (1280x720 instead of 1920x1080
+   is 2.25x fewer pixels to fill). If that helps, a real mode switch for
+   software fullscreen would do it without touching the desktop. The per-pixel
+   part is the texture upload, which Mesa's vc4 driver retiles on the CPU. A
+   16-bit (RGB565) texture would halve it, at the cost of colour precision.
 2. **Idle cores with two or three players.** More than one view means one view
    per thread and no bands, so two players on four cores leave two idle. Split
    each view into bands as well.

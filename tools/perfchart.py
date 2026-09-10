@@ -35,6 +35,11 @@ unless --game says otherwise.
 Checks it makes, because a benchmark that quietly measured the wrong thing is
 worse than none:
 
+  * The first size is run once and thrown away before the chart starts: the
+    first run of a chart starts cold and read up to a quarter slow on the Pi.
+  * The header lists the settings that change the numbers -- the ones the
+    chart forces, and the ones it takes from the config (Row Padding, view
+    size, frame cap), so two charts can always be told apart.
   * The engine's result line says what it drew ("640x480 8bpp software").  A
     size the engine did not actually use is reported, not credited.
   * Every size must play the same number of game tics.  Drawing cannot change
@@ -102,6 +107,12 @@ SETTINGS = [('drawmode', 'Software 8bit'),
             # frame.  The first Pi chart had it in every row: roughly 20% off
             # at 320x200, a few percent at 1280x960.  See the "adds up" check.
             ('screenlink', 'None')]
+
+# Settings the chart does not force but that change the numbers.  They come
+# from the cabinet's own config, so the header has to say what they were --
+# two charts of one build, one with Row Padding and one without, looked
+# identical at the top until this was added.
+REPORTED = ('row_padding', 'viewsize', 'framerate_cap')
 
 GAMES = ('doom1', 'doomu', 'doom2', 'tnt', 'plutonia', 'heretic', 'hexen',
          'freedoom1', 'freedoom2', 'freedm', 'chex')
@@ -258,6 +269,19 @@ def make_rundir(binary, home_src, demo, settings, wads):
     return rd
 
 
+def config_values(rd, keys):
+    """The values the scratch config actually holds for these keys."""
+    try:
+        text = open(os.path.join(rd, 'legacyhome', 'config.cfg'), encoding='latin-1').read()
+    except OSError:
+        return []
+    out = []
+    for k in keys:
+        m = re.search(r'(?m)^%s\s+"?([^"\n]*)"?\s*$' % re.escape(k), text)
+        out.append((k, m.group(1) if m else 'default'))
+    return out
+
+
 def run_one(rd, game, w, h, headless, timeout, extra):
     argv = ['./doomlegacyarcade', '-game', game, '-width', str(w),
             '-height', str(h), '-timedemo', 'bench.lmp', '-frameprofile'] + extra
@@ -401,7 +425,18 @@ def main():
           % (len(sizes), a.runs, os.path.basename(a.demo), game,
              ', headless' if a.headless else ''))
     rd = make_rundir(a.binary, home_src, a.demo, settings, wads)
+    forced = set(k for k, _ in settings)
+    reported = config_values(rd, [k for k in REPORTED if k not in forced])
     rows, info = [], {}
+
+    # A throwaway run first.  The first run of a chart starts cold -- the
+    # wads, the demo and the engine itself coming off the SD card -- and on
+    # the Pi that cost the first size up to a quarter of its frame rate
+    # (320x200 read 85 fps first in one chart and 114 in the next).  Every
+    # size is then measured warm, the same way.
+    if sizes:
+        print('  warming up at %dx%d' % sizes[0])
+        run_one(rd, game, sizes[0][0], sizes[0][1], a.headless, a.timeout, extra)
     csvf = open(base + '.csv', 'w', newline='')
     cw = csv.writer(csvf)
     cw.writerow(['size', 'width', 'height', 'shape', 'fps_min', 'fps_median',
@@ -494,8 +529,9 @@ def main():
     lines.append('Build %s. Demo `%s` (%s game tics). %s%s.'
                  % (info.get('version', '?'), os.path.basename(a.demo),
                     '/'.join(str(t) for t in sorted(all_tics)) or '?',
-                    ', '.join('%s "%s"' % kv for kv in settings
-                              if kv[0] not in ('fullscreen', 'localplayers')),
+                    ', '.join('%s "%s"' % kv for kv in
+                              [kv for kv in settings if kv[0] not in ('fullscreen', 'localplayers')]
+                              + reported),
                     ', headless' if a.headless else ''))
     if info.get('render'):
         lines.append('Renderer: %s.' % info['render'])

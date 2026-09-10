@@ -393,14 +393,16 @@ to anyone else running this port. Each is written up in full in the commit that 
   frame by frame. The same change at 32 bits per pixel measured slightly *slower*, so the higher
   colour depths were left as they were.
 - **Getting the picture onto the screen is faster in the software renderer.** On a Pi 3 that last
-  step was more than half of every frame, bigger than drawing the 3D view. Two changes. With
-  **Render Threads** above 1, the 8bpp palette expansion is now shared across the cores instead of
-  being done by one; on the laptop that halved its cost. And the screen is now cleared before the
-  picture is drawn onto it even when the picture fills the screen: the Pi's graphics chip works in
-  tiles, and a frame that does not start with a clear makes it read the previous frame back before
-  drawing over it. That was the likely cause of 640x360 and 864x486 — sizes that fill a 16:9 panel
-  exactly, and so were never cleared — taking about a third longer to present than their
-  neighbours. The picture itself is unchanged.
+  step was more than half of every frame, bigger than drawing the 3D view. Two changes. The screen
+  is now cleared before the picture is drawn onto it even when the picture fills the screen: the
+  Pi's graphics chip works in tiles, and a frame that does not start with a clear makes it read the
+  previous frame back before drawing over it. That is what made 640x360, 864x486 and 960x540 —
+  the sizes that fill a 16:9 panel exactly, and so were never cleared — slow for their size: with
+  the clear, 640x360 went from 59 fps to 72 on the Pi, level with 640x350. And with **Render
+  Threads** above 1 the 8bpp palette expansion is shared across the cores instead of being done by
+  one. On the laptop that halved its cost; on the Pi it made no visible difference, because at that
+  point the Pi is waiting for its graphics chip rather than its processor. The picture itself is
+  unchanged.
 - **Clearing HUD messages erased the wrong part of the screen at 16 and 32 bits per pixel**, and
   would have at any depth with a padded screen buffer; **screenshots** would have come out
   scrambled with a padded buffer at 16 and 32 bits. Both stepped through the screen by the width in
@@ -496,42 +498,42 @@ Smallest first (September 2026). To make the same table for your own machine, se
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
-| 320x200 | 16:10 | 108 |
+| 320x200 | 16:10 | 114 |
 | 320x240 | 4:3 | 113 |
-| 400x300 | 4:3 | 98 |
-| 512x384 | 4:3 | 79 |
-| 640x350 | ~16:9 | **72** |
-| 640x360 | 16:9 | 59 — slow for its size, see below |
+| 400x300 | 4:3 | 99 |
+| 512x384 | 4:3 | 78 |
+| 640x350 | ~16:9 | **73** |
+| 640x360 | 16:9 | 72 |
 | 640x400 | 16:10 | 68 |
-| 720x400 | ~16:9 | 63 |
-| 640x480 | 4:3 | 58 |
-| 720x480 | 3:2 | 57 |
+| 720x400 | ~16:9 | 62 |
+| 640x480 | 4:3 | 62 |
+| 720x480 | 3:2 | 58 |
 | 768x480 | 16:10 | 55 |
-| 800x500 | 16:10 | 50 |
-| 864x486 | 16:9 | 44 — slow for its size, see below |
+| 800x500 | 16:10 | 53 |
+| 864x486 | 16:9 | 51 |
 | 800x600 | 4:3 | 46 |
-| 960x540 | 16:9 | 39 |
+| 960x540 | 16:9 | 45 |
 | 928x580 | 16:10 | 43 |
-| 960x600 | 16:10 | 38 |
-| 1024x576 | 16:9 | 28 — slow for its size, see below |
-| 1024x768 | 4:3 | 20 — slow for its size, see below |
-| 1152x720 | 16:10 | 31 |
-| 1280x720 | 16:9 | 24 |
-| 1152x864 | 4:3 | 26 |
-| 1280x800 | 16:10 | 23 |
-| 1280x960 | 4:3 | 22 |
+| 960x600 | 16:10 | 39 |
+| 1024x576 | 16:9 | 33 — **38** with Row Padding |
+| 1024x768 | 4:3 | 21 — **31** with Row Padding |
+| 1152x720 | 16:10 | 32 |
+| 1280x720 | 16:9 | 27 |
+| 1152x864 | 4:3 | 25 |
+| 1280x800 | 16:10 | 27 |
+| 1280x960 | 4:3 | 23 |
 
 **These are benchmark numbers; a busy fight runs slower.** The demo is the opening of E1M1, and in
 play the same Pi read lower at the middle and large sizes: 640x350 gave 61–64 with **Framerate Cap**
-`Uncapped`, against 72 here. **On a 60 Hz panel, 640x350 is the sweet spot**: in play it is the
+`Uncapped`, against 73 here. **On a 60 Hz panel, 640x350 is the sweet spot**: in play it is the
 biggest size that stayed above 60, and 512x384 does it with room to spare. Anything above the panel's
 refresh rate is never shown, so for play set **Framerate Cap** to the panel's rate (60) rather than
 leaving it uncapped. Uncapped is for measuring, and on a Pi it only adds heat.
 
-**Four sizes are slower than their size suggests on a Pi, for two different reasons.** The two
-1024-wide sizes take about twice as long to *draw* as their neighbours. 640x360 and 864x486 take
-about a third longer to get onto the *screen*. Neither is understood yet, so pick a neighbour: 640x350
-rather than 640x360, 1152x720 rather than 1024x576 (it is both bigger and faster).
+**On a Pi, turn Row Padding on** (Performance Options). Without it the two 1024-wide sizes take
+about twice as long to draw as their neighbours; with it 1024x768 goes from 21 fps to 31 and
+1024x576 from 33 to 38. At every other size it made no difference beyond the run-to-run noise.
+(640x360 and 864x486 used to be slow for their size as well. That was the engine, and is fixed.)
 
 **Four players cost about the same as one** — within a couple of FPS at every size it was checked
 at. With one player the renderer cuts the single view into vertical bands, one per core; with four
@@ -1009,8 +1011,9 @@ sizes took about twice as long to draw as their neighbours: at exactly 1024 pixe
 of the picture lands in the same few slots of the processor's cache, so drawing a wall keeps
 throwing its own data out. Padding each row by a little breaks that pattern. It changes nothing
 you can see — the picture is identical, checked frame by frame — only where it sits in memory, and
-whether that helps depends on the processor: on the development laptop it made no measurable
-difference at all. So it is off unless you turn it on. Measure it on your own machine, with
+whether that helps depends on the processor. On a Pi 3 it took 1024x768 from 21 fps to 31; on the
+development laptop it made no measurable difference at all. So it is off unless you turn it on, and
+on a Pi you should. Measure it on your own machine, with
 `tools/perfchart.py --compare` against a run with it off (see below), rather than taking it on
 trust; it takes effect straight away, with a moment's blank screen while the video mode is set
 again.
