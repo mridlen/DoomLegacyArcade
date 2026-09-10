@@ -40,6 +40,11 @@ worse than none:
   * Every size must play the same number of game tics.  Drawing cannot change
     the simulation, so a different count means that run went wrong -- the demo
     did not load, or it quit early.
+  * The time must add up.  With -frameprofile the engine reports, for exactly
+    the frames it counted, how long went on Views (the 3D view), Present (onto
+    the screen) and Other (game logic, HUD); those are columns in the table, and
+    their sum must be 1000/fps.  If it is not, wall time went somewhere no frame
+    was drawn, and the size is flagged.  That check found the screen wipe.
   * On a Raspberry Pi it records the temperature after each run and reads
     `vcgencmd get_throttled` at the end.  A Pi that got hot and slowed itself
     down produces numbers that look like the game is slow; the chart says so.
@@ -54,6 +59,10 @@ Traps it goes round (CLAUDE.md, Headless verification):
     so a legacy.wad kept next to the binary -- which is how the Pi is set up --
     is otherwise left behind, and the engine stops with "No legacy.wad file".
     Then DOOMWADDIR and the rest of the list tools/smoke.sh searches.
+  * screenlink "None".  The level load restarts the timedemo clock and the
+    wipe that follows runs on its own clock, so with a wipe about a second is
+    counted in the fps figure and in no frame -- half the result on a fast
+    machine.  The first Pi chart had it in every row.
   * config8p/configgl/confign.cfg deleted -- they run after config.cfg and
     would put the drawmode back.  autoexec.cfg deleted.
   * SDL_NO_SIGNAL_HANDLERS=1, or a stray signal becomes SDL_QUIT and the run
@@ -86,7 +95,13 @@ SETTINGS = [('drawmode', 'Software 8bit'),
             ('draw8bpp', 'On'),
             ('render_threads', 'Auto'),
             ('fullscreen', 'Yes'),
-            ('localplayers', '1')]
+            ('localplayers', '1'),
+            # No wipe.  The level load restarts the timedemo clock, and the
+            # crossfade or melt that follows runs on its own clock inside that
+            # same pass -- about a second counted in the fps figure and in no
+            # frame.  The first Pi chart had it in every row: roughly 20% off
+            # at 320x200, a few percent at 1280x960.  See the "adds up" check.
+            ('screenlink', 'None')]
 
 GAMES = ('doom1', 'doomu', 'doom2', 'tnt', 'plutonia', 'heretic', 'hexen',
          'freedoom1', 'freedoom2', 'freedm', 'chex')
@@ -94,6 +109,8 @@ GAMES = ('doom1', 'doomu', 'doom2', 'tnt', 'plutonia', 'heretic', 'hexen',
 STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 RESULT = re.compile(r'timedemo: (\d+) gametics in (\d+) realtics, ([0-9.]+) avg fps'
                     r'(?:, (\d+)x(\d+) (\d+)bpp (\w+))?')
+PROFILE = re.compile(r'timedemo profile: (\d+) frames, ms per frame: tics ([0-9.]+) '
+                     r'views ([0-9.]+) present ([0-9.]+) hud/other ([0-9.]+) total ([0-9.]+)')
 RENDER = re.compile(r'^Render: (.*)$', re.M)
 VERSION = re.compile(r'Doom Legacy Arcade (v\S+)')
 
@@ -242,7 +259,7 @@ def make_rundir(binary, home_src, demo, settings, wads):
 
 def run_one(rd, game, w, h, headless, timeout, extra):
     argv = ['./doomlegacyarcade', '-game', game, '-width', str(w),
-            '-height', str(h), '-timedemo', 'bench.lmp'] + extra
+            '-height', str(h), '-timedemo', 'bench.lmp', '-frameprofile'] + extra
     env = dict(os.environ, SDL_NO_SIGNAL_HANDLERS='1', SDL_AUDIODRIVER='dummy')
     if headless:
         env.update(DISPLAY='', SDL_VIDEODRIVER='offscreen')
@@ -264,6 +281,10 @@ def run_one(rd, game, w, h, headless, timeout, extra):
             r['drew'] = (int(m.group(4)), int(m.group(5)))
             r['bpp'] = int(m.group(6))
             r['renderer'] = m.group(7)
+    m = PROFILE.search(log)
+    if m:
+        tics, views, present, hud, total = (float(m.group(i)) for i in range(2, 7))
+        r['views'], r['present'], r['other'], r['total'] = views, present, tics + hud, total
     m = RENDER.search(log)
     if m:
         r['render'] = m.group(1).strip()
@@ -379,10 +400,12 @@ def main():
     csvf = open(base + '.csv', 'w', newline='')
     cw = csv.writer(csvf)
     cw.writerow(['size', 'width', 'height', 'shape', 'fps_min', 'fps_median',
-                 'fps_max', 'runs', 'gametics', 'drew', 'temp_c', 'note'])
+                 'fps_max', 'runs', 'gametics', 'drew', 'temp_c',
+                 'views_ms', 'present_ms', 'other_ms', 'note'])
     try:
         for (w, h) in sizes:
             fps, tics, notes, drew, temp = [], set(), [], None, None
+            split = {'views': [], 'present': [], 'other': []}
             for n in range(a.runs):
                 r = run_one(rd, game, w, h, a.headless, a.timeout, extra)
                 for k in ('render', 'version', 'renderer', 'bpp'):
@@ -405,17 +428,31 @@ def main():
                     continue
                 fps.append(r['fps'])
                 tics.add(r['tics'])
+                if 'total' in r:
+                    for k in split:
+                        split[k].append(r[k])
+                    # Does the time add up?  The profile covers the frames the
+                    # fps figure counts, so its total must be 1000/fps.  If the
+                    # fps figure is lower, wall time went somewhere no frame
+                    # was drawn -- which is how the screen wipe was found.
+                    measured = 1000.0 / r['fps']
+                    if abs(r['total'] - measured) > 0.10 * measured:
+                        notes.append('time does not add up: frames account for %.1f ms '
+                                     'each, the fps figure says %.1f' % (r['total'], measured))
                 drew = r.get('drew')
                 if drew and drew != (w, h):
                     notes.append('drew %dx%d instead' % drew)
                 temp = pi_temp()
-                print('  %5dx%-4d  %7.1f fps  %5.1fs%s' % (
+                print('  %5dx%-4d  %7.1f fps  %5.1fs%s%s' % (
                     w, h, r['fps'], r['wall'],
+                    ('   views %.2f  present %.2f  other %.2f ms'
+                     % (r['views'], r['present'], r['other'])) if 'total' in r else '',
                     ('   %.0f°C' % temp) if temp is not None else ''))
             if drew and drew != (w, h):
                 fps = []            # measured something else: do not credit it
+            med = {k: (statistics.median(v) if v and fps else None) for k, v in split.items()}
             row = dict(size='%dx%d' % (w, h), w=w, h=h, fps=fps, tics=tics,
-                       notes=sorted(set(notes)), temp=temp, drew=drew)
+                       notes=sorted(set(notes)), temp=temp, drew=drew, split=med)
             rows.append(row)
             cw.writerow([row['size'], w, h, shape(w, h),
                          '%.1f' % min(fps) if fps else '',
@@ -424,6 +461,8 @@ def main():
                          len(fps), '/'.join(str(t) for t in sorted(tics)),
                          '%dx%d' % drew if drew else '',
                          '%.1f' % temp if temp is not None else '',
+                         ] + ['%.3f' % med[k] if med[k] is not None else ''
+                              for k in ('views', 'present', 'other')] + [
                          '; '.join(row['notes'])])
             csvf.flush()
     except KeyboardInterrupt:
@@ -454,7 +493,10 @@ def main():
         lines.append('Renderer: %s.' % info['render'])
     lines.append('')
     has_temp = any(r['temp'] is not None for r in rows)
+    has_split = any(r['split']['views'] is not None for r in rows)
     head = ['Resolution', 'Shape', 'FPS']
+    if has_split:
+        head += ['Views ms', 'Present ms', 'Other ms']
     if compare:
         head += ['Before', 'Change']
     if has_temp:
@@ -465,6 +507,9 @@ def main():
         cells = [r['size'], shape(r['w'], r['h']), fps_cell(r['fps'])]
         if r['notes'] and not r['fps']:
             cells[2] = '— (%s)' % r['notes'][0]
+        if has_split:
+            cells += ['%.2f' % r['split'][k] if r['split'][k] is not None else '—'
+                      for k in ('views', 'present', 'other')]
         if compare:
             old = compare.get(r['size'])
             new = statistics.median(r['fps']) if r['fps'] else None
@@ -473,6 +518,13 @@ def main():
         if has_temp:
             cells.append('%.0f°C' % r['temp'] if r['temp'] is not None else '')
         lines.append('| ' + ' | '.join(cells) + ' |')
+    if has_split:
+        lines.append('')
+        lines.append('Per frame: **Views** is drawing the 3D view (what Render Threads '
+                     'spreads over the cores). **Present** is getting the finished frame '
+                     'onto the screen: the 8bpp palette expansion, the upload and the '
+                     'scale to the display. **Other** is the game logic and the HUD. '
+                     'They add up to 1000 / FPS.')
 
     warnings = []
     if rows and not all_tics:

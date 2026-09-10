@@ -5421,6 +5421,7 @@ void G_TimeDemo (const char* name)
     singletics = true;
     framecount = 0;
     demostarttime = I_GetTime ();
+    FP_Run_Reset();   // [Arcade] -frameprofile totals, same window as framecount
     G_DeferedPlayDemo (name);
 }
 
@@ -5430,6 +5431,7 @@ void G_DoneLevelLoad(void)
     CONS_Printf("Load Level in %f sec\n",(float)(I_GetTime()-demostarttime)/TICRATE);
     framecount = 0;
     demostarttime = I_GetTime ();
+    FP_Run_Reset();   // [Arcade] -frameprofile totals, same window as framecount
 }
 
 
@@ -5519,6 +5521,7 @@ boolean G_CheckDemoStatus (void)
         GenPrintf (EMSG_errlog, "timedemo: %i gametics in %i realtics, %f avg fps, %ix%i %ibpp %s\n",
                    leveltime, time, f2/f1, vid.width, vid.height, vid.bitpp,
                    (rendermode == render_soft)? "software" : "hardware" );
+        FP_Run_Report();   // [Arcade] with -frameprofile: where those frames went
         if( EV_restore_cv_vidwait != cv_vidwait.EV )
             CV_SetValue(&cv_vidwait, EV_restore_cv_vidwait);
 

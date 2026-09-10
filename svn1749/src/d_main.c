@@ -958,6 +958,40 @@ static long    fp_frames = 0;
 static double  fp_report_at = -1.0;
 byte  frameprofile = 0;   // set from the command line in D_DoomMain
 
+// [Arcade] The same buckets, but totalled over one timedemo instead of three
+// seconds, so a benchmark gets the split for exactly the frames its fps
+// figure counts.  tools/perfchart.py reads it.  The periodic line cannot do
+// this job: its first window includes the level load, and a fast machine
+// finishes the whole demo before the first window closes.
+static double  fp_run_acc[FP_N];
+static long    fp_run_frames = 0;
+// Set by FP_Run_Reset, which runs in the middle of a loop pass (from the
+// level load inside TryRunTics).  The rest of that pass -- the load itself,
+// timed as "tics" -- must not land in the first counted frame.
+static boolean fp_run_skip = false;
+
+void  FP_Run_Reset( void )
+{
+    int i;
+    for( i = 0; i < FP_N; i++ )  fp_run_acc[i] = 0.0;
+    fp_run_frames = 0;
+    fp_run_skip = true;
+}
+
+void  FP_Run_Report( void )
+{
+    double f;
+    if( ! frameprofile || fp_run_frames == 0 )  return;
+    f = 1000.0 / fp_run_frames;
+    GenPrintf( EMSG_errlog,
+        "timedemo profile: %ld frames, ms per frame: tics %.3f views %.3f present %.3f hud/other %.3f total %.3f\n",
+        fp_run_frames, fp_run_acc[FP_TIC] * f, fp_run_acc[FP_VIEWS] * f,
+        fp_run_acc[FP_PRESENT] * f,
+        (fp_run_acc[FP_TOTAL] - fp_run_acc[FP_TIC] - fp_run_acc[FP_VIEWS]
+         - fp_run_acc[FP_PRESENT]) * f,
+        fp_run_acc[FP_TOTAL] * f );
+}
+
 double  FP_Now( void )
 {
     struct timespec ts;
@@ -967,8 +1001,11 @@ double  FP_Now( void )
 
 void  FP_Add( int bucket, double t0 )
 {
+    double dt;
     if( ! frameprofile )  return;
-    fp_acc[bucket] += FP_Now() - t0;
+    dt = FP_Now() - t0;
+    fp_acc[bucket] += dt;
+    if( ! fp_run_skip )  fp_run_acc[bucket] += dt;
 }
 
 // Called once per loop iteration, with the time that iteration began.
@@ -983,6 +1020,13 @@ void  FP_Frame_End( double t0 )
     now = FP_Now();
     fp_acc[FP_TOTAL] += now - t0;
     fp_frames++;
+    if( fp_run_skip )
+        fp_run_skip = false;    // [Arcade] the pass FP_Run_Reset ran in
+    else
+    {
+        fp_run_acc[FP_TOTAL] += now - t0;
+        fp_run_frames++;
+    }
 
     if( fp_report_at < 0.0 )  fp_report_at = now;
     if( (now - fp_report_at) < 3.0 )  return;

@@ -268,7 +268,12 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   Performance table plus a `.csv`; `--quick --compare <before.csv>` is the before/after for any
   speed change. It refuses to credit a size the engine did not draw, checks every size played the
   same tics, and on a Pi reports throttling. Do not benchmark against `legacyhome/demos`: the
-  cabinet rewrites those when a record falls. → `render-threads.md`
+  cabinet rewrites those when a record falls. **Anything that times `-timedemo` must set
+  `screenlink "None"`**: the level load restarts its clock and the wipe then runs inside the
+  measurement, about a second drawn in no frame, which halved every result on the laptop. With
+  `-frameprofile` the engine also prints `timedemo profile:` (Views/Present/Other per frame over
+  the same frames), and the tool flags any size where that does not add up to 1000/fps.
+  → `render-threads.md`
 - **A layout verified in one renderer is not verified.** The software and hardware paths place their
   views by completely different code — draw tables (`R_Set_View_Window`) against GL viewport
   (`HWR_RenderPlayerView`) — so a view-grid change has to be looked at in both. The three and four

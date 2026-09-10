@@ -114,4 +114,10 @@ void D_Demo_Advance_Retry( void );
 void D_StartTitle (void);
 void D_End_commandline(void);
 
+// [Arcade] -frameprofile totals over one timedemo.  Reset when the timedemo's
+// clock restarts (G_DoneLevelLoad), reported with its result
+// (G_CheckDemoStatus).  Both do nothing without -frameprofile.
+void FP_Run_Reset( void );
+void FP_Run_Report( void );
+
 #endif //__D_MAIN__

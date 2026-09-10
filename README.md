@@ -472,8 +472,8 @@ a fanless machine in a sealed cabinet won't thermally throttle.
 
 ### Performance
 
-**A Raspberry Pi 3B+ is enough**, and that is the point of the threaded renderer. Measured on a Pi
-3B+ — quad-core Cortex-A53 — with the **software** renderer, **Render Threads** on, **8bpp Draw**
+**A Raspberry Pi 3 is enough**, and that is the point of the threaded renderer. Measured on a Pi 3
+Model B — quad-core Cortex-A53 at 1.2 GHz — with the **software** renderer, **Render Threads** on, **8bpp Draw**
 on, and **Framerate Cap** set to `Uncapped` so the numbers show what the board can do rather than
 what the cap allows. Smallest first (September 2026). To make the same table for your own machine,
 see `tools/perfchart.py` under [Choosing a resolution, and tuning
@@ -962,7 +962,7 @@ electricity and nothing else. It is there for measuring what the hardware can do
 
 **Render Threads** spreads the software renderer over several cores. With more than one player each
 view gets its own thread; with one player the single view is cut into vertical bands, one per core.
-Either way it is close to a 4x gain on four cores, which is what makes a Pi 3B+ run a four-way split
+Either way it is close to a 4x gain on four cores, which is what makes a Pi 3 run a four-way split
 at full speed. `Auto` picks a count from the machine. It is greyed out under OpenGL, where it would
 gain nothing — the hardware renderer issues its GL calls from inside the walk of the level and a GL
 context belongs to one thread.
@@ -989,7 +989,7 @@ through a slow compatibility layer and is the worse of the two there.
 a short fixed demo (UV speed on E1M1) once at each resolution in the table under
 [Performance](#performance) and prints the same table for your machine, frame rates and all. It
 uses a copy of the cabinet's settings folder, so it never touches the real config, scores or demos.
-The whole list should take under ten minutes on a Pi 3B+, going by the frame rates above.
+The whole list takes about seven minutes on a Pi 3.
 
 ```
 tools/perfchart.py                   # every size in the Performance table
@@ -999,7 +999,10 @@ tools/perfchart.py --compare perfchart-<host>-<date>.csv   # add a "before" colu
 ```
 
 Each run leaves a `.md` file, which is the table ready to paste, and a `.csv` that `--compare` reads
-back, so measuring before and after a change is two commands. On a Pi it also shows the board's
+back, so measuring before and after a change is two commands. Beside each frame rate it shows where
+the time went: **Views** (drawing the 3D view), **Present** (getting the finished picture onto the
+screen) and **Other** (game logic and HUD), in milliseconds per frame. When one resolution is
+oddly slow, those columns say whether the drawing or the display is to blame. On a Pi it also shows the board's
 temperature after each size and warns if the Pi slowed itself down during the run. A Pi that runs
 hot or on a weak power supply throttles its CPU, which looks exactly like the game being slow.
 The windows it opens go fullscreen one after another; from SSH, set `DISPLAY=:0` first to use the
@@ -1283,7 +1286,7 @@ Its IWAD wasn't found. Run with `-v` and check the search paths reported at star
 **The game runs slowly, or the frame rate is choppy.**
 Options → Video Options → **Performance Options**, with **Show Ticrate** on so you can see what each
 change does. On a Pi or another low-power board: use the **software** drawmode, turn **Render
-Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — on a Pi 3B+, 640x350 is the
+Threads** to `Auto`, turn **8bpp Draw** on, and drop the resolution — on a Pi 3 Model B, 640x350 is the
 biggest that holds 60 FPS and 512x384 holds it with room to spare. See [Performance](#performance)
 for measured numbers. On a desktop, use OpenGL and check
 **Framerate Cap** matches the panel's refresh rate.

@@ -67,8 +67,8 @@ GPU and the buffer swap, and threading cannot touch either. It would also be muc
 to one thread, so threading it means rebuilding `hw_main.c` around a deferred draw-command
 buffer. There is no measurable reason to.
 
-The software renderer is the one that matters, and on the **Raspberry Pi 3b+** — quad-core
-Cortex-A53, roughly 5-8x slower per core — it matters a great deal. The Pi is also VideoCore IV,
+The software renderer is the one that matters, and on the **Raspberry Pi 3 Model B** —
+quad-core Cortex-A53 at 1.2 GHz, roughly 5-8x slower per core — it matters a great deal. The Pi is also VideoCore IV,
 so `r_opengl`'s fixed-function `glBegin`/`gluBuild2DMipmaps` path only runs through Mesa's slow
 compatibility layer: on a Pi the software renderer is effectively the only renderer.
 
@@ -170,7 +170,7 @@ grow on demand from NULL — so a worker allocates its own on first use with no 
 
 ## How it ended on the Pi: read `present` as a wait, not a cost
 
-The Pi 3b+ finished at 640x350, software drawmode, `draw8bpp` on, four column
+The Pi 3 finished at 640x350, software drawmode, `draw8bpp` on, four column
 bands:
 
 ```
@@ -467,7 +467,7 @@ What works:
 
 ### On the Pi
 
-Mark measured the Pi 3B+ after these two changes (2026-09-10): software,
+Mark measured the Pi 3 Model B after these two changes (2026-09-10): software,
 Render Threads on, 8bpp Draw on, Framerate Cap uncapped. The full table is in
 the README under Performance. Against the previous README table:
 
@@ -510,9 +510,34 @@ Design points, each forced by a way the measurement could lie:
   the engine turns vsync off for it (`cv_vidwait`), so a 60 Hz panel cannot cap
   the result. It is not identical to `Framerate Cap Uncapped` in play: there the
   simulation runs 35 tics a second whatever the frame rate, and here it runs
-  once per frame. On a Pi, where a tic is about 0.6 ms of a 15-20 ms frame,
-  that should be a few percent at most. **Not yet confirmed on the Pi**: the
-  first perfchart run there, against the hand-read table above, settles it.
+  once per frame. It is also a different scene from wherever a hand reading was
+  taken, so **compare perfchart with perfchart, never with a hand-read
+  table**.
+- **The screen wipe is switched off (`screenlink "None"`).** The first Pi chart
+  was taken with it on, and every number in it was low. The level load restarts
+  the timedemo clock (`G_DoneLevelLoad`), and the crossfade or melt that follows
+  runs on its own clock inside that same loop pass. That is about a second
+  counted in the fps figure and drawn in no frame. On the laptop it halved the
+  result: 640x480 read 241 fps with the crossfade and 505 without. On the Pi a
+  size takes 8-28 s, so if the wipe lasts about a second there too (measured on
+  the laptop only), it cost roughly 20% at 320x200 and a few percent at
+  1280x960. That would also explain why the first Pi chart read lower than the
+  hand-read table at the small sizes. **Any use of `-timedemo` as a clock has to
+  switch the wipe off**, or subtract a constant nobody measured.
+- **Where each frame's time went: Views, Present, Other.** With
+  `-frameprofile`, the engine totals its profile buckets over exactly the
+  frames the timedemo counts (`FP_Run_Reset` in `G_DoneLevelLoad`,
+  `FP_Run_Report` in `G_CheckDemoStatus`) and prints `timedemo profile: ...`
+  next to the result. The periodic 3-second line could not do this: its first
+  window includes the level load, and a fast machine finishes the demo before
+  the first window closes. The pass in which the reset happens is skipped,
+  because it still holds the load.
+- **The time must add up.** The three columns cover the counted frames, so
+  their sum must be 1000/fps. More than 10% apart means wall time went
+  somewhere no frame was drawn, and the size is flagged. This check is what
+  found the wipe, and it was proven by putting the crossfade back
+  (`--set screenlink=Crossfade`): every size flagged, "frames account for 2.0 ms
+  each, the fps figure says 4.2".
 - **The engine's result line says what it drew** (`timedemo: 446 gametics in
   64 realtics, 244.45 avg fps, 640x480 8bpp software`), and a size that came out
   different is reported, not credited. Asking for 200x150 draws 320x200, and
@@ -555,6 +580,29 @@ On a fast machine each size is over in 1-2 seconds, and `realtics` are whole
 35ths of a second, so a single run carries a couple of percent of noise there.
 On a Pi a size takes around ten seconds. Use `--runs 3` whenever the
 difference being looked for is small.
+
+### Five sizes that are slow on the Pi
+
+The first Pi chart (Pi 3 Model B, 2026-09-10, wipe still on) had five sizes
+well below what their pixel count predicts. Megapixels drawn per second, which
+should rise smoothly with size:
+
+| size | fps | Mpx/s | neighbours |
+| --- | --- | --- | --- |
+| 640x360 | 49.5 | 11.4 | 640x350: 13.3, 640x400: 14.8 |
+| 864x486 | 39.1 | 16.4 | 800x500: 18.0, 800x600: 19.0 |
+| 960x540 | 32.5 | 16.8 | 928x580: 20.5, 960x600: 19.4 |
+| 1024x576 | 26.8 | 15.8 | 1152x720: 23.5 |
+| 1024x768 | 19.7 | 15.5 | 1152x720: 23.5, 1152x864: 24.2 |
+
+640x360 matches what Mark read by hand, so it is not the wipe or a misreading.
+Four of the five are exact 16:9, but 1280x720 is 16:9 and normal. On the
+laptop, headless, none of these sizes stands out, which points at the Pi's
+display path (the scale onto the screen) rather than at the drawing. **Not
+diagnosed yet.** The Views/Present split from the next Pi chart says which
+side they lose time on: slow Views means the renderer (a cache effect of the
+row length would be the first suspect for the two 1024-wide ones), slow
+Present means the SDL scale to the panel.
 
 ### Not done yet
 
