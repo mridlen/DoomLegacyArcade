@@ -49,6 +49,11 @@ Traps it goes round (CLAUDE.md, Headless verification):
   * A COPY of legacyhome, never the live one next to the binary, which holds
     the cabinet's real config, scores and demos.  Copied once per chart, not
     once per size: the level packs are tens of MB and a Pi's SD card is slow.
+  * The wads are linked in from where the engine would find them, the
+    binary's own directory FIRST.  The scratch copy is a different directory,
+    so a legacy.wad kept next to the binary -- which is how the Pi is set up --
+    is otherwise left behind, and the engine stops with "No legacy.wad file".
+    Then DOOMWADDIR and the rest of the list tools/smoke.sh searches.
   * config8p/configgl/confign.cfg deleted -- they run after config.cfg and
     would put the drawmode back.  autoexec.cfg deleted.
   * SDL_NO_SIGNAL_HANDLERS=1, or a stray signal becomes SDL_QUIT and the run
@@ -175,7 +180,39 @@ def game_from_demo(path):
 
 # ---- the scratch install ---------------------------------------------------
 
-def make_rundir(binary, home_src, demo, settings):
+def wad_dirs(binary):
+    """Where to look for wads, in order.  The binary's own directory first:
+    the engine looks for legacy.wad next to itself before anywhere else, and a
+    Pi keeps it (and often the IWADs) there rather than in ~/games/doom.  The
+    rest is the list tools/smoke.sh searches."""
+    dirs = [os.path.dirname(os.path.abspath(binary)),
+            os.environ.get('DOOMWADDIR', ''),
+            os.path.expanduser('~/games/doom'),
+            os.path.expanduser('~/games/doomwads'),
+            os.path.expanduser('~/games/doomlegacy/wads'),
+            '/usr/share/games/doom',
+            '/usr/local/share/games/doom']
+    out = []
+    for d in dirs:
+        if d and os.path.isdir(d) and os.path.realpath(d) not in [os.path.realpath(x) for x in out]:
+            out.append(d)
+    return out
+
+
+def find_wads(binary):
+    """{file name: path} for every .wad/.pk3 in wad_dirs(), first found wins.
+    Only those: the binary's directory also holds legacyhome and backups."""
+    wads = {}
+    for d in wad_dirs(binary):
+        for f in sorted(os.listdir(d)):
+            if f.lower().endswith(('.wad', '.pk3')) and f not in wads:
+                path = os.path.join(d, f)
+                if os.path.isfile(path):
+                    wads[f] = path
+    return wads
+
+
+def make_rundir(binary, home_src, demo, settings, wads):
     rd = tempfile.mkdtemp(prefix='perfchart.')
     shutil.copy2(binary, os.path.join(rd, 'doomlegacyarcade'))
     home = os.path.join(rd, 'legacyhome')
@@ -196,13 +233,9 @@ def make_rundir(binary, home_src, demo, settings):
             text += '\n%s\n' % line
     open(cfg, 'w', encoding='latin-1').write(text)
 
-    waddir = os.environ.get('DOOMWADDIR', os.path.expanduser('~/games/doom'))
-    if os.path.isdir(waddir):
-        for f in os.listdir(waddir):
-            try:
-                os.symlink(os.path.join(waddir, f), os.path.join(rd, f))
-            except OSError:
-                pass
+    # Linked, not copied: they are large and only read.
+    for f, path in wads.items():
+        os.symlink(os.path.abspath(path), os.path.join(rd, f))
     shutil.copy2(demo, os.path.join(rd, 'bench.lmp'))
     return rd
 
@@ -297,6 +330,14 @@ def main():
     game = a.game or game_from_demo(a.demo)
     if not game:
         sys.exit('Cannot tell the game from %s -- pass --game.' % a.demo)
+    # Checked here rather than left to the engine, whose "No legacy.wad file"
+    # does not say where it looked -- and where it looked is a scratch copy.
+    wads = find_wads(a.binary)
+    legacy = [f for f in wads if f.lower() == 'legacy.wad']
+    if not legacy:
+        sys.exit('No legacy.wad found.  Looked in:\n  %s\nSet DOOMWADDIR to the '
+                 'directory that holds it.' % '\n  '.join(wad_dirs(a.binary)))
+    print('legacy.wad from %s' % os.path.dirname(wads[legacy[0]]))
     if not a.headless and not (os.environ.get('DISPLAY') or
                                os.environ.get('WAYLAND_DISPLAY')):
         print('No DISPLAY: running --headless.  (From SSH on a Pi, set '
@@ -333,7 +374,7 @@ def main():
     print('perfchart: %d sizes x %d run(s), demo %s, game %s%s'
           % (len(sizes), a.runs, os.path.basename(a.demo), game,
              ', headless' if a.headless else ''))
-    rd = make_rundir(a.binary, home_src, a.demo, settings)
+    rd = make_rundir(a.binary, home_src, a.demo, settings, wads)
     rows, info = [], {}
     csvf = open(base + '.csv', 'w', newline='')
     cw = csv.writer(csvf)

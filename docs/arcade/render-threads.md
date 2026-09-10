@@ -523,6 +523,15 @@ Design points, each forced by a way the measurement could lie:
   at the end.** Its "has occurred" flags stick from boot, so the tool compares
   against the value it read before starting and reports only what happened
   during the chart.
+- **Wads come from where the engine would find them, the binary's own
+  directory first.** The first version looked only in `$DOOMWADDIR` or
+  `~/games/doom`, which is where the laptop keeps them, and the Pi keeps
+  `legacy.wad` next to the binary. The scratch copy is a different directory,
+  so on the Pi the engine stopped with "No legacy.wad file". The tool now
+  searches the binary's directory and then `tools/smoke.sh`'s list, and checks
+  for `legacy.wad` itself before starting, naming the directories it tried.
+  **Any tool that runs the engine from a scratch copy has to carry the wads
+  across from wherever the real install keeps them.**
 - **If the first run gives no result, it stops** and prints the end of the
   engine's output. A broken demo does not end on its own (the random-bytes one
   ran until the timeout), so otherwise every size would sit out the whole
