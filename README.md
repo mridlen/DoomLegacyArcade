@@ -986,7 +986,7 @@ or memory — for speed:
 | **Render Threads** | `Auto`, or 1 to 4. Default **1**. Software renderer only. |
 | **8bpp Draw** | Draw the world at 8 bits and expand it through the palette at the last moment. Default **Off**. |
 | **Row Padding** | Lay the picture out in memory with a little spare space at the end of each row. Default **Off**. Software renderer only. |
-| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the others. |
+| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the others. The number is an average over the last half second. |
 
 **Framerate Cap** is how many frames a second are drawn. The simulation is not affected by it in any
 way: it still runs at exactly 35 tics a second, and every recorded demo plays back identically at

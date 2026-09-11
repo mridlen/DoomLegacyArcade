@@ -126,6 +126,8 @@
 #include "p_setup.h"
   // P_flatsize_to_index
 #include "m_misc.h"
+#include "d_main.h"
+  // FP_Now, for the FPS readout  [Arcade]
   // drawmode, configfile functions
 
 
@@ -3841,23 +3843,39 @@ void V_Draw_ticrate_graph( void )
     }
     else if(cv_ticrate.value == 2)
     {
-        static byte accum_frame = 0;
-        int accum_tic = 0;
-        int i;
-        
-        // Sometimes tics = 0, for a frame.
-        // Use fpsgraph for smoothing the FPS over several frames.
-        memmove( &fpsgraph[0], &fpsgraph[1], (FPS_POINTS-1)*sizeof(fpsgraph[0]));
-        fpsgraph[FPS_POINTS-1]= tics;
-        if( accum_frame < FPS_POINTS )   accum_frame++;  // startup
-        for( i=0; i<accum_frame; i++ )
+        // [Arcade] Frames counted against the wall clock, not in tics.
+        // This used to be 35 frames * 35 / (tics those frames took), drawn
+        // only when that was more than one tic -- so the highest it could
+        // ever say was 35*35/2 = 612, and above that the text vanished
+        // altogether, "FPS:" included.  A tic is 1/35 s; an uncapped OpenGL
+        // frame can be a tenth of that.  Averaged over half a second so the
+        // number is readable at any rate.
+        static double  win_start = -1.0;   // start of the current window
+        static double  last_frame = -1.0;
+        static int     win_frames = 0;
+        static int     shown_fps = -1;     // -1 until the first window closes
+        double now = FP_Now();
+
+        // Off, a level load, a menu drawn without this: a gap that long is
+        // not a frame, so do not average it in.
+        if( win_start < 0.0 || now - last_frame > 1.0 )
         {
-            accum_tic += fpsgraph[i];  // total tics over the frames
+            win_start = now;
+            win_frames = 0;
         }
-        if( accum_tic > 1 )
+        last_frame = now;
+        win_frames++;
+        if( now - win_start >= 0.5 )
+        {
+            shown_fps = (int)( win_frames / (now - win_start) + 0.5 );
+            win_start = now;
+            win_frames = 0;
+        }
+
+        if( shown_fps >= 0 )
         {
             char buff[20];
-            sprintf(buff,"FPS: %4i", ((int)accum_frame * TICRATE)/accum_tic );
+            sprintf(buff,"FPS: %4i", shown_fps );
             V_SetupDraw( V_SCALEPATCH | V_SCALESTART );
             V_DrawString ( 8, 160, V_WHITEMAP, buff);
             V_SetupDraw( drawinfo.prev_screenflags );  // restore

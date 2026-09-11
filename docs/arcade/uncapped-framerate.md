@@ -246,6 +246,18 @@ how a dead backend stops linking.
 switched on. `I_GetTimeFrac` uses a 64-bit intermediate and is not affected. `I_GetTime` was left
 alone: changing the tic clock is not something to do in the same commit as a rendering change.
 
+### The FPS counter could not count past 612
+
+*Show Ticrate*'s text readout (`V_Draw_ticrate_graph`, `v_video.c`, `cv_ticrate` 2) worked out
+the rate as `35 frames * 35 / tics those frames took`, and drew nothing unless that took more than
+one tic. The most it could ever say was 35×35/2 = **612**; faster than that, 35 frames fit inside
+a single tic and the whole line, `FPS:` included, disappeared. It went unnoticed while frames were
+capped at the tic rate, and only uncapped OpenGL gets that fast. Any counter measured in tics has
+a ceiling like this one. It now counts frames against `FP_Now` (the `-frameprofile` clock,
+`CLOCK_MONOTONIC`) over half-second windows, and a gap of more than a second (the counter off, a
+level load) starts a new window rather than being averaged in. The graph mode (`cv_ticrate` 1)
+still plots tics per frame and was left as it is.
+
 ## How this was verified
 
 Without a screen, and worth repeating after any change here:
