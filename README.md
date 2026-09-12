@@ -44,8 +44,9 @@ Discord is likely to get you banned.
   cost about the same as one: each view is drawn on its own core.
 - **Campaign and Deathmatch start in one press.** New Game offers the two games people actually
   ask for, already set up: **Campaign** plays the episode, solo or as co-op depending on how many
-  press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen. The
-  full **Multiplayer** page, with every setting on it, is still there for anyone who wants it.
+  press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen and one
+  question asked — **which map to fight on**. The full **Multiplayer** page, with every setting on
+  it, is still there for anyone who wants it.
 - **Smoother than 35 FPS.** Doom's simulation runs at 35 tics a second and the engine used to draw
   exactly one frame per tic. It now draws as many as the display can take, with everything moving
   interpolated between tics — so on a 60 or 144 Hz panel the motion is genuinely smoother, while the
@@ -148,6 +149,14 @@ Discord is likely to get you banned.
   for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
   never see. A `-devmode` session always keeps Quit whatever the setting says, so the operator is
   never locked in.
+- **Two switches for how much menu a player gets.** **Options → Arcade Options → Multiplayer Menu**
+  takes the **Multiplayer** row off New Game, leaving Campaign, Deathmatch and Single Level — the
+  three rows somebody standing at the cabinet actually presses. It takes away the settings page, not
+  the game: **Deathmatch is not affected**, and neither is anything a player can already start.
+  **Options → Arcade Options → Game Options** takes the **Game Options** page out of the Options
+  menu, so the gameplay rules an operator has settled — weapon switching, jumping, monster
+  behaviour — are not there to be rewritten between runs. Both ship **On**, which is what the
+  cabinet did before they existed, and both are ignored in a `-devmode` session.
 - **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
   attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
   there is then no record demo to show that way.
@@ -735,7 +744,7 @@ operator guide for the restart-loop wrapper you'll want.
 | | |
 | --- | --- |
 | **Campaign** | The normal game — episode, skill, play it through. One player or several: everyone who presses fire on the join screen plays it together in **co-op**, with monsters on. |
-| **Deathmatch** | Players against each other, set up already: weapons and items respawning, no monsters, no bots, five minutes on the clock. Picks an episode where the game has them, and otherwise starts on MAP01. |
+| **Deathmatch** | Players against each other, set up already: weapons and items respawning, no monsters, no bots, five minutes on the clock. Asks which map to play on, and nothing else. |
 | **Single Level** | One chosen map, straight back to the menu afterwards, on its own score table. |
 | **Multiplayer** | The page with every setting on it — map, skill, which co-op or deathmatch variant, monsters, bots. |
 
@@ -743,6 +752,14 @@ Campaign and Deathmatch are the two games somebody standing at the cabinet actua
 they take no setting-up: pick one, everyone presses fire, play. **Multiplayer** is still there
 unchanged for anyone who wants to pick the exact map, run co-op with bots, or play a deathmatch
 variant — nothing was taken away, it just isn't in the way any more.
+
+**Deathmatch asks which map**, on a page of its own that works the way Single Level's does: one row
+listing every map in the game (`map01` … `map32`, or `e1m1` … `e4m9` on the Doom 1 games), then
+**Start**. Everyone has an arena they want, and picking it is one press away instead of impossible —
+a Doom 2 deathmatch used to always start on MAP01, because the page it had before could only ask
+which *episode*, and Doom 2 has one. It starts back at the first map each time the cabinet boots,
+and the choice is the deathmatch's own: it does not disturb the map Single Level or Multiplayer are
+pointing at.
 
 Multiplayer here, in all of these, means everyone playing on *this* cabinet, sharing the screen.
 Deathmatch is hidden on a single-panel cabinet, alongside Multiplayer — one person can't have one.
@@ -763,7 +780,7 @@ launch.
 ### Joining a game
 
 On a cabinet with more than one control panel, a **join screen** appears once the game has been
-chosen — after the skill on a Campaign, after the episode on a Deathmatch. Each panel presses
+chosen — after the skill on a Campaign, after the map on a Deathmatch. Each panel presses
 **fire** to be counted in, and the screen is laid out as the game is about to be: press fire and
 watch your own square claim itself. It starts when the countdown runs out, or as soon as anyone
 already in presses **use**, which the page says once somebody is in.

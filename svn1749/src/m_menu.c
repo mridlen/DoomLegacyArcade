@@ -652,6 +652,33 @@ consvar_t cv_chasecamdemo = {"chasecamdemo", "1", CV_SAVE, CV_OnOff };
 // is never locked in.
 consvar_t cv_quitmenu = {"quitmenu", "0", CV_SAVE, CV_OnOff };
 
+// [Arcade] Leave the Multiplayer entry on the New Game page.  The page behind
+// it is the one that tweaks everything by hand -- map, skill, which coop or
+// deathmatch variant, monsters, bots -- and a cabinet whose whole offer is
+// Campaign, Deathmatch and Single Level has no use for it.  Off gives the New
+// Game page the three rows somebody standing at the cabinet actually presses.
+//
+// It takes away the settings page, not the game: **Deathmatch is a separate
+// row and is not touched by this**, which is the point of it being its own
+// setting.  A one panel cabinet hides both anyway (see below).
+//
+// Operator setting like the rest of this group, applied in M_Configure rather
+// than M_Init's lockdown for the usual reason -- config.cfg is not loaded
+// that early.  On by default: that is what the cabinet did before the switch
+// existed.
+consvar_t cv_multiplayermenu = {"multiplayermenu", "1", CV_SAVE, CV_OnOff };
+
+// [Arcade] Leave the Game Options entry in the Options menu.  It is the page
+// of gameplay rules -- weapon switching, jumping, monster behaviour, the
+// Boom/MBF settings -- which on a scored cabinet the operator has already
+// decided and a player between runs has no business rewriting.  The ranked
+// ruleset pins the settings that actually decide whether a run counts, so
+// this is about what the machine offers rather than about defending the
+// board.
+//
+// Operator setting, on by default, for the same reasons as the row above.
+consvar_t cv_gameoptionsmenu = {"gameoptionsmenu", "1", CV_SAVE, CV_OnOff };
+
 static
 void CV_menusound_OnChange(void)
 {
@@ -783,6 +810,7 @@ menu_t MainDef, SoundDef, EpiDef, NewDef,
   MPOptionDef;
 
 extern menu_t  SingleLevelDef;   // [Arcade]
+extern menu_t  DeathmatchLevelDef;  // [Arcade] deathmatch starting map
 extern menu_t  CheatsDef;        // [Arcade]
 
 
@@ -1614,6 +1642,17 @@ consvar_t cv_bots = {"bots", "0", CV_HIDEN, bots_cons_t};
 consvar_t cv_nextmap  = {"nextmap"  ,"1",CV_HIDEN,map_cons_t};
 consvar_t cv_nextepmap  = {"nextepmap"  ,"11",CV_HIDEN,exmy_cons_t};
 
+// [Arcade] Where a deathmatch starts.  Deliberately *not* cv_nextmap /
+// cv_nextepmap, which the Single Level and Start Game pages already share:
+// picking a deathmatch map should not quietly rewrite what those pages offer
+// next time, which is the same argument M_Arcade_MP_Go makes for writing no
+// cvar at all.  They point at the same PossibleValue tables, so M_Configure's
+// trim of exmy_cons_t down to the episodes actually present covers these too.
+// CV_HIDEN and unsaved like the pair they are modelled on, so every boot
+// starts the page at MAP01 / E1M1.
+consvar_t cv_dm_nextmap   = {"dm_nextmap"  ,"1" ,CV_HIDEN,map_cons_t};
+consvar_t cv_dm_nextepmap = {"dm_nextepmap","11",CV_HIDEN,exmy_cons_t};
+
 // To prevent changing game settings while changing between the possible settings.
 extern CV_PossibleValue_t deathmatch_cons_t[];
 void deathmatch_menu_OnChange( void );
@@ -1887,6 +1926,84 @@ menu_t  SingleLevelDef =
     60,40,
     0
 };
+
+
+//===========================================================================
+//                    DEATHMATCH LEVEL SELECT  [Arcade]
+//===========================================================================
+// Which map the deathmatch starts on, in place of the "Which Episode?" page
+// that route used to show.
+//
+// The episode page could only ever answer "which E?M1", and on a flat MAPxx
+// game it had nothing to ask at all, so a Doom 2 deathmatch always started on
+// MAP01 -- one map out of thirty-two, chosen by the engine.  The people
+// standing at the panels have a favourite arena, and this is the page that
+// lets them name it.  Modelled on Single Level's map row, down to the
+// gamemode swap below, because that is the map selector on this cabinet a
+// player has already learned.
+//
+// Still no skill page: with no monsters the skill only decides how much ammo
+// and armour the map hands out, which is not worth a page between pressing
+// DEATHMATCH and playing one.  See M_Deathmatch_Start.
+
+static void M_DeathmatchLevel_Start(int choice);
+
+// Item indices; the map row is swapped by gamemode in M_Configure.
+enum { DML_map = 0, DML_start, DML_numitems };
+
+menuitem_t  DeathmatchLevelMenu[]=
+{
+    {IT_STRING | IT_CVAR,0,"Map"             ,&cv_dm_nextmap ,0},
+    // 30, so Start sits one blank row below the map rather than directly
+    // under it: it starts the game, and a row that does that should not be
+    // one cursor step from a row the player is still scrolling through.
+    {IT_WHITESTRING | IT_CALL | IT_YOFFSET,
+                         0,"Start"           ,M_DeathmatchLevel_Start ,30},
+};
+
+// Swapped in by M_Configure, exactly as SingleLevelMenu does: Doom 2 has a
+// flat MAPxx list, the Doom 1 games are episode+map.
+menuitem_t  DeathmatchLevelMenu_Map =
+    {IT_STRING | IT_CVAR,0,"Map"             ,&cv_dm_nextmap  ,0};
+menuitem_t  DeathmatchLevelMenu_EpisodeMap =
+    {IT_STRING | IT_CVAR,0,"Episode Map"     ,&cv_dm_nextepmap,0};
+
+menu_t  DeathmatchLevelDef =
+{
+    // The New Game page's own DEATHMATCH graphic as the title, the same
+    // trick SingleLevelDef plays with M_SINLVL: the page is named by the row
+    // that reached it.  135 wide, drawn at the fixed title x of 94, so it
+    // ends at 229 of 320.
+    "M_DEATHM",  // in legacy.wad
+    "Deathmatch",
+    DeathmatchLevelMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(DeathmatchLevelMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+
+// The selected map in the engine's own form, the same split
+// M_SingleLevel_MapName makes: the flat list is a 1..32 map number, the
+// episode list encodes episode*10+map.
+static const char *  M_Deathmatch_MapName( void )
+{
+    if( gamemode == doom2_commercial )
+        return G_BuildMapName( 1, cv_dm_nextmap.value );
+
+    return G_BuildMapName( cv_dm_nextepmap.value / 10, cv_dm_nextepmap.value % 10 );
+}
+
+
+// Defined with the rest of the Deathmatch route, further down.
+static void  M_Deathmatch_Start( void );
+
+static void M_DeathmatchLevel_Start(int choice)
+{
+    M_Deathmatch_Start();
+}
 
 
 // The map name the menu is currently pointing at, in the engine's own form.
@@ -2969,21 +3086,12 @@ menu_t  EpiDef =
 //
 int     epi;
 
-// [Arcade] Which of the New Game page's two routes into a game is being set
-// up.  The episode page is shared between them and knows nothing about
-// either, and the two differ in what happens *after* it -- Campaign goes on
-// to pick a skill, Deathmatch starts the game -- so the route has to be
-// remembered across it.
-enum
-{
-    NGROUTE_campaign = 0,
-    NGROUTE_deathmatch,
-};
-static byte  newgame_route = NGROUTE_campaign;
-
-// Defined with the rest of the Deathmatch route, further down.
-static void  M_Deathmatch_Start( void );
-
+// [Arcade] The episode page belongs to the Campaign route alone now.
+// Deathmatch used to come through here too -- it wanted an episode and
+// started on that episode's first map -- and a newgame_route flag had to be
+// carried across the page to say what happened next.  Deathmatch has its own
+// map selector (DeathmatchLevelDef) since, which asks a better question and
+// answers this one on the way, so the flag and the branch below are gone.
 static
 void M_Episode(int choice)
 {
@@ -3004,16 +3112,6 @@ void M_Episode(int choice)
     }
 
     epi = choice;
-
-    // [Arcade] Deathmatch asks for the episode and nothing else.  There is no
-    // skill to pick when there are no monsters -- it would only change how
-    // much ammo the map hands out -- and a page nobody has a reason to think
-    // about is a page between pressing DEATHMATCH and playing one.
-    if( newgame_route == NGROUTE_deathmatch )
-    {
-        M_Deathmatch_Start();
-        return;
-    }
 
     Push_Setup_Menu(&NewDef);
 }
@@ -3091,8 +3189,6 @@ void M_DrawNewGame(void)
 static
 void M_CampaignNewGame(int choice)
 {
-    newgame_route = NGROUTE_campaign;
-
     // to get out of two player game, and can then backout to multiplayer
     StartSplitScreenGame = false;
     M_Player2_MenuEnable( 0 );
@@ -3110,14 +3206,14 @@ void M_CampaignNewGame(int choice)
         Push_Setup_Menu(&EpiDef);
 }
 
-// [Arcade] Deathmatch: the episode page where the game has episodes, and
-// nothing else.  The same test as the campaign above -- a flat MAPxx game has
-// one episode, so there is nothing to ask and MAP01 is where it starts.
+// [Arcade] Deathmatch: the map selector, and nothing else.  Every gamemode
+// gets it, including the flat MAPxx games that had no page here at all and so
+// always started on MAP01.  The page carries the gamemode difference itself
+// (M_Configure swaps its one cvar row), so unlike the campaign above this
+// route has no gamemode test to make.
 static
 void M_DeathmatchNewGame(int choice)
 {
-    newgame_route = NGROUTE_deathmatch;
-
     // A deathmatch is local multiplayer, so the split goes on the way the
     // Multiplayer page turns it on.  How many panels actually play is still
     // the join screen's answer, not this.
@@ -3129,18 +3225,7 @@ void M_DeathmatchNewGame(int choice)
     // Restore user settings
     D_End_commandline();
 
-    if ( gamemode == doom2_commercial
-         || (gamemode == chexquest1 && !modifiedgame)
-         )
-    {
-        // No episode page, so nothing sets epi on this route; a previous
-        // game cannot have left it set for a commercial game either, but say
-        // so rather than relying on that.
-        epi = 0;
-        M_Deathmatch_Start();
-    }
-    else
-        Push_Setup_Menu(&EpiDef);
+    Push_Setup_Menu(&DeathmatchLevelDef);
 }
 
 // =========================================================================
@@ -4066,7 +4151,9 @@ static void  M_Deathmatch_Go( void )
 
 static void  M_Deathmatch_Start( void )
 {
-    dl_strncpy( newgame_map, G_BuildMapName(epi+1,1), sizeof(newgame_map) );
+    // [Arcade] The map chosen on DeathmatchLevelDef, where this used to be
+    // the first map of the chosen episode.
+    dl_strncpy( newgame_map, M_Deathmatch_MapName(), sizeof(newgame_map) );
 
     // With no monsters the skill only decides how much ammo and armour the
     // map hands out, so nobody is asked for it -- see M_Episode.  Medium is
@@ -4177,6 +4264,12 @@ menuitem_t OptionsMenu[]=
 
 // [Arcade] index of the Select Game line, which is the last one
 enum { OPT_selectgame = (sizeof(OptionsMenu)/sizeof(menuitem_t)) - 1 };
+
+// [Arcade] index of the Game Options line, hidden by cv_gameoptionsmenu.
+// Counted from the top of the array above: Messages, Always Run, Crosshair,
+// Player, Effects Options, Game Options.  The #if in the middle of it yields
+// exactly one item either way, so this does not move with the build options.
+enum { OPT_gameoptions = 5 };
 
 menu_t  OptionsDef =
 {
@@ -4815,6 +4908,12 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
     {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
     {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
+    // [Arcade] Which menus a player may reach, beside the two above that say
+    // the same kind of thing.  Inserted rather than appended: nothing indexes
+    // MenuOptionsMenu by position (`grep -n "MenuOptionsMenu\[" m_menu.c` is
+    // empty) and numitems is a sizeof, so rows can go where they read best.
+    {IT_STRING | IT_CVAR,0, "Multiplayer Menu", &cv_multiplayermenu, 0},
+    {IT_STRING | IT_CVAR,0, "Game Options"    , &cv_gameoptionsmenu, 0},
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
     // [Arcade] The idle-to-title timeout was console/config only, so the one
     // setting that decides how long a paying player may stand still before
@@ -10283,6 +10382,8 @@ consvar_t * menu_init_cvar_list[] =
   &cv_monsters,
   &cv_nextmap,
   &cv_nextepmap,
+  &cv_dm_nextmap,       // [Arcade] deathmatch starting map
+  &cv_dm_nextepmap,     // [Arcade]
   &cv_deathmatch_menu,
   &cv_dm_timelimit,     // [Arcade]
   &cv_wait_players,
@@ -10542,6 +10643,14 @@ void M_Configure (void)
          SingleLevelMenu_Map
        : SingleLevelMenu_EpisodeMap;
 
+    // [Arcade] The deathmatch starting map, for the same reason and by the
+    // same test.  Reached with IT_SUBMENU-like directness from the New Game
+    // page (Push_Setup_Menu in M_DeathmatchNewGame), so there is no menu-open
+    // handler to hook either.
+    DeathmatchLevelMenu[DML_map] = (gamemode==doom2_commercial)?
+         DeathmatchLevelMenu_Map
+       : DeathmatchLevelMenu_EpisodeMap;
+
     // Here we could catch other version dependencies,
     //  like HELP1/2, and four episodes.
 
@@ -10629,6 +10738,36 @@ void M_Configure (void)
         MainMenu[MM_cheats].status = IT_HIDDEN;
         if( MainDef.lastOn == MM_cheats )
             MainDef.lastOn = 0;
+    }
+
+    // [Arcade] The Multiplayer entry on the New Game page, when the operator
+    // has turned it off (cv_multiplayermenu).  Deathmatch is deliberately not
+    // touched here: it is its own row starting its own game, not a way into
+    // the settings page this hides.  Here rather than in M_Init's lockdown
+    // for the usual reason -- the cvar comes from config.cfg, which is not
+    // loaded when M_Init runs.
+    if( ! devmode && ! cv_multiplayermenu.EV )
+    {
+        SingleMulti_Menu[singlemulti_multi].status = IT_HIDDEN;
+        if( SingleMultiDef.lastOn == singlemulti_multi )
+            SingleMultiDef.lastOn = 0;
+    }
+
+    // [Arcade] The Game Options page, when the operator has turned it off
+    // (cv_gameoptionsmenu).  **Both** routes a player can take to it: the
+    // Options menu, and the Net Options page that Multiplayer -> Options
+    // reaches.  (MPOptionMenu has a third copy, inside Networked Multiplayer,
+    // which the lockdown has already hidden entirely.)  Missing either one
+    // leaves the page reachable and the setting looking broken.
+    if( ! devmode && ! cv_gameoptionsmenu.EV )
+    {
+        OptionsMenu[OPT_gameoptions].status = IT_HIDDEN;
+        if( OptionsDef.lastOn == OPT_gameoptions )
+            OptionsDef.lastOn = 3;   // Player >>, the first item still shown
+
+        NetOptionsMenu[netoption_gameoptions].status = IT_HIDDEN;
+        if( NetOptionDef.lastOn == netoption_gameoptions )
+            NetOptionDef.lastOn = netoption_allowexit;
     }
 
     // [Arcade] Panels 3 and 4 exist only on a cabinet configured for them.
@@ -11157,6 +11296,8 @@ consvar_t * menu_command_cvar_list[] =
   &cv_jointime,         // [Arcade]
   &cv_defaultgame,      // [Arcade]
   &cv_cheatsmenu,       // [Arcade]
+  &cv_multiplayermenu,  // [Arcade]
+  &cv_gameoptionsmenu,  // [Arcade]
   &cv_chasecamdemo,     // [Arcade]
   &cv_initialstimeout,  // [Arcade]
 

@@ -82,7 +82,10 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   ```
 
   Deathmatch and Multiplayer are in brackets because `M_Configure` hides both on a one panel
-  cabinet — see "Campaign and Deathmatch" below.
+  cabinet — see "Campaign and Deathmatch" below. **Multiplayer and Game Options can also be taken
+  away on any cabinet**, by the operator switches `cv_multiplayermenu` / `cv_gameoptionsmenu` — see
+  "Multiplayer Menu / Game Options" below. So this tree is the *most* a player can be given, not a
+  fixed shape.
 
   On **Multiplayer → Options** (the Net Options page) only the deathmatch ruleset a player might
   reasonably choose is left: Allow exitlevel, Teamplay, TeamDamage, Fraglimit, Timelimit,
@@ -266,10 +269,46 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     starting at 128 — no overlap anywhere, and the widest (`M_SINLVL`) ends at x 244 of 320.
     `tools/menufit-test.py` reports the page at `5 rows, y 64..135, room for 6 more`.
 
-  - **`newgame_route`** exists because `EpiDef` is shared and knows nothing about either route,
-    while what happens *after* it differs. Set at both entry points, read only by `M_Episode`.
-    Three `Push_Setup_Menu(&EpiDef)` call sites exist and two of them are those entry points, so
-    nothing can reach the episode page without the flag being set.
+  - **`newgame_route` existed** because `EpiDef` is shared and knows nothing about either route,
+    while what happens *after* it differs. It is **gone**: Deathmatch no longer passes through the
+    episode page at all (see the map selector below), so `M_Episode` belongs to Campaign alone and
+    has nothing to remember across it. `EpiDef` now has one entry point again.
+
+- **The Deathmatch map selector** (`m_menu.c`, `DeathmatchLevelDef` / `DeathmatchLevelMenu`;
+  `cv_dm_nextmap` / `cv_dm_nextepmap`). Deathmatch asks **which map**, on a page of its own, where
+  it used to show the shared "Which Episode?" page.
+
+  - **The episode page was answering the wrong question.** It could only ever pick which `E?M1` to
+    start on, and on a flat `MAPxx` game there was nothing to ask, so `M_DeathmatchNewGame` skipped
+    it and **every Doom 2 deathmatch started on MAP01** — one arena out of thirty-two, chosen by the
+    engine. The people at the panels have a favourite map, which is exactly the thing the old page
+    could not be told.
+
+  - **Two rows: the map, and Start.** `DML_map` is swapped by gamemode in `M_Configure`
+    (`DeathmatchLevelMenu_Map` / `_EpisodeMap`), the same line and the same
+    `gamemode==doom2_commercial` test `SingleLevelMenu[SL_map]` uses directly above it — that page
+    is the map selector a player on this cabinet has already learned, so this one is built from it.
+    Done in `M_Configure` for the same reason: the New Game row reaches the page by
+    `Push_Setup_Menu`, which has no handler to hook, and `gamemode` is not known at `M_Init`.
+    - **Still no skill page**, unchanged and for the unchanged reason: with no monsters the skill
+      only decides how much ammo and armour the map hands out.
+    - Geometry: `tools/menufit-test.py` reports `2 rows, y 40..77, room for 12 more`. Start carries
+      `IT_YOFFSET` 30 so it sits a blank row below the map — a row that starts the game should not
+      be one cursor step from a row the player is still scrolling.
+    - The title patch is **`M_DEATHM`**, the New Game row's own graphic, the same trick
+      `SingleLevelDef` plays with `M_SINLVL`: the page is named by the row that reached it. 135
+      wide at the drawer's fixed title x of 94, so it ends at 229 of 320.
+
+  - **Its own cvars, not `cv_nextmap`/`cv_nextepmap`.** Those are shared by Single Level *and*
+    Multiplayer → Start Game, and a deathmatch map choice writing through to both is the quiet
+    cross-talk `M_Arcade_MP_Go` was written to avoid ("writes **no cvar at all**", above). The new
+    pair points at the **same `PossibleValue` tables**, so `M_Configure`'s trim of `exmy_cons_t`
+    down to the episodes actually present covers them for free, and they are `CV_HIDEN` and unsaved
+    like the pair they copy — every boot starts the page at MAP01 / E1M1. They are registered
+    through `menu_init_cvar_list`; a cvar left out of it has no `.value` at all.
+
+  - `M_Deathmatch_Start` now takes its map from `M_Deathmatch_MapName()` instead of
+    `G_BuildMapName(epi+1,1)`, and nothing on this route sets `epi` any more.
 
 - **Menu naming**: the New Game page offers **Campaign** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
@@ -301,6 +340,39 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   called `MenuOptionsMenu`/`MenuOptionsDef`, and the lockdown still hides the row by its hardcoded
   index (`OptionsMenu[9]`), so nothing else moved. The old name said where the page sat in the menu
   tree; the new one says what is on it — every row is a cabinet setting, none of them is about menus.
+
+- **Multiplayer Menu / Game Options** — `cv_multiplayermenu` / `cv_gameoptionsmenu`, two operator
+  switches for how much menu a player is given, inserted after "Quit Menu" because they say the
+  same kind of thing it and "Cheats Menu" do. Both `CV_SAVE`, both applied in `M_Configure` under
+  `! devmode` — the usual reason, `config.cfg` is not loaded when `M_Init` runs.
+
+  - **Both default On, and that is the rule rather than a preference**: a switch added so somebody
+    *can* change something defaults to what the machine already did. See the `CLAUDE.md` note on a
+    new cvar having no config line, so its compiled default is what every cabinet runs.
+
+  - **Multiplayer Menu hides `SingleMulti_Menu[singlemulti_multi]` and nothing else.** Deathmatch is
+    deliberately untouched: it is its own row starting its own game, not a way into the settings
+    page this takes away. (The one-panel block above hides both, for the different reason that one
+    person cannot have a deathmatch.) Two blocks can hide the same row; the second assignment is a
+    no-op.
+
+  - **Game Options has to hide two rows, not one.** The page is reachable from `OptionsMenu`
+    (`OPT_gameoptions`, index 5) *and* from `NetOptionsMenu[netoption_gameoptions]`, which a player
+    reaches through Multiplayer → Options. Hiding only the first leaves the page reachable and the
+    setting looking broken. `MPOptionMenu` has a third copy, but that page lives inside Networked
+    Multiplayer, which the lockdown hides entirely. **Grep `M_GameOption` before trusting this
+    list** — four call sites, and the fourth is `AdvOption2Menu`, which is *inside* Game Options.
+    - `OPT_gameoptions` is a hardcoded 5, counted from the top of `OptionsMenu`. The `#if` in the
+      middle of that array yields exactly one item either way, so it does not move with the build
+      options — unlike `GameOptionsMenu`'s own last row, which the lockdown indexes from the end
+      for exactly that reason.
+
+  - Geometry: 14 rows now, `tools/menufit-test.py` reports `y 40..177, room for 2 more`. Measured
+    against the real `STCFN` lumps, "Game Options" the *label* is the wider new one at **125**
+    ("Multiplayer Menu" is 122, against "Initials Timeout" at 108 already on the page), so it runs
+    60..185 while an `Off` value (24 wide, right-justified to 260) starts at 236 — a 51px gap. (The
+    4px squeeze written up under "2 Player Split" below belongs to the Players & Views page now,
+    which that row moved to; nothing on this page comes near it.)
 
 - **Attract Volume** — `cv_attractvolume`, appended to the end of `MenuOptionsMenu` like every other
   operator row. Written up in `attract.md`; noted here only because it is a row on this page.
