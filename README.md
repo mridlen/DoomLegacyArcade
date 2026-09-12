@@ -42,6 +42,10 @@ Discord is likely to get you banned.
   wide screen, each with their own HUD. A **join screen** after the skill select lets each panel
   press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous. Four players
   cost about the same as one: each view is drawn on its own core.
+- **Campaign and Deathmatch start in one press.** New Game offers the two games people actually
+  ask for, already set up: **Campaign** plays the episode, solo or as co-op depending on how many
+  press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen. The
+  full **Multiplayer** page, with every setting on it, is still there for anyone who wants it.
 - **Smoother than 35 FPS.** Doom's simulation runs at 35 tics a second and the engine used to draw
   exactly one frame per tic. It now draws as many as the display can take, with everything moving
   interpolated between tics — so on a 60 or 144 Hz panel the motion is genuinely smoother, while the
@@ -726,11 +730,25 @@ operator guide for the restart-loop wrapper you'll want.
 
 ## Playing
 
-**New Game → Single Player** or **Multiplayer** from the main menu, then pick a skill. Multiplayer
-here means everyone playing on *this* cabinet, sharing the screen.
+**New Game** offers four rows:
+
+| | |
+| --- | --- |
+| **Campaign** | The normal game — episode, skill, play it through. One player or several: everyone who presses fire on the join screen plays it together in **co-op**, with monsters on. |
+| **Deathmatch** | Players against each other, set up already: weapons and items respawning, no monsters, no bots, five minutes on the clock. Picks an episode where the game has them, and otherwise starts on MAP01. |
+| **Single Level** | One chosen map, straight back to the menu afterwards, on its own score table. |
+| **Multiplayer** | The page with every setting on it — map, skill, which co-op or deathmatch variant, monsters, bots. |
+
+Campaign and Deathmatch are the two games somebody standing at the cabinet actually asks for, so
+they take no setting-up: pick one, everyone presses fire, play. **Multiplayer** is still there
+unchanged for anyone who wants to pick the exact map, run co-op with bots, or play a deathmatch
+variant — nothing was taken away, it just isn't in the way any more.
+
+Multiplayer here, in all of these, means everyone playing on *this* cabinet, sharing the screen.
+Deathmatch is hidden on a single-panel cabinet, alongside Multiplayer — one person can't have one.
 
 **End Game** is on the main menu, at the bottom, and appears **only while a game is actually being
-played** — any kind: Single Player, Single Level or Multiplayer. On the attract screen there is
+played** — any kind: Campaign, Single Level or Multiplayer. On the attract screen there is
 nothing to end, so it isn't there.
 
 DoomLegacy's **networked** play between separate machines is still in there, under
@@ -744,10 +762,16 @@ launch.
 
 ### Joining a game
 
-On a cabinet with more than one control panel, a **join screen** appears once the skill is chosen.
-Each panel presses **fire** to be counted in, and the screen is laid out as the game is about to be:
-press fire and watch your own square claim itself. It starts when the countdown runs out, or as soon
-as anyone already in presses **use**.
+On a cabinet with more than one control panel, a **join screen** appears once the game has been
+chosen — after the skill on a Campaign, after the episode on a Deathmatch. Each panel presses
+**fire** to be counted in, and the screen is laid out as the game is about to be: press fire and
+watch your own square claim itself. It starts when the countdown runs out, or as soon as anyone
+already in presses **use**, which the page says once somebody is in.
+
+**This is what decides whether a Campaign is co-op.** One panel in and it is the solo run it has
+always been, scored and recorded as usual; two or more and the same game starts as co-op instead.
+Nobody has to choose the mode in advance — the people at the cabinet answer it by pressing fire.
+A co-op game isn't scored, the same as any other game with more than one person in it.
 
 Whoever joins plays at the panel they pressed at, so a lone player can use panel 3 and still get the
 whole screen. One player gets the whole screen; two share it as **stacked halves**, or **side by
@@ -757,8 +781,10 @@ each panel drives is an operator setting too, so each player's view can be on th
 they are actually standing at. All of that is under
 [Players, panels, and how the screen is divided](#players-panels-and-how-the-screen-is-divided).
 
-The page is skipped entirely on a single-panel cabinet, and for a single player it starts on the
-first press rather than making one person sit through a countdown.
+The page is skipped entirely on a single-panel cabinet. It used to start the moment one person
+pressed fire on a single player game, which is exactly what made co-op impossible to ask for — the
+first hand on a button ended the question. It now always waits, and **use** is the way to skip the
+rest of the countdown.
 
 ### Controls
 

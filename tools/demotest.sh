@@ -132,6 +132,28 @@ BINDIR=$( dirname "$BINARY" )
 [ -n "$DEMODIR" ]  || DEMODIR="$HOMEDIR/demos"
 [ -n "$LEVELDIR" ] || LEVELDIR="$HOMEDIR/levels"
 
+# [Arcade] Every one of these is used from inside a slot directory the run
+# cd's into, so a relative --home / -d / --waddir silently points somewhere
+# else once it gets there.  The engine then finds no demo, and -playdemo on a
+# file that is not there is not an error: it sits on the title screen until
+# the per-demo timeout, which is 1800 seconds.  Eight of those in parallel
+# reads as the suite having hung rather than as a mistyped path -- that is
+# exactly the "a failed demo run looks like a passing test" trap in CLAUDE.md,
+# wearing a different hat.  Absolutise them here, once, where BINARY already
+# was.
+abspath()
+{
+    case "$1" in
+        /*) echo "$1" ;;
+        *)  echo "$( cd "$( dirname "$1" )" 2>/dev/null && pwd )/$( basename "$1" )" ;;
+    esac
+}
+HOMEDIR=$( abspath "$HOMEDIR" )
+DEMODIR=$( abspath "$DEMODIR" )
+LEVELDIR=$( abspath "$LEVELDIR" )
+[ -n "$WADDIR" ] && WADDIR=$( abspath "$WADDIR" )
+WORKDIR=$( abspath "$WORKDIR" )
+
 if [ ! -d "$DEMODIR" ]; then
     echo "demotest: no demo directory at $DEMODIR" >&2
     exit 2

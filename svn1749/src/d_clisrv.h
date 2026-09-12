@@ -627,6 +627,10 @@ byte  D_View_Squash( void );   // 0 none, 1 half height, 2 half width
 // [Arcade] How many panels the join screen counted in.  0 = not asked.
 void  D_Set_Join_Count( byte count );
 void  D_Clear_Join_Count( void );
+// What that count came to, without D_NumLocalPlayers' cv_splitscreen fudge:
+// how many people asked to play, which is how New Game decides between a solo
+// campaign and local coop.
+byte  D_Num_Joined_Players( void );
 void  CL_Init_localplayer( void );
 
 

@@ -136,6 +136,38 @@ Redo it whenever the harness changes. Insert the line above into
 minutes, nearly all of it compiling. It is the only thing that distinguishes a
 working check from a check that always passes.
 
+## Two traps found while running it from a worktree
+
+- **"ended at a different tic" is not always a re-recorded demo, and on the
+  multi-level `_ep1_` runs it is not even repeatable.** The suite was run three
+  times over one unchanged corpus, with every `.lmp` mtime hours older than all
+  three runs, so nothing had been re-recorded. Each run named a *different* set
+  of one to three `_ep1_` demos, with different lengths — `doomu_ep1_sk3_pacifist`
+  came back as 1005, then 803, then 577 tics. **Every shared prefix matched
+  exactly and every run reported `0 desynced`**, which is the part that
+  matters: the simulation is identical, only how far playback got before
+  something stopped it varies.
+
+  Leading explanation, **not verified**: these are campaign demos that span
+  several levels, `-timedemo` replays flat out, and eight run in parallel, so
+  where the run is cut off is decided by wall clock rather than by the demo.
+  Whatever the cause, the discipline is the one this file already teaches
+  everywhere else — **re-run the suite with the unchanged binary before
+  reading anything into it.** A control run took 31 seconds and settled it.
+  Anything under "desynced" is still a real finding.
+
+- **A relative `--home`, `-d` or `--waddir` silently points somewhere else.**
+  Each demo is replayed from inside a slot directory the script `cd`s into, so
+  a relative path resolves against *that*, not against where the command was
+  typed. The engine then finds no demo — and `-playdemo` on a file that is not
+  there is not an error, so the process sits on the title screen until the
+  per-demo timeout, which is **1800 seconds**. Eight of those in parallel look
+  exactly like the suite hanging, rather than like a mistyped path, and it cost
+  fifteen minutes before anyone looked at the slot directory. It is the
+  `CLAUDE.md` rule that a failed demo run looks like a passing test, wearing a
+  different hat. The paths are absolutised at the top of the script now, beside
+  `BINARY`, which already was.
+
 ## Cost, and why there is a `--quick`
 
 `-playdemo` replays at wall-clock speed: 35 tics a second, exactly as if

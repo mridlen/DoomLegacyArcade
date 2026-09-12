@@ -377,9 +377,27 @@ void  D_Clear_Join_Count( void )
     local_join_count = 0;
 }
 
-byte  D_NumLocalPlayers( void )
+// [Arcade] How many people asked to play: the join screen's count, or every
+// panel when there was no join screen to ask.
+//
+// Deliberately *without* the cv_splitscreen fudge D_NumLocalPlayers applies
+// below.  A menu deciding what kind of game to start has to go on what was
+// just answered, not on a render split that a previous game may have left
+// turned on -- New Game -> Campaign reads this to decide between a solo run
+// and local coop, and a stale split would silently make a one player
+// campaign into a two player one.
+byte  D_Num_Joined_Players( void )
 {
     int n = local_join_count ? local_join_count : cv_localplayers.EV;
+
+    if( n < 1 )  n = 1;
+    if( n > MAXSPLITSCREENPLAYERS )  n = MAXSPLITSCREENPLAYERS;
+    return (byte) n;
+}
+
+byte  D_NumLocalPlayers( void )
+{
+    int n = D_Num_Joined_Players();
 
     // cv_splitscreen means at least two players, and it is the *only* thing
     // the Two Player Game menu sets -- that menu predates cv_localplayers and
@@ -387,7 +405,6 @@ byte  D_NumLocalPlayers( void )
     // from the menu joined only one, because cv_localplayers defaults to 1.
     if( cv_splitscreen.EV && (n < 2) )  n = 2;
 
-    if( n < 1 )  n = 1;
     if( n > MAXSPLITSCREENPLAYERS )  n = MAXSPLITSCREENPLAYERS;
     return (byte) n;
 }

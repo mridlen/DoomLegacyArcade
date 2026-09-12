@@ -1384,26 +1384,42 @@ menu_t  MainDef =
 //SINGLE/MULTI PLAYER GAME MENU
 //===========================================================================
 
-static void M_SingleNewGame(int choice);
+static void M_CampaignNewGame(int choice);
+static void M_DeathmatchNewGame(int choice);
 static void M_TwoPlayerMenu(int choice);
 static void M_EndGame(int choice);
 
-// [Arcade] This menu is addressed by position by the lockdown, so its
-// indices are named.  Keep the enum in step with the array below.
+// [Arcade] This menu is addressed by position by the lockdown and by
+// M_Configure, so its indices are named.  Keep the enum in step with the
+// array below.
 enum
 {
-    singlemulti_single = 0,
+    singlemulti_campaign = 0,
+    singlemulti_deathmatch,
     singlemulti_singlelevel,
     singlemulti_multi,
     singlemulti_network,
 };
 
-// DoomLegacy graphics from legacy.wad: M_SINGLE, M_2PLAYR, M_MULTI, M_SINLVL
+// DoomLegacy graphics from legacy.wad: M_CAMPGN, M_DEATHM, M_MULTI, M_SINLVL
 menuitem_t SingleMulti_Menu[] =
 {
-    {IT_CALL | IT_PATCH,"M_SINGLE","SINGLE PLAYER",M_SingleNewGame ,'s'},
-    // [Arcade] Single Level belongs here, directly under Single Player,
-    // rather than on the main menu beside New Game: it is a third way to
+    // [Arcade] "Campaign", not "Single Player", because it is no longer only
+    // that: however many panels check in on the join screen play it, one
+    // alone as the solo run it has always been and two or more as local
+    // coop.  The row name now says what the row *does* rather than how many
+    // people are expected to do it.  M_SINGLE reads "SINGLE PLAYER" and is
+    // unused from here on.
+    {IT_CALL | IT_PATCH,"M_CAMPGN","CAMPAIGN",M_CampaignNewGame ,'c'},
+    // [Arcade] A deathmatch with its ruleset already chosen: DM_both, no
+    // monsters, no bots.  It is the same game Multiplayer -> Start Game can
+    // be talked into, minus the page of settings -- which is the whole point
+    // of it, on a machine where the people who want a deathmatch are already
+    // standing at the panels.  Hidden on a one panel cabinet, with
+    // Multiplayer, by M_Configure.
+    {IT_CALL | IT_PATCH,"M_DEATHM","DEATHMATCH",M_DeathmatchNewGame ,'d'},
+    // [Arcade] Single Level belongs here, directly under Campaign,
+    // rather than on the main menu beside New Game: it is another way to
     // *start a game*, not a peer of the New Game item.  Same M_SINLVL
     // graphic, and this menu shares the main menu's origin (both are at
     // 97,64), so it draws in exactly the position it did before.
@@ -1412,6 +1428,10 @@ menuitem_t SingleMulti_Menu[] =
     // takes that name and the M_MULTI graphic that reads "MULTIPLAYER".
     // M_2PLAYR literally reads "TWO PLAYER GAME", which stopped being true
     // once the cabinet supported four panels.
+    //
+    // Kept as the page that tweaks everything -- map, skill, which coop or
+    // deathmatch variant, monsters, bots -- now that Campaign and Deathmatch
+    // cover the two games a player standing at the cabinet actually asks for.
     {IT_CALL | IT_PATCH,"M_MULTI","MULTIPLAYER",M_TwoPlayerMenu ,'n'},
     // [Arcade] The networked server menu is named for what it is and drawn as
     // plain text rather than the M_MULTI graphic, so it cannot be mistaken for
@@ -2949,6 +2969,21 @@ menu_t  EpiDef =
 //
 int     epi;
 
+// [Arcade] Which of the New Game page's two routes into a game is being set
+// up.  The episode page is shared between them and knows nothing about
+// either, and the two differ in what happens *after* it -- Campaign goes on
+// to pick a skill, Deathmatch starts the game -- so the route has to be
+// remembered across it.
+enum
+{
+    NGROUTE_campaign = 0,
+    NGROUTE_deathmatch,
+};
+static byte  newgame_route = NGROUTE_campaign;
+
+// Defined with the rest of the Deathmatch route, further down.
+static void  M_Deathmatch_Start( void );
+
 static
 void M_Episode(int choice)
 {
@@ -2969,6 +3004,17 @@ void M_Episode(int choice)
     }
 
     epi = choice;
+
+    // [Arcade] Deathmatch asks for the episode and nothing else.  There is no
+    // skill to pick when there are no monsters -- it would only change how
+    // much ammo the map hands out -- and a page nobody has a reason to think
+    // about is a page between pressing DEATHMATCH and playing one.
+    if( newgame_route == NGROUTE_deathmatch )
+    {
+        M_Deathmatch_Start();
+        return;
+    }
+
     Push_Setup_Menu(&NewDef);
 }
 
@@ -3038,9 +3084,15 @@ void M_DrawNewGame(void)
     HS_Draw_Skill_Records( epi + 1, (skill_e) itemOn, NewDef.x, 152 );
 }
 
+// [Arcade] Was M_SingleNewGame.  Unchanged apart from the route flag: the
+// page still asks for an episode where there is one and then a skill, and
+// whether the run turns out to be solo or coop is settled later, by how many
+// panels check in on the join screen.  See M_NewGame_Go.
 static
-void M_SingleNewGame(int choice)
+void M_CampaignNewGame(int choice)
 {
+    newgame_route = NGROUTE_campaign;
+
     // to get out of two player game, and can then backout to multiplayer
     StartSplitScreenGame = false;
     M_Player2_MenuEnable( 0 );
@@ -3049,11 +3101,44 @@ void M_SingleNewGame(int choice)
 
     // Restore user settings
     D_End_commandline();
-   
+
     if ( gamemode == doom2_commercial
          || (gamemode == chexquest1 && !modifiedgame) //DarkWolf95: Support for Chex Quest
          )
         Push_Setup_Menu(&NewDef);
+    else
+        Push_Setup_Menu(&EpiDef);
+}
+
+// [Arcade] Deathmatch: the episode page where the game has episodes, and
+// nothing else.  The same test as the campaign above -- a flat MAPxx game has
+// one episode, so there is nothing to ask and MAP01 is where it starts.
+static
+void M_DeathmatchNewGame(int choice)
+{
+    newgame_route = NGROUTE_deathmatch;
+
+    // A deathmatch is local multiplayer, so the split goes on the way the
+    // Multiplayer page turns it on.  How many panels actually play is still
+    // the join screen's answer, not this.
+    StartSplitScreenGame = true;
+    M_Player2_MenuEnable( 1 );
+
+    if( M_already_playing(1) )  return;
+
+    // Restore user settings
+    D_End_commandline();
+
+    if ( gamemode == doom2_commercial
+         || (gamemode == chexquest1 && !modifiedgame)
+         )
+    {
+        // No episode page, so nothing sets epi on this route; a previous
+        // game cannot have left it set for a commercial game either, but say
+        // so rather than relying on that.
+        epi = 0;
+        M_Deathmatch_Start();
+    }
     else
         Push_Setup_Menu(&EpiDef);
 }
@@ -3438,6 +3523,23 @@ static void  M_Join_Drawer( void )
                       opt, (char*) state );
     }
 
+    // [Arcade] How to stop waiting.  Only worth saying once somebody is in --
+    // before that Use does nothing, and the panels are already each showing
+    // PRESS FIRE.  This earns its place now that Campaign waits out the
+    // countdown like everything else: a player on their own would otherwise
+    // have no way of knowing the wait is skippable, and the row they pressed
+    // used to start instantly.
+    if( ! join_first_press_starts )
+    {
+        byte any = 0;
+        for( panel=0; panel < panels; panel++ )
+            any |= join_pressed[panel];
+
+        if( any )
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth("USE TO START NOW"))/2,
+                          BASEVIDHEIGHT - 42, V_WHITEMAP, "USE TO START NOW" );
+    }
+
     if( secs < 0 )  secs = 0;
     if( join_first_press_starts )
         snprintf(buf, sizeof(buf), "PRESS FIRE ON YOUR PANEL   (%d)", secs);
@@ -3813,20 +3915,174 @@ static void  M_Initials_Drawer( void )
 }
 
 
-// [Arcade] The Single Player route's game start, deferred until the join
-// screen is done with (or run straight away when there is no join screen).
+// [Arcade] The New Game page's game start, deferred until the join screen is
+// done with (or run straight away when there is no join screen).
 static skill_e  newgame_skill;
 static char     newgame_map[16];
 static boolean  newgame_split;
 
+// [Arcade] deathmatch_cons_t values (g_game.c) by name, for the two rulesets
+// the New Game page pins.  Coop is 0x10 -- 0 is "Coop_weapons", which is a
+// different game -- and DM_both is 3, items and placed weapons both
+// respawning, which is what a cabinet deathmatch wants.
+enum
+{
+    DMM_coop    = 0x10,
+    DMM_dm_both = 3,
+};
+
+// [Arcade] Bring up a local multiplayer game with the ruleset a mode *is*,
+// rather than whatever the Multiplayer page was last left holding.  Shared by
+// the Campaign route when more than one panel joined, and by Deathmatch.
+//
+// Deliberately separate from M_StartServer_Go rather than a refactor of it:
+// that one belongs to the page a player tweaks by hand, reads its settings
+// off that page's cvars, and is left exactly as it was.  This one writes no
+// cvar at all, so playing a Campaign or a Deathmatch does not quietly rewrite
+// what Multiplayer -> Start Game will offer next time.
+//
+// The order is load bearing.  server/netgame/multiplayer must be set before
+// D_WaitPlayer_Setup, and every setting goes into the command buffer ahead of
+// the map command -- which does not run until the buffer drains, so nothing
+// here may be set as a cvar and expected to be in force when the level loads.
+//
+//   dmm        a deathmatch_cons_t value: DMM_coop or DMM_dm_both
+//   monsters   0/1, as the map command's -monsters wants
+//   timelimit  minutes, 0 for none
+//
+// The map and skill come from newgame_map / newgame_skill, which both routes
+// have already filled in.
+static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit )
+{
+    // How many panels checked in.  The join screen has already answered this
+    // (D_Set_Join_Count); without one it is the panel count, i.e. everybody.
+    byte     joined = D_Num_Joined_Players();
+    boolean  split  = ( joined > 1 );
+
+    M_Clear_Menus(true);
+
+    single_level_mode = 0;   // a campaign game, see M_ChooseSkill
+
+    // [WDJ] May have been client.
+    server = true;
+    netgame = true;
+    multiplayer = true;
+
+    // How many players to hold the start for.  This has to be said, and
+    // saying it has to come before D_WaitPlayer_Setup, which is what reads it.
+    //
+    // netgame is set just above, so the wait is armed: the default is 2, and
+    // a Deathmatch that exactly one person pressed fire for would sit on
+    // "waiting for players" for ever -- no timeout either, cv_wait_timeout
+    // being 0.  That is a reachable hang and not a rare one, since a lone
+    // player trying the row is the obvious way to meet it.
+    //
+    // Multiplayer -> Start Game never hit it only by accident: it always
+    // issues "splitscreen 1", and the cv_splitscreen bump inside
+    // D_NumLocalPlayers then reports two players whether or not two joined.
+    // Every local player joins through one node at once, so the joined count
+    // is exactly the right number to wait for.
+    //
+    // Set and put straight back: D_WaitPlayer_Setup copies the value into
+    // wait_netplayer and nothing else ever reads the cvar, so restoring it
+    // keeps the promise that this function leaves the Multiplayer page's
+    // settings -- "Wait Players" among them -- exactly as the operator set
+    // them.  cv_wait_players is plain CV_HIDEN, no CALL or NETVAR, so
+    // writing it twice has no other effect at all.
+    {
+        int  prev_wait = cv_wait_players.value;
+
+        CV_SetValue( &cv_wait_players, joined );
+        D_WaitPlayer_Setup();   // needs server set, just above
+        CV_SetValue( &cv_wait_players, prev_wait );
+    }
+
+    // The same settings G_DeferedInitNew issues for a solo campaign, with a
+    // real deathmatch mode in place of its "deathmatch 0" -- including
+    // fraglimit, which it clears and M_StartServer_Go leaves to Net Options.
+    // Fast monsters and monster respawn come from the player's own choice in
+    // Game Options, not from whatever the last game left set; see the
+    // cv_fastmonsters_menu comment for why the _menu pair is the one to read.
+    COM_BufAddText( va("stopdemo;splitscreen %d;deathmatch %d;"
+                       "fastmonsters %d;respawnmonsters %d;"
+                       "timelimit %d;fraglimit 0\n",
+                       split, dmm,
+                       cv_fastmonsters_menu.EV, cv_respawnmonsters_menu.EV,
+                       timelimit ) );
+
+    // skin change, as M_StartServer_Go does for the same reason
+    if (split
+        && ! ( displayplayer2_ptr
+             && displayplayer2_ptr->skin
+             && (strcasecmp(cv_skin[1].string, skins[displayplayer2_ptr->skin]->name) == 0 )
+             ) )
+    {
+        COM_BufAddText ( va("%s \"%s\"\n", cv_skin[1].name, cv_skin[1].string));
+    }
+
+    // -skill is the cvar-style 1..5, the same conversion G_DeferedInitNew makes.
+    COM_BufAddText( va("map \"%s\" -skill %d -monsters %d\n",
+                       newgame_map, newgame_skill + 1, monsters ) );
+}
+
 static void  M_NewGame_Go( void )
 {
+    // [Arcade] More than one panel checked in on the join screen, so this is
+    // a coop campaign rather than a solo run: the same map, skill and
+    // monsters, played as a local server.  One panel is the solo game this
+    // route has always started, below, entirely unchanged -- which is what
+    // "only load a Coop game if more than one person checks in" means.
+    //
+    // No HS_NewGame on the coop branch, and none is wanted: HS_Scored_Game
+    // already excludes anything with a second person in it, so a background
+    // record demo would be started for a run that can never be saved.
+    if( D_Num_Joined_Players() > 1 )
+    {
+        M_Arcade_MP_Go( DMM_coop, 1, 0 );   // monsters on, no time limit
+        return;
+    }
+
     // Reset cumulative timer and begin background recording.  Must precede
     // G_DeferedInitNew so the player-create and map netxcmds land in the demo
     // stream (see HS_NewGame).
     if( ! newgame_split )
         HS_NewGame();
     G_DeferedInitNew( newgame_skill, newgame_map, newgame_split );
+}
+
+
+// [Arcade] The Deathmatch route's start, once the episode (if the game has
+// any) has been chosen.
+static void  M_Deathmatch_Go( void )
+{
+    // G_InitNew hands cv_bots straight to B_Regulate_Bots and the map command
+    // has no switch for it, so this is the one setting that has to be written
+    // rather than passed.  cv_bots is CV_HIDEN and not saved, so nothing
+    // persists past this boot, and the ranked ruleset pins it to 0 anyway.
+    CV_SetValue( &cv_bots, 0 );
+
+    M_Arcade_MP_Go( DMM_dm_both, 0, cv_dm_timelimit.value );
+}
+
+static void  M_Deathmatch_Start( void )
+{
+    dl_strncpy( newgame_map, G_BuildMapName(epi+1,1), sizeof(newgame_map) );
+
+    // With no monsters the skill only decides how much ammo and armour the
+    // map hands out, so nobody is asked for it -- see M_Episode.  Medium is
+    // what the map was drawn for.
+    newgame_skill = sk_medium;
+
+    // Wait out the countdown rather than starting on the first press: a
+    // deathmatch is about the *other* panels checking in.  A panel that is
+    // already in can press Use to start at once, which is what the join
+    // screen tells them.
+    if( M_Join_Open( M_Deathmatch_Go, false ) )
+        return;
+
+    D_Clear_Join_Count();   // no join screen: every panel plays
+    D_Reset_View_Cells();
+    M_Deathmatch_Go();      // clears the menus itself
 }
 
 
@@ -3872,12 +4128,19 @@ void M_ChooseSkill(int choice)
     dl_strncpy( newgame_map, G_BuildMapName(epi+1,1), sizeof(newgame_map) );
     newgame_split = StartSplitScreenGame;
 
-    if( M_Join_Open( M_NewGame_Go, true ) )   // one player: first press starts
+    // [Arcade] Wait out the countdown rather than starting on the first
+    // press.  This used to pass true -- a lone player pressed Fire and the
+    // game began at once -- which is exactly what made a coop campaign
+    // impossible to ask for: the first person to reach for a button ended the
+    // question before anybody else could answer it.  A player on their own
+    // presses Fire and then Use, which the join screen says to do and which
+    // starts the game just as immediately.
+    if( M_Join_Open( M_NewGame_Go, false ) )
         return;
 
     D_Clear_Join_Count();   // no join screen: every panel plays
     D_Reset_View_Cells();
-    M_NewGame_Go();
+    M_NewGame_Go();         // clears the menus itself on the coop branch
     M_Clear_Menus (true);
 }
 
@@ -10334,6 +10597,14 @@ void M_Configure (void)
     {
         SingleMulti_Menu[singlemulti_multi].status = IT_HIDDEN;
         if( SingleMultiDef.lastOn == singlemulti_multi )
+            SingleMultiDef.lastOn = 0;
+
+        // [Arcade] And Deathmatch with it: it is the same local multiplayer
+        // game with its settings already chosen, and one person cannot have
+        // a deathmatch.  Campaign stays -- on one panel it is the solo run
+        // it has always been.
+        SingleMulti_Menu[singlemulti_deathmatch].status = IT_HIDDEN;
+        if( SingleMultiDef.lastOn == singlemulti_deathmatch )
             SingleMultiDef.lastOn = 0;
 
         // Player 2's config screen is unreachable in play and meaningless

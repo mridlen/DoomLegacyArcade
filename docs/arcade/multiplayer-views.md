@@ -360,20 +360,40 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     joined at panel 3 gets the whole screen (cell 0) but must still be driven by panel 3's buttons
     — with one table the compact layout overwrote the panel with the cell, so joining at panel 3
     handed you player 1's controls and the panel you were standing at did nothing.
-  - **Single Player starts on the first press** (`join_first_press_starts`), with no countdown to
-    sit through: there is nobody else to wait for, and the page's value on that route is letting a
-    lone player claim the panel they are standing at. Multiplayer still waits.
+  - **Every route now waits out the countdown. `join_first_press_starts` is dead on the menu
+    paths, and removing its last user was the point.** Single Player used to pass `true` — the
+    first fire press started the game at once, on the reasoning that there was nobody else to wait
+    for. Once that row became **Campaign**, and the number of people who press fire is what decides
+    between a solo run and local coop (see `menus.md`), that reasoning inverted: the first hand on
+    a button was ending the question before anybody else could answer it, so a coop campaign was
+    not merely hard to start but **impossible to ask for**.
+    - The flag and its `M_Join_Drawer` wording are kept rather than ripped out — nothing else
+      costs anything, and it is the right behaviour for any future route with genuinely nobody to
+      wait for.
+    - **The cost is a lone player waiting, and it has to be paid back on the page itself.** Use
+      from a panel that is already in has always started the game immediately; nothing said so.
+      `M_Join_Drawer` now draws **"USE TO START NOW"** at `BASEVIDHEIGHT - 42`, in white, and only
+      once some panel has pressed in — before that Use does nothing and the cells already say
+      PRESS FIRE. Clear of the bottom row of cells, which end at y 122 (`cy = 60 + row*50`, text
+      at `cy` and `cy+12`), and of the countdown line at `BASEVIDHEIGHT - 28`.
   - **One or two players get the big layout** — the whole screen, or the stacked halves — however
     far apart their panels are; only three or more use the 2x2. Keeping a player in their own
     panel's cell only earns its keep once the grid is in use anyway: with two players top and
     bottom there is nothing to be confused about, and a quarter screen each is a poor trade.
     `M_Join_Start` assigns cells by join order when `joined <= 2` and by panel otherwise.
-  - **Both routes into a game must be hooked.** The cabinet's New Game menu offers *Single Player*,
-    which ends at `M_ChooseSkill` → `G_DeferedInitNew`, and *Two Player Game → Start Game*, which
-    goes through `M_StartServer` and issues its own command sequence. Hooking only the first left
-    the two player route skipping the page entirely. `M_Join_Open` therefore takes a **completion
-    callback** rather than game parameters, and each route supplies its own starter
-    (`M_NewGame_Go`, `M_StartServer_Go`).
+  - **Every route into a game must be hooked.** The cabinet's New Game menu offers *Campaign*,
+    which ends at `M_ChooseSkill` → `G_DeferedInitNew`, *Deathmatch*, which ends at
+    `M_Deathmatch_Start`, and *Multiplayer → Start Game*, which goes through `M_StartServer` and
+    issues its own command sequence. Hooking only the first left the two player route skipping the
+    page entirely. `M_Join_Open` therefore takes a **completion callback** rather than game
+    parameters, and each route supplies its own starter (`M_NewGame_Go`, `M_Deathmatch_Go`,
+    `M_StartServer_Go`).
+  - **`D_Num_Joined_Players()` is what a caller should ask "how many people said yes".**
+    `D_NumLocalPlayers()` answers the same question with a `cv_splitscreen` bump added on top, for
+    the old Two Player menu's benefit, and that bump is stale state as far as a menu deciding what
+    kind of game to start is concerned. `D_NumLocalPlayers` is now the bump wrapped around
+    `D_Num_Joined_Players`; everything that asks "how many players does this node have" still calls
+    it and is unaffected. → `menus.md`
   - Nobody pressing starts panel 1 alone rather than dead-ending on the page. Use/open from a panel
     that is already in starts immediately, so a ready group need not sit out the countdown.
   - **The page does not appear until `cv_localplayers` is raised**, which is correct but reads as

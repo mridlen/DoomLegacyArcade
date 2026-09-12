@@ -75,11 +75,14 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
   ```
   Main:     New Game / Options / [End Game] / [Quit Game]
-  New Game: Single Player / Single Level / Multiplayer
+  New Game: Campaign / [Deathmatch] / Single Level / [Multiplayer]
   Options:  Player >> / Game Options >> / Select Game >>
   Player:   Player1 config >> / Player2 config >>
   Player n: Your color / Crosshair / Control scheme
   ```
+
+  Deathmatch and Multiplayer are in brackets because `M_Configure` hides both on a one panel
+  cabinet — see "Campaign and Deathmatch" below.
 
   On **Multiplayer → Options** (the Net Options page) only the deathmatch ruleset a player might
   reasonably choose is left: Allow exitlevel, Teamplay, TeamDamage, Fraglimit, Timelimit,
@@ -182,7 +185,93 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   `config.cfg` on that leg), while the same command at tic 105 of a loaded level produces no second
   startup at all. That the synthetic key worked at all is also the proof that the default binding
   is applied — an unbound control reads as `KEY_NULL` and is rejected before the gate.
-- **Menu naming**: the New Game page offers **Single Player** and **Multiplayer**, where
+- **Campaign and Deathmatch** (`m_menu.c`, `M_CampaignNewGame` / `M_DeathmatchNewGame` /
+  `M_Arcade_MP_Go`; `SingleMulti_Menu`). The New Game page is now four rows —
+  **Campaign**, **Deathmatch**, **Single Level**, **Multiplayer** — where the first two start the
+  two games somebody standing at the cabinet actually asks for, with no settings page in between.
+
+  New graphics `M_CAMPGN` (108x17) and `M_DEATHM` (135x17) in `legacy.wad`. `M_SINGLE` reads
+  "SINGLE PLAYER" and is now unused, alongside `M_2PLAYR`.
+
+  - **Campaign is the old Single Player route, renamed, with the mode decided at the join screen
+    instead of in advance.** Episode where the game has one, then skill, then the join screen; one
+    panel checking in is the solo run it has always been, two or more start the same game as local
+    coop. Nobody picks "coop" anywhere — the people at the cabinet answer it by pressing fire,
+    which is the whole UX argument for doing it this way. `M_NewGame_Go` branches on the count:
+    `D_Num_Joined_Players() > 1` goes to `M_Arcade_MP_Go( DMM_coop, 1, 0 )`, one player falls
+    through to the unchanged `HS_NewGame()` / `G_DeferedInitNew()` pair.
+    - **The name change is not cosmetic.** "Single Player" would now be a lie on the row that
+      starts a four player coop game; "Campaign" says what the row does rather than how many people
+      are expected to do it.
+    - **Not `D_NumLocalPlayers()`, which was the first thing tried.** That one bumps its answer to
+      2 whenever `cv_splitscreen` is set — a fudge that exists for the old Two Player menu, which
+      sets the render split and nothing else. A menu deciding *what kind of game to start* has to
+      go on what was just answered on the join screen, not on a split a previous game may have left
+      on, or a one player campaign silently becomes a two player one. Hence
+      `D_Num_Joined_Players()` (`d_clisrv.c`), which is the same arithmetic without the bump;
+      `D_NumLocalPlayers` now calls it and adds the bump back.
+    - **No `HS_NewGame()` on the coop branch**, deliberately. `HS_Scored_Game` already excludes
+      anything with a second person in it, so calling it would spend the record demo buffer on a
+      run that can never be saved.
+
+  - **Deathmatch is the Multiplayer page's game with its ruleset pinned**: `DM_both` (3), monsters
+    off, bots 0, `cv_dm_timelimit` on the clock. Episode page where the game has episodes, and
+    nothing else: `M_Episode` checks `newgame_route` and calls `M_Deathmatch_Start` instead of
+    pushing `NewDef`.
+    - **No skill page.** With no monsters the skill only decides how much ammo and armour the map
+      hands out, so it is a page nobody has a reason to think about standing between pressing the
+      row and playing the game. `sk_medium`, fixed.
+    - **`cv_bots` is the one setting that has to be written rather than passed.** The `map`
+      command has switches for skill and monsters but not bots — `G_InitNew` hands `cv_bots`
+      straight to `B_Regulate_Bots` — so `M_Deathmatch_Go` does a `CV_SetValue`. It is `CV_HIDEN`
+      and not saved, so nothing persists past the boot, and the ranked ruleset pins it to 0 anyway.
+
+  - **`M_Arcade_MP_Go` is deliberately *not* a refactor of `M_StartServer_Go`.** That one belongs
+    to the page a player tweaks by hand and reads its settings off that page's cvars; it is left
+    byte for byte as it was, because the brief was to leave Multiplayer alone. The new one writes
+    **no cvar at all** (bar `cv_bots`), so playing a Campaign or a Deathmatch does not quietly
+    rewrite what Multiplayer → Start Game offers next time — which is what setting
+    `cv_deathmatch_menu` / `cv_monsters` / `cv_nextmap` and calling the existing function would
+    have done.
+    - The order in it is load bearing and copied from the proven one:
+      `server`/`netgame`/`multiplayer` before `D_WaitPlayer_Setup()`, and every setting into the
+      command buffer *ahead* of the `map` command, which does not run until the buffer drains. See
+      the `G_DeferedInitNew` note in `CLAUDE.md` — nothing there may be set as a cvar and expected
+      to be in force when the level loads.
+    - It clears `fraglimit` the way `G_DeferedInitNew` does and `M_StartServer_Go` does not, and
+      takes fast monsters / monster respawn from `cv_fastmonsters_menu` /
+      `cv_respawnmonsters_menu` — the player's own choice — rather than from whatever the last
+      game left set.
+    - `DMM_coop` is **0x10**, not 0. In `deathmatch_cons_t` 0 is `Coop_weapons`, a different game.
+    - **`cv_wait_players` has to be set to the joined count, or a one player Deathmatch hangs the
+      cabinet.** Setting `netgame` arms `D_WaitPlayer_Setup`'s wait, and it defaults to **2** with
+      `cv_wait_timeout` 0 — no timeout — so a Deathmatch that exactly one person pressed fire for
+      sits on "waiting for players" for ever. That is not an exotic case: one curious player
+      pressing the row is the obvious way to meet it. **Multiplayer → Start Game only escapes it by
+      accident**, because it always issues `splitscreen 1` and the `cv_splitscreen` bump inside
+      `D_NumLocalPlayers` then reports two players whether or not two joined — which is also why
+      taking that bump out of the *decision* (above) has to be paired with this.
+      `M_Arcade_MP_Go` sets the cvar, calls `D_WaitPlayer_Setup`, and puts it straight back: the
+      value is copied into `wait_netplayer` there and read nowhere else, so restoring it keeps the
+      Multiplayer page's "Wait Players" exactly as the operator set it.
+
+  - **Both new rows are hidden on a one panel cabinet**, in `M_Configure` beside Multiplayer
+    (not `M_Init` — `cv_localplayers` comes from `config.cfg`, which is not loaded yet). Campaign
+    stays: on one panel it is the solo run it has always been.
+
+  - **Geometry.** Five rows from `SingleMultiDef.y` 64, `IT_PATCH` stepping `LINEHEIGHT` 16, so
+    64/80/96/112 with the plain-text Networked row at 128. Measured from the lumps rather than
+    their bounding boxes: the new art is 17 tall in the box but **15 rows of ink** (rows 1..15),
+    exactly like `M_SINLVL`, so ink runs 64..78, 80..94, 96..110, 112..126 against a text row
+    starting at 128 — no overlap anywhere, and the widest (`M_SINLVL`) ends at x 244 of 320.
+    `tools/menufit-test.py` reports the page at `5 rows, y 64..135, room for 6 more`.
+
+  - **`newgame_route`** exists because `EpiDef` is shared and knows nothing about either route,
+    while what happens *after* it differs. Set at both entry points, read only by `M_Episode`.
+    Three `Push_Setup_Menu(&EpiDef)` call sites exist and two of them are those entry points, so
+    nothing can reach the episode page without the flag being set.
+
+- **Menu naming**: the New Game page offers **Campaign** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
   only) and uses the **`M_MULTI`** graphic, which reads "MULTIPLAYER". `M_2PLAYR` literally reads
   "TWO PLAYER GAME" and is now unused. The engine's networked server menu is renamed
@@ -204,7 +293,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     mouse settings on a cabinet, and they were three rows of clutter on the page reached most
     often. Already hidden for panels 3 and 4, which have no mouse hardware at all.
   - **No menu indices moved**, so the lockdown's hardcoded positions (`SingleMulti_Menu[2]`,
-    `TwoPlayerMenu[4]`) still point at the right rows.
+    `TwoPlayerMenu[4]`) still point at the right rows. (`SingleMulti_Menu`'s *did* move later,
+    when Campaign and Deathmatch went in — which is what the named `singlemulti_*` enum is for.)
 
 - **The operator page is named "Arcade Options"** — `OptionsMenu`'s row, and `MenuOptionsDef`'s own
   `menutitle`, which had been left as a copy-pasted "Effects". The array and the `menu_t` are still
