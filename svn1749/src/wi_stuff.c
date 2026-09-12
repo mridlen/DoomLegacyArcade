@@ -1926,7 +1926,11 @@ static void WI_Draw_NetgameStats(void)
             continue;
 
         byte skin_color = players[i].skincolor;
-        int ds_att = 0;
+        // [Arcade] Every name in grey.  Upstream drew the console player's name
+        // in V_WHITEMAP and everyone else's in attribute 0, which is red -- with
+        // four local players that singled out panel 1 for no reason a player
+        // could see.  The face and shoulder banner still mark the console player.
+        int ds_att = V_WHITEMAP;
         x = ngsx;
         y10 = y+10;
 
@@ -1942,7 +1946,6 @@ static void WI_Draw_NetgameStats(void)
 //            V_DrawScaledFill (namex, y10+2, ngsx-namex+10,6, color);  // me, mark
             V_DrawScaledFill (namex, NG_STATSY+2, 42,10, color);  // me, shoulder banner under face
             V_DrawScaledPatch(namex+4, (NG_STATSY + 8 - V_patch(pl_face)->height), pl_face);  // face
-            ds_att = V_WHITEMAP;
         }
        
         // draw name, truncate to colwidth
