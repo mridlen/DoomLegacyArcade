@@ -623,3 +623,19 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     - `splitvertical 1` typed at the console mid-game re-carves the screen immediately, which is
       the `CV_CALL` → `R_SetViewSize` path the menu row uses; and a `-devmode` session writes
       `splitvertical "Side by Side"` back to `config.cfg`.
+
+## Coop intermission: every name in grey
+
+`WI_Draw_NetgameStats` (`wi_stuff.c`) draws one row per player — a bar in the player's skin colour
+with the name written over it. Upstream picked the text attribute per row: `V_WHITEMAP` for
+`i == me`, attribute `0` for everyone else. **Attribute `0` is red, not "default"** (the colour
+numbering reads backwards — see the rule in `CLAUDE.md`), so on the cabinet panel 1 got a grey name
+and panels 2-4 got red ones.
+
+`me` is `wbs->pnum`, the single console player, set once in `WI_Start`. It means "the machine's
+own player" in a net game, which on a four-panel cabinet is an implementation detail no player can
+see — there is one screen and four people at it, and the odd colour out reads as a bug or as panel 1
+being special. All four rows now use `V_WHITEMAP`.
+
+The console player is still marked, by the things that were always doing the marking: the face
+patch and the shoulder banner drawn under it in that player's colour. Those stay.
