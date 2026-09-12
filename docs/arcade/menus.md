@@ -781,10 +781,34 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     every position on the page would have to be doubled to compensate — **exactly**, which is not
     possible when `vid.dupx` is odd. At the measured 3/3 it would have put the sprite at 4/3 of its
     intended offset.
-  - The integers are still rounded to the halved floats (a 4,3 dup gives 2,2 not 2,1) and clamped
-    to 1, the same rule the HUD block follows.
+  - The software integers are the **page's whole-number dup halved, rounding up** (a 4,3 dup gives
+    2,2 not 2,1), clamped to 1. They used to be the halved *floats* rounded, which is what the HUD
+    block does, and that is wrong here: at 800x600 the page is dup 2,2 while `fdupx,fdupy` are
+    2.5,3.0, so the man came out 1 wide by 2 tall — full height, head 36px through the box top.
   - Verified: outer dup 3/3 → 2/2, sprite 41×56 → **20×28**, sitting in a 32×40 interior with
-    margins **L 7, R 5, T 7, B 5**.
+    margins **L 7, R 5, T 7, B 5**. **That was only ever true of OpenGL**, which halves exactly.
+    Software cannot draw half of 3×: it draws 2×, a sprite a third bigger than planned in page
+    units, and the fixed feet anchor below cut his head off.
+
+  **The feet are placed from the scale actually drawn, not a fixed offset.** The anchor was
+  `interior bottom - 8`, which centres the walk cycle only at a sprite-to-page ratio of exactly ½.
+  Now `ratio` is sprite pixels per row over page pixels per unit — `y_scale / y0_scale` in
+  software, `fdupy / fdupy0` in OpenGL, the same two numbers `HWR_DrawMappedPatch` uses — and the
+  feet stand where the walk cycle's envelope is centred in the 40-unit interior. The envelope is
+  `PL_SPRITE_ABOVE` 53 and `PL_SPRITE_BELOW` 5 source rows, the extremes over `PLAYA1..PLAYD1`
+  (per frame: above 51/53/51/52, below 5/3/5/3). Anchoring on the feet rather than centring each
+  frame keeps him from bobbing. If the envelope cannot fit, the feet are kept in and the head goes.
+  - Measured by logging the rows each frame actually wrote against the interior, every frame of
+    the walk cycle:
+
+    | resolution | page dup → sprite dup | ratio | feet | worst top / bottom margin (px) |
+    | --- | --- | --- | --- | --- |
+    | 1024x768, 1280x720, 1366x768 | 3,3 → 2,2 | 0.667 | 36 (was 32) | 2 / 2 (was ~10 cut) |
+    | 1920x1080 | 6,5 → 3,3 | 0.600 | 34 | 11 / 15 |
+    | 640x480 | 2,2 → 1,1 | 0.500 | 32 | 11 / 11 |
+    | 800x600 | 2,2 → 1,1 (was 1,2) | 0.500 | 32 | 11 / 11 (was 36 cut) |
+    | 320x200 | 1,1 → 1,1 | 1.000 | 35 | head 18 over — a 1:1 marine is taller than the box |
+    | OpenGL, any | exact half | 0.500 | 32 (unchanged) | — |
 
   Sizing the box from the measured half-scale sprite: it is centred on the interior and stands with
   its feet 8 above the interior floor, so margins are `4*PLBOXW - 9` left, `4*PLBOXW - 11.5` right

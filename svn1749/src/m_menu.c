@@ -2597,6 +2597,10 @@ static boolean M_QuitMultiPlayerMenu(void);
 #define PLBOXH    5
 #define PLBOXX    90
 #define PLBOXY    8
+// [Arcade] The player sprite's walk cycle, in sprite rows: how far it reaches
+// above and below the feet across PLAYA1..PLAYD1.  Used to centre the preview.
+#define PL_SPRITE_ABOVE  53
+#define PL_SPRITE_BELOW  5
 // [Arcade] 72, was 96.  This is where the block below the preview box starts
 // -- the skin row and everything under it are placed from it -- and the box
 // got 32 shorter when the sprite went to half scale, so leaving it at 96 left
@@ -2899,10 +2903,13 @@ void M_DrawSetupMultiPlayerMenu(void)
 
         drawinfo.fdupx = sv_fdupx / 2.0f;
         drawinfo.fdupy = sv_fdupy / 2.0f;
-        // Round the integers to the floats, so a 4,3 dup gives 2,2 and not
-        // 2,1 -- the same rule the half scale HUD block follows.
-        drawinfo.dupx = (byte)(drawinfo.fdupx + 0.5f);
-        drawinfo.dupy = (byte)(drawinfo.fdupy + 0.5f);
+        // [Arcade] Halve the whole number the page is really drawn at, rounding
+        // up, so a 4,3 dup gives 2,2 and not 2,1.  Not the floats: at 800x600
+        // the page is 2,2 while fdupx,fdupy are 2.5,3.0, which rounded to 1,2
+        // -- a man drawn full height and half width, head through the top of
+        // his box.
+        drawinfo.dupx = (sv_dupx + 1) / 2;
+        drawinfo.dupy = (sv_dupy + 1) / 2;
         if( drawinfo.dupx < 1 )  drawinfo.dupx = 1;
         if( drawinfo.dupy < 1 )  drawinfo.dupy = 1;
         drawinfo.xbytes = drawinfo.dupx * vid.bytepp;
@@ -2914,17 +2921,44 @@ void M_DrawSetupMultiPlayerMenu(void)
         drawinfo.x_unitfrac = FixedDiv(FRACUNIT, drawinfo.x_scale);
         drawinfo.y_unitfrac = FixedDiv(FRACUNIT, drawinfo.y_scale);
 
+    {
+      // [Arcade] Stand him so his whole walk cycle is centred in the box, at
+      // the size he is really drawn.  A fixed "feet 8 above the floor" was
+      // right only for a sprite drawn at exactly half the page scale, which is
+      // what OpenGL does; software scales by whole numbers, so at a 3x page
+      // the half scale rounds up to 2x and he came out a third too big, head
+      // cut off by the box top and a gap under his feet.
+      //
+      // ratio: screen pixels per sprite row over screen pixels per page unit.
+      // Envelope: the PLAY walk frames reach 53 rows above the feet and 5
+      // below (PLAYA1..PLAYD1, measured from the IWAD), so anchoring on the
+      // feet keeps him from bobbing while the envelope centres him.
+      float ratio;
+      int   feet_y, floor_y;
+#ifdef HWRENDER
+      if( rendermode != render_soft )
+          ratio = drawinfo.fdupy / drawinfo.fdupy0;  // how HWR_DrawMappedPatch sizes and places
+      else
+#endif
+          ratio = (float)drawinfo.y_scale / (float)drawinfo.y0_scale;
+      floor_y = PLBOXH*8 - (int)(PL_SPRITE_BELOW * ratio + 0.5f);  // lowest his feet may stand
+      feet_y = (int)( ((PLBOXH*8) - (PL_SPRITE_ABOVE + PL_SPRITE_BELOW) * ratio) / 2.0f
+                      + (PL_SPRITE_ABOVE * ratio) + 0.5f );
+      if( feet_y > floor_y )  feet_y = floor_y;  // too big to fit: keep his feet in, lose the head
+      feet_y += my+PLBOXY+8;
+
     if( itemOn>0 )  // Edit skin or color
     {
       // Some skins are too large for the screen, cause segfault.
-      V_DrawMappedPatch_Box (mx+PLBOXX+8+(PLBOXW*8/2),my+PLBOXY+8+(PLBOXH*8)-8, patch, colormap,
+      V_DrawMappedPatch_Box (mx+PLBOXX+8+(PLBOXW*8/2), feet_y, patch, colormap,
                            1, 0, 300, my+PLBOXY+8+PLBOXH*8 );
     }
     else
     {
       // Some skins are too large for the box
-      V_DrawMappedPatch_Box (mx+PLBOXX+8+(PLBOXW*8/2),my+PLBOXY+8+(PLBOXH*8)-8, patch, colormap,
+      V_DrawMappedPatch_Box (mx+PLBOXX+8+(PLBOXW*8/2), feet_y, patch, colormap,
                            mx+PLBOXX+8, my+PLBOXY+8, PLBOXW*8, PLBOXH*8 );
+    }
     }
 
         drawinfo.fdupx = sv_fdupx;   drawinfo.fdupy = sv_fdupy;

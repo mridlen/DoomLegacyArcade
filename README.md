@@ -459,7 +459,9 @@ to anyone else running this port. Each is written up in full in the commit that 
   the little marine was sized by the sprite's scale rather than the page's, so shrinking him to
   half size shrank the box too — and that ran into a stock bug where the bottom edge of the clip
   was computed backwards, dropping part of him and drawing the rest as streaks down the screen.
-  OpenGL never clips to that box, so it was always fine there.
+  OpenGL never clips to that box, so it was always fine there. He is also now stood in the middle
+  of the box at the size software really draws him; before, his head was cut off by the top of it
+  at 1366x768 and most other resolutions, and at 800x600 he was stretched to twice his proper height.
 - **Slime trails.** The thin ragged strips of floor showing through a wall, most famously on the
   E1M1 stairs — an artefact of the node data id's own builder wrote in 1993, baked into every IWAD.
   The engine now rebuilds the BSP nodes at level load with a modern builder (ZDBSP, vendored here)
