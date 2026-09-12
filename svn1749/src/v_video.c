@@ -1635,10 +1635,14 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
     // Offsets are subject to DRAWSCALE dup.
     draw_y1 = (V_start_y(y) * vid.ybytes) - (V_scale_y(patch->topoffset) * vid.ybytes);
     draw_x = (V_start_x(x) * vid.bytepp) - (V_scale_x(patch->leftoffset) * vid.bytepp);
+    // [Arcade] The box is page layout, so both of its edges go through the
+    // start scale.  Sizing it by the patch scale was the same thing only while
+    // the two scales were equal; the player preview halves the patch scale,
+    // which shrank the box with it and put its bottom edge mid-sprite.
     by1 = (V_start_y(box_y) * vid.ybytes);
-    by2 = by1 + (V_scale_y(box_h) * vid.ybytes);
+    by2 = (V_start_y(box_y + box_h) * vid.ybytes);
     bx1 = (V_start_x(box_x) * vid.bytepp);
-    bx2 = bx1 + (V_scale_x(box_w) * vid.bytepp);
+    bx2 = (V_start_x(box_x + box_w) * vid.bytepp);
 
 #ifdef DIRTY_RECT
     if (drawinfo.screen == 0)
@@ -1657,6 +1661,7 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
 
     for ( ; col < wf; col += drawinfo.x_unitfrac)
     {
+        if( draw_x >= bx2 )  break;  // Right edge of box  [Arcade] before drawing, not after
         column = (column_t *) ((byte *) patch + patch->columnofs[col >> FRACBITS]);
 
 #ifdef DEEPSEA_TALL_PATCH
@@ -1702,7 +1707,10 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
             if( (draw_y + (count * vid.ybytes)) > by2 )  // Bottom of box
             {
                 // Clip at bottom of box
-                count = (draw_y - by2) / vid.ybytes;
+                // [Arcade] Was (draw_y - by2): negative for a post crossing
+                // the edge, so it vanished, and positive for one starting
+                // below it, which then drew a streak down the screen.
+                count = (by2 - draw_y) / vid.ybytes;
                 if( count <= 0 )  continue;
             }
 
@@ -1730,7 +1738,6 @@ void V_DrawMappedPatch_Box(int x, int y, patch_t * patch, byte * colormap, int b
             }
         }
         draw_x += vid.bytepp;
-        if( draw_x > bx2 )  break;  // Right edge of box
     }
 }
 

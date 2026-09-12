@@ -791,6 +791,29 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   and `8*PLBOXH - 33.5` top. `PLBOXW` 3 would leave 0.5 on the right and `PLBOXH` 4 would clip the
   head by 1.5.
 
+  **Halving the patch scale also halved the clip box, and in software that garbled the man.**
+  `V_DrawMappedPatch_Box` took the box's *corner* through the start scale but its *width and height*
+  through the patch scale. The two were the same number until this page halved one of them, which
+  pulled the clip box's bottom edge up to mid-sprite. That then walked into an upstream bug that
+  had never been reachable: the bottom clip computed `count = (draw_y - by2)`, backwards, so a
+  column crossing the edge was dropped and a column starting below it drew a long streak downward.
+  On screen the preview was a handful of vertical lines on the box background, on both rows, at
+  8, 24 and 32bpp. OpenGL was fine throughout because `HWR_DrawMappedPatch` ignores the box.
+  - Fixed by taking both box edges through the start scale — `V_start_y(box_y + box_h)`, not
+    `by1 + V_scale_y(box_h)` — correcting the bottom clip to `(by2 - draw_y)`, and testing the
+    right edge before a column is drawn instead of after.
+  - **The general rule: a clip rectangle is page layout, not art, so it scales with the start
+    scale.** Anything that shrinks a patch in place by touching only the patch fields of `drawinfo`
+    must not have its bounds read through `V_scale_x/y`.
+  - Verified headlessly with a temporary console command that opened this page and screenshotted
+    it under the offscreen driver: garbled before, whole after, matching the OpenGL control at
+    1024x768 and 640x480 in 8bpp and at 1366x768 and 1024x768 with `draw8bpp` off. The clip
+    itself was then proved to work rather than merely no longer be reached, by temporarily
+    shrinking the box to 5/8: the man came out cut along one straight vertical and one straight
+    horizontal edge, with nothing outside. **Note `draw8bpp "On"` in a config wins over a 24 or
+    32bit drawmode** — check the log's `Draw buffer: ... bytes per row` before calling a run deep
+    colour.
+
   **The crosshair row then moved off the narrow column and onto a line of its own**, in the run of
   rows below the box beside Control scheme. It was only squeezed in next to the box because, at full
   sprite size, there was nowhere else for it — that was what forced the "labels wider than ~90 units
