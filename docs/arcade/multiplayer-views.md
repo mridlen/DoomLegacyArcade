@@ -376,6 +376,36 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       once some panel has pressed in — before that Use does nothing and the cells already say
       PRESS FIRE. Clear of the bottom row of cells, which end at y 122 (`cy = 60 + row*50`, text
       at `cy` and `cy+12`), and of the countdown line at `BASEVIDHEIGHT - 28`.
+  - **Pressing in opens a per-panel setup in the panel's own cell** — COLOR, CROSSHAIR, CONTROLS,
+    then LOCK IN. `join_pressed[]` is a three-state `JOIN_OUT`/`JOIN_SETUP`/`JOIN_LOCKED` (still
+    tested as a boolean by `M_Join_Start`, so `JOIN_OUT` must stay 0) and `join_row[]` the cursor.
+    The rows edit `cv_playercolor[panel]`, `cv_crosshair[panel]` and `cv_controlscheme[panel]` —
+    the Player N config cvars, per **panel**, so nothing needs mapping through a pind.
+    - **This replaced "USE TO START NOW".** The game starts from `M_Join_Check_All_Locked` once no
+      panel is still in `JOIN_SETUP` and at least one is locked, or when the countdown ends
+      (unlocked panels still play, with whatever they had picked). Use now steps back a row or
+      unlocks.
+    - **Fire steps down the rows rather than changing the value**, so mashing fire joins, keeps the
+      panel's existing settings and locks in — the old one-press habit still works, in four.
+    - **Input is matched per panel** (`M_Join_Panel_Control`), not through `M_key_is_control`,
+      which asks about every panel at once. Left/right accept turn *and* strafe, because which
+      pair turns is the very thing the CONTROLS row changes — and changing it fires
+      `ControlScheme_OnChange`, rebinding that panel mid-page, which is harmless for that reason.
+    - **Values are named through the PossibleValue table**, not `cv->string`: a cvar set by number
+      can still hold the digit.
+    - **Layout, measured against STCFN**: widest row is `COLOR` (40) + `LIGHT BROWN` (81) + arrows
+      (5+5, 3px gaps) + 4px margins = 145, inside a quarter's 160. Five lines at a 9px pitch take 43
+      of a cell; `cy` went from `60 + row*50` to `54 + row*54`, which leaves 9px between the rows
+      of cells (they nearly touched) and ends the bottom row at y 153, above the countdown at 172.
+    - Verified headless with a temporary console command feeding each panel's bound keys through
+      `M_Join_Key` plus an offscreen GL screenshot: turn and strafe both change a value, fire walks
+      the rows and locks, use unlocks, and the page stays up while any joined panel is still
+      choosing and starts the instant the last one locks. Cells narrower than 150 (`cv_split4`, 80 wide) put each value on its own
+      line under its label; wider cells (two stacked) centre a 150-wide box. `LIGHT BROWN` is 1px
+      wider than an 80 cell and is allowed to overhang.
+    - **"Look and Move" was renamed "Tank"** (`controlscheme_cons_t`). An old config's
+      `controlscheme "Look and Move"` fails to parse with one console line and leaves the default,
+      value 0, which *is* Tank — and `M_Verify_Config` skips values it cannot resolve.
   - **One or two players get the big layout** — the whole screen, or the stacked halves — however
     far apart their panels are; only three or more use the 2x2. Keeping a player in their own
     panel's cell only earns its keep once the grid is in use anyway: with two players top and

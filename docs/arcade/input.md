@@ -104,10 +104,10 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       LT and RT independent.
     - `check_Joystick_Xbox[]` is now **assigned but never read**. Left in place (it is upstream
       code, and harmless) rather than removed.
-- **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Look and Move" vs "WASD") per player,
+- **Control schemes** (`g_input.c`). `cv_controlscheme[2]` ("Tank" vs "WASD") per player,
   selectable on the Setup Player 1 and 2 screens. `ControlScheme_Apply()` owns ten bindings per
   player (move/turn/strafe/fire/use/weapon cycling); everything else is left alone. The two schemes
-  differ **only** in which pair turns and which strafes — `pair_a` turns under "Look and Move" and
+  differ **only** in which pair turns and which strafes — `pair_a` turns under "Tank" and
   strafes under "WASD", `pair_b` the reverse. The built-in presets' keys are the characters the
   user's **Dvorak** layout produces — the engine captures layout-aware SDL keycodes, not physical
   scancodes (`sdl/i_system.c`).
@@ -170,11 +170,11 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     control layout lives in `config.cfg`** and the hardcoded table is only the fallback preset.
     An empty or malformed string falls back silently.
   - Going through the scheme machinery instead of writing `gamecontrol[]` is what keeps
-    **"Look and Move" / "WASD" working on a custom panel**. The stick's left/right lands in pair A
+    **"Tank" / "WASD" working on a custom panel**. The stick's left/right lands in pair A
     and the strafe buttons in pair B, which is the Look-and-Move arrangement; picking WASD
     afterwards swaps which pair turns and which strafes. The operator is never asked about this —
     it is a player preference applied after the fact. Verified headless with a distinct key per
-    slot: under "Look and Move" turn was `a`/`e` and strafe `t`/`n`; under "WASD" they traded,
+    slot: under "Tank" turn was `a`/`e` and strafe `t`/`n`; under "WASD" they traded,
     with forward and fire unmoved.
   - `cv_customcontrols` is `CV_CALL` onto the same OnChange as the scheme cvar, so whichever of the
     two lines config.cfg happens to list last still leaves the bindings correct.
@@ -246,7 +246,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     number; they press the pad in their hands.
   - **Nothing new is persisted.** The ten controls the scheme owns go through
     `G_Save_CustomControls` into `cv_customcontrols[panel]` (already `CV_SAVE`, already preferred by
-    `ControlScheme_Apply` over the compiled `scheme_keys[]`), so **"Look and Move" / "WASD" keeps
+    `ControlScheme_Apply` over the compiled `scheme_keys[]`), so **"Tank" / "WASD" keeps
     working on a pad**; the rest are ordinary `gamecontrol_pl` entries, already written out as
     `setcontrol`/`setcontrol2/3/4` lines. This is what makes the feature small.
     - It also fills the gap `scheme_keys[]` documents: there is no third or fourth *keyboard* preset
@@ -321,7 +321,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     analog movement would double-apply against these same bindings.
   - Strafe sits on the right stick rather than the shoulders, which is what pushed the weapon keys
     onto LB/RB and left **X and Y free** for the operator. The strafe pair goes in through
-    `CK_pair_b`, so the "Look and Move" / "WASD" selector still swaps it with turning -- on a pad
+    `CK_pair_b`, so the "Tank" / "WASD" selector still swaps it with turning -- on a pad
     that means WASD makes the **right stick turn and the left stick strafe**.
     - **That is a feature, and both layouts are play-tested.** It fell out of reusing the scheme
       machinery rather than being designed, so it was first written down here as a caveat; on the

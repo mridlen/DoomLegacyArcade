@@ -134,7 +134,7 @@ extern consvar_t   cv_controlscheme[MAXSPLITSCREENPLAYERS];
 
 // [Arcade] The ten controls a cabinet panel needs, in the order the guided
 // setup captures them and the order they are stored in cv_customcontrols.
-// The two "pair" entries are what the scheme swaps: under "Look and Move"
+// The two "pair" entries are what the scheme swaps: under "Tank"
 // pair A turns and pair B strafes, under "WASD" it is the other way round.
 enum {
     CK_forward = 0,
@@ -143,9 +143,9 @@ enum {
     CK_use,
     CK_nextweapon,
     CK_prevweapon,
-    CK_pair_a_left,     // turn left  under "Look and Move", strafe under WASD
+    CK_pair_a_left,     // turn left  under "Tank", strafe under WASD
     CK_pair_a_right,
-    CK_pair_b_left,     // strafe left under "Look and Move", turn under WASD
+    CK_pair_b_left,     // strafe left under "Tank", turn under WASD
     CK_pair_b_right,
     CK_NUMKEYS
 };
