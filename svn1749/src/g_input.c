@@ -80,7 +80,7 @@ void ControlScheme2_OnChange(void);
 void ControlScheme3_OnChange(void);   // [Arcade] third panel
 void ControlScheme4_OnChange(void);   // [Arcade] fourth panel
 CV_PossibleValue_t controlscheme_cons_t[] =
-  { {0,"Look and Move"}, {1,"WASD"}, {0,NULL} };
+  { {0,"Tank"}, {1,"WASD"}, {0,NULL} };
 consvar_t  cv_controlscheme[MAXSPLITSCREENPLAYERS] = {
   { "controlscheme",  "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme1_OnChange },
   { "controlscheme2", "0", CV_SAVE | CV_CALL, controlscheme_cons_t, ControlScheme2_OnChange },
@@ -722,7 +722,7 @@ int G_KeyStringtoNum(char *keystr)
 // engine captures (SDL keycodes are layout-aware, see sdl/i_system.c).
 // Player 1 uses the left-hand ,aoe cluster (physical WASD), player 2 the
 // right-hand yuid cluster (physical TFGH).
-//   pair_a = the A/D-position pair: turns in "Look and Move", strafes in "WASD"
+//   pair_a = the A/D-position pair: turns in "Tank", strafes in "WASD"
 //   pair_b = the complementary pair, doing whichever job pair_a is not
 typedef struct {
     int  forward, backward, fire, use, nextweapon, prevweapon;
@@ -784,7 +784,7 @@ static void ControlScheme_Apply( int pind )
     controlkeys_t  custom;
     // [Arcade] An operator table from the guided setup takes the place of
     // the compiled-in preset, but is swapped by the scheme exactly the same
-    // way -- so a cabinet still gets both "Look and Move" and "WASD".
+    // way -- so a cabinet still gets both "Tank" and "WASD".
     boolean have_custom = Parse_CustomControls(pind, &custom);
     const controlkeys_t * k = have_custom ? &custom : &scheme_keys[pind];
     int (* gc)[2] = gamecontrol_pl[pind];   // [Arcade] was a 0/1 choice
@@ -832,7 +832,7 @@ static void ControlScheme_Apply( int pind )
 //
 // So this stamps a whole layout in one go, through cv_customcontrols exactly
 // as the guided setup does: the ten controls the scheme owns go through
-// G_Save_CustomControls, so "Look and Move" / "WASD" keeps working on a pad,
+// G_Save_CustomControls, so "Tank" / "WASD" keeps working on a pad,
 // and the rest are bound directly because ControlScheme_Apply leaves them be.
 
 // Button numbers on the standard Linux xpad / SDL layout.  Verified against a
@@ -906,7 +906,7 @@ int  G_Joy_Num_Of_Key( int key )
 //
 // Strafe is on the right stick rather than the shoulders, which is what pushed
 // the weapon keys onto LB/RB and left X and Y free for the operator.  Note the
-// strafe pair goes in through CK_pair_b, so the "Look and Move" / "WASD"
+// strafe pair goes in through CK_pair_b, so the "Tank" / "WASD"
 // selector still swaps it with turning; on a pad that means WASD makes the
 // right stick turn and the left stick strafe, which is a deliberate choice
 // rather than an accident.

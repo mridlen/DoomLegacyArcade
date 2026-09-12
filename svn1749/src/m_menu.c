@@ -3417,7 +3417,29 @@ static void  M_Draw_Cheats( void )
 // currentMenu test kept firing the countdown every tic after the game had
 // already been started -- G_DeferedInitNew once per tic, for ever.
 static boolean join_active = false;
-static byte  join_pressed[MAXSPLITSCREENPLAYERS];  // panel has pressed in
+// [Arcade] Where each panel is on the page.  Pressing in no longer just
+// counts a panel: it opens that panel's own little setup in its cell -- the
+// colour, crosshair and control scheme from Player N config -- so a player
+// who walks up to a cabinet can pick them without an operator and without
+// leaving the join screen.  The game starts when every panel that pressed in
+// has locked in, or when the countdown runs out, whichever is first.
+enum {
+    JOIN_OUT = 0,     // has not pressed fire; must stay 0, tested as a boolean
+    JOIN_SETUP,       // in, choosing settings
+    JOIN_LOCKED       // in, and done
+};
+static byte  join_pressed[MAXSPLITSCREENPLAYERS];  // JOIN_* per panel
+// The rows of a panel's setup, in cursor order.  JOIN_ROW_READY is last:
+// fire steps down the rows, so a player who only mashes fire keeps what the
+// panel already had and locks in.
+enum {
+    JOIN_ROW_COLOR = 0,
+    JOIN_ROW_CROSSHAIR,
+    JOIN_ROW_CONTROLS,
+    JOIN_ROW_READY,
+    JOIN_NUM_ROWS
+};
+static byte  join_row[MAXSPLITSCREENPLAYERS];      // cursor row per panel
 static int   join_endtic;         // gametic the countdown expires
 // What to run once joining is done.  A callback because the two menu routes
 // into a game start differently: the Single Player path ends at
@@ -3520,9 +3542,51 @@ void  M_Join_Ticker( void )
 }
 
 
+// Is key bound to action gc on this one panel.  M_key_is_control asks the
+// same about every panel at once, which is exactly what this page must not do.
+static boolean  M_Join_Panel_Control( byte panel, uint16_t key, int gc )
+{
+    if( key == KEY_NULL )  return false;   // unbound rows are KEY_NULL
+    return gamecontrol_pl[panel][gc][0] == key
+        || gamecontrol_pl[panel][gc][1] == key;
+}
+
+// The cvar a setup row edits.  All three are per *panel*, the same ones
+// Player N config edits, so what is picked here is what that page shows.
+static consvar_t *  M_Join_Row_Cvar( byte panel, byte row )
+{
+    switch( row )
+    {
+     case JOIN_ROW_COLOR:     return &cv_playercolor[panel];
+     case JOIN_ROW_CROSSHAIR: return &cv_crosshair[panel];
+     case JOIN_ROW_CONTROLS:  return &cv_controlscheme[panel];
+    }
+    return NULL;
+}
+
+// Start now if every panel that pressed in has also locked in.
+static void  M_Join_Check_All_Locked( void )
+{
+    byte panel, panels = M_Join_NumPanels();
+    byte joined = 0;
+
+    for( panel=0; panel < panels; panel++ )
+    {
+        if( join_pressed[panel] == JOIN_SETUP )  return;   // still choosing
+        if( join_pressed[panel] == JOIN_LOCKED )  joined++;
+    }
+    if( joined )
+        M_Join_Start();
+}
+
 // Raw key handling, taken before M_Cabinet_Menu_Key translates panel buttons
 // into cursor movement -- this page needs to know *which* panel pressed, and
 // that translation throws the identity away.  True when the key is consumed.
+//
+// Per panel: fire joins, then steps down the rows and finally locks in;
+// forward/back move the cursor; turn or strafe change the value, both of them
+// because which pair turns depends on the very scheme being chosen; use steps
+// back up a row, or unlocks.
 boolean  M_Join_Key( uint16_t key )
 {
     byte panel, panels = M_Join_NumPanels();
@@ -3536,32 +3600,99 @@ boolean  M_Join_Key( uint16_t key )
 
     for( panel=0; panel < panels; panel++ )
     {
-        // Fire joins this panel.
-        if( key == gamecontrol_pl[panel][gc_fire][0]
-            || key == gamecontrol_pl[panel][gc_fire][1] )
+        byte * row = &join_row[panel];
+
+        if( join_pressed[panel] == JOIN_OUT )
         {
-            if( ! join_pressed[panel] )
+            // Fire joins this panel.
+            if( M_Join_Panel_Control( panel, key, gc_fire ) )
             {
-                join_pressed[panel] = 1;
+                join_pressed[panel] = JOIN_SETUP;
+                *row = JOIN_ROW_COLOR;
                 S_StartSound(menu_sfx_enter);
                 if( join_first_press_starts )
                     M_Join_Start();
+                return true;
+            }
+            continue;
+        }
+
+        if( join_pressed[panel] == JOIN_LOCKED )
+        {
+            // Use takes it back, in case of a change of mind.
+            if( M_Join_Panel_Control( panel, key, gc_use ) )
+            {
+                join_pressed[panel] = JOIN_SETUP;
+                *row = JOIN_ROW_READY;
+                S_StartSound(menu_sfx_esc);
+                return true;
+            }
+            if( M_Join_Panel_Control( panel, key, gc_fire ) )
+                return true;
+            continue;
+        }
+
+        // JOIN_SETUP
+        if( M_Join_Panel_Control( panel, key, gc_fire ) )
+        {
+            if( *row < JOIN_ROW_READY )
+            {
+                (*row)++;
+                S_StartSound(menu_sfx_updown);
+            }
+            else
+            {
+                join_pressed[panel] = JOIN_LOCKED;
+                S_StartSound(menu_sfx_enter);
+                M_Join_Check_All_Locked();
             }
             return true;
         }
-
-        // Use/open from a panel that is already in starts the game now, so a
-        // group that is ready need not sit out the rest of the countdown.
-        if( join_pressed[panel]
-            && ( key == gamecontrol_pl[panel][gc_use][0]
-                 || key == gamecontrol_pl[panel][gc_use][1] ) )
+        if( M_Join_Panel_Control( panel, key, gc_use )
+            || M_Join_Panel_Control( panel, key, gc_forward ) )
         {
-            M_Join_Start();
+            if( *row > 0 )
+            {
+                (*row)--;
+                S_StartSound(menu_sfx_updown);
+            }
             return true;
+        }
+        if( M_Join_Panel_Control( panel, key, gc_backward ) )
+        {
+            if( *row < JOIN_ROW_READY )
+            {
+                (*row)++;
+                S_StartSound(menu_sfx_updown);
+            }
+            return true;
+        }
+        {
+            int dir = 0;
+            if( M_Join_Panel_Control( panel, key, gc_turnleft )
+                || M_Join_Panel_Control( panel, key, gc_strafeleft ) )
+                dir = -1;
+            else if( M_Join_Panel_Control( panel, key, gc_turnright )
+                || M_Join_Panel_Control( panel, key, gc_straferight ) )
+                dir = 1;
+
+            if( dir )
+            {
+                consvar_t * cv = M_Join_Row_Cvar( panel, *row );
+                if( cv )
+                {
+                    // Fires the OnChange, so a control scheme swaps this
+                    // panel's turn and strafe pairs at once -- harmless here,
+                    // where both pairs mean left and right.
+                    CV_ValueIncDec( cv, dir );
+                    S_StartSound(menu_sfx_val);
+                }
+                return true;
+            }
         }
     }
 
-    return true;   // swallow the rest; this page has no cursor to move
+    return true;   // swallow the rest; this page has no shared cursor
 }
 
 
@@ -3598,31 +3729,93 @@ static void  M_Join_Drawer( void )
 
         D_Grid_Cell_Pos( panel, gcols, grows, &col, &row );
         int  cx  = col * cw;
-        int  cy  = 60 + row * 50;
-        const char * state = join_pressed[panel] ? "READY" : "PRESS FIRE";
-        int  opt = join_pressed[panel] ? V_WHITEMAP : 0;
+        int  cy  = 54 + row * 54;   // [Arcade] 9px between the rows of cells
+        byte st  = join_pressed[panel];
+        int  opt = (st == JOIN_OUT) ? 0 : V_WHITEMAP;
 
         snprintf(buf, sizeof(buf), "PLAYER %d", panel+1);
         V_DrawString( cx + (cw - V_StringWidth(buf))/2, cy, opt, buf );
-        V_DrawString( cx + (cw - V_StringWidth((char*)state))/2, cy + 12,
-                      opt, (char*) state );
-    }
 
-    // [Arcade] How to stop waiting.  Only worth saying once somebody is in --
-    // before that Use does nothing, and the panels are already each showing
-    // PRESS FIRE.  This earns its place now that Campaign waits out the
-    // countdown like everything else: a player on their own would otherwise
-    // have no way of knowing the wait is skippable, and the row they pressed
-    // used to start instantly.
-    if( ! join_first_press_starts )
-    {
-        byte any = 0;
-        for( panel=0; panel < panels; panel++ )
-            any |= join_pressed[panel];
+        if( st == JOIN_OUT )
+        {
+            V_DrawString( cx + (cw - V_StringWidth("PRESS FIRE"))/2, cy + 12,
+                          0, "PRESS FIRE" );
+            continue;
+        }
 
-        if( any )
-            V_DrawString( (BASEVIDWIDTH - V_StringWidth("USE TO START NOW"))/2,
-                          BASEVIDHEIGHT - 42, V_WHITEMAP, "USE TO START NOW" );
+        // [Arcade] The panel's setup, one row per setting.  Measured against
+        // the STCFN lumps: the widest pairing is COLOR (40) with LIGHT BROWN
+        // (81), which with the arrows (5 each, 3 apart) and a 4px margin
+        // either side is 145 -- inside a quarter screen's 160.  The rows are
+        // 9 apart (glyphs are 7 tall), so five lines take 43 of the cell's
+        // 50 and the bottom row of cells still ends above the countdown.
+        //
+        // In a cell narrower than that -- four side by side, 80 wide -- the
+        // value goes on its own line under its label, centred, with room to
+        // spare below.  A wide cell (two players stacked) keeps the rows
+        // together in a 150 box rather than flinging the value to the far
+        // edge of the screen.
+        {
+            static const char * const labels[JOIN_NUM_ROWS] =
+                { "COLOR", "CROSSHAIR", "CONTROLS", NULL };
+            byte narrow = (cw < 150);
+            int  bw = narrow ? cw : 150;
+            int  bx = cx + (cw - bw)/2;
+            int  ly = cy + 11;
+            byte r;
+
+            for( r = 0; r < JOIN_NUM_ROWS; r++ )
+            {
+                // The row under the cursor is red and the rest grey; once
+                // locked in, everything is grey.
+                byte sel  = (st == JOIN_SETUP) && (join_row[panel] == r);
+                int  ropt = sel ? 0 : V_WHITEMAP;
+                consvar_t * cv = M_Join_Row_Cvar( panel, r );
+
+                if( ! cv )
+                {
+                    const char * s = (st == JOIN_LOCKED) ? "READY" : "LOCK IN";
+                    V_DrawString( bx + (bw - V_StringWidth((char*)s))/2, ly,
+                                  ropt, (char*) s );
+                    ly += 9;
+                    continue;
+                }
+
+                {
+                    // Named through the table, not cv->string: a cvar set
+                    // by number (the colours' defaults are "0".."3") can
+                    // still hold the digit as its string.
+                    const char * val = cv->string;
+                    CV_PossibleValue_t * pv;
+                    int  vw;
+                    for( pv = cv->PossibleValue; pv && pv->strvalue; pv++ )
+                    {
+                        if( pv->value == cv->value )  { val = pv->strvalue;  break; }
+                    }
+                    vw = V_StringWidth( (char*) val );
+
+                    if( narrow )
+                    {
+                        V_DrawString( bx + (bw - V_StringWidth((char*)labels[r]))/2,
+                                      ly, ropt, (char*) labels[r] );
+                        V_DrawString( bx + (bw - vw)/2, ly + 9, ropt, (char*) val );
+                        ly += 20;
+                    }
+                    else
+                    {
+                        int  vx = bx + bw - 4 - 5 - 3 - vw;  // right-aligned
+                        V_DrawString( bx + 4, ly, ropt, (char*) labels[r] );
+                        V_DrawString( vx, ly, ropt, (char*) val );
+                        if( sel )
+                        {
+                            V_DrawString( vx - 3 - 5, ly, ropt, "<" );
+                            V_DrawString( bx + bw - 4 - 5, ly, ropt, ">" );
+                        }
+                        ly += 9;
+                    }
+                }
+            }
+        }
     }
 
     if( secs < 0 )  secs = 0;
@@ -4184,7 +4377,10 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
     if( cv_jointime.EV == 0 )     return false;
 
     for( panel=0; panel<MAXSPLITSCREENPLAYERS; panel++ )
-        join_pressed[panel] = 0;
+    {
+        join_pressed[panel] = JOIN_OUT;
+        join_row[panel] = JOIN_ROW_COLOR;
+    }
 
     join_startfunc = startfunc;
     join_first_press_starts = first_press_starts;
@@ -6686,7 +6882,7 @@ static void M_Guided_Response( event_t * ev )
 
     // Hand the table to the scheme machinery rather than writing bindings
     // directly: ControlScheme_Apply owns exactly these ten actions, and this
-    // way the "Look and Move" / "WASD" selector keeps working on the custom
+    // way the "Tank" / "WASD" selector keeps working on the custom
     // layout instead of overwriting it.
     G_Save_CustomControls( controls_player, guided_keys );
 

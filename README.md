@@ -782,8 +782,17 @@ launch.
 On a cabinet with more than one control panel, a **join screen** appears once the game has been
 chosen — after the skill on a Campaign, after the map on a Deathmatch. Each panel presses
 **fire** to be counted in, and the screen is laid out as the game is about to be: press fire and
-watch your own square claim itself. It starts when the countdown runs out, or as soon as anyone
-already in presses **use**, which the page says once somebody is in.
+watch your own square claim itself.
+
+**Pressing in opens your own setup in your square**: **COLOR**, **CROSSHAIR** and **CONTROLS**
+(Tank or WASD) — the same settings as your panel's `PlayerN config` page, so what you pick there
+is what you pick here. Stick up/down moves between them, left/right changes one, and **fire** steps
+down to the next; the last row is **LOCK IN**, so a player who just presses fire four times keeps
+what the panel already had. **Use** steps back up, or unlocks. The row you are on is red, and
+everything turns grey once you are locked in.
+
+The game starts **as soon as everyone who pressed in has locked in**, or when the countdown runs
+out, whichever comes first. A panel that never pressed in is not waited for.
 
 **This is what decides whether a Campaign is co-op.** One panel in and it is the solo run it has
 always been, scored and recorded as usual; two or more and the same game starts as co-op instead.
@@ -800,8 +809,8 @@ they are actually standing at. All of that is under
 
 The page is skipped entirely on a single-panel cabinet. It used to start the moment one person
 pressed fire on a single player game, which is exactly what made co-op impossible to ask for — the
-first hand on a button ended the question. It now always waits, and **use** is the way to skip the
-rest of the countdown.
+first hand on a button ended the question. It now always waits, and locking in is the way to skip
+the rest of the countdown.
 
 ### Controls
 
@@ -833,9 +842,9 @@ The stick both moves and turns. Binding all of this is an operator job — see
 [Setting up a control panel](#setting-up-a-control-panel), which needs `-devmode`.
 
 **Two schemes** are offered per player under Options → Player → `Player1 config` (through
-`Player4 config`): **Look and Move** and **WASD**. They swap which pair of controls turns and which
-strafes, and both work on the same wiring, so it's purely a player preference. Look and Move
-matches how most joysticks and digital gamepads are normally set up, and is the better default.
+`Player4 config`), and on the join screen: **Tank** (called *Look and Move* in older builds) and
+**WASD**. They swap which pair of controls turns and which strafes, and both work on the same
+wiring, so it's purely a player preference. Tank matches how most joysticks and digital gamepads are normally set up, and is the better default.
 
 **In the menus**, the same buttons navigate: stick up/down moves the cursor, left/right changes a
 setting, **fire** selects, **use** backs out. No keyboard is needed.
