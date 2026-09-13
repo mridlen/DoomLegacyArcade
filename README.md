@@ -1199,6 +1199,10 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
 - Both cabinets need this version of the game. A cabinet with Cabinet Link switched on also ignores
   game traffic from anything that is not a linked cabinet.
+- The cabinets must have the **same IWAD**, but not the same file name: Ultimate Doom as `DOOM.WAD` on
+  one and `doomu.wad` on the other is fine. A *different version* under the same name (Doom 2 v1.666
+  against v1.9) is refused with "different version of DOOM2.WAD", because the two would play different
+  games.
 
 Shared high scores come next.
 

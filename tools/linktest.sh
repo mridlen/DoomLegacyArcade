@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -135,7 +135,7 @@ cfg() {
 run() {
     local d=$1 secs=$2; shift 3
     ( cd "$d" && env LK_SELFCHECK="${LKSC:-}" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game doom2 -nodraw -nosound -nomusic -linkstatus "$@" \
+        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" -nodraw -nosound -nomusic -linkstatus "$@" \
         > out.txt 2>&1 ) &
 }
 
@@ -473,6 +473,59 @@ case_noshow() {
     expect "the host was told a player was coming" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
     # 15 seconds of waiting, then the game starts with whoever is there.
     expect "the host gives up waiting and plays" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+}
+
+
+# ---- The IWAD is matched by content, not by file name ---------------------
+
+# Ultimate Doom is DOOM.WAD here and doomu.wad there: the same file, so the
+# two cabinets must play together.  The engine used to refuse this by name.
+case_iwadname() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/DOOM.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/DOOM.WAD to test with"; return; }
+    mkcab "$d/master"; mkcab "$d/member"
+    rm -f "$d/member/DOOM.WAD" "$d/member/doom.wad"
+    ln -s "$WADDIR/DOOM.WAD" "$d/member/doomu.wad"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    GAME=doomu run "$d/master" 45 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    GAME=doomu run "$d/member" 42 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the joiner really loaded it as doomu.wad" "$d/member" "Added file .*/doomu\.wad"
+    expect "the host is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# Doom 2 v1.666 against v1.9: the same name, a different file.  They would play
+# two different games, so the joiner must be refused and the host play alone.
+case_iwadversion() {
+    local d=$1 p=$2
+    local old="$HOME/games/doom-backup/DOOM2.WAD.v1.666"
+    [ -f "$old" ] || { FAILS="$FAILS
+      no $old to test with"; return; }
+    mkcab "$d/master"; mkcab "$d/member"
+    rm -f "$d/member/DOOM2.WAD"
+    ln -s "$old" "$d/member/DOOM2.WAD"
+    # -iwad needs a name ending in .wad: "DOOM2.WAD.v1.666" is "File not found".
+    mkdir -p "$d/member/oldiwad"
+    ln -s "$old" "$d/member/oldiwad/DOOM2.WAD"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 50 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    # -iwad: without it the engine prefers ~/games/doom/DOOM2.WAD over the link
+    # in the cabinet's own directory, and the first run of this case quietly
+    # tested two identical files.
+    run "$d/member" 46 0 -linktest -linkautojoin -clientport $((p+101)) -iwad "$d/member/oldiwad/DOOM2.WAD"
+    wait
+    expect "the joiner really loaded the old version" "$d/member" "Added file .*/oldiwad/DOOM2\.WAD"
+    expect "the joiner tried to join" "$d/member" "^LINKLOG .*joining HOSTCAB"
+    expect_not "the joiner was not let into the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0"
+    expect "the host plays alone after the wait" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
 }
 
 case_convert() {

@@ -778,7 +778,7 @@ it would send to an address with no key. Measured 14–25 µs per packet on the 
 savegame because a peer — even an authenticated one — offered it. Different wads are refused at
 connect instead (the netcode's own MD5 check).
 
-**Verified** — `tools/linktest.sh`, now 17 cases, all pass (two at a time, about five minutes):
+**Verified** — `tools/linktest.sh`, now 19 cases, all pass (two at a time, about six minutes):
 - `linkgame` — master hosts a Deathmatch, member joins: host `server=1 players=2`, joiner
   `server=0 players=2`, ~1,700 packets sealed and opened each way over 55 seconds, **0 dropped**,
   both still linked at the end.
@@ -824,6 +824,21 @@ connect instead (the netcode's own MD5 check).
   This also means the 15 second no-show timeout would have been undone the same way.
 - **The laptop's firewall was never the obstacle Phase 0 assumed.** Fedora's workstation zone allows
   every TCP and UDP port from 1025 up, so either cabinet can host.
+- **The first real linked game refused to connect: "it uses DOOM.WAD, you are using doomu.wad".**
+  Mark's laptop has Ultimate Doom as `DOOM.WAD` and the Pi as `doomu.wad` — the same file (md5
+  `c4fe9fd9…`). The stock `CL_CheckFiles` (`d_netfil.c`) compared the IWAD **by name only**, which is
+  wrong both ways: it refused identical files under different names, and let in *different* releases
+  under the same name (Doom 2 v1.666 and v1.9 are both `DOOM2.WAD`) to play two different games. It now
+  compares the md5, which `W_Load_WadFile` always computes and the server always sends; the name only
+  chooses the wording of the refusal. Two cases prove it both ways and both fail on the build before:
+  `iwadname` (Ultimate Doom as `doomu.wad` on one cabinet, `DOOM.WAD` on the other: one game) and
+  `iwadversion` (the joiner on v1.666 against a v1.9 host: refused, the host plays alone). Getting
+  `iwadversion` to test anything took two tries, both worth knowing: the engine prefers
+  `~/games/doom/DOOM2.WAD` over a file linked into the cabinet's own directory, so the first run compared
+  two identical files; and `-iwad` answers "File not found" for a name that does not end in `.wad`.
+  - A cabinet with a different IWAD version is still *invited* (the game id is the same), and learns at
+    connect; the host starts alone after its 15 second wait. Putting the IWAD's md5 into the game id
+    would stop the invite instead — not done yet.
 
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way

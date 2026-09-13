@@ -516,14 +516,28 @@ checkfiles_e  CL_CheckFiles(void)
 
     // The first fileneed is the iwad (the main wad file).
     // Do not check file date.
+    //
+    // [Arcade] Compared by content (md5), not by name.  The stock test was the
+    // file name alone, which got both cases wrong: Ultimate Doom installed as
+    // DOOM.WAD on one cabinet and as doomu.wad on the other -- the same bytes --
+    // was refused, while two *different* releases under the same name (Doom 2
+    // v1.666 and v1.9 are both DOOM2.WAD) were let in to play two different
+    // games and desync.  The md5 is always computed when a wad is added
+    // (W_Load_WadFile), and the server sends it, so the name is only needed for
+    // the message.
     strcpy(wadfilename, wadfiles[0]->filename);
     nameonly(wadfilename);
-    if( strcasecmp(wadfilename, cl_fileneed[0].filename) != 0 )
+    if( memcmp(wadfiles[0]->md5sum, cl_fileneed[0].md5sum, 16) != 0 )
     {
-        M_SimpleMessage(va("You cannot connect to this server\n"
-                          "since it uses %s\n"
-                          "You are using %s\n",
-                          cl_fileneed[0].filename, wadfilename));
+        if( strcasecmp(wadfilename, cl_fileneed[0].filename) == 0 )
+            M_SimpleMessage(va("You cannot connect to this server\n"
+                              "since it uses a different version of %s\n",
+                              wadfilename));
+        else
+            M_SimpleMessage(va("You cannot connect to this server\n"
+                              "since it uses %s\n"
+                              "You are using %s\n",
+                              cl_fileneed[0].filename, wadfilename));
         return CFR_iwad_error;
     }
     cl_fileneed[0].status=FS_OPEN;
