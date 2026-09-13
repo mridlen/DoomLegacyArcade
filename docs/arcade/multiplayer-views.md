@@ -393,6 +393,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       `ControlScheme_OnChange`, rebinding that panel mid-page, which is harmless for that reason.
     - **Values are named through the PossibleValue table**, not `cv->string`: a cvar set by number
       can still hold the digit.
+    - **The COLOR value is drawn in the colour it names** (`M_Skin_Font_Map`, drawn with
+      `V_DrawString_Mapped`, which is `V_DrawString` through any colormap rather than only
+      `whitemap`; `V_DrawString` is now a wrapper and every other caller is unchanged). Measured
+      across every STCFN lump in DOOM/DOOM2/TNT/PLUTONIA (`legacy.wad` has none): the face is red
+      176..188, the shadow 191, plus one pixel each of 45 and 47 (same RGB as 190/191). That is the
+      16-shade run 176..191, exactly as long as the player sprites' green ramp 112..127, so the map
+      is red→green one to one and then `SKIN_TO_SKINMAP` — **the text uses the very shades the
+      sprite is drawn in**, with no second colour table to keep in step. Colour 0 is untranslated
+      green. Only the value is recoloured; the label and arrows keep the cursor red.
+      - **Doom palette only** (`EN_doom_etc`): Heretic's font is not that ramp, so the map returns
+        NULL there and the value keeps the ordinary red/grey. The software `font1` fallback cannot
+        remap either and keeps the option colour.
+      - The map is rebuilt on each call into one fixed buffer per colour. The OpenGL patch cache
+        keys mipmaps by colormap *pointer* (`HWR_GetMappedPatch`), so a stable pointer per colour
+        means one cached glyph per colour, and rebuilding means it can never go stale against
+        `skintranstables`.
+      - Inherent to the palette, not bugs: GRAY and LIGHT GRAY look like the unselected grey text,
+        and LIGHT RED (ramp 0xb0) *is* the font's own red, so it matches the cursor colour. BLUE is
+        the darkest and still readable on the faded menu background.
+      - Verified with offscreen screenshots of all eleven colours — software 640x400 in the 2x2 and
+        the narrow four-column layout, and OpenGL on the real GPU — using a temporary `M_Ticker`
+        hook that called `M_StartControlPanel` then `M_Join_Open` (the page is normally opened
+        from inside an active menu; without the first call it opens invisibly). Pass no
+        `-width`/`-height` for the GL capture: forcing 640x400 against the offscreen driver's
+        1024x768 mode captures a zoomed, cropped corner, which looks like a drawing bug.
     - **Layout, measured against STCFN**: widest row is `COLOR` (40) + `LIGHT BROWN` (81) + arrows
       (5+5, 3px gaps) + 4px margins = 145, inside a quarter's 160. Five lines at a 9px pitch take 43
       of a cell; `cy` went from `60 + row*50` to `54 + row*54`, which leaves 9px between the rows

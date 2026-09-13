@@ -373,6 +373,9 @@ int V_DrawCharacter (int x, int y, byte c);
 
 //added:05-02-98: draw a string using the hu_font
 void V_DrawString (int x, int y, int option, const char* string);
+// [Arcade] The same, through any colormap (NULL = the font's own red).
+void V_DrawString_Mapped (int x, int y, int option, byte * colormap,
+                          const char* string);
 
 // Find string width from hu_font chars
 int V_StringWidth (const char* string);

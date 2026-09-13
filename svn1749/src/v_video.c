@@ -3255,6 +3255,16 @@ int V_DrawCharacter(int x, int y, byte c)
 // Called wi_stuff YAH: option 0 or V_WHITEMAP, within SetupDraw(SCALESTART, SCALEPATCH)
 void V_DrawString(int x, int y, int option, const char *string)
 {
+    V_DrawString_Mapped( x, y, option,
+                         (option & V_WHITEMAP)? whitemap : NULL, string );
+}
+
+// [Arcade] V_DrawString through any colormap, not only whitemap -- the join
+// screen draws each player colour's name in that colour.  colormap NULL draws
+// the font's own red.  The font1 fallback cannot remap, and keeps option.
+void V_DrawString_Mapped(int x, int y, int option, byte * colormap,
+                         const char *string)
+{
     // Save draw SCALESTART setting, and switch to NO SCALESTART drawing.
     // The combination of SCALESTART to this DrawString, and NO SCALEPATCH
     // drawing, cannot be handled with dup. Must turn off SCALESTART.
@@ -3340,8 +3350,8 @@ void V_DrawString(int x, int y, int option, const char *string)
         w = V_patch( hu_font[c] )->width * dupx;  // proportional width
         if (cx + w > vid.width)
             break;
-        if (option & V_WHITEMAP)
-            V_DrawMappedPatch( (int)cx, (int)cy, hu_font[c], whitemap);
+        if (colormap)
+            V_DrawMappedPatch( (int)cx, (int)cy, hu_font[c], colormap);
         else
             V_DrawScaledPatch( (int)cx, (int)cy, hu_font[c]);
         cx += w;

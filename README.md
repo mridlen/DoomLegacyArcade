@@ -796,7 +796,9 @@ watch your own square claim itself.
 is what you pick here. Stick up/down moves between them, left/right changes one, and **fire** steps
 down to the next; the last row is **LOCK IN**, so a player who just presses fire four times keeps
 what the panel already had. **Use** steps back up, or unlocks. The row you are on is red, and
-everything turns grey once you are locked in.
+everything turns grey once you are locked in. The color's name is always shown **in that color** —
+BROWN in brown, BLUE in blue — using the exact shades your player will be drawn in, so you can tell
+at a glance without reading it.
 
 The game starts **as soon as everyone who pressed in has locked in**, or when the countdown runs
 out, whichever comes first. A panel that never pressed in is not waited for.

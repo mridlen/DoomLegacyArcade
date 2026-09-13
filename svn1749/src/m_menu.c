@@ -3730,6 +3730,47 @@ boolean  M_Join_Key( uint16_t key )
 }
 
 
+// [Arcade] A colormap that draws the hu_font in player colour `skin`, so the
+// join screen shows BROWN in brown.  The font is the red ramp 176..191
+// (measured across every STCFN lump: 176..188 face, 191 shadow, plus 45 and
+// 47, which are the same RGB as 190 and 191) -- sixteen shades, exactly the
+// length of the player sprites' green ramp 112..127.  So red maps one to one
+// onto green, and the skin translation takes green to the colour: the text
+// uses the very shades the player's sprite is drawn in.
+//
+// Doom palette only; returns NULL elsewhere (Heretic's font is not this
+// ramp) and the caller keeps its ordinary text colour.  Rebuilt on every call
+// -- 256 bytes -- so it can never go stale against skintranstables, and one
+// fixed buffer per colour keeps the OpenGL cache, which is keyed by colormap
+// pointer, to one texture per glyph per colour.
+static byte *  M_Skin_Font_Map( byte skin )
+{
+    static byte  fontmap[NUMSKINCOLORS][256];
+    byte * map;
+    int i;
+
+    if( ! EN_doom_etc || ! skintranstables || skin >= NUMSKINCOLORS )
+        return NULL;
+
+    map = fontmap[skin];
+    for( i=0; i<256; i++ )
+        map[i] = i;
+    for( i=176; i<192; i++ )
+        map[i] = 112 + (i - 176);
+    map[45] = 126;
+    map[47] = 127;
+
+    if( skin > 0 )   // colour 0 is the untranslated green
+    {
+        byte * trantab = SKIN_TO_SKINMAP( skin );
+        for( i=176; i<192; i++ )
+            map[i] = trantab[ map[i] ];
+        map[45] = trantab[126];
+        map[47] = trantab[127];
+    }
+    return map;
+}
+
 static void  M_Join_Drawer( void )
 {
     byte  panel, panels = M_Join_NumPanels();
@@ -3828,18 +3869,29 @@ static void  M_Join_Drawer( void )
                     }
                     vw = V_StringWidth( (char*) val );
 
+                    // [Arcade] The colour's name is drawn in that colour, so
+                    // it reads at a glance.  The label and the arrows still
+                    // carry the red of the cursor row.
+                    byte * vmap = (ropt & V_WHITEMAP)? whitemap : NULL;
+                    if( r == JOIN_ROW_COLOR )
+                    {
+                        byte * skinmap = M_Skin_Font_Map( cv->value );
+                        if( skinmap )  vmap = skinmap;
+                    }
+
                     if( narrow )
                     {
                         V_DrawString( bx + (bw - V_StringWidth((char*)labels[r]))/2,
                                       ly, ropt, (char*) labels[r] );
-                        V_DrawString( bx + (bw - vw)/2, ly + 9, ropt, (char*) val );
+                        V_DrawString_Mapped( bx + (bw - vw)/2, ly + 9, ropt, vmap,
+                                             (char*) val );
                         ly += 20;
                     }
                     else
                     {
                         int  vx = bx + bw - 4 - 5 - 3 - vw;  // right-aligned
                         V_DrawString( bx + 4, ly, ropt, (char*) labels[r] );
-                        V_DrawString( vx, ly, ropt, (char*) val );
+                        V_DrawString_Mapped( vx, ly, ropt, vmap, (char*) val );
                         if( sel )
                         {
                             V_DrawString( vx - 3 - 5, ly, ropt, "<" );
