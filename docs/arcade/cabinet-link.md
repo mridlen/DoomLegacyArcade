@@ -1,0 +1,512 @@
+# Cabinet Link: networked cabinets (PLAN — nothing here is built yet)
+
+*Part of the DoomLegacy arcade cabinet build. This is a design plan, written 2026-09-13 before any
+code. Read it before starting any of the work it describes, and replace each section with the real
+write-up as the phase lands — the same way the other docs in this directory record what was tried,
+what broke and how it was verified.*
+
+See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
+
+---
+
+## What it does, in plain terms
+
+Two or more cabinets on the same home network join into a group.
+
+- **They share one set of high scores.** A record set on the Pi shows up on the laptop's attract
+  screen and intermission, with its record demo, and the other way round. A cabinet that was
+  switched off catches up the next time it is on.
+- **A multiplayer game on one cabinet invites the others.** When somebody starts Deathmatch (or a
+  Campaign) on the laptop, a cabinet sitting on its attract screen shows **PRESS FIRE TO JOIN**
+  along with the countdown the laptop's join screen is running. Whoever presses in on the Pi plays
+  in the same game, on the Pi's own screen and controls. A cabinet that is in the middle of a game,
+  or has someone at its menus, is not interrupted.
+- **Nothing gets in without the passcode.** Cabinets talk over an encrypted connection, prove to
+  each other that they were set up with the same passcode, and remember each other's identity so a
+  different machine cannot pretend to be one of them later.
+- **One cabinet is the master**; the others connect to it. If the master is off, every cabinet
+  still plays normally on its own and syncs when the master comes back.
+
+It is built for any number of cabinets up to the engine's 32 player limit, tested with two. Nearly
+all of it costs the same for two as for thirty-two; the places where it does not are listed under
+[Scaling past two](#scaling-past-two-cabinets).
+
+**Out of scope for the first version:** play over the internet, joining a game already in
+progress, and sharing the operator's audit counters (each cabinet's money and play counts stay its
+own).
+
+---
+
+## What the engine already gives us
+
+Found by reading the code on 2026-09-13; every claim below has a file to check.
+
+- **32 players, 4 per machine.** `MAXPLAYERS 32` (`doomdef.h`), `MAXSPLITSCREENPLAYERS 4`,
+  `MAXNETNODES 32` (`d_net.h`). So the limit is **32 players in total with at most 4 per cabinet** —
+  32x1, 16x2 and 8x4 all fit, and so does any mix (4+4+2+1...). It is not a fixed panels-per-cabinet
+  shape.
+- **Every game is already a network game.** Solo and local multiplayer run through the client/server
+  code in `d_clisrv.c`; local splitscreen sets `netgame`. A remote cabinet is "another node" to code
+  that already handles nodes — the client join packet carries `num_node_players`
+  (`clientconfig_pak_t`), and the arcade's four-panel work generalised the per-node player mask.
+  This is the single biggest reason the plan is feasible.
+- **The transport is plain UDP, unauthenticated.** `SOCK_Send`/`SOCK_Get` (`i_tcp.c`), port 5029,
+  `MAXPACKETLENGTH 1450`. Any machine on the network can send packets that the netcode parses. The
+  parsers were written for friendly LAN parties in the 2000s and were never hardened. **This, not
+  the score sync, is the main security exposure**, and the plan closes it (Phase 3).
+- **The netcode already checks wads by MD5** (`d_netfil.c`) and **downloads missing ones by
+  default** (`cv_download_files` and `cv_download_savegame`, both default `1`). A file written to
+  disk because a network peer said so has no place on a cabinet; linked games must force both off.
+- **A desync detector exists**: `Consistency()` (`d_clisrv.c`) sums player positions and the random
+  index every tic, and `SV_consistency_fault` repairs or drops the node.
+- **Scoring is single player only.** `HS_Scored_Game` (`hs_stuff.c`) refuses anything with `netgame`
+  or a second human, so **networked games are never scored** and never produce a record demo. Score
+  sharing and networked play are therefore independent features that happen to share a connection.
+- **The score files are plain text with append-only fields**, written atomically:
+  - `highscores.dat` — `game map skill tics category startmap`, the best per board key.
+  - `runs.dat` — `game startmap endmap skill category tics initials`, the ranked run board.
+  - `demos/<game>_<map>_sk<N>_<cat>.lmp` (and `<game>_ep<N>_...` for Survival) — one record demo per
+    key. The whole directory is about **1.1MB for 102 demos** on the laptop, the largest 73KB, so
+    transferring all of it is trivial even over the Pi 3's Wi-Fi.
+  - Neither file records **when** or **on which cabinet** a record was set. Sync needs both
+    (see Phase 2).
+- **The join screen** (`m_menu.c`, `M_Join_Open` / `M_Join_Start`, ~3437) already has the shape the
+  invite needs: a countdown (`cv_jointime`), per-panel press-in and setup, and a start callback. The
+  Deathmatch and Campaign routes go through `M_Arcade_MP_Go`, which sets `cv_wait_players` to the
+  joined count — a remote cabinet's players just add to that count.
+- **Threads**: `r_threads.c` uses `SDL_CreateThread`/`SDL_mutex`, so a background network thread
+  has a portable precedent (Linux, Pi, Windows).
+- **No TLS library is linked today.** Nothing in the `Makefile` or `tools/build.sh` mentions one.
+
+---
+
+## Architecture
+
+Two separate channels, because they have opposite needs.
+
+```
+                 ┌──────────────── Link channel ────────────────┐
+                 │  TCP + TLS 1.3, port 5030, always on          │
+   Pi (member) ──┤  pairing / auth, presence, invites,           ├── Laptop (master)
+                 │  score + demo sync                            │
+                 └───────────────────────────────────────────────┘
+                 ┌──────────────── Game channel ────────────────┐
+                 │  existing Legacy UDP netcode, port 5029,      │
+   Pi (client) ──┤  only during a linked game, every packet      ├── cabinet that started
+                 │  encrypted + authenticated with a per-game key│   the game (host)
+                 └───────────────────────────────────────────────┘
+```
+
+### The link channel (new)
+
+- **One long-lived TLS connection per member, to the master.** Star topology: the master relays
+  presence and invites between members. With two cabinets it is simply a direct connection. With
+  many, it is still N-1 connections, not N².
+- **Runs on its own thread.** A TLS handshake, a DNS lookup or a slow Wi-Fi write must never stall a
+  frame (`no-added-input-latency` applies to the attract screen too — a hitch there is a hitch on a
+  demo). The link thread owns the sockets and OpenSSL; the main thread talks to it through two
+  mutex-protected message queues, polled **once per tic** from `D_DoomLoop`.
+  - **The main thread owns all game state.** The link thread never touches `hs_table`, `hs_runs`,
+    menus or cvars. It hands the main thread "here is the peer's manifest" or "a demo finished
+    downloading to `demos/x.lmp.tmp`", and the main thread merges, renames and saves. This is the
+    `R_TLS` lesson from the render threads applied up front: decide which thread owns what before
+    writing the first line, not after the first corruption.
+- **Messages are length-framed binary**: 4-byte length, 1-byte type, little-endian fields, a
+  protocol version in `HELLO`, and a hard maximum size per type (a demo chunk is at most 16KB; a
+  manifest at most a few hundred KB). Anything oversized or unknown closes the connection. No text
+  parser, no JSON.
+- **Liveness**: a `PING` every 5 seconds; 15 seconds of silence drops the peer and marks it offline.
+  Reconnection backs off 1s, 2s, 4s ... capped at 60s, so a master that is switched off costs the
+  members nothing noticeable.
+
+### Roles
+
+- **Master** listens on 5030. **Member** connects to the master's address from its config.
+- **Game host is not the master.** The cabinet whose player started the game hosts it (its engine
+  runs `SV_SpawnServer` as it does today); the others connect to it directly over UDP. The master
+  only brokers the invite and hands out addresses. So the Pi can start a Deathmatch that the laptop
+  joins without the game being routed through anything.
+- **Addresses** are hostnames or IPs in the config. A hostname such as `laptop.local` survives the
+  Pi getting a new DHCP address (mDNS via avahi/nss-mdns on both Linux machines). Automatic
+  discovery is deliberately left out of the first version: it is exactly the kind of unauthenticated
+  broadcast this plan is removing.
+
+### Cabinet state, as the link sees it
+
+Each cabinet publishes one of:
+
+| state | meaning | receives invites? |
+| --- | --- | --- |
+| `IDLE` | attract cycle (pages or demos), no menu open | **yes** |
+| `MENU` | someone is in the menus over attract | no |
+| `JOINING` | its own join screen is up | no (it is starting its own game) |
+| `PLAYING` | in a level, intermission or finale | no |
+| `SIGNING` | initials entry | no — never interrupt someone signing the board |
+| `DEVMODE` | an operator session | no |
+
+Presence also carries the cabinet's name, its panel count (`cv_localplayers`), its build
+(`DLA_VERSION`) and the list of games it can run with their wad fingerprints — so an invite for TNT
+is only shown on cabinets that have `TNT.WAD`, and never becomes a "wad mismatch" error on screen.
+
+---
+
+## Security
+
+The goal is that a device on the same network that does not know the passcode cannot: read or
+change scores, push demos, see or answer invites, or send a single packet the game will parse.
+
+### Identity
+
+- On first enabling the link, each cabinet generates a key pair (ECDSA P-256) and a self-signed
+  certificate, stored in `legacyhome/link/` with mode 0600. The **cabinet ID is the SHA-256 of the
+  public key**; the operator page shows a short form of it (e.g. `7F3A-91C2`).
+- Keys, pins and the passcode are written with `M_Atomic_Write_Open`/`Close` — the power-cut rule.
+- **The passcode does not go in `config.cfg`.** That file has a tracked copy at
+  `cabinet/legacyhome/config.cfg`, and a passcode must never reach git. It lives in
+  `legacyhome/link/link.cfg` (0600), which is gitignored along with the rest of `link/`.
+
+### The handshake, every connection
+
+1. **TLS 1.3 only**, both sides present their certificate (mutual TLS). OpenSSL's normal chain
+   verification is replaced by a callback that records the peer's fingerprint.
+2. **The member checks the master's fingerprint against its pin** before sending anything else. A
+   mismatch drops the connection and puts "MASTER IDENTITY CHANGED" on the operator page — it does
+   not fall back to asking again.
+3. **The member proves it knows the passcode, bound to this exact TLS session.** Both sides take a
+   TLS exporter value (`SSL_export_keying_material`, label `"dla-link-auth"`), and the member sends
+   `HMAC-SHA256( key = PBKDF2(passcode, salt = both cabinet IDs), msg = exporter || "member" )`.
+   Because the exporter is unique to the session, a machine sitting in the middle of two connections
+   cannot relay the proof from one to the other.
+4. **Only then does the master prove it back** (the same with `"master"`). The order matters: a
+   stranger who connects to the master and guesses wrong learns nothing it could take away and crack
+   later — each wrong guess costs it a live attempt.
+5. **Rate limiting**: three failed proofs from one address locks it out for 60 seconds, logged to the
+   console and counted.
+6. On success the master pins the member's fingerprint too. **Changing the passcode on the master
+   revokes every member at once**, since their next proof fails; "Forget paired cabinets" on the
+   operator page clears the pins.
+
+### The first connection, and the honest limit of a passcode
+
+On the very first connection the member has no pin for the master yet, so it trusts the first
+master it reaches (the same model as SSH's "trust this host?"). The operator page on **both**
+cabinets shows the two short cabinet IDs; if they match, nobody is in the middle, and from then on
+the pin makes that permanent.
+
+What a passcode cannot do on its own: if an attacker is *already* intercepting traffic on the home
+network at the moment of that very first pairing, and the operator does not compare the IDs, they
+can collect one proof and try passcodes offline at their own pace. Two cheap defences cover this
+for a home arcade, and the plan uses both:
+
+- **Compare the short IDs once at pairing time** (a glance at two screens).
+- **A long passcode.** The operator page warns under 10 characters; the passcode is typed with a
+  keyboard in a `-devmode` session, so length costs nothing after setup.
+
+The principled fix is a PAKE (a password-authenticated key exchange, e.g. SPAKE2), which makes
+offline guessing impossible outright. OpenSSL does not offer one through a stable public API, and
+vendoring one is real work for a threat that needs someone already on the LAN at pairing time — so
+it is listed under decisions, not built by default.
+
+### The game channel
+
+- When a linked game starts, the host generates a random 256-bit **session key** and sends it only
+  to the cabinets that joined, over their authenticated TLS link.
+- A shim at the bottom of `SOCK_Send`/`SOCK_Get` (`i_tcp.c`) seals every UDP packet with
+  **ChaCha20-Poly1305** (OpenSSL EVP): an 8-byte counter as the nonce, a 16-byte tag. On receive the
+  tag is checked **before the netcode sees a byte**; a failed tag, a replayed counter (64-packet
+  sliding window per sender) or an unknown address is dropped silently. The stock parsers are then
+  only ever fed packets from a cabinet that proved the passcode.
+- **Cost**: roughly 40 bytes and a few microseconds per packet on the Pi 3. That is measured, not
+  assumed, before Phase 3 lands (see "input latency" below). Local-only games do not use the socket
+  and are untouched.
+- In a linked session the engine also **forces off** `cv_download_files` and
+  `cv_download_savegame`, refuses stock `connect` / `askinfo` broadcasts from anything outside the
+  session, and **only opens the UDP port for the duration of a linked game**.
+
+### What the link does *not* protect
+
+A cabinet that knows the passcode is trusted. If one cabinet's scores are corrupted — the Pi's SD
+card has already shown it does not survive power loss (`pi-intermittent-crash-open`) — sync would
+spread the damage. So Phase 2 adds sanity rules: **a record without its demo is not accepted, the
+demo's header must parse, and tics must be positive and plausible**. Replaying every received demo
+headlessly to confirm its time is possible later with `-timedemo`/`-synclog`, but not in v1.
+
+### Library
+
+**OpenSSL 3**, optional at build time as `HAVE_LINK=1`:
+
+- Fedora (`openssl-devel`), Raspberry Pi OS (`libssl-dev`), MSYS2 (`mingw-w64-ucrt-x86_64-openssl`)
+  and the GitHub runners all ship it.
+- `tools/build.sh` / `tools/build.ps1` probe it by test-compiling, the way they probe SDL2_mixer.
+  Without it the link code compiles out and the operator page hides — so a build machine without
+  OpenSSL still builds the game, which is the rule those scripts exist to keep.
+- `build.ps1` already derives the Windows DLLs from import tables, so `libssl-3-x64.dll` and
+  `libcrypto-3-x64.dll` are picked up with no hardcoded list.
+- mbedTLS was the alternative (small, easy to vendor); it loses on having to be vendored and kept
+  patched, when every target already has a maintained OpenSSL.
+
+---
+
+## Shared high scores and demos
+
+### Sync is a merge of state, not a replay of events
+
+Each side sends a **manifest** of what it holds; each side computes the merged result with the
+**same pure function** and fetches whatever it is missing. There is no queue of "records to send",
+so nothing is lost to a power cut, nothing is applied twice, and a cabinet that was off for a month
+catches up exactly like one that was off for a minute.
+
+For that to converge, the merge must be:
+
+- **commutative** — merge(A, B) = merge(B, A), so both cabinets reach the same board;
+- **idempotent** — merging the same manifest again changes nothing;
+- **associative** — so three cabinets syncing through a master in any order agree.
+
+That holds only if **every comparison is a total order**. Two records with equal tics from two
+cabinets must not be "equal" or each cabinet keeps its own and they flip back and forth for ever.
+Ties break by `(tics, set_time, cabinet_id, initials)`: the record set first wins, and the cabinet
+ID settles the rest.
+
+### File format changes (append-only, as before)
+
+- `highscores.dat` gains `set_time cabinet_id demo_sha256`. `set_time` is Unix seconds from the
+  cabinet that set it. Old lines read back with `set_time 0` (oldest) and the local cabinet's ID.
+- `runs.dat` gains `set_time cabinet_id`. The run board is a union of both cabinets' entries,
+  deduplicated on the whole tuple, sorted by the existing `HS_Board_Sort` rules, trimmed to the
+  board's size.
+- A **board epoch** in a new header line. `clearhighscores` bumps it. **Without it a cleared board
+  comes straight back from the other cabinet on the next sync**; with it, entries from an older epoch
+  are discarded and the clear spreads instead. Clearing is allowed on the master only, so two
+  cabinets cannot clear at once and race.
+- Clock sanity: a Pi without a real-time clock boots in 1970 until NTP answers. A `set_time` before
+  2026-01-01 is sent as unknown (`0`) rather than as a real time, so it can never beat a genuine one
+  on a tie.
+
+### What is compared, and what is refused
+
+A record is only comparable with the same **game content and rules**, and today's key
+(`doom2`, `doom2+packname`) does not prove that — two cabinets can hold different versions of a pack
+with the same file name.
+
+- The manifest carries, per game ID, a **fingerprint of the loaded wads** (the MD5s the netcode
+  already computes, cached by size and mtime so the Pi does not rehash `DOOM2.WAD` on every boot).
+  Game IDs whose fingerprints differ are skipped and listed on the operator page.
+- The **build must match**: same `DLA_VERSION` for sync and for games. Two builds from different
+  commits can simulate differently without any version number changing, which desyncs a netgame and
+  makes a shared demo play out wrong. The operator page says which cabinet needs updating.
+- The **ranked ruleset must match**: `HS_Apply_Ranked_Ruleset` pins most gameplay settings, and the
+  handshake hashes the ones it does not (the same list `tools/cfgaudit.py` reports). A mismatch is a
+  warning on the operator page and pauses score sync, because a record under different rules is a
+  different board.
+
+### Demo transfer
+
+- Demos travel with their `highscores.dat` entry: when the merge picks a remote record, the local
+  cabinet requests that demo by SHA-256.
+- Written to `demos/<name>.lmp.tmp`, hash checked, header checked, then **renamed over** the old file
+  on the main thread. Leftover `.tmp` files are deleted at startup.
+- **On Windows a rename over an open file fails**, and the attract cycle may be playing that very
+  demo. The main thread retries the rename after the demo ends rather than failing the sync.
+- The attract cycle needs no change: it already builds its demo list from the score table.
+
+### When sync runs
+
+On connect, then whenever a board changes (`HS_Save` / `HS_Runs_Save` nudge the link thread), and
+every 10 minutes as a backstop. **Never during a scored run**: the main thread holds received merges
+until the cabinet is back to `IDLE`, so a record appearing mid-run cannot change the target a player
+is chasing or race the local `HS_LevelExit` write.
+
+---
+
+## Invites and networked games
+
+### Which games invite
+
+- **Deathmatch** — always.
+- **Campaign** — yes, because the join screen is what decides between a solo run and coop today;
+  a remote cabinet's player pressing in is the same as a second local panel pressing in: the game
+  becomes coop and, as now, unranked. *(See decisions.)*
+- **Single Level** — never. It is scored single player and has no join screen.
+- **Multiplayer → Start Game** (the operator's hand-tuned page) — not in v1.
+
+### The flow
+
+1. **Laptop:** someone picks Deathmatch. The join screen opens as now and the link sends `INVITE`
+   (game ID, category, episode/map, skill, host cabinet name, *seconds remaining*) to every `IDLE`
+   cabinet that can run the game. Time is sent as a duration, never a clock time — the two machines'
+   clocks do not agree.
+2. **Pi:** over the attract screen, a banner: `DEATHMATCH ON LAPTOP — PRESS FIRE TO JOIN — 17`. The
+   attract demo keeps playing underneath. A press on panel N opens that panel's own join cell with
+   the same colour / crosshair / controls setup as the local join screen, which becomes a full join
+   page on the Pi once anyone presses. The Pi's state goes to `JOINING`.
+3. **Both:** each cabinet sends `JOIN_STATUS` as its panels press in and lock. The laptop's join
+   screen shows `PI: 2 IN` beside its own cells; the Pi's shows `LAPTOP: 1 IN`.
+   **View cells stay per cabinet** — a remote player never takes a quarter of the laptop's screen.
+4. **Start**, when the countdown ends or every pressed-in panel on *every* cabinet has locked:
+   the laptop sends `START` with its UDP address, port and the session key to each cabinet that has
+   players in, then calls `M_Arcade_MP_Go` with `cv_wait_players` set to the **total** across
+   cabinets. Each joined cabinet runs `D_Set_Panel`/`D_Set_View_Cell`/`D_Set_Join_Count` for its own
+   panels and connects as a client with `num_node_players` = its own count.
+5. **If a cabinet does not arrive** within 10 seconds, the host starts with whoever is present
+   (`cv_wait_timeout` set for linked games — the arcade already learned that a wait with no timeout
+   hangs the cabinet), and the late cabinet shows `COULD NOT JOIN` and returns to attract.
+6. **A cabinet nobody pressed on** just drops the banner when the countdown ends.
+
+### During and after
+
+- Each cabinet's idle timeout and arcade-death rules apply **to its own players**. When all of a
+  cabinet's players have left, that cabinet disconnects and returns to attract; the game carries on
+  for everyone else. This has to be checked against `G_Idle_Timeout_Check` and
+  `G_Arcade_Death_Check`, which were written for one machine.
+- When the host's game ends (time limit, everyone gone), clients receive the server shutdown and go
+  back to attract through `Command_ExitGame_f`, the one funnel that resets leftover state.
+- If the host loses power mid-game, clients time out (`server_timeout_handler`) and do the same.
+- Two cabinets starting a Deathmatch in the same second: each sees the other as `JOINING`, so
+  neither is invited to the other's game. Both play separately — no deadlock, no merge.
+
+### Input latency
+
+The rule is that a fix must never tax every keypress. Two separate things to measure:
+
+- **The encryption shim** must add nothing measurable to a tic. Compare `-timedemo` style timing and
+  a per-packet microsecond counter on the Pi 3, shim on and off.
+- **The network itself** adds the round trip for players on the client cabinets — that is what
+  networked play is, not a regression. But **players on the host must feel exactly what a local
+  multiplayer game feels like today**, and that is measured by comparing when a ticcmd built on the
+  host is applied, local game against linked game.
+- The Pi 3 has 2.4GHz Wi-Fi only. The docs will recommend Ethernet for play; sync works fine on
+  Wi-Fi.
+
+---
+
+## Operator page
+
+A new `-devmode` page, **Cabinet Link**, under Setup:
+
+- **Link**: Off / Master / Member (`cv_link_role`, default **Off** — a new switch defaults to what
+  the cabinet already did).
+- **Cabinet name**: shown on invites and records (`cv_link_name`, defaults to the hostname).
+- **Master address** (members only), **Passcode** (entered with the keyboard, shown as `********`).
+- **This cabinet's ID** and, per peer: name, ID, state, build, last sync, and any mismatch
+  (build / wads / ruleset) spelled out.
+- **Sync now**, **Forget paired cabinets**.
+
+Every row added follows the `menus.md` rule: the enum and the `choice ==` handlers move with it, and
+`tools/menufit-test.py` is run.
+
+---
+
+## Phases
+
+Each phase is usable on its own, lands with its doc section rewritten from plan to record, a
+README update, and the checks named. Mark does the play testing; everything that can be checked
+headlessly is checked first.
+
+### Phase 0 — prove the ground is solid (no new features)
+
+Before writing link code, find out whether the laptop and the Pi can play one game at all. If they
+cannot, everything else is built on sand.
+
+1. **Cross-architecture determinism.** Record the baseline on the laptop
+   (`tools/demotest.sh --baseline -w <dir>`), copy that work directory and the laptop's
+   `legacyhome` (demos, level packs, config) to the Pi, and compare there with
+   `tools/demotest.sh --home <copied legacyhome> -w <copied dir>`. The laptop is x86-64, the Pi
+   ARM64 (it boots `kernel8.img`). If any demo desyncs, a networked game between them will too, and
+   shared demos will play out wrong — this is the most likely showstopper and one run rules it out.
+   Take it on the Pi's own demos too, in the other direction. (The Pi 3 is far slower than the
+   laptop's 40 seconds; use `--quick` first.)
+2. **A plain stock netgame between them.** Laptop runs a server, the Pi `connect`s by IP, one player
+   each, Deathmatch then coop, on a trusted network with the security off. Checks: it connects at
+   all with the arcade join screen and panel mapping in place; `Consistency()` reports no faults over
+   ten minutes; the Pi 3 keeps up with the simulation; how it feels. Mark plays this.
+3. **Many nodes on one machine.** Several headless instances on the laptop, each with its own copy
+   of `legacyhome` and its own port, connected to one server, to see what breaks past four players
+   (see scaling). No hardware needed.
+
+Output: a short findings section here, and a go / change-course decision.
+
+### Phase 1 — the link: identity, TLS, pairing, presence
+
+- `HAVE_LINK` build probe in both build scripts and the `Makefile` (`LINK_OBJS`), CI package install.
+- New `lk_link.c`/`lk_link.h` (thread, sockets, TLS, framing, auth), added to `MOBJS`, every line
+  `// [Arcade]`.
+- Key generation, `link.cfg`, pins, atomic writes.
+- Presence and the operator page, read-only status first.
+- `D_DoomLoop` polls the queue once per tic.
+
+**Verified by:** two headless instances on the laptop pairing over loopback; then laptop and Pi.
+Every rejection is shown to happen — wrong passcode, changed master key, a plain TCP client sending
+garbage, an oversized frame, a replayed proof from another session, the lockout after three failures
+— and each of those tests is shown to go red when its check is disabled (`--selfcheck`, the rule
+that a check never seen to fail is not evidence).
+
+### Phase 2 — shared high scores and demos
+
+- Append the new fields and the epoch to `highscores.dat` / `runs.dat`, with old files loading
+  unchanged.
+- The merge as **one pure function** in `hs_stuff.c`, and a test in the style of the existing
+  extracted tests that drives it exhaustively for commutativity, idempotence, associativity over
+  three cabinets, tie-breaking, epochs and old-format lines.
+- Wad fingerprints, build and ruleset checks; demo transfer; deferred application while playing.
+
+**Verified by:** the merge test; two headless instances with different boards converging to the same
+files byte for byte; `clearhighscores` on the master spreading instead of being undone; a truncated
+demo refused; `make demotest` still passing (the score file change must not touch the simulation).
+Then Mark sets a record on the Pi and watches it appear on the laptop's attract screen.
+
+### Phase 3 — invites and linked games
+
+- Invite banner over attract, remote `JOIN_STATUS`, start and timeout handling, per-cabinet
+  idle/death rules.
+- The UDP encryption shim, the session key, forced-off downloads, the port opened only during a game.
+
+**Verified by:** a scripted invite between two headless instances (a `link_accept <panels>` console
+command stands in for pressing fire, from the scratch `autoexec.cfg`, remembering that a command
+starting a game does not start it where it appears in the script); a stranger's UDP packet — valid
+Legacy packet, no tag — shown to be dropped before `HGetPacket`; the latency comparison above; then
+Mark plays laptop against Pi: Deathmatch, coop, a cabinet that joins and then walks away, pulling the
+Pi's network cable mid-game.
+
+### Phase 4 — past two cabinets
+
+The scaling work below, done with N headless instances. Only as far as it proves worthwhile.
+
+---
+
+## Scaling past two cabinets
+
+Cheap, and designed in from the start: the star link, presence, invite fan-out, the merge (that is
+what associativity is for), the per-node player counts, `MAXNETNODES 32`.
+
+Not free, and **not claimed to work until each is checked**:
+
+- **Player starts.** Doom maps have 4 coop starts. Legacy has a coop spawn path for extra players
+  (`g_game.c` ~2825) and deathmatch keeps up to `MAX_DM_STARTS 64`, but what player 9 in a coop
+  campaign actually does needs looking at.
+- **Intermission and HUD.** `wi_stuff.c` sizes its arrays at `MAXPLAYERS`, but a table laid out on a
+  320x200 page with 16 or 32 rows is a layout problem — measure against the real font, per the
+  layout rule.
+- **Player colours.** There are far fewer colours than 32 players.
+- **Packet size.** A servertic packet carries a ticcmd per player inside `MAXPACKETLENGTH 1450`,
+  less the 24 bytes the shim adds. Check the arithmetic at 32 players.
+- **The Pi as host.** Every node runs the full simulation, but the host also does the server's work.
+  A Pi 3 hosting eight players may not keep up; the laptop hosting may be the rule.
+
+---
+
+## Decisions for Mark
+
+Recommendations first; any of these can change the plan before Phase 1 starts.
+
+1. **Passcode, or passcode plus PAKE?** Recommended: passcode (10+ characters) plus comparing the
+   two short cabinet IDs at pairing — enough for a home network. PAKE only if the cabinets will ever
+   sit on a network you do not control.
+2. **Does Campaign invite other cabinets?** Recommended: yes, since the join screen already turns a
+   Campaign into coop when a second panel presses in.
+3. **Show which cabinet set a record?** Recommended: yes, small, on the attract table
+   (`MLR · PI`); the field is stored either way.
+4. **Clearing scores on one cabinet clears them everywhere?** Recommended: yes, from the master only.
+5. **Can an invite interrupt someone browsing the menus?** Recommended: no — only an idle attract
+   screen. A person navigating a menu is using the cabinet.
+6. **Master off: members keep full function on their own, sync later.** Recommended as the default
+   and assumed throughout.

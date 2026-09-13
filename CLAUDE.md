@@ -412,6 +412,7 @@ are kept below, in this file.
 | `docs/arcade/branding.md` | Fork identity, `VERSION_BANNER`, `DLA_VERSION` from tags, the executable name, what must NOT be renamed | any string that names the program, the version, `EXENAME` |
 | `docs/arcade/endoom.md` | The exit text screen: lump format, why SLADE will not edit it, `tools/endoom.py` | the `ENDOOM` lump, `endtxt.c`, `I_Show_EndText` |
 | `docs/arcade/demo-desync.md` | The demo desync regression test: `-synclog`, `tools/demotest.sh`, what proves a demo really ran, the self-check | any gameplay-affecting change; `G_Synclog_Tic`, `tools/demotest.sh` |
+| `docs/arcade/cabinet-link.md` | **Plan only, not built yet.** Networked cabinets: shared high scores and demos, cross-cabinet join invites, TLS + passcode pairing, the encrypted game channel, phases and open decisions | before starting any networked-cabinet work, `i_tcp.c` socket code, or the score file formats |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
