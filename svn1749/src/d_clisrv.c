@@ -367,14 +367,30 @@ typedef char localplayer_init_covers_all_slots[ (MAXSPLITSCREENPLAYERS == 4)? 1 
 // game started from the console, wants).
 static byte  local_join_count = 0;
 
+// R_SetViewSize whenever the count changes, as D_Set_View_Cell does for a cell:
+// the count decides how many views the screen is carved into, and the viewport
+// sizes are only recomputed on request.  Without it a four panel cabinet that
+// had never had a join count drew its attract screen for four, and when another
+// cabinet's invite then set the count to one, nothing recomputed -- the joining
+// cabinet's one player played in a quarter of the screen.  Only the first game
+// after starting: after that the count was already 1 when anything recomputed.
 void  D_Set_Join_Count( byte count )
 {
-    local_join_count = (count <= MAXSPLITSCREENPLAYERS) ? count : MAXSPLITSCREENPLAYERS;
+    byte  n = (count <= MAXSPLITSCREENPLAYERS) ? count : MAXSPLITSCREENPLAYERS;
+    if( n != local_join_count )
+    {
+        local_join_count = n;
+        R_SetViewSize();
+    }
 }
 
 void  D_Clear_Join_Count( void )
 {
-    local_join_count = 0;
+    if( local_join_count )
+    {
+        local_join_count = 0;
+        R_SetViewSize();
+    }
 }
 
 // [Arcade] How many people asked to play: the join screen's count, or every

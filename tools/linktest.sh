@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -139,7 +139,7 @@ cfg() {
 run() {
     local d=$1 secs=$2; shift 3
     ( cd "$d" && env LK_SELFCHECK="${LKSC:-}" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" -nodraw -nosound -nomusic -linkstatus "$@" \
+        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" ${NODRAW--nodraw} -nosound -nomusic -linkstatus "$@" \
         > out.txt 2>&1 ) &
 }
 
@@ -743,6 +743,30 @@ case_idleall() {
     lastline "$d/master" LINKGAME | grep -aq "^LINKGAME gamestate=[0-9] netgame=0 .* none$" \
         || FAILS="$FAILS
       at the end the host was still in a game: $(lastline "$d/master" LINKGAME)"
+}
+
+# Mark: "the first game after booting both cabinet binaries, the joining party
+# shows in a smaller size window, like the 1/4 screen; exit and try again, it
+# looks normal".  The joining cabinet has four panels and one person pressing
+# in, it is freshly started, and it draws (the view size is only worked out
+# while drawing, which -nodraw skips).  Its one player must get the whole screen.
+case_joinview() {
+    local d=$1 p=$2
+    mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 50 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    NODRAW= run "$d/member" 47 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the joining cabinet is in the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    local last
+    last=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=2 " | tail -1)
+    echo "$last" | grep -aq " views=1 " || FAILS="$FAILS
+      the joining cabinet drew more than one view: $last"
+    echo "$last" | grep -aEq " viewport=([0-9]+)x([0-9]+) screen=\1x\2 " || FAILS="$FAILS
+      the joining cabinet's view is not the whole screen: $last"
 }
 
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and

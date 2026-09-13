@@ -1199,6 +1199,8 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
 - The cabinet that joined plays as smoothly as the one that started the game, turning included. (It
   used to judder whenever the frame rate was above 35.)
+- A player who joins from another cabinet gets the whole screen. (On a four panel cabinet the first
+  game after starting the program used to put them in a quarter of it.)
 - **The idle timeout counts everyone in the game.** A linked game keeps going as long as anybody on
   any cabinet is playing, even if the other cabinet has been left with nobody at it; when nobody at
   all has touched the controls for the idle timeout, every cabinet goes back to its attract screen

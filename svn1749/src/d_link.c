@@ -16,6 +16,7 @@
 #include "d_main.h"
 #include "command.h"
 #include "m_menu.h"
+#include "r_state.h"   // rdraw_viewwidth, for the status line
 #include "m_misc.h"
 #include "i_system.h"
 #include "m_argv.h"
@@ -2462,9 +2463,12 @@ static void  lk_net_status( void )
     GenPrintf( EMSG_errlog, "LINKNET %s sealed=%u opened=%u dropped=%u avg_us=%.1f\n",
                modes[lku_mode], lku_sealed, lku_opened, lku_dropped,
                lku_ns_n ? (double) lku_ns / lku_ns_n / 1000.0 : 0.0 );
-    GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d menu=%d %s\n",
+    GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d menu=%d"
+               " views=%d viewport=%dx%d screen=%dx%d %s\n",
                (int) gamestate, netgame, server, LKG_Players_In_Game(), consoleplayer,
-               M_Message_Text() ? 2 : menuactive ? 1 : 0, LKG_Mode_Name() );
+               M_Message_Text() ? 2 : menuactive ? 1 : 0,
+               D_NumViews(), rdraw_viewwidth, rdraw_viewheight, vid.width, vid.height,
+               LKG_Mode_Name() );
 }
 
 boolean  LK_Built( void )  { return true; }

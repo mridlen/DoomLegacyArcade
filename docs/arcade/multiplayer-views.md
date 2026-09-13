@@ -68,8 +68,18 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       "watch run" replays too.
     - **Changing the view count needs `R_SetViewSize()`**, or the old geometry sticks: viewport
       sizes are only recomputed on request. `G_DoPlayDemo` and `G_StopDemo` both call it, as
-      `D_Set_View_Cell` does. **This has now caught me twice** — the count was right and the
-      rectangle was stale both times.
+      `D_Set_View_Cell` does. **This has now caught me three times** — the count was right and the
+      rectangle was stale every time.
+      - The third (2026-09-13): **`D_Set_Join_Count` did not call it.** A four panel cabinet
+        starts with no join count, so its attract screen recomputes for four views; when a Cabinet
+        Link invite set the count to one, nothing recomputed, and the joining cabinet's one player
+        played in a quarter of the screen (Mark: "the first game after booting... like the 1/4
+        screen... try again, it looks normal" — by then the count was already one whenever anything
+        recomputed). `D_Set_Join_Count` and `D_Clear_Join_Count` now request a recompute when the
+        count changes. Case `tools/linktest.sh joinview` runs the joining cabinet **drawing** (the
+        recompute happens in `D_Display`, which `-nodraw` skips entirely) and reads the status line's
+        new `views= viewport=WxH screen=WxH` fields: before the fix `views=1 viewport=683x384
+        screen=1366x768`.
     - **The cabinet runs OpenGL** (`drawmode "OpenGL"` in the tracked config), which is why the
       grid went into `hw_main.c`: a viewport there is just a rectangle. `HWR_SetViewSize` halves
       `gr_viewheight` and `gr_viewwidth` on whichever axes the grid divides, and
