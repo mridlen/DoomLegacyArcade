@@ -279,7 +279,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   option area, where there is still room.
 
 - **The audio thread killed the process because a channel was published before it was filled in
-  (fixed).** `I_StartSound` (`sdl/i_sound.c`) set `chanp->data_ptr` -- the field the mixer thread
+  (fixed on x86 — NOT on the Pi, see the note at the end of this entry).** `I_StartSound` (`sdl/i_sound.c`) set `chanp->data_ptr` -- the field the mixer thread
   tests to decide a channel is playable -- and only ~64 lines later set `chanp->leftvol_lookup`, the
   pointer the mixer immediately dereferences. `mix_channel[]` is `static`, so `leftvol_lookup` is
   **NULL until a slot's first use**; a callback landing in that window read `NULL[sample]` and took
@@ -311,6 +311,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`; the giveaway is a
     backtrace whose only frames are SDL's audio thread, with the game thread nowhere in it. It
     happens under `SDL_AUDIODRIVER=dummy` too -- the dummy driver still runs the callback.
+  - **Still crashes on the Raspberry Pi 3 (aarch64), about 1 run in 7** (2026-09-13, found by the
+    Cabinet Link Phase 0 runs): `doomu-sl_E1M1_sk2_speed.lmp` under `tools/demotest.sh`, same
+    backtrace, `leftvol_lookup` (one core) and `rightvol_lookup` (the other) read as NULL on a
+    channel whose memory afterwards is valid. The Pi binary's disassembly has the lookups stored
+    before `data_ptr` and read after the `data_ptr` test, so the ordering fix is in force and is not
+    enough there. Do not treat this entry as closed: the fix is a real lock. Details in
+    `cabinet-link.md`, Phase 0 finding 5.
 
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that

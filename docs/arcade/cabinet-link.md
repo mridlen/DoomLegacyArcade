@@ -460,8 +460,79 @@ cannot, everything else is built on sand.
 3. **Many nodes on one machine.** Several headless instances on the laptop, each with its own copy
    of `legacyhome` and its own port, connected to one server, to see what breaks past four players
    (see scaling). No hardware needed.
+4. **A Windows cabinet.** Cabinets may be Windows as well as Linux (Mark, 2026-09-13), so the same
+   determinism check runs against the MSYS2 build from `tools/build.ps1` — a different compiler and
+   C runtime again. The Windows binary loads but has never been played, so this is also its first
+   real test. The feature must not rely on SSH or any other Linux-only tool; the tests here use SSH
+   to reach the Pi only because it is convenient.
 
 Output: a short findings section here, and a go / change-course decision.
+
+#### Phase 0 findings (2026-09-13)
+
+**Decision: go.** The laptop and the Pi compute the same game, and the stock netcode already plays
+one game between them, including a cabinet with two local players. Nothing found needs the netcode
+replaced. Still open: Mark playing step 2 on real controls (below), and step 4 (no Windows machine
+was reachable).
+
+The machines: laptop x86-64, Fedora, GCC 15; Pi 3 Model B, aarch64 Debian 13, GCC 14. Both on
+Wi-Fi (192.168.1.81 and .68). Both builds use `-O3 -ffast-math` from the `Makefile`. Both
+binaries from b67ef22.
+
+1. **Determinism across the two machines: identical.**
+   - The laptop's 102 record demos replayed on the Pi (`tools/demotest.sh`, laptop baseline copied
+     over, run against the laptop's own IWADs): **98 identical tic for tic.** The other four were
+     not simulation differences:
+     - Two "ended at a different tic" with the prefix matching (`doomu_ep1_sk3_max`,
+       `doomu_ep1_sk3_pacifist`). **The laptop baseline was the long one**: it carried 256 and 19
+       extra no-input tics after the demo ended (momentum decaying, `fwd`/`side` zero). A lone replay
+       on the laptop ends where the Pi does. This is the trailing-tic artifact `G_Synclog_Tic`
+       already tries to stop, still happening when the laptop replays 8 demos at once — a harness
+       flaw, not a desync. It showed up again in the reverse run, on the laptop side again.
+     - One segfaulted on the Pi, intermittently: see finding 5.
+   - The reverse: the Pi's own 12 record demos, baselined on the Pi and replayed on the laptop:
+     **12 identical.**
+   - So x86-64 against aarch64, and GCC 15 against GCC 14, with `-ffast-math`, agree. Whatever
+     floating point the simulation touches is not reaching the result.
+2. **A real netgame, Pi server and laptop client over Wi-Fi: identical.** A temporary probe (not
+   committed) wrote every tic's random index and every player's position, angle and health on each
+   node. Pi as server with two bots, laptop joined by IP: **2911 tics (83 seconds) of bots fighting
+   and monsters taking damage, identical on both machines except tic 31** (finding 4). The Pi 3 kept
+   up as server at full speed. The Pi hosted because the laptop's firewall would need opening for
+   inbound UDP; a client's replies come back through without that.
+3. **Many nodes, and a two-panel cabinet, on one laptop: identical.** A server, a client with
+   **`localplayers 2`** and a third client with one, plus two bots: six players across three
+   processes joined one game (players 3 and 4 on the two-player client, as expected), and all three
+   agreed for 2400 tics except tic 31. The protocol's per-node player count works as the arcade's
+   four-panel work left it.
+   - Harness notes: `-server <n>` then `-connect 127.0.0.1 -clientport <port>`, one scratch
+     `legacyhome` each, `addbot` from the server's `autoexec.cfg` for movement (nothing else moves
+     headlessly — without bots the random index never advanced and the test proved nothing).
+     Console text does not reach stdout once graphics are up and `-debugfile` is compiled out
+     (`DEBUGFILE`), so `playerinfo` prints nothing; the probe used `GenPrintf(EMSG_warn, ...)`.
+4. **One tic disagrees at every level start: tic 31, the client's own player's angle.** The server
+   has the spawn angle (ANG90 on MAP01), the client briefly has 0, and the next tic agrees again
+   because player angles are sent absolute (`EN_cmd_abs_angle`). Stock behaviour, every run, every
+   client. It is harmless unless that player fires on that exact tic, and `Consistency()` does not
+   include angle so it never faults. **Look at it in Phase 3**: it is the kind of thing that becomes
+   a real desync once something reads the angle that tic.
+5. **The Pi has a live sound crash, unrelated to networking.** `doomu-sl_E1M1_sk2_speed` segfaults
+   on the Pi about **1 run in 7** (reproduced 2 of 14 headless, dummy audio driver); never on the
+   laptop. Both cores are in `I_UpdateSound_sdl` on SDL's audio thread — one with channel 11's
+   `leftvol_lookup` read as NULL, the other with channel 13's `rightvol_lookup` NULL — while memory
+   afterwards holds valid pointers. This is the race `gotchas.md` records as fixed by ordering the
+   stores. On the Pi the stores and the mixer's reads are both in the right order in the binary, so
+   something else still races; **the fix is a real lock** between `I_StartSound` /
+   `I_UpdateSoundParams` and the mixer, which `HAVE_MIXER` builds do not have. Separate work, but
+   it matters to a Pi cabinet more than anything in this plan. Core files are on the Pi
+   (`coredumpctl list`).
+6. **The IWAD version decides whether scores can be shared, not the game name.** The laptop had
+   Doom 2 **v1.666** (`30e3c2d0…`), the Pi **v1.9** (`25e1459c…`). Mark chose v1.9 and the laptop
+   was updated (old file kept in `~/games/doom-backup/`). Replaying the laptop's 18 Doom 2 record
+   demos on v1.9: **16 desync at tic 1**; the two `doom2+dwango5` ones survive because the pack
+   replaces MAP01. So the per-game wad fingerprint in Phase 2 is required, not a nicety — the same
+   `doom2` game ID on two IWAD versions is two different games — and the netcode's existing MD5 check
+   would have refused this netgame outright.
 
 ### Phase 1 — the link: identity, TLS, pairing, presence
 
@@ -518,6 +589,34 @@ Pi's network cable mid-game.
 ### Phase 4 — past two cabinets
 
 The scaling work below, done with N headless instances. Only as far as it proves worthwhile.
+
+---
+
+## Alternative considered: run all the game logic on the master
+
+Mark asked (2026-09-13) whether the master could run the whole simulation, with the other cabinets
+only sending input and drawing what they are told — which would make a desync impossible by
+construction. It would, and it is how Quake and the client/server Doom ports (Zandronum, Odamex)
+work. **It is not the plan, for three reasons:**
+
+- **It is a new netcode, not a change to this one.** Doom Legacy, like every Doom since 1993, is
+  *lockstep*: every machine runs the same simulation from the same inputs, and the server only
+  collects and hands out input. Moving to a server that owns the world means sending the state of
+  every monster, projectile, door and lift to every cabinet many times a second, and teaching the
+  clients to draw from that instead of from their own simulation. The ports that did it spent years
+  on it.
+- **It costs the remote players responsiveness.** Their own movement would wait for a round trip to
+  the master unless client-side prediction were built as well — a second large piece, and exactly the
+  input latency this cabinet refuses to add.
+- **It would not remove the need for determinism anyway.** A record demo *is* a list of inputs. A
+  record set on the Pi and shared to the laptop has to replay identically on the laptop, whoever ran
+  the game, so the laptop and the Pi must compute the same simulation regardless. Sharing scores
+  requires the very property this alternative was meant to avoid depending on.
+
+Lockstep also comes with a safety net: `Consistency()` compares every node every tic and the server
+repairs a node that has drifted (`SV_consistency_fault`, and a savegame resend). So the plan keeps
+lockstep, and Phase 0 checks the one thing it depends on. If the laptop and the Pi turn out not to
+agree, the fix is to find the non-deterministic code — which shared demos need fixed in any case.
 
 ---
 
