@@ -239,6 +239,35 @@ leaves them running exactly as they did. None of them is built here — both the
 builds are `SMIF_SDL` — but the declaration is in the shared header, and an undefined reference is
 how a dead backend stops linking.
 
+### A cabinet that joined a network game must not use it
+
+**The clock's fraction is only right where the tics run on that clock.** A host, and every local
+game, runs tic N when its own clock enters tic N, so "how far through the clock's tic" is "how far
+since the tic ran". A cabinet that *joined* a network game (`netgame && !server`) runs tic N when the
+host's tic arrives — one at a time and at the right rate, but at whatever point of its own clock's tic
+the network delivers it. There the fraction said 0.6 on a tic that had only just run, then wrapped to
+0 before the next one arrived, and the picture stepped back and forward by most of a tic. Mark: "gameplay
+is stuttery on the client that joins, no matter whether the laptop or the Pi".
+
+`D_Interp_Frac` (`d_main.c`) is what `D_Display` hands `R_Interp_Set_Frac` now: for a joining cabinet,
+the time since the last tic *actually ran* (`client_tic_time`, stamped by `D_DoomLoop` whenever
+`TryRunTics` advanced `gametic`), clamped to one tic; otherwise `I_GetTimeFrac`, unchanged. It adds no
+delay — nothing is held back to smooth it — and a late tic simply holds the picture on the tic it has
+instead of stepping back.
+
+Measured with **`-tictiming`** (every 5 s in a network game: frames that ran 0/1/2/3+ tics, and the
+error between how far the picture moved and how far the clock moved), laptop and Pi 3 over Wi-Fi,
+headless with copies of the live homes:
+
+| | before | after |
+| --- | --- | --- |
+| Pi joining the laptop's game | 0.40 tic RMS, ~270 frames per 5 s off by > ½ tic | 0.075 tic RMS, 1–3 frames |
+| laptop joining the Pi's game | — | 0.03 tic RMS, 0–3 frames |
+| host, either way | 0.03 (laptop), 0.06 (Pi) | unchanged |
+
+Every client frame ran exactly one tic or none: the tics were arriving evenly all along. It was never
+the network; it was the fraction. Simulation is untouched (the fraction is drawing only).
+
 ### Unrelated latent bug found here
 
 `I_GetTime` computes `(ticks - basetime) * TICRATE / 1000` in 32-bit. That overflows after about

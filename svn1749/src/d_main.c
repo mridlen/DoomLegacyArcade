@@ -1001,6 +1001,83 @@ double  FP_Now( void )
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
+// [Arcade] -tictiming : in a network game, how evenly the displayed game time
+// keeps up with real time.  Every 5 seconds, one line: how many frames ran 0, 1,
+// 2 or more tics, and the error between how far the picture moved (the tic plus
+// the interpolation fraction) and how far the clock moved, RMS and the number of
+// frames off by more than half a tic.  A host reads about 0.03.  Off, it costs a
+// byte test per frame.
+static byte  tictiming = 0;
+
+// [Arcade] When the last game tic ran, on a cabinet that joined a network game.
+// Set by D_DoomLoop, read by D_Interp_Frac.
+static double  client_tic_time = 0;
+
+// [Arcade] How far between the last tic and the next one this frame falls, for
+// the uncapped framerate's interpolation.
+//
+// The host (and every local game) runs its tics on its own clock, so the
+// fraction of the clock's current tic is exactly right.  A joining cabinet runs
+// a tic when the host's tic arrives -- one at a time and at the right rate, but
+// at whatever point of *its* clock's tic the network delivers it.  The clock's
+// fraction then says 0.6 on a tic that has just run, and wraps to 0 before the
+// next one arrives, so the picture stepped back and forward by most of a tic:
+// measured laptop -> Pi 3 over Wi-Fi, the displayed game time was off from
+// real time by 0.4 tic RMS and by more than half a tic on one frame in six
+// (the host, 0.03 tic).  That is the joining cabinet's stutter.  Counting
+// from when the tic really ran costs nothing and adds no delay: a late tic
+// holds the picture at the tic it has, rather than stepping back.
+static fixed_t  D_Interp_Frac( void )
+{
+    if( netgame && ! server && client_tic_time > 0 )
+    {
+        double  f = ( FP_Now() - client_tic_time ) * TICRATE;
+        if( f >= 1.0 )  return FRACUNIT;
+        if( f <= 0.0 )  return 0;
+        return (fixed_t)( f * FRACUNIT );
+    }
+    return I_GetTimeFrac();
+}
+
+// [Arcade] -tictiming, once per pass of D_DoomLoop.
+static void  D_Tic_Timing( int tics_run )
+{
+    static double  t_last = 0, shown_last = 0, t_report = 0, sum_err2 = 0;
+    static int     frames = 0, big = 0, ran[4];
+    double  t, shown;
+
+    if( ! netgame || gamestate != GS_LEVEL )
+    {
+        t_last = 0;
+        return;
+    }
+    t = FP_Now();
+    shown = (double) gametic - 1.0 + (double) D_Interp_Frac() / FRACUNIT;
+    ran[ tics_run > 3 ? 3 : tics_run ]++;
+    if( t_last > 0 )
+    {
+        double  err = ( shown - shown_last ) - ( t - t_last ) * TICRATE;
+        sum_err2 += err * err;
+        frames++;
+        if( err > 0.5 || err < -0.5 )  big++;
+    }
+    else
+        t_report = t;
+    t_last = t;
+    shown_last = shown;
+
+    if( t - t_report >= 5.0 && frames )
+    {
+        GenPrintf( EMSG_errlog, "TICTIMING %s frames=%d ran0=%d ran1=%d ran2=%d ran3+=%d rms_err=%.3f big=%d\n",
+                   server ? "host" : "client", frames, ran[0], ran[1], ran[2], ran[3],
+                   sqrt( sum_err2 / frames ), big );
+        t_report = t;
+        sum_err2 = 0;
+        frames = big = 0;
+        ran[0] = ran[1] = ran[2] = ran[3] = 0;
+    }
+}
+
 void  FP_Add( int bucket, double t0 )
 {
     double dt;
@@ -1212,7 +1289,7 @@ void D_Display(void)
     // sectors interpolated by R_Interp_Frame_Begin below match the sprites
     // and the camera.  Comes back as FRACUNIT (i.e. no interpolation at all)
     // whenever the feature is off or the world is not running.
-    R_Interp_Set_Frac( I_GetTimeFrac() );
+    R_Interp_Set_Frac( D_Interp_Frac() );
 #endif
 
     wipe = false;
@@ -1834,8 +1911,13 @@ void D_DoomLoop(void)
         // process tics (but maybe not if realtic==0)
         {   // [Arcade] -frameprofile
             double fp_s = FP_Now();
+            tic_t  tic_before = gametic;
             TryRunTics(realtics);
             FP_Add( FP_TIC, fp_s );
+            if( gametic != tic_before )
+                client_tic_time = FP_Now();   // [Arcade] see D_Interp_Frac
+            if( tictiming )
+                D_Tic_Timing( gametic - tic_before );
         }
         LK_Ticker();   // [Arcade] Cabinet Link: presence out, log lines in; cheap when off
         {
@@ -4687,6 +4769,7 @@ fatal_error_action:
     // [Arcade] Frame time breakdown, for working out what a slow frame is
     // actually made of.  See FP_Frame_End.
     frameprofile = M_CheckParm("-frameprofile") ? 1 : 0;
+    tictiming = M_CheckParm("-tictiming") ? 1 : 0;   // [Arcade]
     if( frameprofile )
         GenPrintf( EMSG_warn,
             "Frame profiling on: tics / views / hud / present, every 3s.\n" );
