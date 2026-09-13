@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -631,6 +631,28 @@ case_gamewad() {
     expect "the joiner was told it is missing" "$d/member" "notmusic\.wad.* not found"
     expect_not "the joiner was not let into the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0"
     expect "the host plays alone after the wait" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+}
+
+# The host ends the linked game.  The joining cabinet gets "Server has
+# Shutdown", and a press of fire -- a real key event -- must take it straight
+# back to its attract screen.  It used to step "back" onto the main menu the
+# message had opened underneath, so only Escape got a cabinet out.
+case_msgfire() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 55 0 -linktest -linkautohost deathmatch -linkendgame 12 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 52 0 -linktest -linkautojoin -linkmsgpress -clientport $((p+101))
+    wait
+    expect "the joiner was in the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect "the host ended it" "$d/master" "^LINKLOG .*test: ending the linked game"
+    expect "the joiner was told" "$d/member" "^LINKLOG .*test: message .Server has Shutdown., pressing fire"
+    out "$d/member" | sed -n '/pressing fire/,$p' | grep -a "^LINKGAME " | tail -1 | grep -aq " menu=0 " \
+        || FAILS="$FAILS
+      after fire the joiner was still in a menu: $(out "$d/member" | grep -a '^LINKGAME ' | tail -1)"
 }
 
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and

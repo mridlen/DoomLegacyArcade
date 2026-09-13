@@ -9594,6 +9594,16 @@ menu_t MessageDef =
 
 static menu_t * message_menu_back;
 static byte message_lines, message_length;
+// [Arcade] The message put the menus up itself -- nothing was open, as when a
+// network error arrives mid-game -- so dismissing it closes them again rather
+// than stepping "back" to the main menu M_StartControlPanel opened underneath.
+// That main menu is why "Server has Shutdown" and friends needed Escape: fire
+// dismissed the box onto a menu, and only Escape left it.
+static boolean message_opened_menus;
+// [Arcade] When the message appeared, in I_GetTime tics: presses in the first
+// half second are ignored, so someone mashing fire when it pops up still sees it.
+static tic_t message_open_time;
+#define MESSAGE_HOLD_TICS  (TICRATE/2)
 
 
 void M_StartMessage ( const char*       string,
@@ -9611,6 +9621,8 @@ void M_StartMessage ( const char*       string,
     msgtext = Z_StrDup(string);
     DEBFILE(msgtext);
 
+    message_opened_menus = ! menuactive;   // [Arcade] before M_StartControlPanel sets it
+    message_open_time = I_GetTime();
     M_StartControlPanel(); // can't put menuactiv to true
     msgline.text     = msgtext;
     msgline.alphaKey = itemtype;
@@ -9669,6 +9681,12 @@ void M_StartMessage ( const char*       string,
 void M_SimpleMessage ( const char * string )
 {
     M_StartMessage ( string, NULL, MM_NOTHING );
+}
+
+// [Arcade] The text of the message box on screen, or NULL.
+const char *  M_Message_Text( void )
+{
+    return ( menuactive && currentMenu == &MessageDef ) ? MessageDef.menuitems[0].text : NULL;
 }
 
 
@@ -9741,6 +9759,15 @@ void M_DrawMessageMenu(void)
 static
 void M_StopMessage(int choice)
 {
+    // [Arcade] A message that opened the menus closes them.
+    if( (currentMenu == &MessageDef) && message_opened_menus )
+    {
+        message_opened_menus = false;
+        message_menu_back = NULL;
+        S_StartSound(menu_sfx_action);
+        M_Clear_Menus( true );
+        return;
+    }
     // Do not interfere with response menu changes
     if( (currentMenu == &MessageDef) && message_menu_back )
     {
@@ -10365,6 +10392,12 @@ boolean M_Responder (event_t* ev)
             //added:07-02-98:dirty hak:for the customize controls, I want only
             //      buttons/keys, not moves
             if (ev->type == ev_mouse)
+                goto ret_true;
+
+            // [Arcade] A plain message (MM_NOTHING) is dismissed by any press,
+            // fire included -- but not in its first half second.
+            if( r_menuline->alphaKey == MM_NOTHING
+                && I_GetTime() - message_open_time < MESSAGE_HOLD_TICS )
                 goto ret_true;
 
             // Call the itemaction routine, with the key.

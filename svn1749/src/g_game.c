@@ -3478,7 +3478,7 @@ void compose_message( const char * str1, const char * str2 )
 {
     char msgtemp[128];
     if( str2 == NULL )  str2 = "";
-    sprintf( msgtemp, "%s %s\n\nPress ESC\n", str1, str2 );
+    sprintf( msgtemp, "%s %s\n\nPress FIRE\n", str1, str2 );   // [Arcade] fire, not ESC
     M_SimpleMessage ( msgtemp );
 }
 
@@ -3592,7 +3592,7 @@ wrong_wad:
     goto failed_exit;
 
 load_failed:
-    M_SimpleMessage("savegame file corrupted\n\nPress ESC\n" );
+    M_SimpleMessage("savegame file corrupted\n\nPress FIRE\n" );   // [Arcade] fire, not ESC
     Command_ExitGame_f();
 failed_exit:
     P_Savegame_Error_Closefile();  // to dealloate buffer

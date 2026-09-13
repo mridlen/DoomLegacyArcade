@@ -2397,9 +2397,9 @@ static void  lk_net_status( void )
     GenPrintf( EMSG_errlog, "LINKNET %s sealed=%u opened=%u dropped=%u avg_us=%.1f\n",
                modes[lku_mode], lku_sealed, lku_opened, lku_dropped,
                lku_ns_n ? (double) lku_ns / lku_ns_n / 1000.0 : 0.0 );
-    GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d %s\n",
+    GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d menu=%d %s\n",
                (int) gamestate, netgame, server, LKG_Players_In_Game(), consoleplayer,
-               LKG_Mode_Name() );
+               M_Message_Text() ? 2 : menuactive ? 1 : 0, LKG_Mode_Name() );
 }
 
 boolean  LK_Built( void )  { return true; }

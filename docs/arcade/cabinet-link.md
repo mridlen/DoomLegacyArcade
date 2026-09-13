@@ -902,6 +902,23 @@ connect instead (the netcode's own MD5 check).
   - Verified: 26 link cases pass (`pair` failed once in a batch of eleven — its third engine never
     showed up, with the laptop short of memory — and passed on its own); `make smoke` 5/5.
 
+**After the first real games** Mark reported three things (2026-09-13): link setup only from the
+console; error prompts that needed Escape; and play "stuttery on the client that joins, no matter
+whether the laptop or the Pi".
+- **The stutter was the interpolation fraction, not the network** — see `uncapped-framerate.md`, "A
+  cabinet that joined a network game must not use it". `-tictiming` measured the Pi joining at 0.40
+  tic RMS error with every frame running one tic or none; counting the fraction from when the tic
+  really ran brought it to 0.075, with no added delay.
+- **The prompts**: a message box that pops up with no menu open (`"Server has Shutdown"`, `"Server
+  Timeout"`, kicked, sync aborted) is put up by `M_StartMessage` through `M_StartControlPanel`, which
+  opens the *main menu* underneath — and `M_StopMessage` stepped back to it. So fire did dismiss the
+  box, onto a menu only Escape left. A message that opened the menus now closes them
+  (`message_opened_menus`), ignores presses for its first half second (so mashing fire cannot skip it
+  unread), and says "Press FIRE". Case `msgfire`: the host ends the game after 12 s and the joiner
+  presses fire at the message through the input queue (`-linkmsgpress`); the status line's new
+  `menu=` field (0 none, 1 a menu, 2 a message box) must be 0 after. On the build before it read
+  `menu=1` — the main menu.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

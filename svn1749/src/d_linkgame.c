@@ -86,7 +86,8 @@ static byte        lkg_test_join;           // 1 -linkautojoin, 2 -linkautopress
 static boolean     lkg_test_host_done;
 static int         lkg_test_poll_sleep;
 static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
-static uint32_t    lkg_test_press_at;     // -linkpollsleep N: N ms between ticker start and events
+static uint32_t    lkg_test_press_at;
+static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
 static int         lkg_test_end_secs;       // -linkendgame S: a host ends its game after S seconds
 static boolean     lkg_test_end_sent;
@@ -537,6 +538,7 @@ void  LKG_Ticker( void )
                 lkg_test_poll_sleep = atoi( M_GetNextParm() );
             if( M_CheckParm( "-linkpressafter" ) && M_IsNextParm() )
                 lkg_test_press_secs = atoi( M_GetNextParm() );
+            lkg_test_msgpress = M_CheckParm( "-linkmsgpress" ) != 0;
         }
     }
 
@@ -547,6 +549,39 @@ void  LKG_Ticker( void )
 
     while( LK_Poll_Event( &ev ) )
         lkg_on_event( &ev );
+
+    // -linktest -linkmsgpress: a person pressing fire at a message box once they
+    // have read it -- through the input queue, like -linkpressafter.
+    if( lkg_test_msgpress )
+    {
+        static const char * seen_text = NULL;
+        static uint32_t  seen_ms;
+        static boolean   pressed;
+        const char * text = M_Message_Text();
+        if( text != seen_text )
+        {
+            seen_text = text;
+            seen_ms = lkg_now();
+            pressed = false;
+        }
+        if( text && ! pressed && lkg_now() - seen_ms > 1000 )
+        {
+            event_t  ev_fire;
+            int  key = gamecontrol_pl[0][gc_fire][0] ? gamecontrol_pl[0][gc_fire][0]
+                                                     : gamecontrol_pl[0][gc_fire][1];
+            char  first[40];
+            int  i;
+            for( i = 0; i < 39 && text[i] && text[i] != '\n'; i++ )  first[i] = text[i];
+            first[i] = 0;
+            pressed = true;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: message \"%s\", pressing fire\n", first );
+            memset( &ev_fire, 0, sizeof(ev_fire) );
+            ev_fire.type = ev_keydown;  ev_fire.data1 = key;
+            D_PostEvent( &ev_fire );
+            ev_fire.type = ev_keyup;
+            D_PostEvent( &ev_fire );
+        }
+    }
     // Read the clock after the events: they stamp times of their own (START,
     // a remote's STATUS), and none of them may be newer than now.
     now = lkg_now();

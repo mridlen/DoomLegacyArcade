@@ -154,6 +154,8 @@ boolean  M_Initials_Active( void );
 
 // [Arcade] True while the join screen is up (Cabinet Link presence).
 boolean  M_Join_Active( void );
+// [Arcade] The text of the message box on screen, or NULL (tools/linktest.sh).
+const char *  M_Message_Text( void );
 
 // [Arcade] Cabinet Link invites (d_linkgame.c drives these).
 boolean  M_Join_Counts( byte * joined, boolean * all_locked, int * secs );

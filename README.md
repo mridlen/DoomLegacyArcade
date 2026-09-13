@@ -1197,6 +1197,10 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   the other: you get one game, not two.
 - On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
+- The cabinet that joined plays as smoothly as the one that started the game. (It used to judder
+  whenever the frame rate was above 35.)
+- If the other cabinet ends the game or drops out, the message that says so ("Server has Shutdown")
+  goes away with **fire**, back to the attract screen. It used to need Escape.
 - Either cabinet can start the game, master or member. (Earlier builds could send the joining
   cabinet back to attract while the host played alone: when the host had a soundtrack pack loaded
   that the other cabinet lacked, now and then on a slow Raspberry Pi, and whenever the invited

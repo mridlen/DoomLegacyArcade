@@ -3763,7 +3763,7 @@ reset_to_searching:
     return;
 
 quit_ret:
-    M_SimpleMessage ("Network game synchronization aborted.\n\nPress ESC\n");
+    M_SimpleMessage ("Network game synchronization aborted.\n\nPress FIRE\n");   // [Arcade] fire, not ESC
     goto reset_to_title_exit;
 
 reset_to_title_exit:
@@ -4095,7 +4095,7 @@ void Got_NetXCmd_KickCmd(xcmd_t * xc)
     {
         CL_Reset();
         D_StartTitle();
-        M_SimpleMessage("You have been kicked by the server\n\nPress ESC\n");
+        M_SimpleMessage("You have been kicked by the server\n\nPress FIRE\n");   // [Arcade] fire, not ESC
     }
     else
     {
@@ -5221,7 +5221,7 @@ static void server_shutdown_handler()
     network_state = NETS_no_server;
     if( cl_mode != CLM_searching )
     {
-        M_SimpleMessage("Server has Shutdown\n\nPress Esc");
+        M_SimpleMessage("Server has Shutdown\n\nPress FIRE");   // [Arcade] fire, not Esc
         CL_Reset();
         D_StartTitle();
     }
@@ -5234,7 +5234,7 @@ static void server_timeout_handler()
     network_state = NETS_no_server;
     if( cl_mode != CLM_searching )
     {
-        M_SimpleMessage("Server Timeout\n\nPress Esc");
+        M_SimpleMessage("Server Timeout\n\nPress FIRE");   // [Arcade] fire, not Esc
         CL_Reset();
         D_StartTitle();
     }
