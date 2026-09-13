@@ -955,6 +955,45 @@ whether the laptop or the Pi".
   `menu=` field (0 none, 1 a menu, 2 a message box) must be 0 after. On the build before it read
   `menu=1` — the main menu.
 
+**The first eight player game** (four at each cabinet, 2026-09-13). With the laptop hosting after it
+had joined the Pi's game, the Pi drew "the view in the left corner", "a slice of another player
+screen", and "could only turn but not move"; the next try crashed the laptop. Two separate bugs,
+neither the host/joiner order:
+- **The joiner never learned its own players: an upstream packet-size bug that only eight players
+  reach.** `SV_Send_Tics` splits ticcmds into sections of `NUM_SERVERTIC_CMD` (45) but packs the
+  textcmds after them up to `software_MAXPACKETLENGTH`; the client's `servertic_handler` checked a
+  textcmd against the end of the fixed `cmds[45]` array (360 bytes after it starts) instead of the
+  packet it received. At two players a tic's ticcmds are 16 bytes and nothing comes close. At eight
+  they are 64: four or five tics in a packet plus the 143 byte XD_ADDPLAYER textcmd pass 360, the
+  joiner logs **`Nettics: textcmd exceed buffer`** and drops it — and so it never runs the add-player
+  commands for its own four. It then sits in the level with `players=4 locals=-1,-1,-1,-1`: no player
+  of its own, every view drawn from someone else's position, and turning still working because the
+  view's angle comes from the panel (`localangle`). A host sends several tics per packet whenever it
+  falls behind, so on the real pair it happened about one run in ten; locally, never. `endbuffer` is
+  now the end of what arrived (`doomcom->datalength`), capped at `MAXPACKETLENGTH`; the check against
+  the destination buffer is unchanged.
+  - Found by running Mark's sequence on the two real machines (four players a side, drawing, copies of
+    both live homes) until it failed, with each cabinet's local player slots added to the status line
+    (`locals=`). The first theories — a join during the host's attract demo, a duplicated join
+    request, the view grid — were each checked and ruled out (case `demojoin` stays as a guard).
+  - **Case `slowjoin8`**: `-netbatchtics 4` makes the host send exactly four tics a packet (32
+    ticcmds, 256 bytes, plus the textcmd: 399), so the old check fails **every time** (2 of 2) and the
+    fix passes (2 of 2). Slowing the host's frames instead only made it likely — six tics split into a
+    45 ticcmd section and a short one and fit — which is why the switch exists.
+- **The laptop's crash: OpenGL dynamic lights of a freed level.** `hw_light.c` keeps one light list
+  per view (`view_dynlights[4]`), and a view's planes are lit from the lights its sprites found on its
+  own previous frame — mobj pointers. `HWR_SetupLevel` cleared only the list of the view drawn last,
+  so views 2–4 kept pointers into the level just freed, and the first frame of the next game that lit
+  a plane in one of them read a freed mobj (`HWR_PlaneLighting`, `pind=1`, from the core dump).
+  `HWR_Reset_All_Lights` clears all four. **Not reproduced headlessly**: MAP01 has no light-giving
+  things, idle test players fire nothing, and a freed mobj usually still reads as valid — the fix
+  rests on the backtrace and the code.
+- New test plumbing: `rehostview` (four a side, both drawing, both games checked; `PLAYERS_EACH=1`
+  for one a side; `VIDEO=offscreen DRAWMODE=OpenGL` runs any case on the real GPU), `-linkjoinpanels`
+  now presses in up to four panels, and the status line carries `views= viewport= screen= locals=`.
+- Noticed, not fixed: `Send_localtextcmd` sends textcmds for local players 1 and 2 only, so a name or
+  colour change from panels 3 and 4 never reaches the other machines.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

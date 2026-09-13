@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -120,7 +120,8 @@ mkcab() {
     mkdir -p "$d/legacyhome/demos" "$d/legacyhome/link"
     rm -f "$d/legacyhome"/config8p.cfg* "$d/legacyhome"/configgl.cfg* \
           "$d/legacyhome"/confign.cfg* "$d/legacyhome/autoexec.cfg"
-    sed -i -e 's/^drawmode .*/drawmode "Software 8bit"/' \
+    # DRAWMODE=OpenGL (with VIDEO=offscreen) draws on the real GPU, as the cabinets do.
+    sed -i -e "s/^drawmode .*/drawmode \"${DRAWMODE:-Software 8bit}\"/" -e 's/^fullscreen .*/fullscreen "Yes"/' \
            -e "s/^localplayers .*/localplayers \"${LOCALPLAYERS:-1}\"/" "$d/legacyhome/config.cfg"
     for w in "$WADDIR"/*; do ln -sf "$w" "$d/"; done
 }
@@ -138,7 +139,7 @@ cfg() {
 # report misses the timeout, and that reads as a failure of the link.
 run() {
     local d=$1 secs=$2; shift 3
-    ( cd "$d" && env LK_SELFCHECK="${LKSC:-}" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    ( cd "$d" && env LK_SELFCHECK="${LKSC:-}" SDL_VIDEODRIVER="${VIDEO:-dummy}" DISPLAY= SDL_AUDIODRIVER=dummy \
         SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" ${NODRAW--nodraw} -nosound -nomusic -linkstatus "$@" \
         > out.txt 2>&1 ) &
 }
@@ -838,6 +839,94 @@ case_rehost() {
     out "$d/master" | sed -n '/joining LAPCAB/,$p' | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=2 " \
         || FAILS="$FAILS
       game 2: the master never got into the member's game"
+}
+
+# rehost the way Mark's cabinets are: four panels each and four people at each
+# -- an eight player game -- both drawing.  Game 1 the master hosts and the
+# member joins; game 2, in the same running programs, the member hosts and the
+# master joins.  Mark, with the laptop hosting after it had joined the Pi's game:
+# the Pi drew in one corner with a slice of another view and could turn but not
+# move; the next try crashed the laptop drawing a view of a player that was not
+# its own (HWR_RenderPlayerView pind=1 -> players[1]).  In each game both
+# cabinets must have all eight players and draw their own four.
+#
+# PLAYERS_EACH=1 runs the same thing one player a side.
+case_rehostview() {
+    local d=$1 p=$2 each=${PLAYERS_EACH:-4}
+    local total=$((each * 2)) views=$each
+    [ "$each" -ge 3 ] && views=4
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    NODRAW= run "$d/master" 110 0 -linktest -linkautohost deathmatch -linkautojoin -linkjoinpanels $each \
+        -linkendgame 15 -udpport $((p+100)) -clientport $((p+101))
+    sleep 2
+    NODRAW= run "$d/member" 106 0 -linktest -linkautojoin -linkjoinpanels $each -linkhostafter 1 \
+        -udpport $((p+102)) -clientport $((p+103))
+    wait
+    expect "game 1 was over on the member" "$d/member" "^LINKLOG .*linked game over \(1 so far\)"
+    expect "game 2: the member hosted" "$d/member" "^LINKLOG .*starting a linked game with $each player"
+    expect "game 2: the master joined it" "$d/master" "^LINKLOG .*joining LAPCAB"
+    local g1host g1join host join
+    g1host=$(out "$d/master" | grep -a "^LINKGAME gamestate=1 netgame=1 server=1 " | tail -1)
+    g1join=$(out "$d/member" | sed -n '1,/linked game over/p' | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 " | tail -1)
+    host=$(out "$d/member" | sed -n '/starting a linked game/,$p' | grep -a "^LINKGAME gamestate=1 netgame=1 server=1 " | tail -1)
+    join=$(out "$d/master" | sed -n '/joining LAPCAB/,$p' | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 " | tail -1)
+    for pair in "game 1 host:$g1host" "game 1 joiner:$g1join" "game 2 host:$host" "game 2 joiner:$join"; do
+        local who=${pair%%:*} line=${pair#*:}
+        echo "$line" | grep -aq " players=$total " || FAILS="$FAILS
+      $who: not a $total player game: $line"
+        echo "$line" | grep -aq " views=$views " || FAILS="$FAILS
+      $who: did not draw $views view(s): $line"
+    done
+}
+
+# The host starts its game while an attract demo is playing -- the normal case
+# on a cabinet with record demos, and one no other case covers.  A join that the
+# host took for a game already in progress would leave the joiner waiting for
+# the next game with no players of its own (suspected, then ruled out, for the
+# "every view someone else's" report -- that was slowjoin8's).  Four a side.
+case_demojoin() {
+    local d=$1 p=$2
+    KEEPDEMOS=1 LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 70 0 -linktest -linkautohost deathmatch -linkhostindemo -linkjoinpanels 4 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 67 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+101))
+    wait
+    expect "the host started from an attract demo" "$d/master" "^LINKLOG .*starting a linked game with 4 player"
+    expect "the host has all eight" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=8 "
+    expect "the joining cabinet has all eight" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 "
+    expect "the joining cabinet's players are its own" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+}
+
+# An eight player game -- four at each cabinet -- on a slow host.  A host that
+# falls behind sends several tics per packet, and with eight
+# players a tic's ticcmds are big: the joiner's unpacking checked the add-player
+# textcmds against the size of a fixed 45 ticcmd array rather than the packet it
+# received, refused them ("Nettics: textcmd exceed buffer"), and so never learned
+# its own four players -- every view someone else's, turning but not moving.
+# Seen once on the laptop joining the Pi over Wi-Fi.  -netbatchtics 4 makes the
+# host send exactly four tics a packet: 32 ticcmds (256 bytes) and the 143 byte
+# add-player textcmd come to 399, past the old 360 byte limit, every time.
+# (Slowing the host's frames only made it likely: five tics fail too, six split
+# into a 45 ticcmd section and a small one, and fit.)
+case_slowjoin8() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 70 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -netbatchtics 4 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 67 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+101))
+    wait
+    expect "the host has all eight" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=8 "
+    expect_not "the joining cabinet refused no textcmd" "$d/member" "textcmd exceed buffer"
+    expect "the joining cabinet has all eight, four of them its own" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
 }
 
 case_convert() {

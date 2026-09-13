@@ -4969,7 +4969,7 @@ void  HWR_SetupLevel( void )
 
     // Setup structures needed for HWR draw.
     // BP: reset light between levels (we draw preview frame lights on current frame)
-    HWR_Reset_Lights();
+    HWR_Reset_All_Lights();   // [Arcade] every view's, not just the last one drawn
     // Correct missing sidedefs & deep water trick
     HWR_CorrectSWTricks();
     HWR_Create_PlanePolygons();

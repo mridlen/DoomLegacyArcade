@@ -1199,6 +1199,9 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
 - The cabinet that joined plays as smoothly as the one that started the game, turning included. (It
   used to judder whenever the frame rate was above 35.)
+- **Eight player games work** — four at each cabinet. (Earlier builds could leave the joining cabinet
+  with none of its own players, showing other players' views and turning but not moving, and could
+  crash the host in OpenGL when a second four-player game started.)
 - A player who joins from another cabinet gets the whole screen. (On a four panel cabinet the first
   game after starting the program used to put them in a quarter of it.)
 - **The idle timeout counts everyone in the game.** A linked game keeps going as long as anybody on

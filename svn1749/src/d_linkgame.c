@@ -89,7 +89,8 @@ static int         lkg_test_press_secs;     // -linkpressafter S: a real fire pr
 static uint32_t    lkg_test_press_at;
 static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
 static int         lkg_test_move_ms;
-static int         lkg_test_join_panels = 1; // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
+static int         lkg_test_join_panels = 1;
+static boolean     lkg_test_host_in_demo;   // -linkhostindemo: host only while an attract demo plays // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
 static int         lkg_test_end_secs;       // -linkendgame S: a host ends its game after S seconds
 static boolean     lkg_test_end_sent;
@@ -627,6 +628,7 @@ void  LKG_Ticker( void )
             lkg_test_msgpress = M_CheckParm( "-linkmsgpress" ) != 0;
             if( M_CheckParm( "-linkjoinpanels" ) && M_IsNextParm() )
                 lkg_test_join_panels = atoi( M_GetNextParm() );
+            lkg_test_host_in_demo = M_CheckParm( "-linkhostindemo" ) != 0;
             if( M_CheckParm( "-linkmoveevery" ) && M_IsNextParm() )
                 lkg_test_move_ms = atoi( M_GetNextParm() );
         }
@@ -706,6 +708,7 @@ void  LKG_Ticker( void )
     {
      case LKGM_NONE:
         if( lkg_test_host_cat && ! lkg_test_host_done && lkg_games_done >= lkg_test_host_after
+            && ( ! lkg_test_host_in_demo || demoplayback )
             && D_Attract_Running() && LKG_Would_Invite( lkg_test_host_cat ) )
         {
             lkg_test_host_done = true;

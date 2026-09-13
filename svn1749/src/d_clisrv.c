@@ -5548,6 +5548,17 @@ static void SV_Send_Tics (void)
         if( start_tic < next_tic_send )
             start_tic = next_tic_send;
 
+        // [Arcade] -netbatchtics N (tools/linktest.sh): hold new tics until there
+        // are N, so every packet carries N -- what a host that has fallen behind
+        // sends, made exact.  See the endbuffer comment in the client's handler.
+        {
+            static int  batch = -1;
+            if( batch < 0 )
+                batch = ( M_CheckParm( "-netbatchtics" ) && M_IsNextParm() ) ? atoi( M_GetNextParm() ) : 0;
+            if( batch > 1 && start_tic == nextsend_tic[nnode] && end_tic - start_tic < (tic_t) batch )
+                continue;
+        }
+
         // Compute the length of the packet and cut it if too large.
         packsize = SERVER_TIC_BASE_SIZE;
         total_textcmd_size = 0;
@@ -5744,7 +5755,19 @@ static void servertic_handler( byte nnode )
 
     // First the nettics then the net textcmds.
     bufpos = (byte*)netbuffer->u.serverpak.cmds;  // first ticcmd
-    endbuffer = (byte*)& netbuffer->u.serverpak.cmds[NUM_SERVERTIC_CMD];  // after last content
+    // [Arcade] The end of what actually arrived.  It was the end of the fixed
+    // cmds[NUM_SERVERTIC_CMD] array -- but the server (SV_Send_Tics) caps only
+    // the *ticcmds* at that array and packs the textcmds after them up to
+    // software_MAXPACKETLENGTH.  With eight players a tic's ticcmds are 64 bytes,
+    // so four tics plus the add-player textcmd ran past the array end, the
+    // textcmd was refused as "exceed buffer" and lost, and a cabinet joining an
+    // eight player Cabinet Link game never learned which four players were its
+    // own: every view someone else's, turning but not moving.  (Two players never
+    // came near it, which is why it was never seen.)  buflen is still checked
+    // against the destination separately, below.
+    endbuffer = (byte*)netbuffer + doomcom->datalength;
+    if( endbuffer > (byte*)netbuffer + MAXPACKETLENGTH )
+        endbuffer = (byte*)netbuffer + MAXPACKETLENGTH;
 
     cmd_player_mask = read_N32( &netbuffer->u.serverpak.cmd_player_mask );
     cmds_offset = netbuffer->u.serverpak.cmds_offset;

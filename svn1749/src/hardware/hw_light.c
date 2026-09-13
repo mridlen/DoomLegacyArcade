@@ -591,6 +591,20 @@ void HWR_Reset_Lights(void)
     dynlights->nb = 0;
 }
 
+// [Arcade] Every view's lights, for a new level.  The planes of a view are lit
+// by the lights its sprites found on that view's *previous* frame, which hold
+// mobj pointers -- and there is one list per view.  HWR_SetupLevel used to
+// clear only the list of whichever view was drawn last, so the other three kept
+// pointers into the level just freed, and the first frame of the next game that
+// drew one of those views read a freed mobj: the laptop crashed in
+// HWR_PlaneLighting, view 2, starting its second four-panel linked game.
+void HWR_Reset_All_Lights(void)
+{
+    int  v;
+    for( v = 0; v < MAXSPLITSCREENPLAYERS; v++ )
+        view_dynlights[v].nb = 0;
+}
+
 // --------------------------------------------------------------------------
 // Change view, thus change lights (splitscreen)
 // --------------------------------------------------------------------------

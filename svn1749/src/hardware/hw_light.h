@@ -79,6 +79,7 @@ void HWR_DynamicShadowing(vxtx3d_t *clVerts, int nrClipVerts, player_t *p);
 void HWR_PlaneLighting(vxtx3d_t *clVerts, int nrClipVerts);
 void HWR_WallLighting(vxtx3d_t *wlVerts);
 void HWR_Reset_Lights(void);
+void HWR_Reset_All_Lights(void);   // [Arcade] every view's, for a new level
 void HWR_Set_Lights(byte viewnumber);
 
 #define DL_MAX_LIGHT    256  // maximum number of light (extra light are ignored)
