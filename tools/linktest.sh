@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -554,6 +554,83 @@ case_slowclock() {
     expect_not "the master did not give up at once" "$d/master" "^LINKLOG .*linked game over"
     expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
     expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# The invited cabinet has sat on its attract screen longer than idletimeout --
+# which a real cabinet nearly always has.  The idle check closed any menu open
+# over the attract screen, and the join screen an invite opens is one, so it
+# vanished the tic it appeared and a person pressing fire pressed it on the
+# attract screen.  Mark: "I start a deathmatch on the laptop, and it goes back
+# to attract on the Pi."  The press here is a real key event, 6 s in.
+case_idlejoin() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    sed -i -e 's/^idletimeout .*/idletimeout "15"/' "$d/master/legacyhome/config.cfg"
+    run "$d/master" 80 0 -linktest -linkpressafter 6 -udpport $((p+102)) -clientport $((p+101))
+    sleep 20
+    run "$d/member" 58 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
+    wait
+    expect "the master was invited" "$d/master" "^LINKLOG .*LAPCAB invited this cabinet"
+    expect "the master pressed fire" "$d/master" "^LINKLOG .*test: pressing fire"
+    expect "the member started with the master's player" "$d/member" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# mkwad <file> <lump name>... : a tiny PWAD whose lumps have those names.
+mkwad() {
+    python3 - "$@" <<'PYEOF'
+import struct, sys
+out, names = sys.argv[1], sys.argv[2:]
+data = b''.join(b'x' * 16 for _ in names)
+dirofs = 12 + len(data)
+d = b''.join(struct.pack('<ii8s', 12 + 16 * i, 16, n.encode()) for i, n in enumerate(names))
+open(out, 'wb').write(struct.pack('<4sii', b'PWAD', len(names), dirofs) + data + d)
+PYEOF
+}
+
+# The host plays with a soundtrack pack loaded and the joiner has never heard of
+# it.  Music cannot change the game, so they must still play together -- Mark's
+# laptop autoloads IDKFAv2.wad and Doom2OST.wad, the Pi has neither, and the Pi
+# was refused ("IDKFAv2.wad not found") and went back to attract.
+case_musicwad() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    mkwad "$d/master/soundtrk.wad" D_RUNNIN D_STALKS DSPISTOL DPPISTOL
+    run "$d/master" 45 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -file soundtrk.wad
+    sleep 2
+    run "$d/member" 42 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the host really loaded the soundtrack" "$d/master" "Added file .*soundtrk\.wad"
+    expect "the joiner tried to join" "$d/member" "^LINKLOG .*joining HOSTCAB"
+    expect_not "the joiner was not asked for it" "$d/member" "soundtrk\.wad.* not found"
+    expect "the host is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# The same, except one lump in the pack is not audio.  That could be a map or a
+# DEHACKED patch, so the joiner without it must still be refused.
+case_gamewad() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    mkwad "$d/master/notmusic.wad" D_RUNNIN DSPISTOL GAMEDATA
+    run "$d/master" 50 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -file notmusic.wad
+    sleep 2
+    run "$d/member" 46 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the host really loaded it" "$d/master" "Added file .*notmusic\.wad"
+    expect "the joiner was told it is missing" "$d/member" "notmusic\.wad.* not found"
+    expect_not "the joiner was not let into the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0"
+    expect "the host plays alone after the wait" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
 }
 
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and

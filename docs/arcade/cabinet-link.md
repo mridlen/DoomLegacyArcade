@@ -872,6 +872,35 @@ connect instead (the netcode's own MD5 check).
     Pi log stopped mid-story. Run a cross-machine engine under `stdbuf -oL -eL`. And the laptop can run
     the suite two at a time only with memory to spare; with a browser open it was killed twice, even
     serially in the background — run it in the foreground in batches.
+  - **That fix was real, and it was not what Mark was seeing.** On the fixed build he still reported
+    "I start a deathmatch on the laptop, join on both laptop and Pi, and then the Pi goes back to
+    attract mode". Every test so far had joined through `-linkautojoin`, which reaches into the join
+    screen directly, and every scratch cabinet had the same wads — so two things the real cabinets do
+    were never exercised. The Pi was relaunched with its output `tee`d to a file (it normally prints to
+    a terminal, where nothing can read it back) and one attempt gave both answers.
+- **The Pi was refused for two music packs.** The laptop's `legacyhome/autoexec.cfg` does
+  `addfile "IDKFAv2.wad"` and `addfile "Doom2OST.wad"` — 90 MB and 328 MB, every lump a `D_` track.
+  The server lists every loaded wad as needed (`Put_Server_FileNeed`), the Pi had neither, and with
+  downloads off in a linked game `CL_ConnectToServer` gave up: `"IDKFAv2.wad" not found … Remove
+  -nodownload`, back to attract. The laptop's `wait_timeout` then started it alone. When the *Pi*
+  hosted there was nothing extra to ask for, which is the whole of "only works when initiated on the
+  server". **Fix**: the host leaves out any wad whose every lump is audio (`D_` music, `DS`/`DP`
+  sounds); one lump of anything else and it is required as before, and a zip archive always is.
+  Music is found by name and never read by the simulation, so the two cabinets play the same game with
+  their own soundtracks. Cases: `musicwad` (the host loads a 4-lump audio wad the joiner lacks: one
+  game) **fails on the build before** with the field message; `gamewad` (the same wad plus one
+  non-audio lump: refused, host plays alone) passes both before and after — the rule did not get loose.
+  `mkwad` in `tools/linktest.sh` writes such wads.
+- **An invite's join screen closed the tic it opened on a cabinet nobody had touched.**
+  `G_Idle_Timeout_Check` closes any menu over the attract screen once `idletimeout` (60 s on both) has
+  passed since the last *input* — and a cabinet waiting to be invited has usually had none for longer
+  than that. Mark pressed the Pi's buttons before this could bite him, so it was not his symptom, but
+  it would have been the next one. The join screen is now exempt, like the initials page (it has its own
+  countdown). Case `idlejoin`: `idletimeout 15`, invited 20 s after boot, and the press is a **real key
+  event** (`-linkpressafter 6` posts panel 1's fire through `D_PostEvent`, so it only joins if the
+  screen is still up). It fails on the build before.
+  - Verified: 26 link cases pass (`pair` failed once in a batch of eleven — its third engine never
+    showed up, with the laptop short of memory — and passed on its own); `make smoke` 5/5.
 
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way

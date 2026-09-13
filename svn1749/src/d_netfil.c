@@ -189,11 +189,35 @@ void update_download_done( void )
 }
 
 
+// [Arcade] A wad that holds nothing but music and sound effects.  It cannot
+// change what happens in the game -- the simulation never reads an audio lump,
+// and sounds and music are found by name -- so a joining machine does not need
+// it.  Mark's laptop autoloads two soundtrack packs (IDKFAv2.wad, 90 MB, and
+// Doom2OST.wad, 328 MB, every lump a D_ track); the Pi has neither, and with
+// downloads off in a linked game it was refused and went back to attract.
+// Each cabinet now simply plays its own music.  Strict on purpose: one lump of
+// anything else (a map, DEHACKED, a texture) and the wad is required as before.
+static boolean  Wad_Is_Audio_Only( const wadfile_t * wf )
+{
+    int  i;
+    if( ! wf || wf->numlumps <= 0 || ! wf->lumpinfo )  return false;
+#ifdef ZIPWAD
+    if( wf->classify == FC_zip || wf->archive_num_wadfile )  return false;
+#endif
+    for( i = 0; i < wf->numlumps; i++ )
+    {
+        const char * n = wf->lumpinfo[i].name;
+        if( n[0] != 'D' )  return false;
+        if( n[1] != '_' && n[1] != 'S' && n[1] != 'P' )  return false;   // D_ music, DS/DP sounds
+    }
+    return true;
+}
+
 // By server.
 // Fill the serverinfo packet with wad files loaded by the game on the server.
 byte * Put_Server_FileNeed(void)
 {
-    int   i;
+    int   i, num = 0;
     byte *p;  // macros want byte*
     char  wadfilename[MAX_WADPATH];
 
@@ -202,6 +226,10 @@ byte * Put_Server_FileNeed(void)
     p=(byte *)&netbuffer->u.serverinfo.fileneed;
     for(i=0;i<numwadfiles;i++)
     {
+        // [Arcade] Never the IWAD (entry 0, which the client checks first).
+        if( i > 0 && Wad_Is_Audio_Only( wadfiles[i] ) )
+            continue;
+        num++;
         // Format: filesize uint32, filename str0, md5sum 16byte
         WRITEU32(p, wadfiles[i]->filesize);
         strcpy(wadfilename,wadfiles[i]->filename);
@@ -211,7 +239,7 @@ byte * Put_Server_FileNeed(void)
         // char array, is endian safe
         WRITEMEM(p,wadfiles[i]->md5sum,16);
     }
-    netbuffer->u.serverinfo.num_fileneed = i;  // numwadfiles
+    netbuffer->u.serverinfo.num_fileneed = num;  // [Arcade] numwadfiles, less audio-only wads
     return p;
 }
 

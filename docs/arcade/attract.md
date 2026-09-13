@@ -50,6 +50,12 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `pagetic` falling 170 → -180 for the whole 350 tics the menu was up, then at the timeout
     `menuactive` went 0, `demosequence` stepped to 1 with a fresh `pagetic` of 167, and the cycle
     carried on to 2 normally.
+  - **Except the join screen**, which `G_Idle_Timeout_Check` skips like the initials page
+    (`M_Join_Active()`). It runs its own countdown and always ends. The idle test measures time since
+    the *last input*, and a Cabinet Link invite opens the join screen on a cabinet nobody has touched —
+    usually for longer than `idletimeout` — so it was closed on the very tic it opened. Regression case:
+    `tools/linktest.sh idlejoin` (`idletimeout 15`, a real fire key event 6 s into the invite).
+    → `cabinet-link.md`
   - **`console_open` is deliberately kept** in the same test. Someone typing at the console is
     working on the machine, not watching it.
   - Note that "the Options screen doesn't go back to attract mode" was **this**, not the timeout.

@@ -17,6 +17,8 @@
 #include "g_game.h"
 #include "m_misc.h"
 #include "command.h"
+#include "d_event.h"
+#include "g_input.h"
 
 #include <SDL.h>
 
@@ -82,7 +84,9 @@ static int         lkg_test = -1;
 static byte        lkg_test_host_cat;
 static byte        lkg_test_join;           // 1 -linkautojoin, 2 -linkautopress
 static boolean     lkg_test_host_done;
-static int         lkg_test_poll_sleep;     // -linkpollsleep N: N ms between ticker start and events
+static int         lkg_test_poll_sleep;
+static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
+static uint32_t    lkg_test_press_at;     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
 static int         lkg_test_end_secs;       // -linkendgame S: a host ends its game after S seconds
 static boolean     lkg_test_end_sent;
@@ -350,7 +354,9 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
                lkg_host_name, lkg_cat_word( lkg_category ), convert ? " (joining their game)" : "" );
 
     if( lkg_test_join )
-        M_Join_Test_Lock( 0, lkg_test_join == 1 );   // -linkautopress: fire, never lock
+        M_Join_Test_Lock( 0, lkg_test_join == 1 );
+    if( lkg_test_press_secs > 0 )
+        lkg_test_press_at = lkg_now() + lkg_test_press_secs * 1000;   // -linkautopress: fire, never lock
 }
 
 static void  lkg_on_invite( const lk_event_t * ev )
@@ -529,6 +535,8 @@ void  LKG_Ticker( void )
                 lkg_test_end_secs = atoi( M_GetNextParm() );
             if( M_CheckParm( "-linkpollsleep" ) && M_IsNextParm() )
                 lkg_test_poll_sleep = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linkpressafter" ) && M_IsNextParm() )
+                lkg_test_press_secs = atoi( M_GetNextParm() );
         }
     }
 
@@ -582,6 +590,23 @@ void  LKG_Ticker( void )
         if( joined != lkg_sent_joined || locked != lkg_sent_locked
             || lkg_since( now, lkg_status_ms ) > LKG_STATUS_MS )
             lkg_send_status( lkg_host_fp, joined, locked, secs );
+        // -linktest -linkpressafter: panel 1's fire button, as the input
+        // code posts it -- through the responders, so a join screen that is
+        // no longer up does not get it.  The test hooks above reach into the
+        // join screen directly and could never see it closed underneath them.
+        if( lkg_test_press_at && now >= lkg_test_press_at )
+        {
+            event_t  ev;
+            int  key = gamecontrol_pl[0][gc_fire][0] ? gamecontrol_pl[0][gc_fire][0]
+                                                     : gamecontrol_pl[0][gc_fire][1];
+            lkg_test_press_at = 0;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: pressing fire (key %d)\n", key );
+            memset( &ev, 0, sizeof(ev) );
+            ev.type = ev_keydown;  ev.data1 = key;
+            D_PostEvent( &ev );
+            ev.type = ev_keyup;
+            D_PostEvent( &ev );
+        }
         if( now > lkg_deadline_ms + LKG_GRACE_MS )
         {
             GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s did not start the game\n", lkg_host_name );

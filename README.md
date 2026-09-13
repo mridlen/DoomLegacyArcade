@@ -1197,15 +1197,20 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   the other: you get one game, not two.
 - On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
-- Either cabinet can start the game, master or member. (An earlier build often failed when the
-  slower cabinet — a Raspberry Pi — was the one joining: it showed the join screen, then went back
-  to attract while the other cabinet played alone.)
+- Either cabinet can start the game, master or member. (Earlier builds could send the joining
+  cabinet back to attract while the host played alone: when the host had a soundtrack pack loaded
+  that the other cabinet lacked, now and then on a slow Raspberry Pi, and whenever the invited
+  cabinet had sat untouched for longer than the idle timeout.)
 - Both cabinets need this version of the game. A cabinet with Cabinet Link switched on also ignores
   game traffic from anything that is not a linked cabinet.
 - The cabinets must have the **same IWAD**, but not the same file name: Ultimate Doom as `DOOM.WAD` on
   one and `doomu.wad` on the other is fine. A *different version* under the same name (Doom 2 v1.666
   against v1.9) is refused with "different version of DOOM2.WAD", because the two would play different
   games.
+- **Music and sound packs don't have to match.** A wad that holds only music or sound effects (a
+  soundtrack pack such as `IDKFAv2.wad`) is not required of the other cabinet; each cabinet plays its
+  own music. Any other extra wad the host has loaded — maps, patches, textures — the joining cabinet
+  must have too, or it is turned away and goes back to its attract screen.
 
 Shared high scores come next.
 

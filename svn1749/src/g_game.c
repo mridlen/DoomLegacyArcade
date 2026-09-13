@@ -2009,6 +2009,14 @@ static void G_Idle_Timeout_Check( boolean in_menu )
     // an abandoned one still clears itself and the cabinet is never stuck.
     if( M_Initials_Active() )  return;
 
+    // [Arcade] Nor the join screen.  It has its own countdown and always ends:
+    // a local one starts the game, one opened by another cabinet's invite
+    // (Cabinet Link) closes when that cabinet starts, cancels, or goes quiet.
+    // Without this, a cabinet left untouched on its attract screen for longer
+    // than idletimeout -- the normal state of a cabinet nobody is at -- had the
+    // invite's join screen closed on the very tic it opened.
+    if( M_Join_Active() )  return;
+
     // [Arcade] A demo playing on its own *is* the attract screen doing its
     // job, so playback normally means "not idle".  But an attract demo is
     // still running behind an open menu, so when a menu is up that guard has
