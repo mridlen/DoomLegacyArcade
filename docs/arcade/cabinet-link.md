@@ -19,8 +19,10 @@ Two or more cabinets on the same home network join into a group.
 - **A multiplayer game on one cabinet invites the others.** When somebody starts Deathmatch (or a
   Campaign) on the laptop, a cabinet sitting on its attract screen shows **PRESS FIRE TO JOIN**
   along with the countdown the laptop's join screen is running. Whoever presses in on the Pi plays
-  in the same game, on the Pi's own screen and controls. A cabinet that is in the middle of a game,
-  or has someone at its menus, is not interrupted.
+  in the same game, on the Pi's own screen and controls. **The invite interrupts the menus** — if
+  someone on the Pi is halfway through picking a game, the invite replaces the menu, because the
+  likeliest reason they are there is that they are trying to set up the same game. A cabinet that is
+  in the middle of a game, or has someone signing the high score board, is not interrupted.
 - **Nothing gets in without the passcode.** Cabinets talk over an encrypted connection, prove to
   each other that they were set up with the same passcode, and remember each other's identity so a
   different machine cannot pretend to be one of them later.
@@ -138,11 +140,16 @@ Each cabinet publishes one of:
 | state | meaning | receives invites? |
 | --- | --- | --- |
 | `IDLE` | attract cycle (pages or demos), no menu open | **yes** |
-| `MENU` | someone is in the menus over attract | no |
-| `JOINING` | its own join screen is up | no (it is starting its own game) |
+| `MENU` | someone is in the menus over attract | **yes — the menu is closed for the invite** |
+| `JOINING` | its own join screen is up, nobody remote in it yet | **only for the same game** (see below) |
+| `HOSTING` | its own join screen is up and a remote cabinet has joined it | no |
 | `PLAYING` | in a level, intermission or finale | no |
 | `SIGNING` | initials entry | no — never interrupt someone signing the board |
-| `DEVMODE` | an operator session | no |
+| `DEVMODE` | an operator session | no — an operator mid-change is not a player |
+
+Menus are interrupted on purpose (decided 2026-09-13): someone at the Pi's menus while the laptop
+opens a Deathmatch is most likely trying to start that same game, and a Pi that sits silently in its
+menus while the laptop counts down is the confusing outcome.
 
 Presence also carries the cabinet's name, its panel count (`cv_localplayers`), its build
 (`DLA_VERSION`) and the list of games it can run with their wad fingerprints — so an invite for TNT
@@ -186,26 +193,32 @@ change scores, push demos, see or answer invites, or send a single packet the ga
    revokes every member at once**, since their next proof fails; "Forget paired cabinets" on the
    operator page clears the pins.
 
+### Address allow list
+
+**Each cabinet only talks to the addresses it is told to** (decided 2026-09-13). The master has a
+list of member addresses (`link_allow` in `link.cfg`); a member only ever connects to its configured
+master and accepts nothing inbound on 5030. A connection from anywhere else is closed **before the
+TLS handshake starts**, so a stranger on the network never reaches OpenSSL, let alone the passcode
+check. The game channel already drops any address outside the session.
+
+This pairs with the setup Mark intends for an untrusted Wi-Fi network: give the cabinets fixed
+addresses on **wired Ethernet** and list only those. The allow list is a filter, not a replacement
+for the passcode — an address can be borrowed by another device on the same network, the passcode
+cannot.
+
 ### The first connection, and the honest limit of a passcode
 
 On the very first connection the member has no pin for the master yet, so it trusts the first
-master it reaches (the same model as SSH's "trust this host?"). The operator page on **both**
-cabinets shows the two short cabinet IDs; if they match, nobody is in the middle, and from then on
-the pin makes that permanent.
+master it reaches (the same model as SSH's "trust this host?"). The operator page on both cabinets
+shows the two short cabinet IDs; comparing them once confirms nobody is in the middle, and from then
+on the pin makes that permanent.
 
-What a passcode cannot do on its own: if an attacker is *already* intercepting traffic on the home
-network at the moment of that very first pairing, and the operator does not compare the IDs, they
-can collect one proof and try passcodes offline at their own pace. Two cheap defences cover this
-for a home arcade, and the plan uses both:
-
-- **Compare the short IDs once at pairing time** (a glance at two screens).
-- **A long passcode.** The operator page warns under 10 characters; the passcode is typed with a
-  keyboard in a `-devmode` session, so length costs nothing after setup.
-
-The principled fix is a PAKE (a password-authenticated key exchange, e.g. SPAKE2), which makes
-offline guessing impossible outright. OpenSSL does not offer one through a stable public API, and
-vendoring one is real work for a threat that needs someone already on the LAN at pairing time — so
-it is listed under decisions, not built by default.
+A passcode on its own has one theoretical gap: someone *already* intercepting traffic at the exact
+moment of the very first pairing could collect one proof and try passcodes offline. **Decided
+2026-09-13: a passcode is sufficient** — together with the allow list, wired Ethernet and a
+passcode the operator page asks to be at least 10 characters, the attacker has to be inside the
+wired network during a one-off setup. The heavier fix for that gap (a password-authenticated key
+exchange such as SPAKE2) is not planned.
 
 ### The game channel
 
@@ -277,7 +290,12 @@ ID settles the rest.
 - A **board epoch** in a new header line. `clearhighscores` bumps it. **Without it a cleared board
   comes straight back from the other cabinet on the next sync**; with it, entries from an older epoch
   are discarded and the clear spreads instead. Clearing is allowed on the master only, so two
-  cabinets cannot clear at once and race.
+  cabinets cannot clear at once and race. **Clearing on the master clears every cabinet** (decided
+  2026-09-13) — which is also why a stranger on the network must not be able to send one.
+  - Nobody needs to try this by hand on the real cabinets: it is exactly the case the two-instance
+    headless test in Phase 2 covers, against scratch copies of `legacyhome`, and that test is where
+    it gets proven. A member that was switched off during the clear is part of that test too — it
+    must lose its old records when it reconnects, not resurrect them.
 - Clock sanity: a Pi without a real-time clock boots in 1970 until NTP answers. A `set_time` before
   2026-01-01 is sent as unknown (`0`) rather than as a real time, so it can never beat a genuine one
   on a tie.
@@ -323,22 +341,32 @@ is chasing or race the local `HS_LevelExit` write.
 ### Which games invite
 
 - **Deathmatch** — always.
-- **Campaign** — yes, because the join screen is what decides between a solo run and coop today;
-  a remote cabinet's player pressing in is the same as a second local panel pressing in: the game
-  becomes coop and, as now, unranked. *(See decisions.)*
+- **Campaign** — yes (decided 2026-09-13), because the join screen is what decides between a solo
+  run and coop today; a remote cabinet's player pressing in is the same as a second local panel
+  pressing in: the game becomes coop and, as now, unranked. If nobody remote presses in, the solo
+  run is scored exactly as it is now — sending an invite must not make a run unranked.
 - **Single Level** — never. It is scored single player and has no join screen.
 - **Multiplayer → Start Game** (the operator's hand-tuned page) — not in v1.
 
 ### The flow
 
 1. **Laptop:** someone picks Deathmatch. The join screen opens as now and the link sends `INVITE`
-   (game ID, category, episode/map, skill, host cabinet name, *seconds remaining*) to every `IDLE`
-   cabinet that can run the game. Time is sent as a duration, never a clock time — the two machines'
-   clocks do not agree.
-2. **Pi:** over the attract screen, a banner: `DEATHMATCH ON LAPTOP — PRESS FIRE TO JOIN — 17`. The
-   attract demo keeps playing underneath. A press on panel N opens that panel's own join cell with
-   the same colour / crosshair / controls setup as the local join screen, which becomes a full join
-   page on the Pi once anyone presses. The Pi's state goes to `JOINING`.
+   (game ID, category, episode/map, skill, host cabinet name, *seconds remaining*) to every cabinet
+   in `IDLE` or `MENU` that can run the game. Time is sent as a duration, never a clock time — the
+   two machines' clocks do not agree.
+2. **Pi:** a banner: `DEATHMATCH ON LAPTOP — PRESS FIRE TO JOIN — 17`.
+   - From the attract screen, the attract demo keeps playing underneath.
+   - **From the menus, the menu is closed first** (`M_Clear_Menus`) and the banner shown over the
+     attract screen. The banner cannot simply sit on top of an open menu: panel buttons are
+     translated into menu movement (`M_Cabinet_Menu_Key`), so fire would select a menu row instead of
+     joining. Whatever the person was choosing is abandoned the way Escape abandons it — in
+     particular a half-finished guided control setup must be left exactly as a backed-out one is,
+     and that is checked, not assumed.
+   - A press on panel N opens that panel's own join cell with the same colour / crosshair / controls
+     setup as the local join screen, which becomes a full join page on the Pi once anyone presses.
+     The Pi's state goes to `JOINING`.
+   - If nobody presses before the countdown ends, the banner goes and the Pi is on its attract
+     screen. The menu is not reopened: that person saw the invite and let it go.
 3. **Both:** each cabinet sends `JOIN_STATUS` as its panels press in and lock. The laptop's join
    screen shows `PI: 2 IN` beside its own cells; the Pi's shows `LAPTOP: 1 IN`.
    **View cells stay per cabinet** — a remote player never takes a quarter of the laptop's screen.
@@ -361,8 +389,16 @@ is chasing or race the local `HS_LevelExit` write.
 - When the host's game ends (time limit, everyone gone), clients receive the server shutdown and go
   back to attract through `Command_ExitGame_f`, the one funnel that resets leftover state.
 - If the host loses power mid-game, clients time out (`server_timeout_handler`) and do the same.
-- Two cabinets starting a Deathmatch in the same second: each sees the other as `JOINING`, so
-  neither is invited to the other's game. Both play separately — no deadlock, no merge.
+- **Two cabinets opening the same game at nearly the same time** is the case interrupting menus is
+  for, so it must end in one game, not two. The master orders invites as it receives them. A cabinet
+  on its own join screen (`JOINING`, nobody remote in it yet) that receives an invite for the **same
+  game ID and category** turns into a join of the earlier game: its panels that already pressed in
+  stay in, with their colour / crosshair / controls choices, and its own countdown is dropped for
+  the host's. The master breaks an exact tie by cabinet ID, so both cabinets agree who hosts.
+  - An invite for a *different* game (Deathmatch against a Campaign, or another wad) does not touch a
+    cabinet already on its join screen — those people have chosen, and both games run separately.
+  - Once a remote cabinet has joined a join screen (`HOSTING`), that cabinet can no longer be
+    converted, so two cabinets can never each end up waiting on the other.
 
 ### Input latency
 
@@ -387,6 +423,8 @@ A new `-devmode` page, **Cabinet Link**, under Setup:
   the cabinet already did).
 - **Cabinet name**: shown on invites and records (`cv_link_name`, defaults to the hostname).
 - **Master address** (members only), **Passcode** (entered with the keyboard, shown as `********`).
+- **Allowed addresses** (master only): the member addresses it will accept. Empty means none — a
+  master with no list refuses every member rather than accepting all of them.
 - **This cabinet's ID** and, per peer: name, ID, state, build, last sync, and any mismatch
   (build / wads / ruleset) spelled out.
 - **Sync now**, **Forget paired cabinets**.
@@ -430,13 +468,15 @@ Output: a short findings section here, and a go / change-course decision.
 - `HAVE_LINK` build probe in both build scripts and the `Makefile` (`LINK_OBJS`), CI package install.
 - New `lk_link.c`/`lk_link.h` (thread, sockets, TLS, framing, auth), added to `MOBJS`, every line
   `// [Arcade]`.
-- Key generation, `link.cfg`, pins, atomic writes.
+- Key generation, `link.cfg`, pins, the address allow list, atomic writes.
 - Presence and the operator page, read-only status first.
 - `D_DoomLoop` polls the queue once per tic.
 
 **Verified by:** two headless instances on the laptop pairing over loopback; then laptop and Pi.
 Every rejection is shown to happen — wrong passcode, changed master key, a plain TCP client sending
-garbage, an oversized frame, a replayed proof from another session, the lockout after three failures
+garbage, an oversized frame, a replayed proof from another session, the lockout after three failures,
+a connection from an address not on the allow list (closed before any TLS byte is read), a master
+with an empty allow list refusing everyone
 — and each of those tests is shown to go red when its check is disabled (`--selfcheck`, the rule
 that a check never seen to fail is not evidence).
 
@@ -448,23 +488,31 @@ that a check never seen to fail is not evidence).
   extracted tests that drives it exhaustively for commutativity, idempotence, associativity over
   three cabinets, tie-breaking, epochs and old-format lines.
 - Wad fingerprints, build and ruleset checks; demo transfer; deferred application while playing.
+- Last: the cabinet tag on the attract table, if it fits (decision 3).
 
 **Verified by:** the merge test; two headless instances with different boards converging to the same
 files byte for byte; `clearhighscores` on the master spreading instead of being undone; a truncated
-demo refused; `make demotest` still passing (the score file change must not touch the simulation).
+demo refused; a member switched off during a clear losing its old records when it reconnects;
+`make demotest` still passing (the score file change must not touch the simulation).
 Then Mark sets a record on the Pi and watches it appear on the laptop's attract screen.
 
 ### Phase 3 — invites and linked games
 
-- Invite banner over attract, remote `JOIN_STATUS`, start and timeout handling, per-cabinet
+- Invite banner over attract, closing an open menu for it, turning a same-game join screen into a
+  join of the earlier game, remote `JOIN_STATUS`, start and timeout handling, per-cabinet
   idle/death rules.
 - The UDP encryption shim, the session key, forced-off downloads, the port opened only during a game.
 
 **Verified by:** a scripted invite between two headless instances (a `link_accept <panels>` console
 command stands in for pressing fire, from the scratch `autoexec.cfg`, remembering that a command
 starting a game does not start it where it appears in the script); a stranger's UDP packet — valid
-Legacy packet, no tag — shown to be dropped before `HGetPacket`; the latency comparison above; then
-Mark plays laptop against Pi: Deathmatch, coop, a cabinet that joins and then walks away, pulling the
+Legacy packet, no tag — shown to be dropped before `HGetPacket`; an invite arriving while the
+other instance has a menu open (menu closed, banner up) and while it is partway through the guided
+control setup (left as a backed-out setup leaves it); both instances opening a Deathmatch in the
+same tic and ending in one game with an agreed host, and a Deathmatch against a Campaign ending in
+two; the latency comparison above; then
+Mark plays laptop against Pi: Deathmatch, coop, starting a game on the laptop while someone is in
+the Pi's menus, a cabinet that joins and then walks away, pulling the
 Pi's network cable mid-game.
 
 ### Phase 4 — past two cabinets
@@ -494,19 +542,21 @@ Not free, and **not claimed to work until each is checked**:
 
 ---
 
-## Decisions for Mark
+## Decisions
 
-Recommendations first; any of these can change the plan before Phase 1 starts.
+Answered by Mark on 2026-09-13; the sections above already reflect them.
 
-1. **Passcode, or passcode plus PAKE?** Recommended: passcode (10+ characters) plus comparing the
-   two short cabinet IDs at pairing — enough for a home network. PAKE only if the cabinets will ever
-   sit on a network you do not control.
-2. **Does Campaign invite other cabinets?** Recommended: yes, since the join screen already turns a
-   Campaign into coop when a second panel presses in.
-3. **Show which cabinet set a record?** Recommended: yes, small, on the attract table
-   (`MLR · PI`); the field is stored either way.
-4. **Clearing scores on one cabinet clears them everywhere?** Recommended: yes, from the master only.
-5. **Can an invite interrupt someone browsing the menus?** Recommended: no — only an idle attract
-   screen. A person navigating a menu is using the cabinet.
-6. **Master off: members keep full function on their own, sync later.** Recommended as the default
-   and assumed throughout.
+1. **Passcode is sufficient.** No password-authenticated key exchange. Traffic is additionally
+   limited to configured addresses, and on an untrusted Wi-Fi network the cabinets go on wired
+   Ethernet with fixed addresses. → *Address allow list*
+2. **Campaign invites other cabinets.** → *Which games invite*
+3. **Which cabinet set a record: a good idea, not essential.** The cabinet ID is stored with every
+   record regardless (sync needs it for tie-breaking). Showing it — a small tag on the attract table
+   such as `MLR · PI` — is the **last item of Phase 2**, and is dropped if the table has no room for
+   it at its widest glyphs.
+4. **Clearing scores on the master clears every cabinet.** Proven by the headless test, not by hand.
+   → *File format changes*
+5. **An invite interrupts the menus**, so people setting up a networked game on two cabinets are not
+   left confused; a cabinet already on its own join screen for the same game joins the earlier one.
+   → *Cabinet state* and *During and after*
+6. **Master off: members keep full function on their own, sync later.** Assumed throughout.
