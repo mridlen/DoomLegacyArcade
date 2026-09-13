@@ -472,8 +472,8 @@ Output: a short findings section here, and a go / change-course decision.
 
 **Decision: go.** The laptop and the Pi compute the same game, and the stock netcode already plays
 one game between them, including a cabinet with two local players. Nothing found needs the netcode
-replaced. Still open: Mark playing step 2 on real controls (below), and step 4 (no Windows machine
-was reachable).
+replaced, and Mark has played it (finding 2). Still open: step 4 (no Windows machine was
+reachable).
 
 The machines: laptop x86-64, Fedora, GCC 15; Pi 3 Model B, aarch64 Debian 13, GCC 14. Both on
 Wi-Fi (192.168.1.81 and .68). Both builds use `-O3 -ffast-math` from the `Makefile`. Both
@@ -500,6 +500,15 @@ binaries from b67ef22.
    and monsters taking damage, identical on both machines except tic 31** (finding 4). The Pi 3 kept
    up as server at full speed. The Pi hosted because the laptop's firewall would need opening for
    inbound UDP; a client's replies come back through without that.
+   - **Played by Mark on real controls, 2026-09-13: "working great far as I can tell".** Pi as
+     server, laptop joined, both on Wi-Fi, stock netcode with no Cabinet Link code, co-op first and
+     then deathmatch. The commands, for repeating it:
+     - Pi: `./doomlegacyarcade -server 2 -game doom2 -warp 1 -deathmatch -nomonsters`
+     - Laptop: `./doomlegacyarcade -game doom2 -connect 192.168.1.68`
+     - Leave off `-deathmatch` and the server starts co-op, which is what the first attempt did.
+       Game type and rules are server netvars, so only the server's command needs them
+       (`-altdeath`, `-timer`, `-nomonsters` in `D_DoomMain`). The arcade's own Deathmatch ruleset,
+       `DM_both`, has no command-line switch.
 3. **Many nodes, and a two-panel cabinet, on one laptop: identical.** A server, a client with
    **`localplayers 2`** and a third client with one, plus two bots: six players across three
    processes joined one game (players 3 and 4 on the two-player client, as expected), and all three
