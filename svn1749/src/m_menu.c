@@ -230,6 +230,7 @@
   // server1, server2, server3
 #include "mserv.h"
 #include "d_link.h"      // [Arcade] Cabinet Link page
+#include "d_linkgame.h"  // [Arcade] Cabinet Link invites
 #include "p_inter.h"
 #include "m_misc.h"
   // config
@@ -3490,6 +3491,11 @@ static void (*join_startfunc)(void) = NULL;
 // the whole screen, instead of being assumed to be at panel 1.
 static boolean join_first_press_starts = false;
 
+// [Arcade] Cabinet Link: this join screen belongs to another cabinet's game.
+// Nothing here starts a game on its own -- the host sends START (d_linkgame.c)
+// and this cabinet connects to it -- and the countdown is the host's.
+static boolean join_remote = false;
+
 static void  M_Join_Drawer(void);
 
 static menuitem_t  JoinMenu[] =
@@ -3530,6 +3536,7 @@ static void  M_Join_Start( void )
     byte joined_panel[MAXSPLITSCREENPLAYERS];
 
     if( ! join_active )  return;
+    if( join_remote )  return;   // [Arcade] the host starts a linked game
     join_active = false;
 
     for( panel=0; panel < M_Join_NumPanels(); panel++ )
@@ -3561,6 +3568,11 @@ static void  M_Join_Start( void )
 
     D_Set_Join_Count( joined );
 
+    // [Arcade] Cabinet Link: tell the cabinets with players in to connect, and
+    // start sealing the game channel, before the server comes up.  Nothing
+    // when this join screen invited nobody or nobody came.
+    LKG_Host_Start();
+
     M_Clear_Menus( true );
 
     if( join_startfunc )
@@ -3572,6 +3584,7 @@ static void  M_Join_Start( void )
 void  M_Join_Ticker( void )
 {
     if( ! join_active )  return;
+    if( join_remote )  return;   // [Arcade] the host's countdown, not ours
 
     if( (int)gametic >= join_endtic )
         M_Join_Start();
@@ -3611,6 +3624,10 @@ static void  M_Join_Check_All_Locked( void )
         if( join_pressed[panel] == JOIN_SETUP )  return;   // still choosing
         if( join_pressed[panel] == JOIN_LOCKED )  joined++;
     }
+    // [Arcade] Cabinet Link: a remote cabinet's panels count too, and a
+    // remote join screen never starts anything -- the host does.
+    if( join_remote )  return;
+    if( ! LKG_Remotes_All_Locked() )  return;
     if( joined )
         M_Join_Start();
 }
@@ -3631,6 +3648,15 @@ boolean  M_Join_Key( uint16_t key )
     if( key == KEY_ESCAPE )
     {
         join_active = false;    // backing out abandons the join
+        LKG_Join_Abandoned();   // [Arcade] cancel the invite, or tell the host
+        if( join_remote )
+        {
+            // An invite took over this cabinet: backing out goes back to
+            // where it was, the attract screen, not into a menu.
+            join_remote = false;
+            M_Clear_Menus( true );
+            return true;
+        }
         return false;
     }
 
@@ -3903,6 +3929,22 @@ static void  M_Join_Drawer( void )
                     }
                 }
             }
+        }
+    }
+
+    // [Arcade] Cabinet Link: who else is in, or whose game this is.
+    {
+        const char * line = LKG_Join_Line();
+        if( line )
+        {
+            char lb[96];
+            int  n;
+            dl_strncpy( lb, line, sizeof(lb) );
+            n = strlen( lb );
+            while( n > 0 && V_StringWidth( lb ) > BASEVIDWIDTH - 8 )
+                lb[--n] = 0;
+            V_DrawString( (BASEVIDWIDTH - V_StringWidth(lb))/2, BASEVIDHEIGHT - 40,
+                          V_WHITEMAP, lb );
         }
     }
 
@@ -4356,19 +4398,33 @@ static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit )
     // Every local player joins through one node at once, so the joined count
     // is exactly the right number to wait for.
     //
-    // Set and put straight back: D_WaitPlayer_Setup copies the value into
-    // wait_netplayer and nothing else ever reads the cvar, so restoring it
-    // keeps the promise that this function leaves the Multiplayer page's
-    // settings -- "Wait Players" among them -- exactly as the operator set
-    // them.  cv_wait_players is plain CV_HIDEN, no CALL or NETVAR, so
-    // writing it twice has no other effect at all.
-    {
-        int  prev_wait = cv_wait_players.value;
+    // Put back afterwards, to keep the promise that this function leaves the
+    // Multiplayer page's settings -- "Wait Players" among them -- as the
+    // operator set them.  cv_wait_players is plain CV_HIDEN, no CALL or
+    // NETVAR, so writing it has no other effect.
+    //
+    // [Arcade] But *not* straight back, which is what this used to do on the
+    // belief that D_WaitPlayer_Setup is the only reader.  It is not: the map
+    // command below runs SV_SpawnServer, which calls D_WaitPlayer_Setup again
+    // and re-reads both cvars.  Restored at once, the server waited for the
+    // default two players with no timeout, and a one player game started this
+    // way sat on "waiting for players" for ever.  Cabinet Link found it: a
+    // Deathmatch nobody on the other cabinet joined hung the host (linktest
+    // "nojoin"), with the same code path as a local one player Deathmatch.
+    // The restore is now queued behind the map command, so it runs once the
+    // server has taken its copy.
+    int  prev_wait = cv_wait_players.value;
+    int  prev_timeout = cv_wait_timeout.value;
+    // [Arcade] Cabinet Link: players joining from other cabinets are waited
+    // for too -- but not for ever.  A cabinet that never arrives (unplugged,
+    // the wrong wads) must not hang this one: after the timeout the game
+    // starts with whoever is here.
+    int  remote = LKG_Remote_Players();
 
-        CV_SetValue( &cv_wait_players, joined );
-        D_WaitPlayer_Setup();   // needs server set, just above
-        CV_SetValue( &cv_wait_players, prev_wait );
-    }
+    CV_SetValue( &cv_wait_players, joined + remote );
+    if( remote )
+        CV_SetValue( &cv_wait_timeout, 15 );
+    D_WaitPlayer_Setup();   // needs server set, just above
 
     // The same settings G_DeferedInitNew issues for a solo campaign, with a
     // real deathmatch mode in place of its "deathmatch 0" -- including
@@ -4396,6 +4452,9 @@ static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit )
     // -skill is the cvar-style 1..5, the same conversion G_DeferedInitNew makes.
     COM_BufAddText( va("map \"%s\" -skill %d -monsters %d\n",
                        newgame_map, newgame_skill + 1, monsters ) );
+
+    // [Arcade] Only now, behind the map command: see above.
+    COM_BufAddText( va("wait_players %d\nwait_timeout %d\n", prev_wait, prev_timeout ) );
 }
 
 static void  M_NewGame_Go( void )
@@ -4409,7 +4468,9 @@ static void  M_NewGame_Go( void )
     // No HS_NewGame on the coop branch, and none is wanted: HS_Scored_Game
     // already excludes anything with a second person in it, so a background
     // record demo would be started for a run that can never be saved.
-    if( D_Num_Joined_Players() > 1 )
+    // [Arcade] Players who joined from another cabinet count: one here and one
+    // there is a coop campaign, not a solo run.
+    if( D_Num_Joined_Players() + LKG_Remote_Players() > 1 )
     {
         M_Arcade_MP_Go( DMM_coop, 1, 0 );   // monsters on, no time limit
         return;
@@ -4467,8 +4528,13 @@ static void  M_Deathmatch_Start( void )
 boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
 {
     byte panel;
+    // [Arcade] Cabinet Link: Deathmatch and Campaign invite other cabinets, and
+    // a single panel cabinet asks who is playing when there is someone to ask.
+    byte category = ( startfunc == M_Deathmatch_Go ) ? LKG_CAT_DEATHMATCH
+                  : ( startfunc == M_NewGame_Go ) ? LKG_CAT_CAMPAIGN : LKG_CAT_NONE;
+    boolean invite = cv_jointime.EV && LKG_Would_Invite( category );
 
-    if( M_Join_NumPanels() < 2 )  return false;
+    if( M_Join_NumPanels() < 2 && ! invite )  return false;
     if( cv_jointime.EV == 0 )     return false;
 
     for( panel=0; panel<MAXSPLITSCREENPLAYERS; panel++ )
@@ -4483,8 +4549,152 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
 
     D_Reset_View_Cells();
     join_active = true;
+    join_remote = false;
     Push_Setup_Menu( &JoinDef );
+    if( invite )
+        LKG_Host_Begin( category, newgame_map, newgame_skill, cv_jointime.EV );
     return true;
+}
+
+
+// ---------------------------------------------------------------------------
+//  [Arcade] Cabinet Link: the join screen for another cabinet's game
+// ---------------------------------------------------------------------------
+
+// Panels in, whether all of them have locked, and seconds left.  False when
+// the join screen is not up.
+boolean  M_Join_Counts( byte * joined, boolean * all_locked, int * secs )
+{
+    byte panel, n = 0;
+    boolean locked = true;
+    *joined = 0;
+    *all_locked = false;
+    *secs = 0;
+    if( ! join_active )  return false;
+    for( panel=0; panel < M_Join_NumPanels(); panel++ )
+    {
+        if( join_pressed[panel] == JOIN_OUT )  continue;
+        n++;
+        if( join_pressed[panel] != JOIN_LOCKED )  locked = false;
+    }
+    *joined = n;
+    *all_locked = n && locked;
+    *secs = (join_endtic - (int)gametic) / TICRATE;
+    if( *secs < 0 )  *secs = 0;
+    return true;
+}
+
+// A remote cabinet locked in: that may be what the host was waiting for.
+void  M_Join_Recheck_Locked( void )
+{
+    if( join_active && ! join_remote )
+        M_Join_Check_All_Locked();
+}
+
+void  M_Join_Set_Countdown( int secs )
+{
+    if( join_active && join_remote )
+        join_endtic = (int)gametic + secs * TICRATE;
+}
+
+// Another cabinet invited this one.  The invite takes over whatever menu was
+// open -- closing it the way Escape would -- because a person at the menus when
+// the other cabinet starts a game is most likely trying to start the same one.
+void  M_Join_Remote_Open( int secs )
+{
+    byte panel;
+
+    if( menuactive )
+        M_Clear_Menus( true );
+    for( panel=0; panel<MAXSPLITSCREENPLAYERS; panel++ )
+    {
+        join_pressed[panel] = JOIN_OUT;
+        join_row[panel] = JOIN_ROW_COLOR;
+    }
+    join_startfunc = NULL;
+    join_first_press_starts = false;
+    join_remote = true;
+    join_endtic = (int)gametic + secs * TICRATE;
+    D_Reset_View_Cells();
+    join_active = true;
+    M_StartControlPanel();
+    Push_Setup_Menu( &JoinDef );
+}
+
+// Our own join screen for the same game, which the other cabinet opened first:
+// keep who pressed in and what they chose, and wait for that cabinet instead.
+void  M_Join_Convert_To_Remote( int secs )
+{
+    if( ! join_active )
+    {
+        M_Join_Remote_Open( secs );
+        return;
+    }
+    join_startfunc = NULL;
+    join_first_press_starts = false;
+    join_remote = true;
+    join_endtic = (int)gametic + secs * TICRATE;
+}
+
+void  M_Join_Remote_Close( void )
+{
+    if( join_active && join_remote )
+    {
+        join_active = false;
+        join_remote = false;
+        M_Clear_Menus( true );
+    }
+}
+
+// The host said START: hand this cabinet's panels to the engine, exactly as
+// M_Join_Start does for a local game, and connect to the host.
+void  M_Join_Remote_Connect( const char * host, int port )
+{
+    byte panel, i, joined = 0;
+    byte joined_panel[MAXSPLITSCREENPLAYERS];
+
+    if( ! join_active || ! join_remote )  return;
+    join_active = false;
+    join_remote = false;
+
+    for( panel=0; panel < M_Join_NumPanels(); panel++ )
+    {
+        if( join_pressed[panel] )
+            joined_panel[joined++] = panel;
+    }
+    M_Clear_Menus( true );
+    if( joined == 0 )  return;
+
+    for( i=0; i<joined; i++ )
+    {
+        D_Set_Panel( i, joined_panel[i] );
+        D_Set_View_Cell( i, (joined <= 2) ? i : joined_panel[i] );
+    }
+    D_Set_Join_Count( joined );
+    D_Link_Connect( host, port );
+}
+
+
+// tools/linktest.sh (-linktest): a panel presses fire and locks in.
+void  M_Join_Test_Lock( byte panel )
+{
+    if( ! join_active || panel >= M_Join_NumPanels() )  return;
+    join_pressed[panel] = JOIN_LOCKED;
+    M_Join_Check_All_Locked();
+}
+
+// tools/linktest.sh (-linktest -linkautohost): start the join screen for a
+// Deathmatch or a Campaign from the attract screen, as the menus would.
+void  M_Link_Test_Host( byte category )
+{
+    M_StartControlPanel();
+    if( category == LKG_CAT_CAMPAIGN )
+    {
+        epi = 0;
+        M_ChooseSkill( sk_medium );
+    }
+    else
+        M_Deathmatch_Start();
 }
 
 

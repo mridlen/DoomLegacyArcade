@@ -164,11 +164,11 @@ Discord is likely to get you banned.
   playing, levels finished, deaths, how much of the cabinet's running time is actually being
   played, which maps get played most, and how often a run stopped being scored and why. Under
   **Options → Arcade Options → Audit**, or type `audit` at the console.
-- **Cabinet Link (early).** Two or more cabinets on the same home network can pair with a passcode
-  over an encrypted connection and see each other — which cabinets are online and what each is
-  doing. Sharing high scores and inviting the other cabinet into a multiplayer game are the next
-  steps and are not in yet. Off unless you set it up; see
-  [Connecting cabinets together](#connecting-cabinets-together-cabinet-link).
+- **Cabinet Link.** Two or more cabinets on the same home network pair with a passcode over an
+  encrypted connection. Start a Deathmatch or a Campaign on one and the others get a join screen for
+  it: whoever presses fire there plays in the same game, on their own screen, with the game's
+  network traffic encrypted too. Shared high scores are next and not in yet. Off unless you set it
+  up; see [Connecting cabinets together](#connecting-cabinets-together-cabinet-link).
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **A key that unlocks the cabinet**, so operator settings can be reached on a built cabinet with no
@@ -1177,10 +1177,30 @@ Like every operator setting, it is only saved from a `-devmode` session.
 
 ### Connecting cabinets together (Cabinet Link)
 
-**What works so far:** cabinets pair and show each other on **Options → Arcade Options → Cabinet
-Link** — each cabinet's name, a short ID, whether it is online, and what it is doing (idle on the
-attract screen, in the menus, playing, and so on). Shared high scores and cross-cabinet multiplayer
-invites come next.
+**What works:** cabinets pair and show each other on **Options → Arcade Options → Cabinet Link** —
+each cabinet's name, a short ID, whether it is online, and what it is doing. And **starting a
+Deathmatch or a Campaign on one cabinet invites the others**:
+
+- Any other cabinet on its attract screen, or with someone in its menus, running the **same game**
+  (same IWAD and level pack), switches to a join screen for that game: `DEATHMATCH ON LAPTOP, 1 IN
+  THERE`, the same colour, crosshair and controls choices as a local join, and the host's countdown.
+  A cabinet in the middle of a game, or with someone signing the high score board, is left alone.
+- Press fire there to join, as you would locally. Each cabinet keeps its own screen — nobody from
+  the other cabinet takes a quarter of yours. The host's join screen shows who is coming
+  (`RASPBERRYPI: 1 IN`).
+- The game starts when everyone who pressed in, on every cabinet, has locked in — or when the
+  countdown runs out. If a cabinet that joined never turns up, the host waits 15 seconds and starts
+  without it.
+- A Campaign with a player on each cabinet is a coop game. A Campaign nobody else joins is the
+  normal scored solo run.
+- If both cabinets start the same kind of game at the same moment, one of them turns into a join of
+  the other: you get one game, not two.
+- On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
+  keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
+- Both cabinets need this version of the game. A cabinet with Cabinet Link switched on also ignores
+  game traffic from anything that is not a linked cabinet.
+
+Shared high scores come next.
 
 It needs OpenSSL when the game is built. `tools/build.sh` finds it and turns the link on by itself;
 if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSSL development package

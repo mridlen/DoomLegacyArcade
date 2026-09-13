@@ -262,6 +262,11 @@ typedef struct sockaddr_ipx {
 
 #include "doomstat.h"
 #include "mserv.h" //Hurdler: support master server
+#include "d_link.h"  // [Arcade] Cabinet Link: the sealed game channel
+
+// [Arcade] Packets on the wire can be LK_UDP_OVERHEAD longer than the game's
+// own, while a linked game seals them (d_link.c, LK_Net_Recv/LK_Net_Send).
+static byte  link_wire[MAXPACKETLENGTH + LK_UDP_OVERHEAD + 64];
 
 #ifdef __WIN32__
     // some undefined under win32
@@ -686,13 +691,16 @@ byte  SOCK_Get(void)
 #endif
     mysockaddr_t  fromaddress;
 
+next_packet:
     fromlen = sizeof(fromaddress);  // num bytes of addr for OUT
     // fromaddress: OUT the actual address.
     // fromlen: IN sizeof fromaddress, OUT the actual length of the address.
+    // [Arcade] Into link_wire rather than straight into doomcom->data: a
+    // sealed packet is longer, and nothing reaches the game before it opens.
 #ifdef LINUX
     rcnt = recvfrom(mysocket,
-                    &doomcom->data,  // packet
-                    MAXPACKETLENGTH,  // packet length
+                    link_wire,  // packet
+                    sizeof(link_wire),  // packet length
                     0,  // flags
                     /*OUT*/ (struct sockaddr *)&fromaddress,  // net address
                     /*IN,OUT*/ &fromlen );  // net address length
@@ -700,13 +708,32 @@ byte  SOCK_Get(void)
     // winsock.h  recvfrom(SOCKET, char*, int, int, struct sockaddr*, int*)
     rcnt = recvfrom(mysocket,
                     // Some other port requires (char*), undocumented.
-                    (char *)&doomcom->data,
-                    MAXPACKETLENGTH,  // packet length
+                    (char *)link_wire,
+                    sizeof(link_wire),  // packet length
                     0,  // flags
                     /*OUT*/ (struct sockaddr *)&fromaddress,  // net address
                     /*IN,OUT*/ &fromlen );  // net address length
 #endif
     if(rcnt < 0)  goto recv_err;
+
+    // [Arcade] Cabinet Link.  A packet that does not open is dropped here --
+    // before SOCK_Get gives its sender a node, so a stranger cannot even use up
+    // a slot -- and the next one is read at once, so junk cannot push a real
+    // packet back a tic.  With the link off this is the old path unchanged.
+    {
+        int n = LK_Net_Recv( link_wire, rcnt, (byte*) &doomcom->data, MAXPACKETLENGTH,
+                             fromaddress.ip.sin_addr.s_addr, fromaddress.ip.sin_port );
+        if( n == 0 )
+            goto next_packet;
+        if( n < 0 )
+        {
+            if( rcnt > MAXPACKETLENGTH )
+                goto next_packet;   // could never have fitted the old buffer either
+            memcpy( &doomcom->data, link_wire, rcnt );
+        }
+        else
+            rcnt = n;
+    }
     
 //    DEBFILE(va("Get from %s\n",SOCK_AddrToStr(&fromaddress)));
 
@@ -862,15 +889,31 @@ byte  SOCK_Send(void)
     uint32_t errno2;
     byte  nnode = doomcom->remotenode;
     int  cnt;  // chars sent
+    // [Arcade] Cabinet Link: what actually goes on the wire.
+    byte * sbuf = (byte *) &doomcom->data;
+    int    slen = doomcom->datalength;
                          
     if( node_hash[nnode] == 0 )   goto node_unconnected;
+
+    {
+        int n = LK_Net_Send( sbuf, slen, link_wire, sizeof(link_wire),
+                             clientaddress[nnode].ip.sin_addr.s_addr,
+                             clientaddress[nnode].ip.sin_port );
+        if( n == 0 )
+            return NE_success;   // no key for that address: not a cabinet of this game
+        if( n > 0 )
+        {
+            sbuf = link_wire;
+            slen = n;
+        }
+    }
 
     // sockaddr is defined in sys/socket.h
     // MSG_DONTROUTE: Do not use a gateway, local network only.
     // MSG_DONTWAIT: Do not block.
 #ifdef LINUX
     cnt = sendto(mysocket,
-                &doomcom->data, doomcom->datalength,  // packet
+                sbuf, slen,  // packet
                 0,  // flags
                 (struct sockaddr *)&clientaddress[nnode],  // net address
                 sizeof(struct sockaddr));  // net address length
@@ -878,7 +921,7 @@ byte  SOCK_Send(void)
     // winsock.h: sendto(SOCKET, char*, int, int, struct sockaddr*, int)
     cnt = sendto(mysocket,
                 // Some other port requires (char*), undocumented.
-                (char *)&doomcom->data, doomcom->datalength,  // packet
+                (char *)sbuf, slen,  // packet
                 0,  // flags
                 (struct sockaddr *)&clientaddress[nnode],  // net address
                 sizeof(struct sockaddr));  // net address length

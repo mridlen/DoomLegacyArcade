@@ -254,9 +254,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       accident**, because it always issues `splitscreen 1` and the `cv_splitscreen` bump inside
       `D_NumLocalPlayers` then reports two players whether or not two joined — which is also why
       taking that bump out of the *decision* (above) has to be paired with this.
-      `M_Arcade_MP_Go` sets the cvar, calls `D_WaitPlayer_Setup`, and puts it straight back: the
-      value is copied into `wait_netplayer` there and read nowhere else, so restoring it keeps the
-      Multiplayer page's "Wait Players" exactly as the operator set it.
+      `M_Arcade_MP_Go` sets the cvar and calls `D_WaitPlayer_Setup`.
+      - **It used to put the cvar straight back, and that undid the fix.** The belief was that the
+        value is copied into `wait_netplayer` and read nowhere else — but the `map` command it queues
+        runs `SV_SpawnServer`, which calls `D_WaitPlayer_Setup` *again* and re-read the restored
+        default of 2, with no timeout. Found by Cabinet Link's `nojoin` test (a Deathmatch nobody on
+        the other cabinet joined hung the host), which runs this same path — so a local one-player
+        Deathmatch very likely still hung. The restore is now queued in the command buffer **behind
+        the `map` command**, so the Multiplayer page's "Wait Players" is still left as the operator set
+        it, but only after the server has taken its copy. (`cabinet-link.md`, Phase 3.)
 
   - **Both new rows are hidden on a one panel cabinet**, in `M_Configure` beside Multiplayer
     (not `M_Init` — `cv_localplayers` comes from `config.cfg`, which is not loaded yet). Campaign

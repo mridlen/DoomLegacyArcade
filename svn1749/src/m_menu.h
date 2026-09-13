@@ -155,6 +155,17 @@ boolean  M_Initials_Active( void );
 // [Arcade] True while the join screen is up (Cabinet Link presence).
 boolean  M_Join_Active( void );
 
+// [Arcade] Cabinet Link invites (d_linkgame.c drives these).
+boolean  M_Join_Counts( byte * joined, boolean * all_locked, int * secs );
+void     M_Join_Recheck_Locked( void );
+void     M_Join_Set_Countdown( int secs );
+void     M_Join_Remote_Open( int secs );
+void     M_Join_Convert_To_Remote( int secs );
+void     M_Join_Remote_Close( void );
+void     M_Join_Remote_Connect( const char * host, int port );
+void     M_Join_Test_Lock( byte panel );
+void     M_Link_Test_Host( byte category );
+
 #ifdef LAUNCHER
 void M_LaunchMenu( void );
 #endif

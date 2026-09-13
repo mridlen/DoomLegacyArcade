@@ -1,10 +1,11 @@
-# Cabinet Link: networked cabinets (Phase 1 built; Phases 2–4 still a plan)
+# Cabinet Link: networked cabinets (Phases 1 and 3 built; 2 and 4 still a plan)
 
 *Part of the DoomLegacy arcade cabinet build. Read before touching `d_link.c`/`d_link.h`,
 `tools/linktest.sh`, the `HAVE_LINK` build option, or `i_tcp.c` socket code. Written 2026-09-13 as a
 plan before any code; each phase's section is replaced with the record of what was built, what broke
-and how it was verified as it lands. **Phase 1 (identity, pairing, presence) is built** — see
-"Phase 1 — what was built". Everything about score sync, invites and linked games is still plan.*
+and how it was verified as it lands. **Phase 1 (identity, pairing, presence) and Phase 3 (invites
+and linked games) are built** — see "Phase 1 — what was built" and "Phase 3 — what was built".
+Shared scores (Phase 2) are still plan.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
@@ -505,8 +506,9 @@ binaries from b67ef22.
    committed) wrote every tic's random index and every player's position, angle and health on each
    node. Pi as server with two bots, laptop joined by IP: **2911 tics (83 seconds) of bots fighting
    and monsters taking damage, identical on both machines except tic 31** (finding 4). The Pi 3 kept
-   up as server at full speed. The Pi hosted because the laptop's firewall would need opening for
-   inbound UDP; a client's replies come back through without that.
+   up as server at full speed. The Pi hosted because the laptop's firewall was assumed to block
+   inbound UDP. **It does not** (checked in Phase 3): Fedora's workstation zone allows every TCP and
+   UDP port from 1025 up, so either cabinet can host.
    - **Played by Mark on real controls, 2026-09-13: "working great far as I can tell".** Pi as
      server, laptop joined, both on Wi-Fi, stock netcode with no Cabinet Link code, co-op first and
      then deathmatch. The commands, for repeating it:
@@ -696,24 +698,141 @@ demo refused; a member switched off during a clear losing its old records when i
 `make demotest` still passing (the score file change must not touch the simulation).
 Then Mark sets a record on the Pi and watches it appear on the laptop's attract screen.
 
-### Phase 3 — invites and linked games
+### Phase 3 — what was built (2026-09-13)
 
-- Invite banner over attract, closing an open menu for it, turning a same-game join screen into a
-  join of the earlier game, remote `JOIN_STATUS`, start and timeout handling, per-cabinet
-  idle/death rules.
-- The UDP encryption shim, the session key, forced-off downloads, the port opened only during a game.
+Starting a Deathmatch or a Campaign on one cabinet invites every other cabinet that is idle (or in
+its menus) and running the same game; whoever presses in there plays in the same game, over the
+network, with every game packet sealed. **Built before Phase 2**, at Mark's request: invites need
+only what Phase 1 built.
 
-**Verified by:** a scripted invite between two headless instances (a `link_accept <panels>` console
-command stands in for pressing fire, from the scratch `autoexec.cfg`, remembering that a command
-starting a game does not start it where it appears in the script); a stranger's UDP packet — valid
-Legacy packet, no tag — shown to be dropped before `HGetPacket`; an invite arriving while the
-other instance has a menu open (menu closed, banner up) and while it is partway through the guided
-control setup (left as a backed-out setup leaves it); both instances opening a Deathmatch in the
-same tic and ending in one game with an agreed host, and a Deathmatch against a Campaign ending in
-two; the latency comparison above; then
-Mark plays laptop against Pi: Deathmatch, coop, starting a game on the laptop while someone is in
-the Pi's menus, a cabinet that joins and then walks away, pulling the
-Pi's network cable mid-game.
+**Files**
+- `svn1749/src/d_linkgame.c` / `d_linkgame.h` — the invite protocol and its state, entirely on the
+  game thread. It does not test `HAVE_LINK`: it talks only to the `LK_*` functions, which in a
+  build without OpenSSL never report a peer, so it never invites.
+- `d_link.c` — transport for it (see *Protocol v2*), and the sealed game channel.
+- `m_menu.c` — the join screen's side: `M_Join_Open` invites, `M_Join_Remote_Open` /
+  `M_Join_Convert_To_Remote` / `M_Join_Remote_Connect` / `M_Join_Remote_Close` for the other
+  cabinet's screen, remote players counted in `M_Join_Check_All_Locked`, `M_NewGame_Go` and
+  `M_Arcade_MP_Go`.
+- `d_clisrv.c` — `D_Link_Connect` / `D_Link_Restore_Port`. `i_tcp.c` — the seal in `SOCK_Send` and
+  the open in `SOCK_Get`.
+
+**Protocol v2** (`LK_PROTO_VERSION 2`; both cabinets need this build — a v1 cabinet fails the
+proof's version byte and is refused):
+- `HELLO` and `PRESENCE` carry the game id (`doom2`, `doom2+dwango5` — IWAD plus level pack, spelled
+  as the score tables spell it), and the roster carries every cabinet's full id and game.
+- **`ROUTE`** carries a game message to one cabinet or to all. Members only ever talk to the master,
+  so the master relays — and **replaces the source a member wrote with who that member is**, so no
+  cabinet can speak as another.
+- The master **numbers every `INVITE`** as it passes through and tells its sender the number
+  (`INVITE_ACK`). That order is the whole of how two cabinets agree who hosts.
+- Game messages cross threads through two small rings under the link mutex: events in, outbox out.
+  The link thread only moves bytes; every decision is on the game thread.
+
+**The flow, as built**
+1. **Host.** `M_Join_Open` for Deathmatch or Campaign asks `LKG_Would_Invite`: is some online
+   cabinet running the same game and `IDLE`, `MENU` or `JOINING`? If so the join screen opens —
+   **even on a one-panel cabinet**, which otherwise never shows one — and `INVITE` goes to everyone.
+   A solo Campaign that nobody joins is still the scored solo run.
+2. **Other cabinet.** An invite for its game, arriving while `IDLE` or `MENU`, closes any open menu
+   and opens **its own join screen** for that game: the usual per-panel cells, the host's countdown,
+   and a line reading `DEATHMATCH ON LAPTOP, 1 IN THERE`. Anything else (playing, signing the board,
+   an operator session, another game) ignores it. Escape backs out to the attract screen.
+3. **Both** send `STATUS` (panels in, all locked, seconds left) on every change and every second.
+   The host's screen reads `RASPBERRYPI: 1 IN`. The game starts when every panel that pressed in,
+   **on every cabinet**, has locked — or at the host's countdown.
+4. **Start.** `M_Join_Start` calls `LKG_Host_Start` before the server comes up: each cabinet with
+   players in gets `START` (the host's UDP port, a key id, two fresh 32-byte keys); everyone else
+   gets `CANCEL`. Remote players count toward coop (`M_NewGame_Go`) and toward the server's wait
+   (`M_Arcade_MP_Go`), with a **15 second timeout** so a cabinet that never arrives cannot hang the
+   host. The joining cabinet hands its panels to the engine exactly as a local join does and
+   connects (`D_Link_Connect`: the port goes in `server_sock_port`, because the console strips
+   `:port` from `connect`).
+5. **Two cabinets opening the same game at once**: a host whose join screen has no remote players
+   yet, receiving an invite for the same category numbered *before* its own (or before its own has a
+   number), cancels its invite and turns its screen into a join of the other — keeping who pressed in.
+6. **Over.** Each side watches for leaving the network game (`netgame` false after having been in a
+   level, or 30 seconds without ever getting in) and then drops its keys, puts the port and the
+   download settings back.
+
+**Differs from the plan, on purpose**
+- **No banner over the attract screen**: the invited cabinet opens a real join screen at once. A
+  banner needed its own drawing over the attract cycle and its own key handling, and the join screen
+  already says everything — whose game, how many are in, the countdown — with the setup a player
+  needs anyway. Simpler, and nothing is left to confuse.
+- **The UDP port is not opened only for linked games.** Instead a cabinet with the link switched on
+  **drops every game packet that does not open, linked game or not.** That turned out to matter: any
+  menu-started multiplayer game — including a purely local Deathmatch — opens UDP 5029 and, before
+  this, parsed whatever the network sent it.
+
+**The game channel** (`LK_Net_Recv` / `LK_Net_Send`): `u8 key id | u32 counter | ciphertext | 16-byte
+tag`, ChaCha20-Poly1305 with the 5-byte header as associated data, one key each way per joining
+cabinet, fresh at every `START`. 21 bytes, so a full 1450-byte game packet still fits one Ethernet
+frame. A 64-packet replay window per key. A packet that fails is dropped **before `SOCK_Get` gives
+its sender a node**, and `SOCK_Get` reads the next packet at once, so junk cannot delay real traffic a
+tic. The host learns which address uses which key from the first packet that opens, and drops what
+it would send to an address with no key. Measured 14–25 µs per packet on the laptop.
+
+**Downloads are off in a linked game.** `D_Link_Connect` sets `download_files` and
+`download_savegame` to 0 and the end of the game restores them: a cabinet never writes a wad or a
+savegame because a peer — even an authenticated one — offered it. Different wads are refused at
+connect instead (the netcode's own MD5 check).
+
+**Verified** — `tools/linktest.sh`, now 17 cases, all pass (two at a time, about five minutes):
+- `linkgame` — master hosts a Deathmatch, member joins: host `server=1 players=2`, joiner
+  `server=0 players=2`, ~1,700 packets sealed and opened each way over 55 seconds, **0 dropped**,
+  both still linked at the end.
+- `campaign` — the same for a Campaign: a two player coop game across the two cabinets.
+- `nojoin` — nobody on the other cabinet presses in: its invite is cancelled, the host plays alone.
+- `noshow` — the other cabinet joins and is killed the moment it is told to connect: the host gives
+  up after the timeout and plays alone.
+- `stranger` — 60 packets, random and plaintext-shaped, at the host's game port mid-game: all
+  dropped, game unaffected. **Selfcheck**: with the drop switched off (only failures let through, so
+  the linked game still runs) the case goes red because 0 were dropped.
+- `convert` — both cabinets open a Deathmatch as soon as they see each other: one game, exactly one
+  host. (In the runs so far one invite always arrived first, so this proves "never two games", not
+  the numbered tie-break itself.)
+- The 11 Phase 1 cases and their selfcheck, unchanged — after `tools/linktest_peer.py` learned the new
+  version byte. **That mattered**: with the old byte `unbound` still passed, because the master
+  rejected the version before ever checking the proof. Only the selfcheck would have shown it.
+- `make smoke` 5/5; `tools/demotest.sh` 102 compared, 0 desynced.
+- The two join screens, captured in OpenGL on the real GPU: the host's line and the invited
+  cabinet's line are placed and sized right. Brackets were dropped from the invited line — the menu
+  font draws `(` and `)` as shapes that read as other letters.
+- **Laptop and Pi 3 over Wi-Fi, both directions** (`-linktest -linkautohost` on one, `-linkautojoin`
+  on the other): the laptop hosting with the Pi joining, and the Pi hosting with the laptop joining.
+  Each time both cabinets reached the level in one two-player game, about 2,000 packets were sealed
+  and opened each way, **0 dropped**. The seal costs the Pi 3 about **100–125 µs per packet**
+  (laptop 19–22 µs) — at the game's packet rate roughly a tenth of a millisecond per tic, nothing a
+  player can feel.
+
+**What went wrong on the way**
+- **A joining cabinet dropped its keys 30 seconds into a live game.** It judged "the game is over" by
+  `D_Attract_Running()`, which is cleared by `G_DeferedInitNew` — a route a *client* never takes — so
+  a client in a game still read as sitting on its attract screen. It would also have told the other
+  cabinets it was idle, and been invitable mid-game. `D_Link_Connect` now marks the attract cycle
+  over, and the end of a linked game is judged by `netgame`. **The first `linkgame` case passed
+  anyway** — the failure landed in the last seconds of the run — so the case now runs 55 seconds and
+  fails if either side ever reports leaving the link while still in the level; the log of the failing
+  run matches that check three times.
+- **A Deathmatch that nobody on the other cabinet joined hung the host on "waiting for players".**
+  `M_Arcade_MP_Go` set `wait_players` to the joined count, called `D_WaitPlayer_Setup`, and put the
+  cvar straight back — but the `map` command then runs `SV_SpawnServer`, which calls
+  `D_WaitPlayer_Setup` *again* and re-read the restored default of 2, with no timeout. That is the
+  same code path as a **local one-player Deathmatch** started from the menus, which `menus.md`
+  records as fixed — it very likely still hung. The restore is now queued behind the `map` command.
+  This also means the 15 second no-show timeout would have been undone the same way.
+- **The laptop's firewall was never the obstacle Phase 0 assumed.** Fedora's workstation zone allows
+  every TCP and UDP port from 1025 up, so either cabinet can host.
+
+**Needs a person** — not reached headlessly:
+- An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
+  through the **guided control setup** (it should be abandoned exactly as Escape abandons it).
+- Idle timeout and arcade death **in a linked game**: `G_Idle_Timeout_Check` and
+  `G_Arcade_Death_Check` were written for one machine. What happens when the joining cabinet's player
+  walks away, or the host's does, is untested.
+- A Deathmatch against a Campaign opened at the same time (should be two separate games).
+- Pulling a cable mid-game, and playing on the Pi 3 over Wi-Fi for longer than a test run.
 
 ### Phase 4 — past two cabinets
 

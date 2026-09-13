@@ -20,6 +20,9 @@
 #define LK_NAME_LEN        16    // cabinet name, NUL included
 #define LK_ID_SHORT_LEN    10    // "7F3A-91C2" and its NUL
 #define LK_PORT_DEFAULT    5030
+#define LK_FP_BYTES        32    // a cabinet's full id: SHA-256 of its public key
+#define LK_GAME_LEN        40    // game id: IWAD name plus level pack, as scored
+#define LK_MSG_DATA_MAX    256   // largest game message carried over the link
 
 typedef enum
 {
@@ -64,7 +67,31 @@ typedef struct
     lk_state_e  state;
     byte        panels;
     char        reason[64];   // why REFUSED, or empty
+    byte        fp[LK_FP_BYTES];     // full id, for addressing a message (zero if unknown)
+    char        game[LK_GAME_LEN];   // what it is running ("doom2", "doom2+dwango5")
 } lk_peer_info_t;
+
+// Game messages the link carries between cabinets (d_linkgame.c).  The link is
+// only transport, except that the master numbers every INVITE as it passes
+// through and answers its sender with INVITE_ACK: that order is what decides
+// which of two cabinets opening the same game at once becomes the host.
+enum
+{
+    LK_GM_INVITE = 1,     // u32 seq (filled in by the master), u32 nonce, ...
+    LK_GM_INVITE_ACK,     // u32 seq, u32 nonce
+    LK_GM_CANCEL,
+    LK_GM_STATUS,
+    LK_GM_START,
+    LK_GM_NUM
+};
+
+typedef struct
+{
+    byte        source[LK_FP_BYTES];   // who sent it -- set by the link, never by the sender
+    byte        type;                  // LK_GM_*
+    uint16_t    len;
+    byte        data[LK_MSG_DATA_MAX];
+} lk_event_t;
 
 // Is the link built into this binary (OpenSSL present at build time)?
 boolean     LK_Built( void );
@@ -90,6 +117,57 @@ const char* LK_Id_Short( void );
 int         LK_Peers( lk_peer_info_t * out, int max );
 
 const char* LK_State_Name( lk_state_e st );
+
+// --- Messages between cabinets (game thread) ---
+
+// Send a game message.  target NULL goes to every other cabinet on the link.
+// False when the link is not running or the message is too big.
+boolean     LK_Send( const byte * target, byte type, const byte * data, int len );
+
+// Take the next message that arrived for this cabinet, if any.
+boolean     LK_Poll_Event( lk_event_t * ev );
+
+// This cabinet's full id, or NULL before the link has an identity.
+const byte* LK_My_Fp( void );
+
+// Look a cabinet up by full id among the peers this one can see.
+boolean     LK_Peer_Find( const byte * fp, lk_peer_info_t * out );
+
+// This cabinet's game id, the same string other cabinets are told.
+const char* LK_Game_Id( void );
+
+// What this cabinet is doing right now, as it tells the others.
+lk_state_e  LK_State( void );
+
+// --- The game channel (docs/arcade/cabinet-link.md, "The game channel") ---
+//
+// While a linked game is on, every UDP packet of the game netcode is sealed
+// with ChaCha20-Poly1305 under keys the host handed out over the link, and
+// anything that does not open is dropped before the netcode sees a byte.  A
+// cabinet with the link switched on accepts no unauthenticated game traffic
+// at all, linked game or not.
+
+#define LK_UDP_KEYS      64      // two 32-byte keys: member-to-host, host-to-member
+#define LK_UDP_OVERHEAD  21      // key id, counter, tag
+
+// Host: start a session with no clients, then add one per joining cabinet.
+// Add_Client writes that cabinet's keys and returns its key id (1..31, 0 = full).
+void        LK_Udp_Host_Begin( void );
+int         LK_Udp_Host_Add_Client( byte * keys_out );
+// A joining cabinet: its key id and keys, from the host's START.
+void        LK_Udp_Client_Begin( byte keyid, const byte * keys );
+// The linked game is over: forget every key.
+void        LK_Udp_End( void );
+
+// For i_tcp.c.  ip and port in network byte order, as in a sockaddr_in.
+// Recv: returns the plaintext length written to out, 0 to drop the packet,
+// or -1 when the link is not involved (use the packet as it came).
+// Send: returns the sealed length written to out, 0 to drop, or -1 to send the
+// packet as it is.
+int         LK_Net_Recv( const byte * in, int len, byte * out, int outsize,
+                         uint32_t ip, uint16_t port );
+int         LK_Net_Send( const byte * in, int len, byte * out, int outsize,
+                         uint32_t ip, uint16_t port );
 
 // The operator page body (Arcade Options -> Cabinet Link).  The caller sets
 // up drawing and the title, as the Audit page does for AU_Drawer.

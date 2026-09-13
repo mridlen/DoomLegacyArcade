@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,6 +54,8 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
+        linkgame|campaign|nojoin|noshow|convert) echo "-" ;;
+        stranger) echo udp ;;
     esac
 }
 
@@ -338,6 +340,160 @@ case_bigframe() {
     python3 "$PEER" bigframe 127.0.0.1 "$p" "$d/peer" > "$d/peer.txt" 2>&1
     wait
     expect_file "master drops an oversized frame at once" "$d/peer.txt" "RESULT bigframe closed"
+}
+
+
+# ---- Phase 3: invites and linked games ------------------------------------
+# The engines run with -linktest, which honours -linkautohost (start a
+# Deathmatch join screen once another cabinet is online) and -linkautojoin
+# (press fire and lock in on an invite).  Each cabinet gets its own game UDP
+# ports so they can share one machine: -udpport is the port a host serves on,
+# -clientport the one a joining cabinet sends from.
+
+# gamecfg <dir> <jointime> : a short countdown, one panel
+gamecfg() {
+    sed -i -e "s/^jointime .*/jointime \"$2\"/" -e 's/^localplayers .*/localplayers "1"/' \
+        "$1/legacyhome/config.cfg"
+    grep -q '^jointime ' "$1/legacyhome/config.cfg" || echo "jointime \"$2\"" >> "$1/legacyhome/config.cfg"
+}
+
+# The last LINKGAME / LINKNET line an engine printed.
+lastline() { out "$1" | grep -a "^$2 " | tail -1; }
+
+case_linkgame() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    # 55 seconds: long enough that a game channel dropping out part way
+    # through shows up well before the processes are stopped.
+    run "$d/master" 57 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 53 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    # The first version of this case passed while the joining cabinet dropped
+    # its keys 30 seconds into the game (it thought the game was over): check
+    # that the linked game is still linked on both sides at the end.
+    expect_not "the joiner never leaves the linked game while in the level" "$d/member" "^LINKGAME gamestate=1 netgame=1 .* none$"
+    expect_not "the host never leaves the linked game while in the level" "$d/master" "^LINKGAME gamestate=1 netgame=1 .* none$"
+    local hdrop
+    hdrop=$(lastline "$d/master" LINKNET | sed -n 's/.*dropped=\([0-9]*\).*/\1/p')
+    [ -n "$hdrop" ] && [ "$hdrop" -lt 20 ] || FAILS="$FAILS
+      the host dropped ${hdrop:-?} packets from its own linked game (expected almost none)"
+    expect "the host invited the other cabinet" "$d/master" "^LINKLOG .*invited other cabinets to DEATHMATCH"
+    expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to DEATHMATCH"
+    expect "the host started a linked game" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the other cabinet joined it" "$d/member" "^LINKLOG .*joining HOSTCAB at 127\.0\.0\.1 port $((p+100))"
+    expect "the host is in the level as server, two players" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in the level as client, two players" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect "the host opens sealed packets" "$d/master" "^LINKNET host sealed=[1-9][0-9]* opened=[1-9]"
+    expect "the joiner opens sealed packets" "$d/member" "^LINKNET client sealed=[1-9][0-9]* opened=[1-9]"
+}
+
+case_campaign() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 45 0 -linktest -linkautohost campaign -udpport $((p+100))
+    sleep 2
+    run "$d/member" 42 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    # One player here and one there is a coop campaign, not a solo run.
+    expect "the other cabinet was invited to a campaign" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to CAMPAIGN"
+    expect "the host is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+case_nojoin() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 6; gamecfg "$d/member" 6
+    run "$d/master" 34 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 32 0 -linktest -clientport $((p+101))
+    wait
+    expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet"
+    expect "nobody joined, so the invite ended there" "$d/member" "^LINKLOG .*HOSTCAB's invite is over"
+    expect_not "the host did not start a linked game" "$d/master" "starting a linked game"
+    expect "the host plays alone" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+    expect_not "the other cabinet never joined" "$d/member" "^LINKGAME gamestate=1 netgame=1"
+}
+
+case_stranger() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 44 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 42 0 -linktest -linkautojoin -clientport $((p+101))
+    # Once the linked game is running -- polled for, not assumed after a fixed
+    # sleep, which lost the race on a laptop short of memory -- a stranger
+    # talks to the host's game port.
+    local i
+    for i in $(seq 1 80); do
+        grep -aq "^LINKGAME gamestate=1 netgame=1 server=1 players=2 " "$d/master/out.txt" 2>/dev/null && break
+        sleep 0.5
+    done
+    python3 "$PEER" udpjunk 127.0.0.1 $((p+100)) 60 > "$d/peer.txt" 2>&1
+    wait
+    expect "the linked game was running" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 " || return
+    local dropped
+    dropped=$(lastline "$d/master" LINKNET | sed -n 's/.*dropped=\([0-9]*\).*/\1/p')
+    if [ -z "$dropped" ] || [ "$dropped" -lt 60 ]; then
+        FAILS="$FAILS
+      the host dropped ${dropped:-no} packets; all 60 from the stranger should have been"
+    fi
+    expect "the game carried on with two players" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+}
+
+case_noshow() {
+    local d=$1 p=$2 i
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 50 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 45 0 -linktest -linkautojoin -clientport $((p+101))
+    # The joining cabinet is switched off the moment it is told to connect.
+    for i in $(seq 1 60); do
+        grep -aq "^LINKLOG .*joining HOSTCAB" "$d/member/out.txt" 2>/dev/null && break
+        sleep 0.5
+    done
+    pkill -9 -f "$d/member/doomlegacyarcade" 2>/dev/null
+    ( cd "$d/member" && pkill -9 -f "^./doomlegacyarcade -game doom2 -nodraw -nosound -nomusic -linkstatus -linktest -linkautojoin -clientport $((p+101))" ) 2>/dev/null
+    wait
+    expect "the host was told a player was coming" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    # 15 seconds of waiting, then the game starts with whoever is there.
+    expect "the host gives up waiting and plays" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+}
+
+case_convert() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name CABA" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name CABB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    # Both open a Deathmatch as soon as they see each other.
+    run "$d/master" 40 0 -linktest -linkautohost deathmatch -linkautojoin -udpport $((p+100)) -clientport $((p+102))
+    sleep 1
+    run "$d/member" 39 0 -linktest -linkautohost deathmatch -linkautojoin -udpport $((p+101)) -clientport $((p+103))
+    wait
+    local servers
+    servers=0
+    lastline "$d/master" LINKGAME | grep -q "gamestate=1 netgame=1 server=1 players=2 " && servers=$((servers+1))
+    lastline "$d/member" LINKGAME | grep -q "gamestate=1 netgame=1 server=1 players=2 " && servers=$((servers+1))
+    [ "$servers" = 1 ] || FAILS="$FAILS
+      expected one host between them, found $servers"
+    expect "cabinet A is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=[01] players=2 "
+    expect "cabinet B is in a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=[01] players=2 "
 }
 
 case_unbound() {

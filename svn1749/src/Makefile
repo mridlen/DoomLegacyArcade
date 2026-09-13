@@ -1450,7 +1450,7 @@ m_menu.o m_misc.o m_argv.o m_bbox.o m_fixed.o m_swap.o m_cheat.o m_random.o \
 console.o command.o \
 p_saveg.o \
 tables.o info.o infoext.o dstrings.o dehacked.o w_wad.o w_zip.o\
-d_netcmd.o d_clisrv.o d_net.o d_netfil.o i_tcp.o d_link.o \
+d_netcmd.o d_clisrv.o d_net.o d_netfil.o i_tcp.o d_link.o d_linkgame.o \
 d_items.o d_main.o
 
 ifdef UMAPINFO_DIR

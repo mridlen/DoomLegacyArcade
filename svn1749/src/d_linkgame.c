@@ -1,0 +1,580 @@
+// [Arcade] Cabinet Link, Phase 3: invites and linked games.  See d_linkgame.h
+// and docs/arcade/cabinet-link.md.
+//
+// Every decision here runs on the game thread, fed by the link's event queue.
+// The link numbers invites in the order the master sees them (LK_GM_INVITE),
+// which is the only thing two cabinets need to agree on to settle who hosts.
+
+#include "doomincl.h"
+#include "doomstat.h"
+#include "d_link.h"
+#include "d_linkgame.h"
+#include "d_clisrv.h"
+#include "d_main.h"
+#include "m_menu.h"
+#include "m_argv.h"
+#include "i_tcp.h"
+#include "g_game.h"
+#include "m_misc.h"
+
+#include <SDL.h>
+
+// Message payloads (little-endian).  The first eight bytes of every one are
+// the invite's seq and nonce, so a stale message from an earlier invite is
+// recognised and ignored.
+//   INVITE  seq, nonce, u8 category, u8 skill, u16 secs, map[9], game[LK_GAME_LEN]
+//   CANCEL  seq, nonce
+//   STATUS  seq, nonce, u8 joined, u8 all_locked, u16 secs_left
+//   START   seq, nonce, u16 host udp port, u8 key id, keys[LK_UDP_KEYS]
+#define LKG_INVITE_LEN   (8 + 1 + 1 + 2 + 9 + LK_GAME_LEN)
+#define LKG_STATUS_LEN   (8 + 1 + 1 + 2)
+#define LKG_START_LEN    (8 + 2 + 1 + LK_UDP_KEYS)
+
+#define LKG_STATUS_MS    1000     // re-send status this often even unchanged
+#define LKG_SILENT_MS    6000     // a remote this quiet has left
+#define LKG_GRACE_MS     8000     // a remote waits this long past the countdown
+#define LKG_NOGAME_MS    30000    // a linked game that never began is over
+
+typedef enum
+{
+    LKGM_NONE = 0,
+    LKGM_HOST,           // our join screen is up and has invited
+    LKGM_REMOTE,         // another cabinet's join screen is up on ours
+    LKGM_GAME_HOST,      // a linked game we host
+    LKGM_GAME_CLIENT     // a linked game we joined
+} lkg_mode_e;
+
+typedef struct
+{
+    boolean   used;
+    byte      fp[LK_FP_BYTES];
+    byte      joined, locked;
+    uint32_t  last_ms;
+} lkg_remote_t;
+
+static lkg_mode_e  lkg_mode = LKGM_NONE;
+
+// The invite this cabinet is part of, as host or remote.
+static uint32_t    lkg_seq, lkg_nonce;
+static byte        lkg_category;
+static char        lkg_map[9];
+static byte        lkg_skill;
+
+// Host
+static lkg_remote_t  lkg_remotes[LK_MAX_PEERS];
+static int         lkg_remote_players;
+static byte        lkg_sent_joined = 255, lkg_sent_locked = 255;
+static uint32_t    lkg_status_ms;
+
+// Remote
+static byte        lkg_host_fp[LK_FP_BYTES];
+static char        lkg_host_name[LK_NAME_LEN];
+static byte        lkg_host_joined;
+static uint32_t    lkg_deadline_ms;
+
+// A linked game in progress
+static uint32_t    lkg_game_ms;
+static boolean     lkg_seen_level;
+
+// -linktest hooks (tools/linktest.sh): honoured only with -linktest.
+static int         lkg_test = -1;
+static byte        lkg_test_host_cat;
+static boolean     lkg_test_join, lkg_test_host_done;
+
+static char        lkg_line[96];
+
+static uint32_t  lkg_now( void )  { return SDL_GetTicks(); }
+
+static void  put32( byte * p, uint32_t v )
+{
+    p[0] = v & 0xff;  p[1] = (v >> 8) & 0xff;  p[2] = (v >> 16) & 0xff;  p[3] = (v >> 24) & 0xff;
+}
+static uint32_t  get32( const byte * p )
+{
+    return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static void  put16( byte * p, uint16_t v )  { p[0] = v & 0xff;  p[1] = (v >> 8) & 0xff; }
+static uint16_t  get16( const byte * p )  { return p[0] | (p[1] << 8); }
+
+static const char *  lkg_cat_word( byte cat )
+{
+    return ( cat == LKG_CAT_DEATHMATCH ) ? "DEATHMATCH" : "CAMPAIGN";
+}
+
+static void  lkg_set_mode( lkg_mode_e m )
+{
+    lkg_mode = m;
+    if( m == LKGM_NONE )
+    {
+        memset( lkg_remotes, 0, sizeof(lkg_remotes) );
+        lkg_sent_joined = lkg_sent_locked = 255;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+boolean  LKG_Would_Invite( byte category )
+{
+    lk_peer_info_t  peers[LK_MAX_PEERS];
+    int i, n;
+    if( category == LKG_CAT_NONE || lkg_mode != LKGM_NONE )  return false;
+    n = LK_Peers( peers, LK_MAX_PEERS );
+    for( i = 0; i < n; i++ )
+    {
+        if( peers[i].status != LK_PEER_ONLINE )  continue;
+        if( strcmp( peers[i].game, LK_Game_Id() ) )  continue;
+        if( peers[i].state == LK_STATE_IDLE || peers[i].state == LK_STATE_MENU
+            || peers[i].state == LK_STATE_JOINING )
+            return true;
+    }
+    return false;
+}
+
+static void  lkg_send_invite( void )
+{
+    byte p[LKG_INVITE_LEN];
+    memset( p, 0, sizeof(p) );
+    put32( p, 0 );                 // the master numbers it
+    put32( p + 4, lkg_nonce );
+    p[8] = lkg_category;
+    p[9] = lkg_skill;
+    put16( p + 10, 0 );            // filled below
+    memcpy( p + 12, lkg_map, 9 );
+    dl_strncpy( (char*) p + 21, LK_Game_Id(), LK_GAME_LEN );
+    {
+        int secs = 0;
+        byte joined;
+        boolean locked;
+        if( M_Join_Counts( &joined, &locked, &secs ) )
+            put16( p + 10, secs );
+    }
+    LK_Send( NULL, LK_GM_INVITE, p, sizeof(p) );
+}
+
+void  LKG_Host_Begin( byte category, const char * map, byte skill, int secs )
+{
+    (void) secs;
+    if( lkg_mode != LKGM_NONE || ! LKG_Would_Invite( category ) )  return;
+    lkg_set_mode( LKGM_HOST );
+    lkg_category = category;
+    dl_strncpy( lkg_map, map, sizeof(lkg_map) );
+    lkg_skill = skill;
+    lkg_seq = 0;
+    lkg_nonce = ( (uint32_t) rand() << 16 ) ^ (uint32_t) rand() ^ lkg_now();
+    lkg_remote_players = 0;
+    lkg_send_invite();
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: invited other cabinets to %s\n",
+               lkg_cat_word( category ) );
+}
+
+boolean  LKG_Hosting_Remote( void )
+{
+    int i;
+    if( lkg_mode != LKGM_HOST )  return false;
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+        if( lkg_remotes[i].used && lkg_remotes[i].joined )  return true;
+    return false;
+}
+
+boolean  LKG_Remotes_All_Locked( void )
+{
+    int i;
+    if( lkg_mode != LKGM_HOST )  return true;
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+        if( lkg_remotes[i].used && lkg_remotes[i].joined && ! lkg_remotes[i].locked )
+            return false;
+    return true;
+}
+
+int  LKG_Remote_Players( void )
+{
+    return ( lkg_mode == LKGM_GAME_HOST ) ? lkg_remote_players : 0;
+}
+
+int  LKG_Host_Start( void )
+{
+    int i, players = 0;
+    byte p[LKG_START_LEN];
+    byte cancel[8];
+
+    if( lkg_mode != LKGM_HOST )  return 0;
+
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+    {
+        lkg_remote_t * r = &lkg_remotes[i];
+        int id;
+        if( ! r->used || ! r->joined )  continue;
+        if( players == 0 )
+            LK_Udp_Host_Begin();
+        id = LK_Udp_Host_Add_Client( p + 11 );
+        if( ! id )  continue;
+        put32( p, lkg_seq );
+        put32( p + 4, lkg_nonce );
+        put16( p + 8, server_sock_port );
+        p[10] = id;
+        LK_Send( r->fp, LK_GM_START, p, sizeof(p) );
+        players += r->joined;
+    }
+    memset( p, 0, sizeof(p) );
+
+    // Everyone else: the invite is over.  A cabinet that got START ignores
+    // this; it arrives after START on the same connection.
+    put32( cancel, lkg_seq );
+    put32( cancel + 4, lkg_nonce );
+    LK_Send( NULL, LK_GM_CANCEL, cancel, sizeof(cancel) );
+
+    lkg_remote_players = players;
+    if( players )
+    {
+        lkg_set_mode( LKGM_GAME_HOST );
+        lkg_game_ms = lkg_now();
+        lkg_seen_level = false;
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: starting a linked game with %d player(s)"
+                   " from other cabinets\n", players );
+    }
+    else
+        lkg_set_mode( LKGM_NONE );
+    return players;
+}
+
+void  LKG_Join_Abandoned( void )
+{
+    byte p[LKG_STATUS_LEN];
+    if( lkg_mode == LKGM_HOST )
+    {
+        put32( p, lkg_seq );
+        put32( p + 4, lkg_nonce );
+        LK_Send( NULL, LK_GM_CANCEL, p, 8 );
+        lkg_set_mode( LKGM_NONE );
+    }
+    else if( lkg_mode == LKGM_REMOTE )
+    {
+        // Tell the host nobody here is coming.
+        memset( p, 0, sizeof(p) );
+        put32( p, lkg_seq );
+        put32( p + 4, lkg_nonce );
+        LK_Send( lkg_host_fp, LK_GM_STATUS, p, sizeof(p) );
+        lkg_set_mode( LKGM_NONE );
+    }
+}
+
+const char *  LKG_Join_Line( void )
+{
+    lkg_line[0] = 0;
+    if( lkg_mode == LKGM_HOST )
+    {
+        int i, len = 0;
+        lk_peer_info_t  info;
+        for( i = 0; i < LK_MAX_PEERS; i++ )
+        {
+            lkg_remote_t * r = &lkg_remotes[i];
+            if( ! r->used || ! r->joined )  continue;
+            if( ! LK_Peer_Find( r->fp, &info ) )  continue;
+            len += snprintf( lkg_line + len, sizeof(lkg_line) - len, "%s%s: %d IN",
+                             len ? "  " : "", info.name, r->joined );
+            if( len >= (int) sizeof(lkg_line) )  break;
+        }
+        if( ! lkg_line[0] )
+            snprintf( lkg_line, sizeof(lkg_line), "OTHER CABINETS INVITED" );
+    }
+    else if( lkg_mode == LKGM_REMOTE )
+    {
+        // No brackets: the menu font draws ( and ) as shapes that read as
+        // other letters (seen in an OpenGL capture of this screen).
+        snprintf( lkg_line, sizeof(lkg_line), "%s ON %s, %d IN THERE",
+                  lkg_cat_word( lkg_category ), lkg_host_name, lkg_host_joined );
+    }
+    return lkg_line[0] ? lkg_line : NULL;
+}
+
+int  LKG_Players_In_Game( void )
+{
+    int i, n = 0;
+    for( i = 0; i < MAXPLAYERS; i++ )
+        if( playeringame[i] )  n++;
+    return n;
+}
+
+const char *  LKG_Mode_Name( void )
+{
+    static const char * names[] = { "none", "host", "remote", "game-host", "game-client" };
+    return names[lkg_mode];
+}
+
+// ---------------------------------------------------------------------------
+//  Messages
+// ---------------------------------------------------------------------------
+
+static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
+{
+    const byte * p = ev->data;
+    lk_peer_info_t  info;
+    int secs = get16( p + 10 );
+
+    lkg_set_mode( LKGM_REMOTE );
+    memcpy( lkg_host_fp, ev->source, LK_FP_BYTES );
+    lkg_seq = get32( p );
+    lkg_nonce = get32( p + 4 );
+    lkg_category = p[8];
+    lkg_skill = p[9];
+    memcpy( lkg_map, p + 12, 9 );
+    lkg_map[8] = 0;
+    lkg_host_joined = 0;
+    dl_strncpy( lkg_host_name, LK_Peer_Find( ev->source, &info ) ? info.name : "ANOTHER CABINET",
+                LK_NAME_LEN );
+    if( secs < 3 )  secs = 3;
+    lkg_deadline_ms = lkg_now() + secs * 1000;
+    lkg_sent_joined = lkg_sent_locked = 255;
+
+    if( convert )
+        M_Join_Convert_To_Remote( secs );
+    else
+        M_Join_Remote_Open( secs );
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s invited this cabinet to %s%s\n",
+               lkg_host_name, lkg_cat_word( lkg_category ), convert ? " (joining their game)" : "" );
+
+    if( lkg_test_join )
+        M_Join_Test_Lock( 0 );
+}
+
+static void  lkg_on_invite( const lk_event_t * ev )
+{
+    const byte * p = ev->data;
+    const byte * me = LK_My_Fp();
+    char game[LK_GAME_LEN];
+    byte cat;
+    lk_state_e st = LK_State();
+
+    if( ev->len != LKG_INVITE_LEN || ( me && ! memcmp( ev->source, me, LK_FP_BYTES ) ) )  return;
+    cat = p[8];
+    if( cat != LKG_CAT_DEATHMATCH && cat != LKG_CAT_CAMPAIGN )  return;
+    memcpy( game, p + 21, LK_GAME_LEN );
+    game[LK_GAME_LEN-1] = 0;
+    if( strcmp( game, LK_Game_Id() ) )  return;   // cannot play that here
+
+    if( lkg_mode == LKGM_NONE )
+    {
+        // Idle on the attract screen, or someone in the menus: the invite takes
+        // over.  A game, the initials page and an operator session are left alone.
+        if( st == LK_STATE_IDLE || st == LK_STATE_MENU )
+            lkg_become_remote( ev, false );
+        return;
+    }
+
+    if( lkg_mode == LKGM_HOST && ! LKG_Hosting_Remote() && cat == lkg_category )
+    {
+        // Two cabinets opened the same game.  The one the master numbered
+        // first hosts; the other joins it, keeping whoever already pressed in.
+        uint32_t theirs = get32( p );
+        if( lkg_seq == 0 || theirs < lkg_seq )
+        {
+            byte cancel[8];
+            put32( cancel, lkg_seq );
+            put32( cancel + 4, lkg_nonce );
+            LK_Send( NULL, LK_GM_CANCEL, cancel, sizeof(cancel) );
+            lkg_become_remote( ev, true );
+        }
+    }
+}
+
+static void  lkg_on_event( const lk_event_t * ev )
+{
+    const byte * p = ev->data;
+    uint32_t nonce;
+
+    if( ev->type == LK_GM_INVITE )
+    {
+        lkg_on_invite( ev );
+        return;
+    }
+    if( ev->len < 8 )  return;
+    nonce = get32( p + 4 );
+
+    switch( ev->type )
+    {
+     case LK_GM_INVITE_ACK:
+        if( lkg_mode == LKGM_HOST && nonce == lkg_nonce )
+            lkg_seq = get32( p );
+        break;
+
+     case LK_GM_CANCEL:
+        if( lkg_mode == LKGM_REMOTE && nonce == lkg_nonce
+            && ! memcmp( ev->source, lkg_host_fp, LK_FP_BYTES ) )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s's invite is over\n", lkg_host_name );
+            M_Join_Remote_Close();
+            lkg_set_mode( LKGM_NONE );
+        }
+        break;
+
+     case LK_GM_STATUS:
+        if( ev->len != LKG_STATUS_LEN )  break;
+        if( lkg_mode == LKGM_HOST && nonce == lkg_nonce )
+        {
+            int i, slot = -1;
+            for( i = 0; i < LK_MAX_PEERS; i++ )
+            {
+                if( lkg_remotes[i].used && ! memcmp( lkg_remotes[i].fp, ev->source, LK_FP_BYTES ) )
+                    { slot = i; break; }
+                if( slot < 0 && ! lkg_remotes[i].used )  slot = i;
+            }
+            if( slot >= 0 )
+            {
+                lkg_remote_t * r = &lkg_remotes[slot];
+                r->used = true;
+                memcpy( r->fp, ev->source, LK_FP_BYTES );
+                r->joined = p[8];
+                r->locked = p[9];
+                r->last_ms = lkg_now();
+                // A remote locking in may be the last thing the join screen
+                // was waiting for.
+                M_Join_Recheck_Locked();
+            }
+        }
+        else if( lkg_mode == LKGM_REMOTE && nonce == lkg_nonce
+                 && ! memcmp( ev->source, lkg_host_fp, LK_FP_BYTES ) )
+        {
+            int secs = get16( p + 10 );
+            lkg_host_joined = p[8];
+            lkg_deadline_ms = lkg_now() + secs * 1000;
+            M_Join_Set_Countdown( secs );
+        }
+        break;
+
+     case LK_GM_START:
+        if( ev->len != LKG_START_LEN || lkg_mode != LKGM_REMOTE || nonce != lkg_nonce
+            || memcmp( ev->source, lkg_host_fp, LK_FP_BYTES ) )
+            break;
+        {
+            byte joined;
+            boolean locked;
+            int secs;
+            lk_peer_info_t  info;
+            M_Join_Counts( &joined, &locked, &secs );
+            if( ! joined || ! LK_Peer_Find( lkg_host_fp, &info ) )
+            {
+                M_Join_Remote_Close();
+                lkg_set_mode( LKGM_NONE );
+                break;
+            }
+            LK_Udp_Client_Begin( p[10], p + 11 );
+            lkg_set_mode( LKGM_GAME_CLIENT );
+            lkg_game_ms = lkg_now();
+            lkg_seen_level = false;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: joining %s at %s port %d\n",
+                       lkg_host_name, info.address, get16( p + 8 ) );
+            M_Join_Remote_Connect( info.address, get16( p + 8 ) );
+        }
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+static void  lkg_send_status( const byte * target, byte joined, byte locked, int secs )
+{
+    byte p[LKG_STATUS_LEN];
+    put32( p, lkg_seq );
+    put32( p + 4, lkg_nonce );
+    p[8] = joined;
+    p[9] = locked;
+    put16( p + 10, secs < 0 ? 0 : secs );
+    LK_Send( target, LK_GM_STATUS, p, sizeof(p) );
+    lkg_sent_joined = joined;
+    lkg_sent_locked = locked;
+    lkg_status_ms = lkg_now();
+}
+
+void  LKG_Ticker( void )
+{
+    lk_event_t  ev;
+    uint32_t now = lkg_now();
+    byte joined = 0;
+    boolean locked = false;
+    int secs = 0, i;
+
+    if( lkg_test < 0 )
+    {
+        lkg_test = M_CheckParm( "-linktest" ) ? 1 : 0;
+        if( lkg_test )
+        {
+            if( M_CheckParm( "-linkautohost" ) && M_IsNextParm() )
+            {
+                const char * c = M_GetNextParm();
+                lkg_test_host_cat = ! strcasecmp( c, "campaign" ) ? LKG_CAT_CAMPAIGN : LKG_CAT_DEATHMATCH;
+            }
+            lkg_test_join = M_CheckParm( "-linkautojoin" ) != 0;
+        }
+    }
+
+    while( LK_Poll_Event( &ev ) )
+        lkg_on_event( &ev );
+
+    switch( lkg_mode )
+    {
+     case LKGM_NONE:
+        if( lkg_test_host_cat && ! lkg_test_host_done && D_Attract_Running()
+            && LKG_Would_Invite( lkg_test_host_cat ) )
+        {
+            lkg_test_host_done = true;
+            M_Link_Test_Host( lkg_test_host_cat );
+        }
+        break;
+
+     case LKGM_HOST:
+        if( ! M_Join_Counts( &joined, &locked, &secs ) )
+        {
+            // The join screen closed without starting a linked game.
+            LKG_Join_Abandoned();
+            break;
+        }
+        for( i = 0; i < LK_MAX_PEERS; i++ )
+            if( lkg_remotes[i].used && now - lkg_remotes[i].last_ms > LKG_SILENT_MS )
+                lkg_remotes[i].joined = 0;
+        if( joined != lkg_sent_joined || locked != lkg_sent_locked
+            || now - lkg_status_ms > LKG_STATUS_MS )
+            lkg_send_status( NULL, joined, locked, secs );
+        // -linktest: once someone on another cabinet is in, lock this panel in
+        // too, so the game starts without waiting out the countdown.
+        if( lkg_test_host_cat && LKG_Hosting_Remote() && ! locked )
+            M_Join_Test_Lock( 0 );
+        break;
+
+     case LKGM_REMOTE:
+        if( ! M_Join_Counts( &joined, &locked, &secs ) )
+        {
+            LKG_Join_Abandoned();
+            break;
+        }
+        if( joined != lkg_sent_joined || locked != lkg_sent_locked
+            || now - lkg_status_ms > LKG_STATUS_MS )
+            lkg_send_status( lkg_host_fp, joined, locked, secs );
+        if( now > lkg_deadline_ms + LKG_GRACE_MS )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s did not start the game\n", lkg_host_name );
+            M_Join_Remote_Close();
+            lkg_set_mode( LKGM_NONE );
+        }
+        break;
+
+     case LKGM_GAME_HOST:
+     case LKGM_GAME_CLIENT:
+        // Over when this cabinet is no longer in a network game -- whichever
+        // way it left: the game ended, the host went away, or a joining cabinet
+        // never got in.  netgame, not D_Attract_Running: the attract marker is
+        // only as good as every route into a game remembering to clear it, and
+        // the client route did not (D_Link_Connect now does).  A test run caught
+        // a joining cabinet dropping its keys 30 seconds into a live game.
+        if( gamestate == GS_LEVEL && netgame )
+            lkg_seen_level = true;
+        if( ! netgame && ( lkg_seen_level || now - lkg_game_ms > LKG_NOGAME_MS ) )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: linked game over\n" );
+            LK_Udp_End();
+            D_Link_Restore_Port();
+            lkg_remote_players = 0;
+            lkg_set_mode( LKGM_NONE );
+        }
+        break;
+    }
+}

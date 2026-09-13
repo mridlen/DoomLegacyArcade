@@ -16,6 +16,7 @@ CERTDIR gets a throwaway key and certificate (made with the openssl CLI).
 import hashlib, hmac, os, socket, ssl, struct, subprocess, sys, time
 
 MSG_AUTH = 1
+PROTO_VERSION = 2   # must match LK_PROTO_VERSION in d_link.c
 
 
 def make_cert(d):
@@ -103,8 +104,24 @@ def main():
         other_session = bytes(32)
         proof = hmac.new(key, other_session + b"member" + mine + master,
                          hashlib.sha256).digest()
-        s.sendall(frame(MSG_AUTH, bytes([1]) + proof))
+        s.sendall(frame(MSG_AUTH, bytes([PROTO_VERSION]) + proof))
         print("RESULT unbound", "closed" if closed_by_peer(s) else "open")
+
+    elif mode == "udpjunk":
+        # Game channel: packets from a machine that holds no key.  Half are
+        # random, half are shaped like the engine's own plaintext packets (a
+        # checksum-sized header, a packet type, zero padding) -- what a stranger
+        # speaking the stock netcode would send.
+        host, port, count = sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for i in range(count):
+            if i % 2:
+                pkt = os.urandom(40 + i)
+            else:
+                pkt = struct.pack("<IBB", 0, 0, 12) + bytes(64)
+            s.sendto(pkt, (host, port))
+            time.sleep(0.02)
+        print("RESULT udpjunk sent", count)
 
     elif mode == "fakemaster":
         port, certdir, secs = int(sys.argv[2]), sys.argv[3], float(sys.argv[4])
@@ -133,7 +150,7 @@ def main():
                         got_auth = True
                         t.recv(struct.unpack("<I", hdr[:4])[0])
                         # A proof the real master would never send.
-                        t.sendall(frame(MSG_AUTH, bytes([1]) + os.urandom(32)))
+                        t.sendall(frame(MSG_AUTH, bytes([PROTO_VERSION]) + os.urandom(32)))
                         time.sleep(2)
                     t.close()
                 except (ssl.SSLError, OSError):

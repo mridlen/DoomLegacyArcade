@@ -3773,6 +3773,54 @@ reset_to_title_exit:
 }
 
 
+// [Arcade] Cabinet Link: join the linked game a host has just started
+// (d_linkgame.c, on START).  The console strips a ":port" from connect's
+// argument, so the host's port goes into server_sock_port -- the port
+// SOCK_NetMakeNode aims at -- and is put back when the linked game is over,
+// so this cabinet hosts on its usual port next time.
+static uint16_t  link_saved_server_port = 0;
+// A linked game never writes a file because the host said so: the netcode
+// would otherwise download a missing wad, or a savegame, from the server.  The
+// host is an authenticated cabinet, but a cabinet's disk is not the network's
+// to write to -- a wad mismatch is refused instead (CL_CheckFiles).
+static int  link_saved_dl_files = -1, link_saved_dl_savegame = -1;
+
+void  D_Link_Connect( const char * host, int port )
+{
+    if( ! link_saved_server_port )
+        link_saved_server_port = server_sock_port;
+    server_sock_port = port;
+    if( link_saved_dl_files < 0 )
+    {
+        link_saved_dl_files = cv_download_files.value;
+        link_saved_dl_savegame = cv_download_savegame.value;
+    }
+    CV_SetValue( &cv_download_files, 0 );
+    CV_SetValue( &cv_download_savegame, 0 );
+    // A client never passes through G_DeferedInitNew, which is what marks the
+    // attract cycle as over for a local game -- so without this a cabinet in a
+    // linked game still read as sitting on its attract screen: it told the
+    // other cabinets it was idle (and could be invited mid-game), and the
+    // linked game looked over after 30 seconds and dropped its keys.
+    D_DisableDemo();
+    COM_BufAddText( va( "stopdemo\nconnect %s\n", host ) );
+}
+
+void  D_Link_Restore_Port( void )
+{
+    if( link_saved_server_port )
+    {
+        server_sock_port = link_saved_server_port;
+        link_saved_server_port = 0;
+    }
+    if( link_saved_dl_files >= 0 )
+    {
+        CV_SetValue( &cv_download_files, link_saved_dl_files );
+        CV_SetValue( &cv_download_savegame, link_saved_dl_savegame );
+        link_saved_dl_files = link_saved_dl_savegame = -1;
+    }
+}
+
 // By User, future Client.
 void Command_connect(void)
 {
