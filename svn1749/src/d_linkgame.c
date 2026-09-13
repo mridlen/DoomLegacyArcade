@@ -16,6 +16,7 @@
 #include "i_tcp.h"
 #include "g_game.h"
 #include "m_misc.h"
+#include "command.h"
 
 #include <SDL.h>
 
@@ -79,11 +80,26 @@ static boolean     lkg_seen_level;
 // -linktest hooks (tools/linktest.sh): honoured only with -linktest.
 static int         lkg_test = -1;
 static byte        lkg_test_host_cat;
-static boolean     lkg_test_join, lkg_test_host_done;
+static byte        lkg_test_join;           // 1 -linkautojoin, 2 -linkautopress
+static boolean     lkg_test_host_done;
+static int         lkg_test_poll_sleep;     // -linkpollsleep N: N ms between ticker start and events
+static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
+static int         lkg_test_end_secs;       // -linkendgame S: a host ends its game after S seconds
+static boolean     lkg_test_end_sent;
+static int         lkg_games_done;          // linked games this cabinet has seen end
 
 static char        lkg_line[96];
 
 static uint32_t  lkg_now( void )  { return SDL_GetTicks(); }
+
+// Milliseconds from then to now, never "negative".  A stamp taken after now was
+// read -- a message handled later in the same tick -- is 0 ms old, not 49 days:
+// the unsigned wrap is what made a joining cabinet declare its linked game over
+// the instant it began, about one START in five on the Pi.
+static uint32_t  lkg_since( uint32_t now, uint32_t then )
+{
+    return ( now > then ) ? now - then : 0;
+}
 
 static void  put32( byte * p, uint32_t v )
 {
@@ -334,7 +350,7 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
                lkg_host_name, lkg_cat_word( lkg_category ), convert ? " (joining their game)" : "" );
 
     if( lkg_test_join )
-        M_Join_Test_Lock( 0 );
+        M_Join_Test_Lock( 0, lkg_test_join == 1 );   // -linkautopress: fire, never lock
 }
 
 static void  lkg_on_invite( const lk_event_t * ev )
@@ -488,7 +504,7 @@ static void  lkg_send_status( const byte * target, byte joined, byte locked, int
 void  LKG_Ticker( void )
 {
     lk_event_t  ev;
-    uint32_t now = lkg_now();
+    uint32_t now;
     byte joined = 0;
     boolean locked = false;
     int secs = 0, i;
@@ -503,18 +519,35 @@ void  LKG_Ticker( void )
                 const char * c = M_GetNextParm();
                 lkg_test_host_cat = ! strcasecmp( c, "campaign" ) ? LKG_CAT_CAMPAIGN : LKG_CAT_DEATHMATCH;
             }
-            lkg_test_join = M_CheckParm( "-linkautojoin" ) != 0;
+            lkg_test_join = M_CheckParm( "-linkautojoin" ) ? 1 : M_CheckParm( "-linkautopress" ) ? 2 : 0;
+            if( M_CheckParm( "-linkhostafter" ) && M_IsNextParm() )
+            {
+                lkg_test_host_after = atoi( M_GetNextParm() );
+                if( ! lkg_test_host_cat )  lkg_test_host_cat = LKG_CAT_DEATHMATCH;
+            }
+            if( M_CheckParm( "-linkendgame" ) && M_IsNextParm() )
+                lkg_test_end_secs = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linkpollsleep" ) && M_IsNextParm() )
+                lkg_test_poll_sleep = atoi( M_GetNextParm() );
         }
     }
 
+    // -linktest -linkpollsleep: the clock moves on while this tick starts, as
+    // it does on a slow cabinet, so every stamp the events take is newer.
+    if( lkg_test_poll_sleep > 0 )
+        SDL_Delay( lkg_test_poll_sleep );
+
     while( LK_Poll_Event( &ev ) )
         lkg_on_event( &ev );
+    // Read the clock after the events: they stamp times of their own (START,
+    // a remote's STATUS), and none of them may be newer than now.
+    now = lkg_now();
 
     switch( lkg_mode )
     {
      case LKGM_NONE:
-        if( lkg_test_host_cat && ! lkg_test_host_done && D_Attract_Running()
-            && LKG_Would_Invite( lkg_test_host_cat ) )
+        if( lkg_test_host_cat && ! lkg_test_host_done && lkg_games_done >= lkg_test_host_after
+            && D_Attract_Running() && LKG_Would_Invite( lkg_test_host_cat ) )
         {
             lkg_test_host_done = true;
             M_Link_Test_Host( lkg_test_host_cat );
@@ -529,15 +562,15 @@ void  LKG_Ticker( void )
             break;
         }
         for( i = 0; i < LK_MAX_PEERS; i++ )
-            if( lkg_remotes[i].used && now - lkg_remotes[i].last_ms > LKG_SILENT_MS )
+            if( lkg_remotes[i].used && lkg_since( now, lkg_remotes[i].last_ms ) > LKG_SILENT_MS )
                 lkg_remotes[i].joined = 0;
         if( joined != lkg_sent_joined || locked != lkg_sent_locked
-            || now - lkg_status_ms > LKG_STATUS_MS )
+            || lkg_since( now, lkg_status_ms ) > LKG_STATUS_MS )
             lkg_send_status( NULL, joined, locked, secs );
         // -linktest: once someone on another cabinet is in, lock this panel in
         // too, so the game starts without waiting out the countdown.
         if( lkg_test_host_cat && LKG_Hosting_Remote() && ! locked )
-            M_Join_Test_Lock( 0 );
+            M_Join_Test_Lock( 0, true );
         break;
 
      case LKGM_REMOTE:
@@ -547,7 +580,7 @@ void  LKG_Ticker( void )
             break;
         }
         if( joined != lkg_sent_joined || locked != lkg_sent_locked
-            || now - lkg_status_ms > LKG_STATUS_MS )
+            || lkg_since( now, lkg_status_ms ) > LKG_STATUS_MS )
             lkg_send_status( lkg_host_fp, joined, locked, secs );
         if( now > lkg_deadline_ms + LKG_GRACE_MS )
         {
@@ -567,9 +600,19 @@ void  LKG_Ticker( void )
         // a joining cabinet dropping its keys 30 seconds into a live game.
         if( gamestate == GS_LEVEL && netgame )
             lkg_seen_level = true;
-        if( ! netgame && ( lkg_seen_level || now - lkg_game_ms > LKG_NOGAME_MS ) )
+        // -linktest -linkendgame: the host ends the game, as a time limit would.
+        if( lkg_mode == LKGM_GAME_HOST && lkg_test_end_secs && lkg_seen_level && ! lkg_test_end_sent
+            && lkg_since( now, lkg_game_ms ) > (uint32_t) lkg_test_end_secs * 1000 )
         {
-            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: linked game over\n" );
+            lkg_test_end_sent = true;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: ending the linked game\n" );
+            COM_BufAddText( "exitgame\n" );
+        }
+        if( ! netgame && ( lkg_seen_level || lkg_since( now, lkg_game_ms ) > LKG_NOGAME_MS ) )
+        {
+            lkg_games_done++;
+            lkg_test_end_sent = false;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: linked game over (%d so far)\n", lkg_games_done );
             LK_Udp_End();
             D_Link_Restore_Port();
             lkg_remote_players = 0;

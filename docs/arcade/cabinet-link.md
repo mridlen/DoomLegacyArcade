@@ -778,7 +778,7 @@ it would send to an address with no key. Measured 14–25 µs per packet on the 
 savegame because a peer — even an authenticated one — offered it. Different wads are refused at
 connect instead (the netcode's own MD5 check).
 
-**Verified** — `tools/linktest.sh`, now 19 cases, all pass (two at a time, about six minutes):
+**Verified** — `tools/linktest.sh`, 19 cases at the time (23 now), all pass (two at a time, about six minutes):
 - `linkgame` — master hosts a Deathmatch, member joins: host `server=1 players=2`, joiner
   `server=0 players=2`, ~1,700 packets sealed and opened each way over 55 seconds, **0 dropped**,
   both still linked at the end.
@@ -839,6 +839,39 @@ connect instead (the netcode's own MD5 check).
   - A cabinet with a different IWAD version is still *invited* (the game id is the same), and learns at
     connect; the host starts alone after its 15 second wait. Putting the IWAD's md5 into the game id
     would stop the invite instead — not done yet.
+- **"Only works when initiated on the server, otherwise it times out."** Mark's cabinets, the Pi as
+  master: a game started on the Pi worked, one started on the laptop showed the Pi the join screen,
+  then started on the laptop alone while the Pi went back to attract. Every headless case passed,
+  including new ones built to match (`memberhost`: the member hosts; `rehost`: a second game in the
+  same running programs; `memberpress`: four panels, fire pressed but never locked in). Running the
+  two real machines with copies of their live homes reproduced it **about one time in five** — and a
+  per-packet drop reason showed the Pi sending *unsealed* 16-byte "ask info" packets every 2 s, which
+  the laptop rightly threw away, while the Pi's own log read `+4294967295ms` straight after START.
+  - **Cause: `LKG_Ticker` read the clock before handling its events, and the elapsed-time checks were
+    plain unsigned subtractions.** START stamps `lkg_game_ms = lkg_now()` while being handled; when the
+    millisecond ticked over in between, the stamp was 1 ms *newer* than `now`, `now - lkg_game_ms`
+    wrapped to 49 days, the "never began in 30 s" rule fired on the spot, and the joining cabinet
+    dropped its keys before it had sent a packet. The host had the mirror image: a remote's STATUS
+    stamps `last_ms`, which wrapped past the 6 s "gone quiet" rule and zeroed that remote's players —
+    so a host whose countdown ended in that tick started alone. A Pi 3 crosses a millisecond inside a
+    tick far more often than the laptop, which is why the laptop never showed it and why it looked like
+    a master/member difference: the Pi was always the one joining.
+  - **Fix**: the clock is read *after* the events, and every elapsed time goes through `lkg_since()`,
+    which cannot go negative. **Regression case `slowclock`**: `-linktest -linkpollsleep 3` sleeps
+    between the start of the tick and its events on both cabinets, making the race certain. It **fails
+    on the build before** (the host forgets the pressed-in remote and plays alone), while `memberhost`
+    passes on that same build — the field symptom exactly. After the fix, **10 of 10** laptop↔Pi runs
+    with copies of both live homes (four panels, attract demos, the laptop hosting, the Pi pressing in
+    and locking, or pressing in only) reached one two-player game with 0 packets dropped — against 2
+    failures in the 10 runs before it. All 23 link cases pass; `make smoke` 5/5.
+  - The new cases stay in the suite: `memberhost`, `rehost` (`-linkendgame S`, `-linkhostafter N`),
+    `memberpress` (`-linkautopress`; `LOCALPLAYERS=4`), `slowclock` (`-linkpollsleep N`), and
+    `KEEPDEMOS=1` for a cabinet that keeps its record demos.
+  - **Two traps on the way.** The live Pi's output goes to `~/.xsession-errors` only when stdout is
+    flushed, and a test engine killed by `timeout` loses whatever was buffered — the first failing run's
+    Pi log stopped mid-story. Run a cross-machine engine under `stdbuf -oL -eL`. And the laptop can run
+    the suite two at a time only with memory to spare; with a browser open it was killed twice, even
+    serially in the background — run it in the foreground in batches.
 
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way

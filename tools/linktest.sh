@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -112,12 +112,16 @@ mkcab() {
     mkdir -p "$d"
     cp "$BIN" "$d/doomlegacyarcade"
     cp -a "$home" "$d/legacyhome"
-    rm -rf "$d/legacyhome/demos" "$d/legacyhome/link"
+    rm -rf "$d/legacyhome/link"
+    # KEEPDEMOS=1 keeps the record demos, so the attract cycle plays them the
+    # way a real cabinet does -- a join that arrives mid-demo is a different
+    # path from one that arrives on a title page.
+    [ "${KEEPDEMOS:-0}" = 1 ] || rm -rf "$d/legacyhome/demos"
     mkdir -p "$d/legacyhome/demos" "$d/legacyhome/link"
     rm -f "$d/legacyhome"/config8p.cfg* "$d/legacyhome"/configgl.cfg* \
           "$d/legacyhome"/confign.cfg* "$d/legacyhome/autoexec.cfg"
     sed -i -e 's/^drawmode .*/drawmode "Software 8bit"/' \
-           -e 's/^localplayers .*/localplayers "1"/' "$d/legacyhome/config.cfg"
+           -e "s/^localplayers .*/localplayers \"${LOCALPLAYERS:-1}\"/" "$d/legacyhome/config.cfg"
     for w in "$WADDIR"/*; do ln -sf "$w" "$d/"; done
 }
 
@@ -352,7 +356,7 @@ case_bigframe() {
 
 # gamecfg <dir> <jointime> : a short countdown, one panel
 gamecfg() {
-    sed -i -e "s/^jointime .*/jointime \"$2\"/" -e 's/^localplayers .*/localplayers "1"/' \
+    sed -i -e "s/^jointime .*/jointime \"$2\"/" -e "s/^localplayers .*/localplayers \"${LOCALPLAYERS:-1}\"/" \
         "$1/legacyhome/config.cfg"
     grep -q '^jointime ' "$1/legacyhome/config.cfg" || echo "jointime \"$2\"" >> "$1/legacyhome/config.cfg"
 }
@@ -526,6 +530,101 @@ case_iwadversion() {
     expect "the joiner tried to join" "$d/member" "^LINKLOG .*joining HOSTCAB"
     expect_not "the joiner was not let into the game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0"
     expect "the host plays alone after the wait" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+}
+
+
+# The clock ticks over between the start of the link's tick and the messages it
+# handles -- what a Pi does about one tick in five, forced here every tick.  A
+# START stamped 1 ms after "now" read as 49 days old: the joining cabinet called
+# the game over the moment it began, dropped its keys and could never get in,
+# and a host forgot every remote that had pressed in.  Mark saw it as "only
+# works when initiated on the server": the Pi was always the one joining late.
+case_slowclock() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 55 0 -linktest -linkautojoin -linkpollsleep 3 -udpport $((p+102)) -clientport $((p+101))
+    sleep 2
+    run "$d/member" 52 0 -linktest -linkautohost deathmatch -linkpollsleep 3 -udpport $((p+100)) -clientport $((p+103))
+    wait
+    expect "the member started a linked game" "$d/member" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the master tried to join it" "$d/master" "^LINKLOG .*joining LAPCAB"
+    expect_not "the master did not give up at once" "$d/master" "^LINKLOG .*linked game over"
+    expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# memberhost the way a person plays it: on a four panel cabinet, fire joins and
+# the player is still picking a colour when the host's countdown runs out.
+case_memberpress() {
+    local d=$1 p=$2
+    KEEPDEMOS=1 mkcab "$d/master"; KEEPDEMOS=1 mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 70 0 -linktest -linkautopress -udpport $((p+102)) -clientport $((p+101))
+    sleep 2
+    run "$d/member" 67 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
+    wait
+    expect "the member started a linked game" "$d/member" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the master tried to join it" "$d/master" "^LINKLOG .*joining LAPCAB at 127\.0\.0\.1 port $((p+100))"
+    expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+# The arrangement Mark's cabinets use and linkgame does not: a *member* starts
+# the game and the *master* joins it, with the attract demos in place on both.
+# Reported as "only works when initiated on the server, otherwise it times out".
+case_memberhost() {
+    local d=$1 p=$2
+    KEEPDEMOS=1 mkcab "$d/master"; KEEPDEMOS=1 mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 60 0 -linktest -linkautojoin -udpport $((p+102)) -clientport $((p+101))
+    sleep 2
+    run "$d/member" 57 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
+    wait
+    expect "the member started a linked game" "$d/member" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the master tried to join it" "$d/master" "^LINKLOG .*joining LAPCAB at 127\.0\.0\.1 port $((p+100))"
+    expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+}
+
+
+# What Mark actually did: a game started on one cabinet, then -- in the same
+# running programs -- a game started on the other.  Every other case starts
+# fresh processes, which is why none of them saw "the join screen comes up,
+# the game never starts, and the joining cabinet goes back to attract".
+case_rehost() {
+    local d=$1 p=$2
+    KEEPDEMOS=1 mkcab "$d/master"; KEEPDEMOS=1 mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    # Game 1: the master hosts, the member joins, the master ends it after 15 s.
+    # Game 2: the member hosts, the master joins.  Real game ports on both
+    # (the defaults), because the two cabinets serve and join on the same one.
+    run "$d/master" 110 0 -linktest -linkautohost deathmatch -linkautojoin -linkendgame 15 \
+        -udpport $((p+100)) -clientport $((p+101))
+    sleep 2
+    run "$d/member" 106 0 -linktest -linkautojoin -linkhostafter 1 \
+        -udpport $((p+102)) -clientport $((p+103))
+    wait
+    expect "game 1: the master hosted" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "game 1: the master ended it" "$d/master" "^LINKLOG .*test: ending the linked game"
+    expect "game 1 was over on the member" "$d/member" "^LINKLOG .*linked game over \(1 so far\)"
+    expect "game 2: the member hosted" "$d/member" "^LINKLOG .*starting a linked game with 1 player"
+    expect "game 2: the master joined it" "$d/master" "^LINKLOG .*joining LAPCAB"
+    # After game 2 started, both are in it together.
+    out "$d/member" | sed -n '/starting a linked game/,$p' | grep -aq "^LINKGAME gamestate=1 netgame=1 server=1 players=2 " \
+        || FAILS="$FAILS
+      game 2: the member never had a two player game"
+    out "$d/master" | sed -n '/joining LAPCAB/,$p' | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=2 " \
+        || FAILS="$FAILS
+      game 2: the master never got into the member's game"
 }
 
 case_convert() {

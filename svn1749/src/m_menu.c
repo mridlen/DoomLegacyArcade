@@ -4675,11 +4675,11 @@ void  M_Join_Remote_Connect( const char * host, int port )
 }
 
 
-// tools/linktest.sh (-linktest): a panel presses fire and locks in.
-void  M_Join_Test_Lock( byte panel )
+// tools/linktest.sh (-linktest): a panel presses fire, and locks in or not.
+void  M_Join_Test_Lock( byte panel, boolean lock )
 {
     if( ! join_active || panel >= M_Join_NumPanels() )  return;
-    join_pressed[panel] = JOIN_LOCKED;
+    join_pressed[panel] = lock ? JOIN_LOCKED : JOIN_SETUP;
     M_Join_Check_All_Locked();
 }
 

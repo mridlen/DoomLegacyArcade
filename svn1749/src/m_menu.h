@@ -163,7 +163,7 @@ void     M_Join_Remote_Open( int secs );
 void     M_Join_Convert_To_Remote( int secs );
 void     M_Join_Remote_Close( void );
 void     M_Join_Remote_Connect( const char * host, int port );
-void     M_Join_Test_Lock( byte panel );
+void     M_Join_Test_Lock( byte panel, boolean lock );
 void     M_Link_Test_Host( byte category );
 
 #ifdef LAUNCHER

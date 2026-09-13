@@ -1197,6 +1197,9 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   the other: you get one game, not two.
 - On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
+- Either cabinet can start the game, master or member. (An earlier build often failed when the
+  slower cabinet — a Raspberry Pi — was the one joining: it showed the join screen, then went back
+  to attract while the other cabinet played alone.)
 - Both cabinets need this version of the game. A cabinet with Cabinet Link switched on also ignores
   game traffic from anything that is not a linked cabinet.
 - The cabinets must have the **same IWAD**, but not the same file name: Ultimate Doom as `DOOM.WAD` on
