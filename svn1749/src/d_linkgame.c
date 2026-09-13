@@ -87,7 +87,9 @@ static boolean     lkg_test_host_done;
 static int         lkg_test_poll_sleep;
 static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
 static uint32_t    lkg_test_press_at;
-static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in     // -linkpollsleep N: N ms between ticker start and events
+static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
+static int         lkg_test_move_ms;
+static int         lkg_test_join_panels = 1; // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
 static int         lkg_test_end_secs;       // -linkendgame S: a host ends its game after S seconds
 static boolean     lkg_test_end_sent;
@@ -435,7 +437,11 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
                lkg_host_name, lkg_cat_word( lkg_category ), convert ? " (joining their game)" : "" );
 
     if( lkg_test_join )
-        M_Join_Test_Lock( 0, lkg_test_join == 1 );
+    {
+        int  panel;
+        for( panel = lkg_test_join_panels - 1; panel >= 0; panel-- )
+            M_Join_Test_Lock( panel, lkg_test_join == 1 );
+    }
     if( lkg_test_press_secs > 0 )
         lkg_test_press_at = lkg_now() + lkg_test_press_secs * 1000;   // -linkautopress: fire, never lock
 }
@@ -619,6 +625,10 @@ void  LKG_Ticker( void )
             if( M_CheckParm( "-linkpressafter" ) && M_IsNextParm() )
                 lkg_test_press_secs = atoi( M_GetNextParm() );
             lkg_test_msgpress = M_CheckParm( "-linkmsgpress" ) != 0;
+            if( M_CheckParm( "-linkjoinpanels" ) && M_IsNextParm() )
+                lkg_test_join_panels = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linkmoveevery" ) && M_IsNextParm() )
+                lkg_test_move_ms = atoi( M_GetNextParm() );
         }
     }
 
@@ -629,6 +639,32 @@ void  LKG_Ticker( void )
 
     while( LK_Poll_Event( &ev ) )
         lkg_on_event( &ev );
+
+    // -linktest -linkmoveevery: someone at panel 1 who turns now and then, while
+    // a level is up -- held for 200 ms, so the ticcmds built meanwhile see it.
+    if( lkg_test_move_ms > 0 && gamestate == GS_LEVEL )
+    {
+        static uint32_t  down_at = 0;
+        static boolean   held = false;
+        int  key = gamecontrol_pl[0][gc_turnright][0] ? gamecontrol_pl[0][gc_turnright][0]
+                                                      : gamecontrol_pl[0][gc_turnright][1];
+        event_t  ev_turn;
+        memset( &ev_turn, 0, sizeof(ev_turn) );
+        ev_turn.data1 = key;
+        if( ! held && lkg_now() - down_at >= (uint32_t) lkg_test_move_ms )
+        {
+            ev_turn.type = ev_keydown;
+            D_PostEvent( &ev_turn );
+            held = true;
+            down_at = lkg_now();
+        }
+        else if( held && lkg_now() - down_at >= 200 )
+        {
+            ev_turn.type = ev_keyup;
+            D_PostEvent( &ev_turn );
+            held = false;
+        }
+    }
 
     // -linktest -linkmsgpress: a person pressing fire at a message box once they
     // have read it -- through the input queue, like -linkpressafter.
@@ -693,7 +729,11 @@ void  LKG_Ticker( void )
         // -linktest: once someone on another cabinet is in, lock this panel in
         // too, so the game starts without waiting out the countdown.
         if( lkg_test_host_cat && LKG_Hosting_Remote() && ! locked )
-            M_Join_Test_Lock( 0, true );
+        {
+            int  panel;
+            for( panel = lkg_test_join_panels - 1; panel >= 0; panel-- )   // panel 1 last: it may start the game
+                M_Join_Test_Lock( panel, true );
+        }
         break;
 
      case LKGM_REMOTE:

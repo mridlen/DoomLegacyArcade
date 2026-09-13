@@ -4680,7 +4680,10 @@ void  M_Join_Test_Lock( byte panel, boolean lock )
 {
     if( ! join_active || panel >= M_Join_NumPanels() )  return;
     join_pressed[panel] = lock ? JOIN_LOCKED : JOIN_SETUP;
-    M_Join_Check_All_Locked();
+    // Checked on panel 1 only, which a test pressing several panels presses
+    // last: locking panel 2 first must not start the game with panel 2 alone.
+    if( panel == 0 )
+        M_Join_Check_All_Locked();
 }
 
 // tools/linktest.sh (-linktest -linkautohost): start the join screen for a

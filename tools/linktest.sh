@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -690,6 +690,59 @@ case_menusetup() {
     expect "the master turned the member away before it was allowed" "$d/master" "^LINKPEER 127\.0\.0\.1 - refused .*allow list"
     expect "the master sees the member online" "$d/master" "^LINKPEER 127\.0\.0\.1 [0-9A-F]{4}-[0-9A-F]{4} online [a-z]+ LAPCAB\|"
     expect "the member sees the master online" "$d/member" "^LINKPEER 127\.0\.0\.1 [0-9A-F]{4}-[0-9A-F]{4} online [a-z]+ PICAB\|"
+}
+
+# A linked game where only one cabinet has a player at it.  Mark: "it times out
+# when doing a network game and one cabinet is unattended... it should stay
+# running as long as one person in the game is moving the controls".  Both
+# cabinets at the shortest idle timeout (15 s); the host's player turns every
+# 2 s, the joining cabinet is never touched; the game must still be on, with
+# both cabinets in it, long after 15 s.
+case_idleshared() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=2 gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    for c in master member; do
+        sed -i -e 's/^idletimeout .*/idletimeout "15"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/$c/legacyhome/config.cfg"
+    done
+    # The host: two panels pressed in, and then nobody there.  The joining
+    # cabinet's player turns every 2 s.
+    run "$d/master" 85 0 -linktest -linkautohost deathmatch -linkjoinpanels 2 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 82 0 -linktest -linkautojoin -linkmoveevery 2000 -clientport $((p+101))
+    wait
+    expect "the three played together" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=3 "
+    expect_not "the host did not time out" "$d/master" "^LINKLOG .*linked game over"
+    expect_not "the joining cabinet did not time out" "$d/member" "^LINKLOG .*linked game over"
+    # Still all in the level at the very end, 45+ s after the game began.
+    lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=3 " \
+        || FAILS="$FAILS
+      at the end the joining cabinet was not in the game: $(lastline "$d/member" LINKGAME)"
+}
+
+# The other half of the same rule: a linked game nobody is playing ends, on
+# every cabinet.  One panel each, which never timed out at all before.
+case_idleall() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    for c in master member; do
+        sed -i -e 's/^idletimeout .*/idletimeout "15"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/$c/legacyhome/config.cfg"
+    done
+    run "$d/master" 75 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 72 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the two played together" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect "the host's game ended" "$d/master" "^LINKLOG .*linked game over"
+    expect "the joining cabinet's game ended" "$d/member" "^LINKLOG .*linked game over"
+    lastline "$d/master" LINKGAME | grep -aq "^LINKGAME gamestate=[0-9] netgame=0 .* none$" \
+        || FAILS="$FAILS
+      at the end the host was still in a game: $(lastline "$d/master" LINKGAME)"
 }
 
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and

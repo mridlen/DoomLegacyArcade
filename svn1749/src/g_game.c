@@ -512,6 +512,11 @@ player_t *      displayplayer2_ptr = NULL;  // NULL when not in use
 tic_t           gametic;
 tic_t           levelstarttic;          // gametic at level start
 tic_t           last_input_tic;         // gametic of last player input event
+// [Arcade] The gametic of the last tic in which *any* player in the game gave
+// input -- read from the ticcmds every machine in a network game runs, so all
+// of them agree on it.  See G_Idle_Timeout_Check.
+static tic_t    game_input_tic;
+static int16_t  game_prev_angle[MAXPLAYERS], game_prev_aiming[MAXPLAYERS];
 
 // [Arcade] Set when a death has ended a scored campaign run.  Consumed by
 // G_DoWorldDone, which returns to the attract screen instead of loading a
@@ -1590,7 +1595,7 @@ void G_DoLoadLevel (boolean resetplayer)
     // reset the timer -- so a menu left open on the attract screen could
     // never accumulate the 60s the timeout wants, and appeared to be broken.
     if( ! demoplayback )
-        last_input_tic = gametic;
+        last_input_tic = game_input_tic = gametic;
     AU_Level_Started();   // [Arcade] audit: per-map play count
     // [WDJ] Derived from PrBoom, gametic demosync.
     if( EN_boom && !EN_mbf )
@@ -2023,9 +2028,22 @@ static void G_Idle_Timeout_Check( boolean in_menu )
     // to be dropped or the menu case could never fire.
     if( demoplayback && ! in_menu )  return;
 
-    if( netgame && ! cv_splitscreen.EV )  return;
-
-    idle_tics    = gametic - last_input_tic;
+    // [Arcade] In a network game -- a local splitscreen game is one too -- the
+    // game is idle only when nobody in it is playing.  It used to be this
+    // cabinet's own input, and only with splitscreen on: a Cabinet Link host
+    // with two panels pressed in and nobody left at it timed out after a
+    // minute and ended the game for the cabinet whose player was still in the
+    // middle of it (Mark: "it should stay running as long as one person in the
+    // game is moving the controls").  game_input_tic comes from the ticcmds,
+    // which every cabinet runs alike, so when it does fire it fires everywhere
+    // on the same tic -- and a linked game nobody at all is playing now ends
+    // instead of running for ever.
+    {
+        tic_t  last = last_input_tic;
+        if( netgame && game_input_tic > last )
+            last = game_input_tic;
+        idle_tics = gametic - last;
+    }
     timeout_tics = (tic_t)cv_idletimeout.value * TICRATE;
     warn_tics    = (cv_idletimeout.value > cv_idlewarntime.value)
                     ? (tic_t)(cv_idletimeout.value - cv_idlewarntime.value) * TICRATE
@@ -2215,6 +2233,19 @@ void G_Ticker (void)
 
             if (demorecording)
                 G_WriteDemoTiccmd (cmd,i);
+
+            // [Arcade] Anyone at the controls keeps a network game from idling
+            // out.  Turning and aiming are absolute in the ticcmd, so it is a
+            // change that counts.  Not the simulation: nothing here is read by
+            // the game, a demo or a savegame.
+            if( ! demoplayback && playeringame[i] )
+            {
+                if( cmd->forwardmove || cmd->sidemove || cmd->buttons
+                    || cmd->angleturn != game_prev_angle[i] || cmd->aiming != game_prev_aiming[i] )
+                    game_input_tic = gametic;
+                game_prev_angle[i] = cmd->angleturn;
+                game_prev_aiming[i] = cmd->aiming;
+            }
 
             // check for turbo cheats
             if (cmd->forwardmove > TURBOTHRESHOLD

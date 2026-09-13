@@ -1197,8 +1197,12 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   the other: you get one game, not two.
 - On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
-- The cabinet that joined plays as smoothly as the one that started the game. (It used to judder
-  whenever the frame rate was above 35.)
+- The cabinet that joined plays as smoothly as the one that started the game, turning included. (It
+  used to judder whenever the frame rate was above 35.)
+- **The idle timeout counts everyone in the game.** A linked game keeps going as long as anybody on
+  any cabinet is playing, even if the other cabinet has been left with nobody at it; when nobody at
+  all has touched the controls for the idle timeout, every cabinet goes back to its attract screen
+  together.
 - If the other cabinet ends the game or drops out, the message that says so ("Server has Shutdown")
   goes away with **fire**, back to the attract screen. It used to need Escape.
 - Either cabinet can start the game, master or member. (Earlier builds could send the joining

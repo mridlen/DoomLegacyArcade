@@ -99,8 +99,23 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   a level pack is loaded (see the game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime`
   (default 60s/15s, `Off` disables) from **Options > Arcade Options**, rows "Idle Timeout" and
   "Idle Warning". Skipped in devmode and demo playback. **Local splitscreen sets
-  `netgame`**, so the check tests `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
+  `netgame`**, so the check used to test `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
   meant no two player game ever timed out, which is exactly when an unattended cabinet needs it.
+  - **In a network game it is now *everybody's* input** (2026-09-13). The check measured this
+    cabinet's own raw input, and ran in a network game only with splitscreen on — so a Cabinet Link
+    host with two panels pressed in and nobody left at it timed out after a minute and ended the game
+    for the other cabinet, whose player was mid-fight (Mark: "it should stay running as long as one
+    person in the game is moving the controls"); and a one-panel-each linked game nobody was playing
+    never ended at all. `G_Ticker` now stamps `game_input_tic` whenever any player's ticcmd shows
+    movement, buttons, or a changed turn or aim (both absolute in the ticcmd), and in a network game
+    the idle time runs from the later of that and `last_input_tic`. Every cabinet runs the same
+    ticcmds, so all of them fire on the same tic. Nothing the simulation reads — `make demotest`
+    gave the identical 16 desyncs as the build before (the Doom 2 v1.666 demos, see the IWAD switch).
+  - Cases `idleshared` (an idle two-panel host, a joining player turning every 2 s, 15 s timeout: the
+    game must still be on 45 s in; **fails on the build before** — the host timed out) and `idleall`
+    (nobody moving: both cabinets must end it; fails before — nothing ever timed out). Their hooks:
+    `-linkmoveevery MS` holds panel 1's turn for 200 ms every MS, `-linkjoinpanels N` presses N panels
+    in.
 
   - **Both cvars are named lists, and are on the Arcade Options page.** They used to be
     `MIN`..`MAX` ranges reachable only from the console or a hand-edited `config.cfg`, which was
