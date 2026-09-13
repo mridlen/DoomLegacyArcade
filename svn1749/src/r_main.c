@@ -1567,10 +1567,11 @@ void R_SetupFrame( byte pind, player_t* player )
         {
 #ifdef THINKER_INTERPOLATIONS
             // WARNING : camera use this
-            viewangle = R_Interp_View_Angle( prev_localangle[pind],
-                                             localangle[pind] );
-            aimingangle = R_Interp_View_Angle( prev_localaiming[pind],
-                                               localaiming[pind] );
+            // [Arcade] By this cabinet's own clock: see R_Interp_Local_Angle.
+            viewangle = R_Interp_Local_Angle( prev_localangle[pind],
+                                              localangle[pind] );
+            aimingangle = R_Interp_Local_Angle( prev_localaiming[pind],
+                                                localaiming[pind] );
 #else
             viewangle = localangle[pind]; // WARNING : camera use this
             aimingangle=localaiming[pind];

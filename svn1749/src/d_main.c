@@ -1039,12 +1039,20 @@ static fixed_t  D_Interp_Frac( void )
     return I_GetTimeFrac();
 }
 
+// [Arcade] The fraction for a live player's own view angle and aim.  See
+// R_Interp_Local_Angle (r_fps.h).
+static fixed_t  D_Local_View_Frac( void )
+{
+    return I_GetTimeFrac();
+}
+
 // [Arcade] -tictiming, once per pass of D_DoomLoop.
 static void  D_Tic_Timing( int tics_run )
 {
     static double  t_last = 0, shown_last = 0, t_report = 0, sum_err2 = 0;
-    static int     frames = 0, big = 0, ran[4];
-    double  t, shown;
+    static double  turn_last = 0, sum_turn2 = 0;
+    static int     frames = 0, big = 0, turn_big = 0, ran[4];
+    double  t, shown, turn;
 
     if( ! netgame || gamestate != GS_LEVEL )
     {
@@ -1053,27 +1061,34 @@ static void  D_Tic_Timing( int tics_run )
     }
     t = FP_Now();
     shown = (double) gametic - 1.0 + (double) D_Interp_Frac() / FRACUNIT;
+    // The view's turning: localangle advances once per local ticcmd.
+    turn = (double) local_maketics - 1.0 + (double) D_Local_View_Frac() / FRACUNIT;
     ran[ tics_run > 3 ? 3 : tics_run ]++;
     if( t_last > 0 )
     {
         double  err = ( shown - shown_last ) - ( t - t_last ) * TICRATE;
+        double  terr = ( turn - turn_last ) - ( t - t_last ) * TICRATE;
         sum_err2 += err * err;
+        sum_turn2 += terr * terr;
         frames++;
         if( err > 0.5 || err < -0.5 )  big++;
+        if( terr > 0.5 || terr < -0.5 )  turn_big++;
     }
     else
         t_report = t;
     t_last = t;
     shown_last = shown;
+    turn_last = turn;
 
     if( t - t_report >= 5.0 && frames )
     {
-        GenPrintf( EMSG_errlog, "TICTIMING %s frames=%d ran0=%d ran1=%d ran2=%d ran3+=%d rms_err=%.3f big=%d\n",
+        GenPrintf( EMSG_errlog, "TICTIMING %s frames=%d ran0=%d ran1=%d ran2=%d ran3+=%d rms_err=%.3f big=%d"
+                   " turn_rms=%.3f turn_big=%d\n",
                    server ? "host" : "client", frames, ran[0], ran[1], ran[2], ran[3],
-                   sqrt( sum_err2 / frames ), big );
+                   sqrt( sum_err2 / frames ), big, sqrt( sum_turn2 / frames ), turn_big );
         t_report = t;
-        sum_err2 = 0;
-        frames = big = 0;
+        sum_err2 = sum_turn2 = 0;
+        frames = big = turn_big = 0;
         ran[0] = ran[1] = ran[2] = ran[3] = 0;
     }
 }
@@ -1290,6 +1305,7 @@ void D_Display(void)
     // and the camera.  Comes back as FRACUNIT (i.e. no interpolation at all)
     // whenever the feature is off or the world is not running.
     R_Interp_Set_Frac( D_Interp_Frac() );
+    R_Interp_Set_Local_Frac( D_Local_View_Frac() );
 #endif
 
     wipe = false;

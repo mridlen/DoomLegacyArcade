@@ -59,6 +59,7 @@ CV_PossibleValue_t framerate_cap_cons_t[] = {
 consvar_t  cv_framerate_cap = { "framerate_cap", "60", CV_SAVE, framerate_cap_cons_t };
 
 fixed_t  rendertic_frac = FRACUNIT;
+fixed_t  rendertic_local_frac = FRACUNIT;   // [Arcade] see r_fps.h
 boolean  interp_active = false;
 
 // Set by R_Interp_Reset_View, consumed by the next frame: draw at the true
@@ -490,6 +491,11 @@ void  R_Interp_Reset_View(void)
     // the ordering that matters; this is the same instruction as a plain
     // store on x86 and ARM.
     R_SET_INTERP_FRAC( FRACUNIT );
+#ifdef RENDER_THREADS
+    __atomic_store_n( &rendertic_local_frac, FRACUNIT, __ATOMIC_RELAXED );
+#else
+    rendertic_local_frac = FRACUNIT;
+#endif
 }
 
 boolean  R_Interp_View_Active(void)
@@ -530,6 +536,16 @@ void  R_Interp_Set_Frac( fixed_t frac )
         frac = FRACUNIT;
 
     rendertic_frac = frac;
+}
+
+// [Arcade] After R_Interp_Set_Frac, which decides whether anything interpolates.
+void  R_Interp_Set_Local_Frac( fixed_t frac )
+{
+    if( !interp_active || reset_view )
+        frac = FRACUNIT;
+    if( frac > FRACUNIT )  frac = FRACUNIT;
+    if( frac < 0 )         frac = 0;
+    rendertic_local_frac = frac;
 }
 
 void  R_Interp_Frame_Begin(void)

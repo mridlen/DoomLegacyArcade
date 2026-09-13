@@ -717,6 +717,7 @@ boolean D_WaitPlayer_Response( int key );
 
 // How many ticks to run.
 void    TryRunTics (tic_t realtic);
+extern tic_t  local_maketics;   // [Arcade] ticcmds this cabinet has built (-tictiming)
 
 // extra data for lmps
 boolean AddLmpExtradata(byte **demo_p,int playernum);

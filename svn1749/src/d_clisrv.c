@@ -6128,9 +6128,15 @@ static int16_t Consistency(void)
 //
 // TryRunTics
 //
+// [Arcade] How many times this cabinet has built its own ticcmds -- once per
+// tic of its own clock.  localangle, which the view turns by, advances exactly
+// then.  For -tictiming.
+tic_t  local_maketics = 0;
+
 static void Local_Maketic(int realtics)
 {
     rendergametic=gametic;
+    local_maketics++;
     // translate inputs (keyboard/mouse/joystick) into game controls
     // [Arcade] One per local player.  Gated on the player actually having
     // joined (localplayer[pind] valid) rather than on cv_splitscreen and

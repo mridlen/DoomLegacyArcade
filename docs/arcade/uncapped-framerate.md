@@ -268,6 +268,33 @@ headless with copies of the live homes:
 Every client frame ran exactly one tic or none: the tics were arriving evenly all along. It was never
 the network; it was the fraction. Simulation is untouched (the fraction is drawing only).
 
+#### …but the view turns on the local clock
+
+Mark, on that build: "forward and backward looks good, but turning is stuttering". **A live
+player's own view angle and aim are not the simulation's.** `R_SetupFrame` takes them from
+`localangle`/`localaiming`, which `G_BuildTiccmd` advances from the panel's input once per tic of
+*this cabinet's* clock (`Local_Maketic`, from `NetUpdate`) — so they never wait for the host, and the
+fraction that fits them is the local clock's. Giving them the host-tic fraction fixed the walking and
+broke the turning.
+
+There are two fractions now. `R_Interp_Set_Local_Frac` (`r_fps.c`) is set once per frame beside
+`R_Interp_Set_Frac`, from `D_Local_View_Frac` (`I_GetTimeFrac`), and forced to `FRACUNIT` under the
+same conditions; `R_Interp_Local_Angle` (`r_fps.h`) uses it, and `R_SetupFrame`'s `localangle` lines
+are its only callers. On a host the two fractions are the same number, so a host's picture cannot
+have changed. `-tictiming` gained `turn_rms`/`turn_big`, measured against `local_maketics` (the count
+of `Local_Maketic` calls) the same way the world is measured against `gametic`. Laptop hosting, Pi 3
+joining, with Mark's own game running on the Pi and the Pi at 82 °C and throttled:
+
+| Pi joining | turn_rms | turn_big / 5 s |
+| --- | --- | --- |
+| host-tic fraction for the view | 0.63–0.72 | 110–130 |
+| local clock for the view | 0.10–0.25 | 4–14 |
+
+The world's error in the same runs was 0.29 (0.075 on an idle Pi): a test engine competing with a live
+game on a throttled Pi 3 draws ~43 frames a second and gets its tics late, which nothing on the
+drawing side can hide without holding the picture back. Worth knowing before blaming the netcode for
+the Pi: check `vcgencmd get_throttled`.
+
 ### Unrelated latent bug found here
 
 `I_GetTime` computes `(ticks - basetime) * TICRATE / 1000` in 32-bit. That overflows after about

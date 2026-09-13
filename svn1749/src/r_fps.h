@@ -142,4 +142,25 @@ static inline angle_t  R_Interp_View_Angle( angle_t prev, angle_t now )
     return R_Interp_Angle( prev, now, R_INTERP_FRAC() );
 }
 
+// [Arcade] The fraction for a live player's own view angle and aim, which do
+// not come from the simulation: R_SetupFrame takes them from localangle and
+// localaiming, which G_BuildTiccmd advances once per tic of *this cabinet's*
+// clock.  On a host that is the world's clock too and the two fractions are
+// the same number; on a cabinet that joined a network game the world moves when
+// the host's tics arrive, the view turns on the local clock, and one fraction
+// cannot serve both -- the joining cabinet's picture moved smoothly and turned
+// in steps.  Set once per frame beside R_Interp_Set_Frac; FRACUNIT whenever the
+// world fraction is forced whole.
+extern fixed_t  rendertic_local_frac;
+void  R_Interp_Set_Local_Frac( fixed_t frac );
+#ifdef RENDER_THREADS
+# define R_INTERP_LOCAL_FRAC()  __atomic_load_n( &rendertic_local_frac, __ATOMIC_RELAXED )
+#else
+# define R_INTERP_LOCAL_FRAC()  (rendertic_local_frac)
+#endif
+static inline angle_t  R_Interp_Local_Angle( angle_t prev, angle_t now )
+{
+    return R_Interp_Angle( prev, now, R_INTERP_LOCAL_FRAC() );
+}
+
 #endif // R_FPS_H
