@@ -206,23 +206,23 @@ pkg_refresh=""
 case "$distro_family" in
   debian) pkg_refresh="sudo apt-get update"
           pkg_install="sudo apt install -y"
-          pkg_list="build-essential libsdl2-dev libsdl2-mixer-dev libzip-dev zlib1g-dev libgl1-mesa-dev libglu1-mesa-dev" ;;
+          pkg_list="build-essential libsdl2-dev libsdl2-mixer-dev libzip-dev zlib1g-dev libgl1-mesa-dev libglu1-mesa-dev libssl-dev" ;;
   fedora) pkg_install="sudo dnf install -y"
-          pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel mesa-libGL-devel mesa-libGLU-devel" ;;
+          pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel mesa-libGL-devel mesa-libGLU-devel openssl-devel" ;;
   arch)   pkg_install="sudo pacman -S --needed"
-          pkg_list="base-devel sdl2 sdl2_mixer libzip zlib mesa glu" ;;
+          pkg_list="base-devel sdl2 sdl2_mixer libzip zlib mesa glu openssl" ;;
   suse)   pkg_install="sudo zypper install -y"
-          pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel Mesa-libGL-devel glu-devel" ;;
+          pkg_list="gcc make SDL2-devel SDL2_mixer-devel libzip-devel zlib-devel Mesa-libGL-devel glu-devel libopenssl-devel" ;;
   *)      pkg_install=""
           pkg_list="" ;;
 esac
 
 if [ "$os_family" = macos ]; then
     pkg_install="brew install"
-    pkg_list="sdl2 sdl2_mixer libzip"
+    pkg_list="sdl2 sdl2_mixer libzip openssl"
 elif [ "$os_family" = freebsd ]; then
     pkg_install="sudo pkg install"
-    pkg_list="gmake sdl2 sdl2_mixer libzip mesa-libs"
+    pkg_list="gmake sdl2 sdl2_mixer libzip mesa-libs openssl"
 fi
 
 # --------------------------------------------------------------------------
@@ -305,6 +305,25 @@ else
        #include <GL/glu.h>
        int main(void){ glFlush(); gluErrorString(0); return 0; }' \
       "-lGL -lGLU" || need "OpenGL/GLU"
+fi
+
+# [Arcade] OpenSSL, for Cabinet Link (docs/arcade/cabinet-link.md).  Optional:
+# without it the game builds and plays exactly as before, with the link compiled
+# out -- so a miss is not added to "missing" and does not stop the build.  But
+# --install-deps installs it (it is in every pkg_list), because CI builds the
+# release binaries that way and a release quietly missing the link is worse
+# than a slower dependency step.
+have_link=0
+if probe_link "OpenSSL (for Cabinet Link; optional)" \
+     '#include <openssl/ssl.h>
+      int main(void){ SSL_CTX_free(SSL_CTX_new(TLS_method())); return 0; }' \
+     "-lssl -lcrypto"; then
+    have_link=1
+elif [ "$do_install_deps" = 1 ] && [ -z "$missing" ]; then
+    # Everything else is present, so the block below would not install.
+    missing=" OpenSSL(optional)"
+else
+    say "         Cabinet Link will be compiled out; install the OpenSSL development package to get it."
 fi
 
 if [ -n "$missing" ]; then
@@ -438,6 +457,24 @@ else
         grep -q '^ARCH=' "$opts" || echo "ARCH=$arch_flag" >> "$opts"
     fi
     say "  SDL2=1, ARCH=${arch_flag:-none}, ENV_CFLAGS=-std=gnu17 -g"
+fi
+
+# [Arcade] Cabinet Link follows the OpenSSL probe, including in a make_options
+# that already exists -- this script never regenerates one of those, so without
+# this the cabinets that were built before the link existed would never get it.
+# An explicit HAVE_LINK= line (0 or 1) is the operator's and is left alone.
+if grep -q '^HAVE_LINK=' "$opts"; then
+    if grep -q '^HAVE_LINK=1' "$opts" && [ "$have_link" = 0 ]; then
+        warn "make_options has HAVE_LINK=1 but OpenSSL does not link -- the build will fail"
+        warn "at the link step.  Install the OpenSSL development package, or set HAVE_LINK=0."
+    else
+        say "  $(grep -m1 '^HAVE_LINK=' "$opts") (set in make_options; left as it is)"
+    fi
+elif [ "$have_link" = 1 ]; then
+    printf '\n# Added by tools/build.sh: OpenSSL links, so Cabinet Link is built in.\n# Set HAVE_LINK=0 to leave it out.\nHAVE_LINK=1\n' >> "$opts"
+    say "  HAVE_LINK=1 (OpenSSL found; Cabinet Link built in)"
+else
+    say "  Cabinet Link left out (no OpenSSL)"
 fi
 
 # --------------------------------------------------------------------------

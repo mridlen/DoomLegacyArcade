@@ -412,7 +412,7 @@ are kept below, in this file.
 | `docs/arcade/branding.md` | Fork identity, `VERSION_BANNER`, `DLA_VERSION` from tags, the executable name, what must NOT be renamed | any string that names the program, the version, `EXENAME` |
 | `docs/arcade/endoom.md` | The exit text screen: lump format, why SLADE will not edit it, `tools/endoom.py` | the `ENDOOM` lump, `endtxt.c`, `I_Show_EndText` |
 | `docs/arcade/demo-desync.md` | The demo desync regression test: `-synclog`, `tools/demotest.sh`, what proves a demo really ran, the self-check | any gameplay-affecting change; `G_Synclog_Tic`, `tools/demotest.sh` |
-| `docs/arcade/cabinet-link.md` | **Plan only, not built yet.** Networked cabinets: shared high scores and demos, cross-cabinet join invites, TLS + passcode pairing, the encrypted game channel, phases and open decisions | before starting any networked-cabinet work, `i_tcp.c` socket code, or the score file formats |
+| `docs/arcade/cabinet-link.md` | Networked cabinets. **Phase 1 built** (TLS + passcode pairing, pinned identities, allow list, lockout, presence, the Cabinet Link page, `tools/linktest.sh`); shared scores, invites and the encrypted game channel still plan | `d_link.c`/`d_link.h`, `HAVE_LINK`, `tools/linktest.sh`, `i_tcp.c` socket code, or the score file formats |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
 ### Where the arcade code lives
@@ -440,6 +440,7 @@ everything else is arcade blocks inside an upstream file.
 | Render threads | `r_threads.c` entire. `R_TLS` in `doomdef.h`; `D_Submit_Threaded_Views`/`D_Threaded_Views_Wait` (`d_main.c`); the seeding of `colfunc`/`spanfunc` and `R_NetUpdate_Main` (`r_main.c`); `R_Cache_Lock` call sites in `w_wad.c`, `r_segs.c`, `r_plane.c`, `r_bsp.c` |
 | Uncapped framerate | `r_fps.c` entire. Per tic: `R_UpdateInterpolations` (`P_Ticker`), `R_ActivateThinkerInterpolations`/`R_StopInterpolationIfNeeded` (`p_tick.c`), `R_Interp_Capture_Mobj` (`P_MobjThinker`, `P_PlayerThink`, `P_MoveChaseCamera`, `P_ThingHeightClip`, `P_BlasterMobjThinker`). Per frame: `R_Interp_Set_Frac` and `R_Interp_Frame_Begin/End` (`D_Display`), the `R_Interp_Fixed`/`R_Interp_View_Angle` calls in `R_SetupFrame`, `R_ProjectSprite`, `HWR_ProjectSprite`. Resets: `R_Interp_Reset_Mobj` (`P_SpawnMobj`, `P_TeleportMove`, `P_ResetCamera`), `R_Interp_Reset_View` |
 | Whole-screen 2D page scale | `v_video.c`: `V_SetupDraw` (`x_scale`/`y_scale`, `x0_scale`/`y0_scale`) and the `V_scale_x`/`V_scale_y` macros in `v_video.h`. Flag set by `D_PageDrawer`, `HS_Draw_AttractTable`, `WI_Drawer`, `F_Drawer` |
+| Cabinet Link | `d_link.c` entire (the only file that may test `HAVE_LINK`). Hooks: `LK_Init` (`D_DoomMain`), `LK_Ticker` (`D_DoomLoop`), `LK_Shutdown` (`D_Quit_Save`); the page is `CabinetLinkDef`/`LK_Drawer`. Test with `tools/linktest.sh` (and `--selfcheck`); `-linkstatus` prints the status every 2 s |
 | Node rebuilding (slime trails) | `nodebuild/` — vendored ZDBSP, GPLv2+, plus `nb_build.cpp`/`nb_build.h`. Built by `P_Rebuild_Nodes` (`p_setup.c`) into `rbsp_*` and used for **rendering only**, via `R_Use_Render_BSP`/`R_Use_Play_BSP`; `-nonodebuild` disables it |
 
 `devmode` (`extern byte devmode`, `doomincl.h`, defined in `d_main.c`) is the single flag most of

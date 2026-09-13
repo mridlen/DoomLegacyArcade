@@ -116,6 +116,19 @@ work and change nothing, which is worse than refusing. It exists for builds that
 somewhere else*, where the default `-march=native` is a shipping hazard rather than an
 optimisation; `ci-releases.md` covers why.
 
+**`HAVE_LINK` is the one line the script adds to an existing file on its own** (Cabinet Link,
+`cabinet-link.md`). OpenSSL is probed by linking, like every other library, but it is *optional*: a
+miss prints a hint and the build carries on with the link compiled out. When it links and the file
+has no `HAVE_LINK=` line at all, the script appends `HAVE_LINK=1` — otherwise every cabinet built
+before the link existed would keep its old `make_options` for ever and never get it, which is
+exactly the "never overwrites" rule defeating the feature. An explicit `HAVE_LINK=0` is the
+operator's and is left alone, and `HAVE_LINK=1` with OpenSSL gone is warned about before the link
+step fails. OpenSSL is in every `pkg_list`, and a missing OpenSSL alone still triggers
+`--install-deps`, because that is how CI builds release binaries. `d_link.o` depends on
+`make_options` in the Makefile, so the change rebuilds that one object. Verified on the Pi's existing
+`make_options`: probe found OpenSSL 3.5, the line was appended, `d_link.c` alone got `-DHAVE_LINK`,
+binary links `libssl.so.3`. **`build.ps1` does not do this yet** — Windows Cabinet Link is pinned.
+
 ## `BUILD=<dir>` needs its own make_options *inside* that directory
 
 `--debug` builds into `svn1749/debug/`, and this cost a debugging session to find: the Makefile sets

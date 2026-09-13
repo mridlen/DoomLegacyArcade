@@ -1329,6 +1329,20 @@ ifdef LIB_ZLIB
   endif
 endif
 
+# [Arcade] Cabinet Link (networked cabinets, docs/arcade/cabinet-link.md) needs
+# OpenSSL.  d_link.c is always compiled; without HAVE_LINK=1 it builds to stubs.
+# Only d_link.c may test HAVE_LINK -- every caller uses the same functions either
+# way -- so flipping the option cannot leave other objects built the other way.
+# tools/build.sh probes OpenSSL and adds HAVE_LINK=1 when it links.
+ifeq ($(HAVE_LINK), 1)
+  LINK_CFLAGS:=-DHAVE_LINK
+  ifdef WIN32
+    LIBS+=-lssl -lcrypto -lws2_32 -lcrypt32
+  else
+    LIBS+=-lssl -lcrypto
+  endif
+endif
+
 # UMAPINFO directory
 ifdef UMAPINFO_DIR
   ifeq ($(UMAPINFO, 0))
@@ -1436,7 +1450,7 @@ m_menu.o m_misc.o m_argv.o m_bbox.o m_fixed.o m_swap.o m_cheat.o m_random.o \
 console.o command.o \
 p_saveg.o \
 tables.o info.o infoext.o dstrings.o dehacked.o w_wad.o w_zip.o\
-d_netcmd.o d_clisrv.o d_net.o d_netfil.o i_tcp.o \
+d_netcmd.o d_clisrv.o d_net.o d_netfil.o i_tcp.o d_link.o \
 d_items.o d_main.o
 
 ifdef UMAPINFO_DIR
@@ -1674,6 +1688,11 @@ $(O)/d_main.o: $(O)/version.stamp
 
 $(O)/%.o: $(SD)%.c
 	$(CC) $(CFLAGS) $(SND_DEVS) -c $< -o $@
+
+# [Arcade] The one object that sees HAVE_LINK, rebuilt whenever make_options
+# changes so turning the option on or off takes effect without a clean.
+$(O)/d_link.o: $(SD)d_link.c $(wildcard $(MAKE_OPTIONS))
+	$(CC) $(CFLAGS) $(LINK_CFLAGS) -c $< -o $@
 
 $(O)/%.o: $(SD)$(INTERFACE)/%.c
 	$(CC) $(CFLAGS) $(SND_DEVS) -c $< -o $@

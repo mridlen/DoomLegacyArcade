@@ -33,3 +33,7 @@ objs/
 # Machine-local and large: the baseline is recorded from the cabinet's own
 # binary and demos, so it cannot be shared between checkouts.
 /.demotest/
+
+# [Arcade] Cabinet Link keeps the passcode and this cabinet's private key here
+# (legacyhome/link/).  Never commit one, wherever a legacyhome lives.
+link/

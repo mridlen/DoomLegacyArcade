@@ -1,9 +1,10 @@
-# Cabinet Link: networked cabinets (PLAN — nothing here is built yet)
+# Cabinet Link: networked cabinets (Phase 1 built; Phases 2–4 still a plan)
 
-*Part of the DoomLegacy arcade cabinet build. This is a design plan, written 2026-09-13 before any
-code. Read it before starting any of the work it describes, and replace each section with the real
-write-up as the phase lands — the same way the other docs in this directory record what was tried,
-what broke and how it was verified.*
+*Part of the DoomLegacy arcade cabinet build. Read before touching `d_link.c`/`d_link.h`,
+`tools/linktest.sh`, the `HAVE_LINK` build option, or `i_tcp.c` socket code. Written 2026-09-13 as a
+plan before any code; each phase's section is replaced with the record of what was built, what broke
+and how it was verified as it lands. **Phase 1 (identity, pairing, presence) is built** — see
+"Phase 1 — what was built". Everything about score sync, invites and linked games is still plan.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
@@ -551,22 +552,133 @@ binaries from b67ef22.
    `doom2` game ID on two IWAD versions is two different games — and the netcode's existing MD5 check
    would have refused this netgame outright.
 
-### Phase 1 — the link: identity, TLS, pairing, presence
+### Phase 1 — what was built (2026-09-13)
 
-- `HAVE_LINK` build probe in both build scripts and the `Makefile` (`LINK_OBJS`), CI package install.
-- New `lk_link.c`/`lk_link.h` (thread, sockets, TLS, framing, auth), added to `MOBJS`, every line
-  `// [Arcade]`.
-- Key generation, `link.cfg`, pins, the address allow list, atomic writes.
-- Presence and the operator page, read-only status first.
-- `D_DoomLoop` polls the queue once per tic.
+Pairing, authentication and presence between cabinets, with nothing yet shared across the link. A
+cabinet with the link switched off, or built without OpenSSL, behaves exactly as before.
 
-**Verified by:** two headless instances on the laptop pairing over loopback; then laptop and Pi.
-Every rejection is shown to happen — wrong passcode, changed master key, a plain TCP client sending
-garbage, an oversized frame, a replayed proof from another session, the lockout after three failures,
-a connection from an address not on the allow list (closed before any TLS byte is read), a master
-with an empty allow list refusing everyone
-— and each of those tests is shown to go red when its check is disabled (`--selfcheck`, the rule
-that a check never seen to fail is not evidence).
+**Files**
+- `svn1749/src/d_link.c` / `d_link.h` — the whole feature. Named `d_link`, not `lk_link` as planned:
+  the Makefile's dependency lists are grouped by filename prefix and there is no group for `l*`, so a
+  header change would not have rebuilt it. `d_*` is also where the network code already lives.
+- Hooks: `LK_Init` beside `HS_Init`/`AU_Init` in `D_DoomMain`, `LK_Ticker` every pass of
+  `D_DoomLoop` (after `TryRunTics`), `LK_Shutdown` in `D_Quit_Save` before `D_Quit_NetGame`.
+  `M_Join_Active()` added to `m_menu.c` for presence.
+- `tools/linktest.sh` + `tools/linktest_peer.py` — the test, below.
+
+**Build.** `HAVE_LINK=1` in `make_options` links `-lssl -lcrypto` and compiles `d_link.c` with
+`-DHAVE_LINK`; without it `d_link.c` compiles to stubs. **Only `d_link.c` may test `HAVE_LINK`** —
+every caller uses the same functions either way — and `d_link.o` depends on `make_options`, so
+switching the option rebuilds one file, never leaving other objects built the other way.
+`tools/build.sh` probes OpenSSL by linking (like every other library) and **appends `HAVE_LINK=1` to an
+existing `make_options`** that has no `HAVE_LINK=` line — it never regenerates one, so without that the
+laptop and the Pi would never have got the link. An explicit `HAVE_LINK=0` is left alone; `HAVE_LINK=1`
+without OpenSSL is warned about. OpenSSL is in every distribution's `pkg_list`, and a missing OpenSSL
+triggers `--install-deps`, because CI builds the release binaries that way. **`tools/build.ps1` does not
+enable it yet** — Windows is pinned (step 4); `d_link.c` is POSIX sockets only until then.
+
+**Settings** live in `legacyhome/link/link.cfg` (mode 0600, gitignored everywhere as `link/`):
+`role master|member|off`, `name`, `master <host>`, `port` (default 5030), `passcode <rest of the line>`,
+`allow <host>` (repeatable). Changed at the console with **`link_set <key> <value>`** in a `-devmode`
+session (`link_set allow 192.168.1.68`, `link_set unallow ...`), which saves atomically and restarts
+the link; **`link`** prints the status; **`link_forget`** clears the pins. The operator page is read
+only for now (Arcade Options → **Cabinet Link**), so a passcode is typed at the console.
+
+**Identity**: an ECDSA P-256 key and a self-signed certificate generated on first use
+(`cabinet.key`, `cabinet.crt`, 0600 from the first byte — `fchmod` on the atomic-write temp file before
+writing). The id is SHA-256 of the DER public key; the short form is its first four bytes
+(`14F0-7533`). Validity is fixed at 1970–9999, because nothing checks it and a Pi with no clock boots
+into 1970. `pins.txt` holds the cabinets this one has authenticated.
+
+**The protocol**, all on one TLS 1.3 connection per member (no resumption, no tickets):
+1. The master closes any connection from an address not on its allow list, or locked out, **before
+   `SSL_new`** — a stranger never reaches OpenSSL. An empty list refuses everyone.
+2. Mutual certificates, accepted by the verify callback; identity is decided after the handshake.
+3. The member checks the master's key against its pin (if it has one) **before sending anything**.
+4. Both derive `PBKDF2-HMAC-SHA256(passcode, "dla-link-v1-salt" || lower id || higher id, 60000)`.
+5. The member sends `AUTH` = `HMAC(key, TLS exporter("dla-link-auth") || "member" || member id ||
+   master id)`. Only if it is right does the master answer with its own (`"master"`); a wrong one
+   closes the connection and counts toward a 3-strikes, 60-second lockout per address.
+6. Then `HELLO` (name, build, role, panels, state), `PRESENCE` on every change, `PING` after 5 s
+   quiet, dropped after 15 s silent; the master sends every member a `PEERLIST` roster when it
+   changes. Frames are `u32 length, u8 type`; each type has a maximum length and anything longer,
+   or of an unknown type, closes the connection. Names and build strings off the wire are sanitised
+   to printable characters before anything draws them.
+7. 10 seconds from accept to authenticated, or the connection is dropped. Members reconnect with
+   backoff 1 s doubling to 60 s; a changed master identity goes straight to 60 s.
+
+**Threads.** One `SDL_Thread` runs every socket and all of OpenSSL around a `poll()` loop, woken by a
+pipe. The game thread and it share one struct under a mutex: this cabinet's state out, the peer
+snapshot and log lines in. **The link thread never prints** — the console is not thread-safe — it
+queues lines that `LK_Ticker` prints, and pin file writes are also done by the game thread. The
+member's `AUTH` usually arrives in the same read as the end of its handshake, where OpenSSL has
+already taken it off the socket and `poll()` will never report it, so the loop drains
+`SSL_has_pending` explicitly — without that the master would sit on a proof until the timeout.
+
+**Presence** (`lk_compute_state`): `devmode` → DEVMODE, initials page → SIGNING, join screen →
+JOINING, `D_Attract_Running()` → MENU if a menu is open, otherwise IDLE; anything else is PLAYING.
+HOSTING is defined for Phase 3 and not yet set.
+
+**Status output for tests.** `link` prints to the console, and also writes `LINKSELF` / `LINKPEER`
+lines, and every link log line as `LINKLOG`, with **`EMSG_errlog`** — terminal only. `EMSG_info` does
+not reach stdout once graphics are up, so a headless run saw nothing at first. **`-linkstatus`** runs
+`link` every 2 seconds of wall time.
+
+**Verified**
+- `tools/linktest.sh`: **11 cases, all pass** in about 2 minutes, two at a time on the laptop (`-j`; four at once was killed for memory with a browser open).
+  - `pair` — master and two members: both online, one reported `devmode` and one `idle`, the second
+    member sees the first through the master's roster, the ids each side reports for the other agree,
+    `cabinet.key` and `pins.txt` are mode 600.
+  - `passcode`, `allow`, `emptyallow`, `lockout` — refused for the right reason on both sides.
+  - `identity` — a member that paired, then meets the same address and passcode with a new key,
+    refuses it: `MASTER IDENTITY CHANGED`.
+  - `fakemaster` — on first contact (no pin) the member does prove itself, by design, but refuses a
+    master that cannot prove the passcode back. `pinnedfake` — once pinned, it sends **no** proof to a
+    different key on the master's address.
+  - `garbage` — random bytes are dropped, and the master still pairs a real member afterwards.
+  - `bigframe` — an `AUTH` frame claiming a megabyte is dropped at once, before authenticating.
+  - `unbound` — a proof with the right passcode, ids and roles but another session's exporter is
+    refused.
+- **`--selfcheck`: all 9 checkable cases go red** with their own check switched off, each for the
+  right reason (the bad actor gets online, the proof is accepted, the frame is kept). The selfcheck
+  build compiles `d_link.c` with `LK_SELFCHECK`, where `lk_selfcheck_off(name)` reads an environment
+  variable; in every normal build it is the constant `false` — the installed binary contains no
+  `LK_SELFCHECK` string. `pair` and `garbage` have nothing to switch off.
+- An idle master costs nothing measurable: 20 seconds headless used 9.1 s of CPU with the link on
+  against 11.9 s with it off (noise; the engine loop dominates).
+- `make smoke` 5/5; `tools/demotest.sh` 102 compared, 0 desynced — the link changes no gameplay.
+- The operator page, screenshotted in OpenGL on the real GPU with one member online and one locked
+  out: a refusal reason trimmed into the status column read "REFUSED: LOCKED OU" and lost its
+  meaning, so a refused cabinet's reason now gets a full-width line of its own.
+- **Laptop and Pi over Wi-Fi**, built by `tools/build.sh` on the Pi's existing `make_options` (which
+  appended `HAVE_LINK=1` itself): Pi as master allowing only the laptop (192.168.1.81), laptop as
+  member. Both authenticated each other, each reported the other's id as that cabinet reports its own
+  (Pi `7E5F-1B35`, laptop `7F00-0361`), and 14 consecutive reports showed it online and idle. With a
+  wrong passcode on the laptop: the Pi refused, locked the address out after three tries, and the
+  laptop said the passcodes probably differ.
+- That run showed the laptop, after it quit, as **`refused: connection lost`** on the Pi — red, on
+  the operator page, for a cabinet that was simply switched off. A cabinet that was authenticated and
+  then leaves is now **OFFLINE**; REFUSED is only for failures before authenticating. `pair` checks
+  it (members quit before the master), and the check was shown red against the build from before.
+
+**What went wrong on the way — worth knowing before extending the test**
+- **The harness reported a pass for a case that had not run.** A case function looped with `for c`,
+  overwriting the variable the harness used to name the case's result file; the result was never
+  found, and a missing result counted as a pass. It now needs a `finished` marker. Same lesson as
+  `viewgrid-test.py`: prove the harness can fail before trusting it green.
+- **Timing a status report in game tics does not work with many engines on one machine.** An
+  autoexec `wait 350; link` never ran before the timeout with a dozen headless engines — the tics ran
+  far behind the wall clock (`-nodraw` barely helped), and it read as the link failing. Hence
+  `-linkstatus`, and four cases at a time.
+- **Python's `ssl` server with `CERT_OPTIONAL` and no CA rejects a self-signed client certificate**
+  and aborts the handshake, which looked like the engine refusing the fake master. `CERT_NONE` (do
+  not ask) is what a stand-in master needs.
+- **A master answers junk with a TLS alert before closing**, so "the peer sent something" is not "the
+  connection is open": read to end-of-file.
+
+**Not in Phase 1, on purpose**: editing settings from the menu (console only), IPv6 (IPv4 only),
+discovery, Windows sockets, and a role change from master to member keeping its old pins (a member
+enforces any pin it has — `link_forget` after changing role).
 
 ### Phase 2 — shared high scores and demos
 

@@ -152,6 +152,9 @@ extern consvar_t cv_respawnmonsters_menu;
 // from under them; the page runs its own (operator set) countdown instead.
 boolean  M_Initials_Active( void );
 
+// [Arcade] True while the join screen is up (Cabinet Link presence).
+boolean  M_Join_Active( void );
+
 #ifdef LAUNCHER
 void M_LaunchMenu( void );
 #endif

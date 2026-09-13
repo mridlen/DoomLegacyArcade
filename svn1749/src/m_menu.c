@@ -229,6 +229,7 @@
 #include "d_clisrv.h"
   // server1, server2, server3
 #include "mserv.h"
+#include "d_link.h"      // [Arcade] Cabinet Link page
 #include "p_inter.h"
 #include "m_misc.h"
   // config
@@ -791,6 +792,7 @@ static void M_PlayerDirector(int choice);
 menu_t GameSelectDef;   // [Arcade] IWAD switcher
 menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
 menu_t AuditDef;        // [Arcade] operator audit, informational
+menu_t CabinetLinkDef;  // [Arcade] Cabinet Link status, informational
 menu_t PlayerViewsDef;  // [Arcade] panels, splits, join
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
@@ -3981,6 +3983,13 @@ boolean  M_Initials_Active( void )
     return initials_active;
 }
 
+// [Arcade] True while the join screen is up.  Cabinet Link reports it to the
+// other cabinets, which must not invite a cabinet already starting its own game.
+boolean  M_Join_Active( void )
+{
+    return join_active;
+}
+
 
 static void  M_Initials_Confirm( void )
 {
@@ -5207,6 +5216,9 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
+    // [Arcade] Networked cabinets.  Status only for now; settings are link_set
+    // at the console.  Appended, and nothing indexes this array by position.
+    {IT_SUBMENU| IT_WHITESTRING,0, "Cabinet Link >>", &CabinetLinkDef  , 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -6521,6 +6533,39 @@ menu_t  AuditDef =
     M_Draw_Audit,
     NULL,
     sizeof(AuditMenu)/sizeof(menuitem_t),
+    160, 190,
+    0
+};
+
+//===========================================================================
+//                        CABINET LINK  [Arcade]
+//===========================================================================
+// Read only, like the Audit page: this cabinet's link settings and every other
+// cabinet it can see.  The layout belongs to d_link.c (LK_Drawer).  Operator
+// only by the same route as Audit.  See docs/arcade/cabinet-link.md.
+
+static void M_Draw_CabinetLink( void )
+{
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    M_Centre_At( BASEVIDWIDTH/2, 12, V_WHITEMAP, "CABINET LINK" );
+    LK_Drawer();
+    M_Centre_At( BASEVIDWIDTH/2, 180, 0, "LINK_SET AT THE CONSOLE CHANGES SETTINGS" );
+}
+
+menuitem_t CabinetLinkMenu[] =
+{
+    // Invisible item: any select backs out, as Audit does.
+    {IT_SUBMENU | IT_NOTHING, 0, "", &MenuOptionsDef, 0}
+};
+
+menu_t  CabinetLinkDef =
+{
+    NULL,
+    NULL,
+    CabinetLinkMenu,
+    M_Draw_CabinetLink,
+    NULL,
+    sizeof(CabinetLinkMenu)/sizeof(menuitem_t),
     160, 190,
     0
 };

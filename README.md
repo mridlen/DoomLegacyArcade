@@ -164,6 +164,11 @@ Discord is likely to get you banned.
   playing, levels finished, deaths, how much of the cabinet's running time is actually being
   played, which maps get played most, and how often a run stopped being scored and why. Under
   **Options → Arcade Options → Audit**, or type `audit` at the console.
+- **Cabinet Link (early).** Two or more cabinets on the same home network can pair with a passcode
+  over an encrypted connection and see each other — which cabinets are online and what each is
+  doing. Sharing high scores and inviting the other cabinet into a multiplayer game are the next
+  steps and are not in yet. Off unless you set it up; see
+  [Connecting cabinets together](#connecting-cabinets-together-cabinet-link).
 - **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
   IWAD the search finds first.
 - **A key that unlocks the cabinet**, so operator settings can be reached on a built cabinet with no
@@ -1169,6 +1174,54 @@ setting, and if the chosen game is ever uninstalled the cabinet warns and falls 
 search rather than refusing to start.
 
 Like every operator setting, it is only saved from a `-devmode` session.
+
+### Connecting cabinets together (Cabinet Link)
+
+**What works so far:** cabinets pair and show each other on **Options → Arcade Options → Cabinet
+Link** — each cabinet's name, a short ID, whether it is online, and what it is doing (idle on the
+attract screen, in the menus, playing, and so on). Shared high scores and cross-cabinet multiplayer
+invites come next.
+
+It needs OpenSSL when the game is built. `tools/build.sh` finds it and turns the link on by itself;
+if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSSL development package
+(`libssl-dev` on Debian and Raspberry Pi OS, `openssl-devel` on Fedora) and build again. Not yet on
+Windows.
+
+One cabinet is the **master**; the others are **members** and connect to it. Set them up from the
+console in an operator session (`./doomlegacyarcade -devmode`, then the console key):
+
+On the master:
+```
+link_set name LAPTOP
+link_set passcode pick a long passphrase here
+link_set allow 192.168.1.68
+link_set role master
+```
+`allow` takes each member's address (repeat it for more). A master with nobody on its allow list
+accepts nobody.
+
+On each member:
+```
+link_set name RASPBERRYPI
+link_set passcode pick a long passphrase here
+link_set master 192.168.1.81
+link_set role member
+```
+
+Type `link` to see the status. The first time a member connects, compare the **ID** each cabinet
+shows for the other with the ID the other shows for itself (at the top of its Cabinet Link page) —
+if they match, nothing is sitting in between, and from then on the member remembers that master's
+identity and refuses anything else claiming to be it.
+
+- **Wrong passcode:** the master refuses and, after three tries, ignores that address for a minute.
+  The member's page says the passcodes probably differ.
+- **"MASTER IDENTITY CHANGED"** on a member means something new is answering at the master's
+  address. If you really did reinstall or replace the master, type `link_forget` on the member.
+- **Changing the passcode on the master** cuts off every member until they are given the new one.
+- Settings and the cabinet's private key are kept in `legacyhome/link/`, readable only by the user
+  running the game. Never copy that folder to another cabinet — each one needs its own identity.
+- The master listens on port **5030** (`link_set port` changes it). Use fixed addresses for the
+  cabinets — on an untrusted Wi-Fi network, put them on wired Ethernet and list only those addresses.
 
 ### Replacement music (OGG soundtracks)
 

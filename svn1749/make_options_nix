@@ -79,6 +79,10 @@ HAVE_LIBZIP=1
 # Optional, load with dlopen.
 # HAVE_LIBZIP=3
 
+# [Arcade] Cabinet Link (networked cabinets) needs OpenSSL.  tools/build.sh adds
+# HAVE_LINK=1 when OpenSSL links; without it the link is compiled out.
+# HAVE_LINK=1
+
 # Extended nodes require zlib.
 HAVE_ZLIB=1
 # Optional, load with dlopen.

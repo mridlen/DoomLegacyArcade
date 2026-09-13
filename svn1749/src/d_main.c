@@ -229,6 +229,7 @@
 #include "g_game.h"
 #include "hs_stuff.h"
 #include "au_stuff.h"
+#include "d_link.h"      // [Arcade] Cabinet Link
 #include "g_input.h"
 
 #include "hu_stuff.h"
@@ -1836,6 +1837,7 @@ void D_DoomLoop(void)
             TryRunTics(realtics);
             FP_Add( FP_TIC, fp_s );
         }
+        LK_Ticker();   // [Arcade] Cabinet Link: presence out, log lines in; cheap when off
         {
 #ifdef CLIENTPREDICTION2
         boolean  tic_advanced = (singletics || spirit_update);
@@ -3984,6 +3986,7 @@ restart_command:
 
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
     AU_Init();   // [Arcade] load the operator audit counters, count this boot
+    LK_Init();   // [Arcade] Cabinet Link settings and identity; starts nothing
 
     // [Arcade] Must be after legacyhome/configfile_main are resolved and
     // before IdentifyVersion below, which is what acts on it.
@@ -4869,6 +4872,7 @@ void D_Quit_Save ( quit_severity_e severity )
     if( quitseq < 2 )
     {
         quitseq = 2;
+        LK_Shutdown();   // [Arcade] close the Cabinet Link connections first
         D_Quit_NetGame ();
     }
     if( quitseq < 5 )
