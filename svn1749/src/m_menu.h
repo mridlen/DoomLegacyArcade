@@ -156,6 +156,10 @@ boolean  M_Initials_Active( void );
 boolean  M_Join_Active( void );
 // [Arcade] The text of the message box on screen, or NULL (tools/linktest.sh).
 const char *  M_Message_Text( void );
+// [Arcade] The Cabinet Link pages' keys (M_Responder), and opening them for
+// tools/linktest.sh (-linkkeys).
+boolean  M_Link_Page_Key( const event_t * ev );
+void     M_Link_Page_Open( void );
 
 // [Arcade] Cabinet Link invites (d_linkgame.c drives these).
 boolean  M_Join_Counts( byte * joined, boolean * all_locked, int * secs );

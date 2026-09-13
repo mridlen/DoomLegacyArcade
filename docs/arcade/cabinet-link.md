@@ -419,20 +419,56 @@ The rule is that a fix must never tax every keypress. Two separate things to mea
 
 ## Operator page
 
-A new `-devmode` page, **Cabinet Link**, under Setup:
+**Built (2026-09-13)** — *Arcade Options → Cabinet Link*, `-devmode` only like the rest of Arcade
+Options. Mark: "we need a better way of managing the cabinet link other than the console". Three
+pages, all in the `CABINET LINK` block of `m_menu.c`:
 
-- **Link**: Off / Master / Member (`cv_link_role`, default **Off** — a new switch defaults to what
-  the cabinet already did).
-- **Cabinet name**: shown on invites and records (`cv_link_name`, defaults to the hostname).
-- **Master address** (members only), **Passcode** (entered with the keyboard, shown as `********`).
-- **Allowed addresses** (master only): the member addresses it will accept. Empty means none — a
-  master with no list refuses every member rather than accepting all of them.
-- **This cabinet's ID** and, per peer: name, ID, state, build, last sync, and any mismatch
-  (build / wads / ruleset) spelled out.
-- **Sync now**, **Forget paired cabinets**.
+- **`CabinetLinkDef`** — Role (fire, or left/right: off → master → member), Name, Passcode (shown as
+  "SET, n CHARACTERS", never the text), Master (a member) or Allowed (a master), Port, Forget paired
+  cabinets (fire twice). Below the rows, `LK_Drawer( y, y_end )`: running or why not, this cabinet's
+  ID, and every peer with its status and reason.
+- **`LinkTextDef`** — an on-screen keyboard: three rows of 13 keys and an action row (character set,
+  SPACE, DELETE, CANCEL, DONE). Stick moves, fire types, *use* deletes. Sets are capitals, lower case,
+  symbols; a field gets only the sets and characters it can hold (a port: digits). **The menu font has
+  no lowercase and its "white" and grey are indistinguishable on screen**, so typed lowercase letters
+  are drawn **red**, the set key says UPPER/LOWER/SYMBOL (not abc/ABC, which would draw the same), and
+  "LOWER CASE LETTERS" heads the grid in that set — all found by looking at an OpenGL capture, where
+  the first version showed `LINK1cd` as seven identical capitals. A passcode is typed afresh.
+- **`LinkAllowDef`** — a master's allow list, then **ADD AN ADDRESS**, then every cabinet recently
+  refused for not being on the list (the link already keeps the last eight refusals, with address and
+  reason): **ALLOW 192.168.1.68**, one press. That is the intended way to set a master up — nobody has
+  to know a member's address. Fire twice on an allowed address removes it. A member backs off up to 60 s
+  between attempts, which the page says.
 
-Every row added follows the `menus.md` rule: the enum and the `choice ==` handlers move with it, and
-`tools/menufit-test.py` is run.
+Every change goes through **`LK_Setting_Set` / `LK_Allow_Add` / `LK_Allow_Remove` / `LK_Forget_Pins`**
+(`d_link.h`): validate, save `link.cfg`, restart the link. `link_set` and `link_forget` were rewritten
+on top of them, so the page and the console cannot drift apart.
+
+**Keys are taken raw, before `M_Cabinet_Menu_Key`** (`M_Link_Page_Key`, hooked in `M_Responder`
+right after the join screen's hook, for the same reason). The laptop's panels are keyboard keys — `a`,
+`e`, `h`, `n`, `o`, `t` and more are buttons — so a typed letter and a panel button can be the same
+key. A key bound to a control is always the control; anything else a keyboard sends is typed.
+
+`LK_Ticker` used to return at once for a cabinet with the link off, which also skipped `-linkstatus`;
+it now prints status in every role, and runs the test key script before the role check (a cabinet
+with the link off is exactly the one this page switches on).
+
+**Verified**:
+- `tools/linktest.sh menusetup`: two cabinets with **no `link.cfg`**, set up entirely by button presses
+  through the input queue (`-linktest -linkkeys "<tokens>"`: `open`, `u d l r f b` for panel 1's
+  stick, fire and use, `esc enter bs`, `c=X` a typed key, `wN`, `shot`). The presses that type text come
+  from **`tools/linktest_kbd.py`, which reads `lkt_sets` out of `m_menu.c`** and models
+  `M_Link_Text_Move`, so the test types on the keyboard that ships. The master goes off → master, names
+  itself, sets a mixed-case passcode and the port; the member does the same plus the master's address;
+  the master turns the member away ("allow list is empty"), is allowed from the list, and both report
+  each other **online**; both `link.cfg` files hold exactly what was typed.
+- All 27 link cases pass. `noshow` failed once in six runs (the host never saw the joiner arrive) and
+  passed alone four times and in the same batch order again — noted as flaky, not explained.
+- `make smoke` 5/5. The three pages captured in OpenGL (`shot`) and looked at: a truncated "TRIED TO
+  CONNEC", a footer wider than the screen, the case problem above and a cursor underline that read as a
+  bar over the letter below were fixed from those captures.
+- **Needs a person**: the page on the real cabinets, and on the Pi's display (only the laptop's GPU was
+  captured).
 
 ---
 

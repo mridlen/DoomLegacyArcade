@@ -323,6 +323,86 @@ const char *  LKG_Mode_Name( void )
 }
 
 // ---------------------------------------------------------------------------
+//  -linktest -linkkeys "<tokens>": the Cabinet Link page, pressed by a script
+// ---------------------------------------------------------------------------
+//
+// Space separated, one every 50 ms:
+//   open         open the page, as Arcade Options would
+//   u d l r f b  panel 1's forward, backward, turn left, turn right, fire, use
+//                -- the buttons a cabinet has, through the input queue
+//   esc enter bs a keyboard's escape, enter, backspace
+//   c=X          a keyboard typing X
+//   wN           wait N milliseconds
+//   shot         take a screenshot (after the next frame is drawn)
+// It starts 3 seconds after the link is set up, and only under -linktest.
+
+static void  lkg_post_key( int key, int ch )
+{
+    event_t  ev;
+    memset( &ev, 0, sizeof(ev) );
+    ev.type = ev_keydown;  ev.data1 = key;  ev.data2 = ch;
+    D_PostEvent( &ev );
+    ev.type = ev_keyup;
+    D_PostEvent( &ev );
+}
+
+static int  lkg_panel_key( int gc )
+{
+    return gamecontrol_pl[0][gc][0] ? gamecontrol_pl[0][gc][0] : gamecontrol_pl[0][gc][1];
+}
+
+void  LKG_Test_Keys( void )
+{
+    static const char * script = NULL;
+    static int  state = -1;          // -1 unread, 0 none, 1 running, 2 done
+    static uint32_t  next_ms;
+    char  tok[64];
+    int   n;
+
+    if( state == 0 || state == 2 )  return;
+    if( state < 0 )
+    {
+        state = 0;
+        if( ! M_CheckParm( "-linktest" ) || ! M_CheckParm( "-linkkeys" ) || ! M_IsNextParm() )
+            return;
+        script = M_GetNextParm();
+        state = 1;
+        next_ms = lkg_now() + 3000;
+        return;
+    }
+    if( lkg_now() < next_ms )  return;
+    next_ms = lkg_now() + 50;
+
+    while( *script == ' ' )  script++;
+    if( ! *script )
+    {
+        state = 2;
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: keys done\n" );
+        return;
+    }
+    for( n = 0; script[n] && script[n] != ' ' && n < (int) sizeof(tok) - 1; n++ )
+        tok[n] = script[n];
+    tok[n] = 0;
+    script += n;
+
+    if( ! strcmp( tok, "open" ) )        M_Link_Page_Open();
+    else if( ! strcmp( tok, "u" ) )      lkg_post_key( lkg_panel_key( gc_forward ), 0 );
+    else if( ! strcmp( tok, "d" ) )      lkg_post_key( lkg_panel_key( gc_backward ), 0 );
+    else if( ! strcmp( tok, "l" ) )      lkg_post_key( lkg_panel_key( gc_turnleft ), 0 );
+    else if( ! strcmp( tok, "r" ) )      lkg_post_key( lkg_panel_key( gc_turnright ), 0 );
+    else if( ! strcmp( tok, "f" ) )      lkg_post_key( lkg_panel_key( gc_fire ), 0 );
+    else if( ! strcmp( tok, "b" ) )      lkg_post_key( lkg_panel_key( gc_use ), 0 );
+    else if( ! strcmp( tok, "esc" ) )    lkg_post_key( KEY_ESCAPE, 0 );
+    else if( ! strcmp( tok, "enter" ) )  lkg_post_key( KEY_ENTER, 0 );
+    else if( ! strcmp( tok, "bs" ) )     lkg_post_key( KEY_BACKSPACE, 0 );
+    else if( tok[0] == 'c' && tok[1] == '=' && tok[2] )  lkg_post_key( (unsigned char) tok[2], (unsigned char) tok[2] );
+    else if( tok[0] == 'w' )             next_ms = lkg_now() + atoi( tok + 1 );
+    else if( ! strcmp( tok, "shot" ) )   COM_BufAddText( "screenshot\n" );
+    else
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: unknown key token %s\n", tok );
+}
+
+// ---------------------------------------------------------------------------
 //  Messages
 // ---------------------------------------------------------------------------
 

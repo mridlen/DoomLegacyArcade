@@ -5426,8 +5426,8 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
-    // [Arcade] Networked cabinets.  Status only for now; settings are link_set
-    // at the console.  Appended, and nothing indexes this array by position.
+    // [Arcade] Networked cabinets: the settings and every other cabinet's
+    // status.  Appended, and nothing indexes this array by position.
     {IT_SUBMENU| IT_WHITESTRING,0, "Cabinet Link >>", &CabinetLinkDef  , 0},
 };
 
@@ -6750,22 +6750,685 @@ menu_t  AuditDef =
 //===========================================================================
 //                        CABINET LINK  [Arcade]
 //===========================================================================
-// Read only, like the Audit page: this cabinet's link settings and every other
-// cabinet it can see.  The layout belongs to d_link.c (LK_Drawer).  Operator
-// only by the same route as Audit.  See docs/arcade/cabinet-link.md.
+// The link's settings, changed with the cabinet's own buttons, above the status
+// of every other cabinet.  Three pages, all drawn and driven from here:
+//   CabinetLinkDef   the settings rows, then the status (LK_Drawer)
+//   LinkAllowDef     a master's allow list, and the cabinets it recently turned
+//                    away, each one press from being allowed
+//   LinkTextDef      an on-screen keyboard for a name, an address, a passcode
+// Operator only, as the whole of Arcade Options is.  Every change goes through
+// LK_Setting_Set / LK_Allow_* (d_link.c) -- the code link_set runs -- which
+// saves link.cfg and restarts the link.
+//
+// Keys are taken raw, before M_Cabinet_Menu_Key, as the join screen takes them:
+// the keyboard page has to tell a letter typed on a keyboard from a panel's
+// button that happens to be that letter.  A key bound to a control is always
+// the control.  See docs/arcade/cabinet-link.md, "The Cabinet Link page".
 
-static void M_Draw_CabinetLink( void )
+static uint16_t  M_Cabinet_Menu_Key( uint16_t key );
+
+menu_t  LinkAllowDef, LinkTextDef;
+
+typedef enum
 {
+    LKP_ROLE, LKP_NAME, LKP_PASSCODE,
+    LKP_ADDRESS,      // a member: the master's address; a master: its allow list
+    LKP_PORT, LKP_FORGET,
+    LKP_NUM_ROWS
+} lkp_row_e;
+
+static int      lkp_row = LKP_ROLE;
+static boolean  lkp_forget_armed;
+static char     lkp_note[64];        // what the last change did, under the rows
+static tic_t    lkp_note_time;
+
+#define LKP_NOTE_TICS   (4*TICRATE)
+#define LKP_LABEL_X     24
+#define LKP_VALUE_X     118
+#define LKP_ROW_Y0      28
+#define LKP_ROW_DY      10
+
+static void  M_Link_Note( const char * err, const char * ok )
+{
+    char  up[64];
+    int   i;
+    dl_strncpy( up, err ? err : ok, sizeof(up) );
+    for( i = 0; up[i]; i++ )  up[i] = toupper( (unsigned char) up[i] );
+    dl_strncpy( lkp_note, up, sizeof(lkp_note) );
+    lkp_note_time = I_GetTime();
+}
+
+// Draw text cut to fit width, as LK_Drawer does.
+static void  M_Link_Fit( int x, int y, int width, int option, const char * text )
+{
+    char  buf[80];
+    int   n;
+    dl_strncpy( buf, text, sizeof(buf) );
+    n = strlen( buf );
+    while( n > 0 && V_StringWidth( buf ) > width )
+        buf[--n] = 0;
+    V_DrawString( x, y, option, buf );
+}
+
+static void  M_Link_Cursor( int y )
+{
+    if( skullAnimCounter < 4 )
+        V_DrawCharacter( LKP_LABEL_X - 12, y, '*' | 0x80 );   // white, as generic menus do
+}
+
+static boolean  M_Link_Row_Shown( int row )
+{
+    return row != LKP_ADDRESS || LK_Role() != LK_ROLE_OFF;
+}
+
+// ---- the settings page ----------------------------------------------------
+
+static void  M_Draw_CabinetLink( void )
+{
+    char  val[128], buf[96];
+    int   row, y, plen;
+    lk_role_e  role = LK_Role();
+
     V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
     M_Centre_At( BASEVIDWIDTH/2, 12, V_WHITEMAP, "CABINET LINK" );
-    LK_Drawer();
-    M_Centre_At( BASEVIDWIDTH/2, 180, 0, "LINK_SET AT THE CONSOLE CHANGES SETTINGS" );
+
+    if( ! LK_Built() )
+    {
+        LK_Drawer( 40, 170 );
+        return;
+    }
+
+    for( row = 0, y = LKP_ROW_Y0; row < LKP_NUM_ROWS; row++ )
+    {
+        const char * label = "";
+        if( ! M_Link_Row_Shown( row ) )  continue;
+        val[0] = 0;
+        switch( row )
+        {
+         case LKP_ROLE:
+            label = "ROLE";
+            LK_Setting_Get( LK_SET_ROLE, val, sizeof(val) );
+            break;
+         case LKP_NAME:
+            label = "NAME";
+            LK_Setting_Get( LK_SET_NAME, val, sizeof(val) );
+            break;
+         case LKP_PASSCODE:
+            label = "PASSCODE";
+            LK_Setting_Get( LK_SET_PASSCODE, buf, sizeof(buf) );
+            plen = strlen( buf );
+            if( ! plen )
+                snprintf( val, sizeof(val), "NOT SET" );
+            else
+                snprintf( val, sizeof(val), "SET, %d CHARACTERS%s", plen, plen < 10 ? " - SHORT" : "" );
+            memset( buf, 0, sizeof(buf) );
+            break;
+         case LKP_ADDRESS:
+            if( role == LK_ROLE_MASTER )
+            {
+                int n = LK_Allow_Count();
+                label = "ALLOWED";
+                if( n == 1 )
+                    snprintf( val, sizeof(val), "%s", LK_Allow_Get( 0 ) );
+                else
+                    snprintf( val, sizeof(val), n ? "%d CABINETS" : "NOBODY YET", n );
+            }
+            else
+            {
+                label = "MASTER";
+                LK_Setting_Get( LK_SET_MASTER, val, sizeof(val) );
+                if( ! val[0] )  snprintf( val, sizeof(val), "NOT SET" );
+            }
+            break;
+         case LKP_PORT:
+            label = "PORT";
+            LK_Setting_Get( LK_SET_PORT, val, sizeof(val) );
+            break;
+         case LKP_FORGET:
+            label = lkp_forget_armed ? "FIRE AGAIN TO FORGET" : "FORGET PAIRED CABINETS";
+            break;
+        }
+        {
+            int i;
+            for( i = 0; val[i]; i++ )  val[i] = toupper( (unsigned char) val[i] );
+        }
+        V_DrawString( LKP_LABEL_X, y, 0, label );
+        if( val[0] )
+            M_Link_Fit( LKP_VALUE_X, y, 308 - LKP_VALUE_X, V_WHITEMAP, val );
+        if( row == lkp_row )
+            M_Link_Cursor( y );
+        y += LKP_ROW_DY;
+    }
+
+    if( lkp_note[0] && I_GetTime() - lkp_note_time < LKP_NOTE_TICS )
+        M_Link_Fit( LKP_LABEL_X, y + 2, 300 - LKP_LABEL_X, 0, lkp_note );
+
+    LK_Drawer( 98, 170 );
+    M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, "FIRE CHANGES   LEFT RIGHT ROLE   USE BACK" );
+}
+
+// ---- the on-screen keyboard ----------------------------------------------
+
+typedef enum { LKT_NAME, LKT_PASSCODE, LKT_MASTER, LKT_PORT, LKT_ALLOW } lkt_kind_e;
+
+#define LKT_COLS     13
+#define LKT_CELL_W   22
+#define LKT_X0       ((BASEVIDWIDTH - LKT_COLS*LKT_CELL_W) / 2)
+#define LKT_Y0       78
+#define LKT_ROW_DY   15
+#define LKT_ACTIONS  5            // the bottom row: set, space, delete, cancel, done
+#define LKT_TEXT_MAX 64
+
+static const char * lkt_sets[3][3] =
+{
+    { "ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "0123456789.-_" },
+    { "abcdefghijklm", "nopqrstuvwxyz", "0123456789.-_" },
+    { "!#$%&*+=?@:/,", ";<>[]^'\"\\    ", "0123456789.-_" },
+};
+// The menu font has no lowercase, so "abc" and "ABC" would draw the same.
+static const char * lkt_set_names[3] = { "UPPER", "LOWER", "SYMBOL" };
+static const char * lkt_action_names[LKT_ACTIONS] = { "", "SPACE", "DELETE", "CANCEL", "DONE" };
+
+static lkt_kind_e  lkt_kind;
+static char        lkt_text[LKT_TEXT_MAX];
+static int         lkt_max;
+static int         lkt_set, lkt_col, lkt_line;   // lkt_line 0..2 characters, 3 actions
+
+static int  M_Link_Text_Sets( void )
+{
+    switch( lkt_kind )
+    {
+     case LKT_PASSCODE:  return 3;
+     case LKT_MASTER:
+     case LKT_ALLOW:     return 2;   // host names are letters, digits, dots and dashes
+     default:            return 1;
+    }
+}
+
+// May c go into the text being edited?
+static boolean  M_Link_Text_Allows( char c )
+{
+    switch( lkt_kind )
+    {
+     case LKT_PORT:      return c >= '0' && c <= '9';
+     case LKT_NAME:      return isalnum( (unsigned char) c ) || c == ' ' || c == '-' || c == '_' || c == '.';
+     case LKT_MASTER:
+     case LKT_ALLOW:     return isalnum( (unsigned char) c ) || c == '.' || c == '-' || c == ':';
+     case LKT_PASSCODE:  return c >= ' ' && c <= '~';
+    }
+    return false;
+}
+
+static void  M_Link_Text_Type( char c )
+{
+    int n = strlen( lkt_text );
+    if( lkt_kind == LKT_NAME )  c = toupper( (unsigned char) c );
+    if( ! M_Link_Text_Allows( c ) || n >= lkt_max )
+    {
+        S_StartSound( sfx_noway );
+        return;
+    }
+    lkt_text[n] = c;
+    lkt_text[n+1] = 0;
+}
+
+static void  M_Link_Text_Open( lkt_kind_e kind )
+{
+    lkt_kind = kind;
+    lkt_set = lkt_col = lkt_line = 0;
+    lkt_text[0] = 0;
+    switch( kind )
+    {
+     case LKT_NAME:      lkt_max = LK_NAME_LEN - 1;  LK_Setting_Get( LK_SET_NAME, lkt_text, sizeof(lkt_text) );  break;
+     case LKT_MASTER:    lkt_max = LKT_TEXT_MAX - 1; LK_Setting_Get( LK_SET_MASTER, lkt_text, sizeof(lkt_text) );  break;
+     case LKT_PORT:      lkt_max = 5;                LK_Setting_Get( LK_SET_PORT, lkt_text, sizeof(lkt_text) );  break;
+     // A passcode is typed afresh: it is never shown, not even to be edited.
+     case LKT_PASSCODE:  lkt_max = LKT_TEXT_MAX - 1;  break;
+     case LKT_ALLOW:     lkt_max = LKT_TEXT_MAX - 1;  break;
+    }
+    if( (int) strlen( lkt_text ) > lkt_max )  lkt_text[lkt_max] = 0;
+    Push_Setup_Menu( &LinkTextDef );
+}
+
+static void  M_Link_Text_Done( void )
+{
+    const char * err = NULL;
+    switch( lkt_kind )
+    {
+     case LKT_NAME:      err = LK_Setting_Set( LK_SET_NAME, lkt_text );  break;
+     case LKT_PASSCODE:  err = LK_Setting_Set( LK_SET_PASSCODE, lkt_text );  break;
+     case LKT_MASTER:    err = LK_Setting_Set( LK_SET_MASTER, lkt_text );  break;
+     case LKT_PORT:      err = LK_Setting_Set( LK_SET_PORT, lkt_text );  break;
+     case LKT_ALLOW:     err = LK_Allow_Add( lkt_text );  break;
+    }
+    memset( lkt_text, 0, sizeof(lkt_text) );
+    Pop_Menu();
+    M_Link_Note( err, "SAVED" );
+    S_StartSound( err ? sfx_noway : menu_sfx_action );
+}
+
+// The cell under the cursor, as a character (0 for an action or a blank).
+static char  M_Link_Text_Cell( void )
+{
+    if( lkt_line >= 3 )  return 0;
+    return lkt_sets[lkt_set][lkt_line][lkt_col];
+}
+
+static void  M_Link_Text_Press( void )
+{
+    if( lkt_line < 3 )
+    {
+        char c = M_Link_Text_Cell();
+        if( c && c != ' ' )
+            M_Link_Text_Type( c );
+        return;
+    }
+    switch( lkt_col )
+    {
+     case 0:   // next character set
+        lkt_set = ( lkt_set + 1 ) % M_Link_Text_Sets();
+        break;
+     case 1:   M_Link_Text_Type( ' ' );  break;
+     case 2:
+        if( lkt_text[0] )  lkt_text[strlen( lkt_text ) - 1] = 0;
+        break;
+     case 3:
+        memset( lkt_text, 0, sizeof(lkt_text) );
+        Pop_Menu();
+        break;
+     case 4:   M_Link_Text_Done();  break;
+    }
+}
+
+static void  M_Link_Text_Move( int dx, int dy )
+{
+    if( dy )
+    {
+        int from = lkt_line;
+        lkt_line = ( lkt_line + dy + 4 ) % 4;
+        // Between the character rows (13 wide) and the action row (5 wide),
+        // keep roughly the same place across.
+        if( from < 3 && lkt_line == 3 )
+            lkt_col = lkt_col * LKT_ACTIONS / LKT_COLS;
+        else if( from == 3 && lkt_line < 3 )
+            lkt_col = ( lkt_col * LKT_COLS + LKT_COLS/2 ) / LKT_ACTIONS;
+    }
+    if( dx )
+    {
+        int width = ( lkt_line < 3 ) ? LKT_COLS : LKT_ACTIONS;
+        lkt_col = ( lkt_col + dx + width ) % width;
+    }
+    if( lkt_line == 3 && lkt_col == 0 && M_Link_Text_Sets() == 1 )
+        lkt_col = ( dx < 0 ) ? LKT_ACTIONS - 1 : 1;   // no other set to switch to
+}
+
+static void  M_Draw_LinkText( void )
+{
+    static const char * titles[] = { "CABINET NAME", "NEW PASSCODE", "MASTER'S ADDRESS", "PORT", "ALLOW AN ADDRESS" };
+    int   line, col, x, y, w, i, n, start;
+    char  one[2] = { 0, 0 };
+
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    M_Centre_At( BASEVIDWIDTH/2, 12, V_WHITEMAP, "CABINET LINK" );
+    M_Centre_At( BASEVIDWIDTH/2, 28, 0, titles[lkt_kind] );
+
+    // The text so far, its tail if it is too long to fit.  The menu font has no
+    // lowercase -- and its "white" and grey are too close to tell apart -- so
+    // lowercase letters are drawn red.
+    n = strlen( lkt_text );
+    for( start = 0; start < n; start++ )
+    {
+        int width = 0;
+        for( i = start; i < n; i++ )
+        {
+            one[0] = lkt_text[i];
+            width += V_StringWidth( one );
+        }
+        if( width <= 280 )  break;
+    }
+    x = 20;  y = 48;
+    for( i = start; i < n; i++ )
+    {
+        one[0] = lkt_text[i];
+        if( islower( (unsigned char) lkt_text[i] ) )
+            V_DrawString( x, y, 0, one );
+        else
+            V_DrawString( x, y, V_WHITEMAP, one );
+        x += V_StringWidth( one );
+    }
+    if( skullAnimCounter < 4 && n < lkt_max )
+        V_DrawCharacter( x, y, '_' | 0x80 );
+    V_DrawFill( 20, y + 10, 280, 1, 4 );
+
+    for( line = 0; line < 3; line++ )
+    {
+        y = LKT_Y0 + line * LKT_ROW_DY;
+        for( col = 0; col < LKT_COLS; col++ )
+        {
+            char c = lkt_sets[lkt_set][line][col];
+            boolean sel = ( line == lkt_line && col == lkt_col );
+            if( c == ' ' )  continue;
+            one[0] = toupper( (unsigned char) c );
+            w = V_StringWidth( one );
+            x = LKT_X0 + col * LKT_CELL_W + ( LKT_CELL_W - w ) / 2;
+            if( sel )
+                V_DrawString( x, y, 0, one );            // red: under the cursor
+            else if( M_Link_Text_Allows( c ) )
+                V_DrawString( x, y, V_WHITEMAP, one );
+            // A one pixel line under it: an '_' glyph reached the row below and
+            // read as a bar over that letter.
+            if( sel && skullAnimCounter < 4 )
+                V_DrawFill( x, y + 9, w, 1, 4 );
+        }
+    }
+
+    y = LKT_Y0 + 3 * LKT_ROW_DY + 4;
+    for( col = 0; col < LKT_ACTIONS; col++ )
+    {
+        const char * label = ( col == 0 ) ? lkt_set_names[ ( lkt_set + 1 ) % 3 ] : lkt_action_names[col];
+        int cell = LKT_COLS * LKT_CELL_W / LKT_ACTIONS;
+        boolean sel = ( lkt_line == 3 && lkt_col == col );
+        if( col == 0 && M_Link_Text_Sets() == 1 )  continue;
+        if( col == 0 && M_Link_Text_Sets() == 2 )  label = lkt_set_names[ lkt_set ? 0 : 1 ];
+        w = V_StringWidth( label );
+        x = LKT_X0 + col * cell + ( cell - w ) / 2;
+        V_DrawString( x, y, sel ? 0 : V_WHITEMAP, label );
+        if( sel && skullAnimCounter < 4 )
+            V_DrawCharacter( x - 9, y, '*' | 0x80 );
+    }
+
+    if( lkt_set == 1 )
+        M_Centre_At( BASEVIDWIDTH/2, LKT_Y0 - 14, 0, "LOWER CASE LETTERS" );
+    {
+        boolean lower = ( lkt_set == 1 );
+        for( i = 0; lkt_text[i] && ! lower; i++ )
+            lower = islower( (unsigned char) lkt_text[i] ) != 0;
+        if( lower )
+            M_Centre_At( BASEVIDWIDTH/2, 158, V_WHITEMAP, "RED LETTERS ARE LOWER CASE" );
+    }
+    M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, "FIRE TYPES   USE DELETES" );
+}
+
+// ---- the allow list (a master) -------------------------------------------
+
+#define LKA_MAX_ROWS   (LK_MAX_ALLOW + 1 + LK_MAX_PEERS)
+#define LKA_SHOWN      11
+
+typedef struct { byte kind; int index; char address[48]; char name[LK_NAME_LEN]; } lka_row_t;
+enum { LKA_ALLOWED, LKA_ADD, LKA_REFUSED };
+
+static int      lka_row, lka_top;
+static int      lka_armed = -1;     // an allowed row fire has armed for removal
+
+// Allowed addresses, then "add", then every cabinet recently turned away for
+// not being on the list.  Rebuilt on every use: the link fills in refusals as
+// they happen.
+static int  M_Link_Allow_Rows( lka_row_t * rows )
+{
+    lk_peer_info_t  peers[LK_MAX_PEERS];
+    int  i, j, n = 0, np;
+
+    for( i = 0; i < LK_Allow_Count(); i++, n++ )
+    {
+        rows[n].kind = LKA_ALLOWED;
+        rows[n].index = i;
+        dl_strncpy( rows[n].address, LK_Allow_Get( i ), sizeof(rows[n].address) );
+        rows[n].name[0] = 0;
+    }
+    rows[n].kind = LKA_ADD;
+    n++;
+    np = LK_Peers( peers, LK_MAX_PEERS );
+    for( i = 0; i < np; i++ )
+    {
+        if( peers[i].status != LK_PEER_REFUSED || ! strstr( peers[i].reason, "allow" ) )  continue;
+        for( j = 0; j < LK_Allow_Count(); j++ )
+            if( ! strcasecmp( LK_Allow_Get( j ), peers[i].address ) )  break;
+        if( j < LK_Allow_Count() )  continue;
+        rows[n].kind = LKA_REFUSED;
+        rows[n].index = i;
+        dl_strncpy( rows[n].address, peers[i].address, sizeof(rows[n].address) );
+        dl_strncpy( rows[n].name, peers[i].name, sizeof(rows[n].name) );
+        n++;
+    }
+    return n;
+}
+
+static void  M_Draw_LinkAllow( void )
+{
+    lka_row_t  rows[LKA_MAX_ROWS];
+    char  buf[96];
+    int   n = M_Link_Allow_Rows( rows ), i, y;
+
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ );
+    M_Centre_At( BASEVIDWIDTH/2, 12, V_WHITEMAP, "CABINETS ALLOWED TO CONNECT" );
+
+    if( lka_row >= n )  lka_row = n - 1;
+    if( lka_row < lka_top )  lka_top = lka_row;
+    if( lka_row >= lka_top + LKA_SHOWN )  lka_top = lka_row - LKA_SHOWN + 1;
+
+    for( i = lka_top, y = 30; i < n && i < lka_top + LKA_SHOWN; i++, y += 12 )
+    {
+        switch( rows[i].kind )
+        {
+         case LKA_ALLOWED:
+            V_DrawString( LKP_LABEL_X, y, 0, rows[i].address );
+            M_Link_Fit( 200, y, 110, V_WHITEMAP, lka_armed == rows[i].index ? "FIRE AGAIN: REMOVE" : "ALLOWED" );
+            break;
+         case LKA_ADD:
+            V_DrawString( LKP_LABEL_X, y, 0, "ADD AN ADDRESS" );
+            break;
+         case LKA_REFUSED:
+            snprintf( buf, sizeof(buf), "ALLOW %s", rows[i].address );
+            V_DrawString( LKP_LABEL_X, y, 0, buf );
+            M_Link_Fit( 200, y, 110, V_WHITEMAP, rows[i].name[0] ? rows[i].name : "TURNED AWAY" );
+            break;
+        }
+        if( i == lka_row )
+            M_Link_Cursor( y );
+    }
+    if( lkp_note[0] && I_GetTime() - lkp_note_time < LKP_NOTE_TICS )
+        M_Link_Fit( LKP_LABEL_X, 162, 300 - LKP_LABEL_X, 0, lkp_note );
+    M_Centre_At( BASEVIDWIDTH/2, 176, V_WHITEMAP, "A CABINET TURNED AWAY SHOWS UP HERE" );
+    M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, "IT CONNECTS WITHIN A MINUTE OF ALLOWING" );
+}
+
+// ---- keys -------------------------------------------------------------------
+
+static void  M_Link_Cycle_Role( int dir )
+{
+    static const char * roles[3] = { "off", "master", "member" };
+    int r = ( (int) LK_Role() + dir + 3 ) % 3;
+    M_Link_Note( LK_Setting_Set( LK_SET_ROLE, roles[r] ), "SAVED" );
+    S_StartSound( menu_sfx_action );
+}
+
+static void  M_Link_Page_Fire( void )
+{
+    if( lkp_row != LKP_FORGET )
+        lkp_forget_armed = false;
+    switch( lkp_row )
+    {
+     case LKP_ROLE:      M_Link_Cycle_Role( 1 );  break;
+     case LKP_NAME:      M_Link_Text_Open( LKT_NAME );  break;
+     case LKP_PASSCODE:  M_Link_Text_Open( LKT_PASSCODE );  break;
+     case LKP_PORT:      M_Link_Text_Open( LKT_PORT );  break;
+     case LKP_ADDRESS:
+        if( LK_Role() == LK_ROLE_MASTER )
+        {
+            lka_row = lka_top = 0;
+            lka_armed = -1;
+            Push_Setup_Menu( &LinkAllowDef );
+        }
+        else
+            M_Link_Text_Open( LKT_MASTER );
+        break;
+     case LKP_FORGET:
+        if( ! lkp_forget_armed )
+            lkp_forget_armed = true;
+        else
+        {
+            lkp_forget_armed = false;
+            M_Link_Note( LK_Forget_Pins(), "FORGOT EVERY PAIRED CABINET" );
+        }
+        break;
+    }
+}
+
+static void  M_Link_Allow_Fire( void )
+{
+    lka_row_t  rows[LKA_MAX_ROWS];
+    int  n = M_Link_Allow_Rows( rows );
+    if( lka_row < 0 || lka_row >= n )  return;
+    switch( rows[lka_row].kind )
+    {
+     case LKA_ALLOWED:
+        if( lka_armed != rows[lka_row].index )
+            lka_armed = rows[lka_row].index;
+        else
+        {
+            lka_armed = -1;
+            M_Link_Note( LK_Allow_Remove( rows[lka_row].index ), "REMOVED" );
+        }
+        break;
+     case LKA_ADD:
+        lka_armed = -1;
+        M_Link_Text_Open( LKT_ALLOW );
+        break;
+     case LKA_REFUSED:
+        lka_armed = -1;
+        M_Link_Note( LK_Allow_Add( rows[lka_row].address ), "ALLOWED: IT CAN CONNECT NOW" );
+        break;
+    }
+}
+
+// True when the key was for one of the Cabinet Link pages.
+boolean  M_Link_Page_Key( const event_t * ev )
+{
+    uint16_t  raw = ev->data1, key;
+    boolean   control;
+    menu_t *  page = currentMenu;
+
+    if( page != &CabinetLinkDef && page != &LinkAllowDef && page != &LinkTextDef )
+        return false;
+    if( ! LK_Built() )
+        return false;   // the generic handling backs out
+
+    key = M_Cabinet_Menu_Key( raw );
+    control = ( key != raw );
+
+    if( page == &LinkTextDef )
+    {
+        if( control )
+        {
+            switch( key )
+            {
+             case KEY_UPARROW:    M_Link_Text_Move( 0, -1 );  break;
+             case KEY_DOWNARROW:  M_Link_Text_Move( 0, 1 );  break;
+             case KEY_LEFTARROW:  M_Link_Text_Move( -1, 0 );  break;
+             case KEY_RIGHTARROW: M_Link_Text_Move( 1, 0 );  break;
+             case KEY_ENTER:      M_Link_Text_Press();  break;
+             case KEY_ESCAPE:     // use deletes
+                if( lkt_text[0] )  lkt_text[strlen( lkt_text ) - 1] = 0;
+                break;
+            }
+            return true;
+        }
+        switch( raw )
+        {
+         case KEY_UPARROW:    M_Link_Text_Move( 0, -1 );  return true;
+         case KEY_DOWNARROW:  M_Link_Text_Move( 0, 1 );  return true;
+         case KEY_LEFTARROW:  M_Link_Text_Move( -1, 0 );  return true;
+         case KEY_RIGHTARROW: M_Link_Text_Move( 1, 0 );  return true;
+         case KEY_ENTER:      M_Link_Text_Done();  return true;
+         case KEY_BACKSPACE:
+            if( lkt_text[0] )  lkt_text[strlen( lkt_text ) - 1] = 0;
+            return true;
+         case KEY_ESCAPE:
+            memset( lkt_text, 0, sizeof(lkt_text) );
+            Pop_Menu();
+            return true;
+        }
+        {
+            // Typed on a keyboard.  SDL2 may hand over the character itself.
+            int c = ( ev->data2 >= ' ' && ev->data2 <= '~' ) ? ev->data2 : ( raw >= ' ' && raw <= '~' ) ? raw : 0;
+            if( c )
+                M_Link_Text_Type( (char) c );
+        }
+        return true;
+    }
+
+    if( ! control )
+    {
+        // The keyboard's own arrows, enter and escape behave as the buttons do.
+        if( raw == KEY_UPARROW || raw == KEY_DOWNARROW || raw == KEY_LEFTARROW
+            || raw == KEY_RIGHTARROW || raw == KEY_ENTER || raw == KEY_ESCAPE )
+            key = raw;
+        else
+            return true;   // nothing else means anything here
+    }
+
+    if( key == KEY_ESCAPE )
+    {
+        lkp_forget_armed = false;
+        lka_armed = -1;
+        Pop_Menu();
+        S_StartSound( menu_sfx_esc );
+        return true;
+    }
+
+    if( page == &CabinetLinkDef )
+    {
+        int step = 0;
+        switch( key )
+        {
+         case KEY_UPARROW:    step = -1;  break;
+         case KEY_DOWNARROW:  step = 1;  break;
+         case KEY_LEFTARROW:
+         case KEY_RIGHTARROW:
+            if( lkp_row == LKP_ROLE )
+                M_Link_Cycle_Role( key == KEY_LEFTARROW ? -1 : 1 );
+            return true;
+         case KEY_ENTER:
+            M_Link_Page_Fire();
+            return true;
+        }
+        if( step )
+        {
+            do
+                lkp_row = ( lkp_row + step + LKP_NUM_ROWS ) % LKP_NUM_ROWS;
+            while( ! M_Link_Row_Shown( lkp_row ) );
+            lkp_forget_armed = false;
+            S_StartSound( menu_sfx_updown );
+        }
+        return true;
+    }
+
+    // LinkAllowDef
+    {
+        lka_row_t  rows[LKA_MAX_ROWS];
+        int  n = M_Link_Allow_Rows( rows );
+        switch( key )
+        {
+         case KEY_UPARROW:    lka_row = ( lka_row + n - 1 ) % n;  lka_armed = -1;  S_StartSound( menu_sfx_updown );  break;
+         case KEY_DOWNARROW:  lka_row = ( lka_row + 1 ) % n;  lka_armed = -1;  S_StartSound( menu_sfx_updown );  break;
+         case KEY_ENTER:      M_Link_Allow_Fire();  break;
+        }
+        return true;
+    }
+}
+
+// tools/linktest.sh (-linktest -linkkeys): open the page as Arcade Options would.
+void  M_Link_Page_Open( void )
+{
+    M_StartControlPanel();
+    lkp_row = LKP_ROLE;
+    Push_Setup_Menu( &CabinetLinkDef );
 }
 
 menuitem_t CabinetLinkMenu[] =
 {
-    // Invisible item: any select backs out, as Audit does.
-    {IT_SUBMENU | IT_NOTHING, 0, "", &MenuOptionsDef, 0}
+    // One inert item: the pages are driven entirely from M_Link_Page_Key.
+    {IT_SPACE | IT_NOTHING, 0, "", NULL, 0}
 };
 
 menu_t  CabinetLinkDef =
@@ -6774,6 +7437,30 @@ menu_t  CabinetLinkDef =
     NULL,
     CabinetLinkMenu,
     M_Draw_CabinetLink,
+    NULL,
+    sizeof(CabinetLinkMenu)/sizeof(menuitem_t),
+    160, 190,
+    0
+};
+
+menu_t  LinkAllowDef =
+{
+    NULL,
+    NULL,
+    CabinetLinkMenu,
+    M_Draw_LinkAllow,
+    NULL,
+    sizeof(CabinetLinkMenu)/sizeof(menuitem_t),
+    160, 190,
+    0
+};
+
+menu_t  LinkTextDef =
+{
+    NULL,
+    NULL,
+    CabinetLinkMenu,
+    M_Draw_LinkText,
     NULL,
     sizeof(CabinetLinkMenu)/sizeof(menuitem_t),
     160, 190,
@@ -9995,6 +10682,11 @@ boolean M_Responder (event_t* ev)
         // same cursor keys -- so this has to come first, before that identity
         // is thrown away.
         if( menuactive && M_Join_Key( key ) )
+            return true;
+
+        // [Arcade] The Cabinet Link pages, for the same reason: the on-screen
+        // keyboard must tell a typed letter from a panel button.
+        if( menuactive && M_Link_Page_Key( ev ) )
             return true;
 
         // [Arcade] Drive the menus from the cabinet buttons.  Only while a

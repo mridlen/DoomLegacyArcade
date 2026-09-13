@@ -1223,40 +1223,45 @@ if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSS
 (`libssl-dev` on Debian and Raspberry Pi OS, `openssl-devel` on Fedora) and build again. Not yet on
 Windows.
 
-One cabinet is the **master**; the others are **members** and connect to it. Set them up from the
-console in an operator session (`./doomlegacyarcade -devmode`, then the console key):
+One cabinet is the **master**; the others are **members** and connect to it. Set them up in an
+operator session (*Devmode Restart*, or `./doomlegacyarcade -devmode`) from **Options → Arcade
+Options → Cabinet Link**, with the cabinet's own stick and buttons. The page lists the settings
+above the other cabinets it can see:
 
-On the master:
-```
-link_set name LAPTOP
-link_set passcode pick a long passphrase here
-link_set allow 192.168.1.68
-link_set role master
-```
-`allow` takes each member's address (repeat it for more). A master with nobody on its allow list
-accepts nobody.
+- **Role** — fire, or left and right, steps through *off*, *master* and *member*.
+- **Name**, **Passcode**, **Master** (a member's master's address) and **Port** — fire opens an
+  on-screen keyboard. Move with the stick, fire types the letter under the cursor, *use* deletes, and
+  **DONE** saves. The bottom-left key switches between capitals, lower case and symbols; letters you
+  have typed in lower case show **red**, since the menu font only has capitals. A passcode is always
+  typed fresh — the page never shows the old one, only how long it is. A keyboard works too, for any
+  key that is not one of a panel's buttons.
+- **Allowed** (on a master) opens the list of addresses allowed to connect. A member that tries to
+  connect before it is on the list appears there as **ALLOW 192.168.1.68** — press fire on it and it
+  is allowed; it connects within a minute. **ADD AN ADDRESS** types one in instead; fire twice on an
+  allowed address removes it.
+- **Forget paired cabinets** — fire twice. See "MASTER IDENTITY CHANGED" below.
 
-On each member:
-```
-link_set name RASPBERRYPI
-link_set passcode pick a long passphrase here
-link_set master 192.168.1.81
-link_set role member
-```
+Every change is saved at once and restarts the link. So on the master: role *master*, a name, a
+passcode. On each member: role *member*, a name, the **same passcode**, and the master's address.
+Then allow each member on the master's **Allowed** page.
 
-Type `link` to see the status. The first time a member connects, compare the **ID** each cabinet
-shows for the other with the ID the other shows for itself (at the top of its Cabinet Link page) —
+The console still works (`link_set name|passcode|master|port|role|allow|unallow <value>`,
+`link_forget`, and `link` for the status) — the page and the commands change the same settings.
+
+The first time a member connects, compare the **ID** each cabinet
+shows for the other with the ID the other shows for itself (on its Cabinet Link page, beside RUNNING) —
 if they match, nothing is sitting in between, and from then on the member remembers that master's
 identity and refuses anything else claiming to be it.
 
 - **Wrong passcode:** the master refuses and, after three tries, ignores that address for a minute.
   The member's page says the passcodes probably differ.
 - **"MASTER IDENTITY CHANGED"** on a member means something new is answering at the master's
-  address. If you really did reinstall or replace the master, type `link_forget` on the member.
+  address. If you really did reinstall or replace the master, use **Forget paired cabinets** on the
+  member.
 - **Changing the passcode on the master** cuts off every member until they are given the new one.
 - Settings and the cabinet's private key are kept in `legacyhome/link/`, readable only by the user
   running the game. Never copy that folder to another cabinet — each one needs its own identity.
-- The master listens on port **5030** (`link_set port` changes it). Use fixed addresses for the
+- The master listens on port **5030** (the **Port** row changes it). Use fixed addresses for the
   cabinets — on an untrusted Wi-Fi network, put them on wired Ethernet and list only those addresses.
 
 ### Replacement music (OGG soundtracks)

@@ -22,6 +22,9 @@ enum
 
 // Called from LK_Ticker every pass while the link runs.
 void         LKG_Ticker( void );
+// tools/linktest.sh (-linktest -linkkeys): press buttons on the Cabinet Link
+// page from a script.  Called by LK_Ticker whatever the link's role.
+void         LKG_Test_Keys( void );
 
 // --- The host: a cabinet whose own join screen is up ---
 

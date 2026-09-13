@@ -84,12 +84,22 @@ int         LK_Net_Recv( const byte * in, int len, byte * out, int outsize, uint
 int         LK_Net_Send( const byte * in, int len, byte * out, int outsize, uint32_t ip, uint16_t port )
             { (void)in; (void)len; (void)out; (void)outsize; (void)ip; (void)port; return -1; }
 
-void  LK_Drawer( void )
+void  LK_Drawer( int y, int y_end )
 {
-    lk_draw_fit( 6, 40, 308, 0, "NOT BUILT INTO THIS BINARY" );
-    lk_draw_fit( 6, 52, 308, V_WHITEMAP, "IT NEEDS OPENSSL AT BUILD TIME:" );
-    lk_draw_fit( 6, 62, 308, V_WHITEMAP, "INSTALL IT AND RUN TOOLS/BUILD.SH" );
+    (void) y_end;
+    lk_draw_fit( 6, y, 308, 0, "NOT BUILT INTO THIS BINARY" );
+    lk_draw_fit( 6, y + 12, 308, V_WHITEMAP, "IT NEEDS OPENSSL AT BUILD TIME:" );
+    lk_draw_fit( 6, y + 22, 308, V_WHITEMAP, "INSTALL IT AND RUN TOOLS/BUILD.SH" );
 }
+
+static const char lk_not_built[] = "not built into this binary";
+void        LK_Setting_Get( lk_setting_e w, char * out, int n )  { (void)w; if( n > 0 ) out[0] = 0; }
+const char* LK_Setting_Set( lk_setting_e w, const char * v )  { (void)w; (void)v; return lk_not_built; }
+int         LK_Allow_Count( void )  { return 0; }
+const char* LK_Allow_Get( int i )  { (void)i; return ""; }
+const char* LK_Allow_Add( const char * a )  { (void)a; return lk_not_built; }
+const char* LK_Allow_Remove( int i )  { (void)i; return lk_not_built; }
+const char* LK_Forget_Pins( void )  { return lk_not_built; }
 
 #else
 // ===========================================================================
@@ -137,7 +147,7 @@ void  LK_Drawer( void )
 #define LK_REFUSED_SHOW_MS  60000      // how long a refusal stays on the status list
 #define LK_BACKOFF_MIN_MS   1000
 #define LK_BACKOFF_MAX_MS   60000
-#define LK_MAX_ALLOW        LK_MAX_PEERS
+// LK_MAX_ALLOW is in d_link.h (the Cabinet Link page lists it)
 #define LK_MAX_PINS         64
 #define LK_LOG_LINES        32
 #define LK_LOG_LEN          160
@@ -1797,6 +1807,18 @@ static void  lk_net_status( void );
 static int       lk_status_every = -1;    // -1 unchecked, 0 off, else ms
 static uint32_t  lk_status_next = 0;
 
+// -linkstatus, whether or not the link is running.
+static void  lk_status_tick( void )
+{
+    if( lk_status_every < 0 )
+        lk_status_every = M_CheckParm( "-linkstatus" ) ? 2000 : 0;
+    if( lk_status_every && lk_now() >= lk_status_next )
+    {
+        lk_status_next = lk_now() + lk_status_every;
+        Command_Link_f();
+    }
+}
+
 void  LK_Ticker( void )
 {
     int i, nlog = 0, save_pins = 0;
@@ -1804,11 +1826,20 @@ void  LK_Ticker( void )
     lk_state_e st;
     byte panels;
 
-    if( ! lk_inited || lk_set.role == LK_ROLE_OFF )  return;
+    if( ! lk_inited )  return;
 
+    // -linktest -linkkeys drives the Cabinet Link page, which is how a cabinet
+    // with the link off gets it switched on -- so before the role test.
+    LKG_Test_Keys();
+
+    if( lk_set.role == LK_ROLE_OFF )
+    {
+        lk_status_tick();
+        return;
+    }
     if( ! lk_thread )
     {
-        if( lk_start_failed_reported )  return;
+        if( lk_start_failed_reported )  { lk_status_tick();  return; }
         if( ! lk_start() )
         {
             GenPrintf( EMSG_warn, "Cabinet Link: not started: %s\n", lk_status_reason );
@@ -1840,13 +1871,7 @@ void  LK_Ticker( void )
         lk_last_state = st;
         lk_wake();
     }
-    if( lk_status_every < 0 )
-        lk_status_every = M_CheckParm( "-linkstatus" ) ? 2000 : 0;
-    if( lk_status_every && lk_now() >= lk_status_next )
-    {
-        lk_status_next = lk_now() + lk_status_every;
-        Command_Link_f();
-    }
+    lk_status_tick();
     for( i = 0; i < nlog; i++ )
     {
         GenPrintf( EMSG_info, "%s\n", log[i] );
@@ -1909,11 +1934,113 @@ static void  Command_Link_f( void )
                    peers[i].name[0] ? peers[i].name : "-", peers[i].reason );
 }
 
+// ---------------------------------------------------------------------------
+//  Settings (the Cabinet Link page and link_set)
+// ---------------------------------------------------------------------------
+
+// Saved, then applied by restarting the link; the ticker starts it again.
+static const char *  lk_settings_apply( void )
+{
+    const char * err = NULL;
+    if( ! lk_settings_save() )
+        err = "could not write link.cfg";
+    lk_stop();
+    lk_start_failed_reported = false;
+    return err;
+}
+
+void  LK_Setting_Get( lk_setting_e which, char * out, int outsize )
+{
+    if( outsize <= 0 )  return;
+    out[0] = 0;
+    switch( which )
+    {
+     case LK_SET_ROLE:     dl_strncpy( out, lk_role_names[lk_set.role], outsize );  break;
+     case LK_SET_NAME:     dl_strncpy( out, lk_set.name, outsize );  break;
+     case LK_SET_MASTER:   dl_strncpy( out, lk_set.master, outsize );  break;
+     case LK_SET_PORT:     snprintf( out, outsize, "%d", lk_set.port );  break;
+     case LK_SET_PASSCODE: dl_strncpy( out, lk_set.passcode, outsize );  break;
+    }
+}
+
+const char *  LK_Setting_Set( lk_setting_e which, const char * value )
+{
+    int i;
+    if( ! devmode )  return "only in an operator session";
+    switch( which )
+    {
+     case LK_SET_ROLE:
+        for( i = 0; i < 3; i++ )
+            if( ! strcasecmp( value, lk_role_names[i] ) )  break;
+        if( i == 3 )  return "role is off, master or member";
+        lk_set.role = i;
+        break;
+     case LK_SET_NAME:
+        if( ! value[0] )  return "a cabinet needs a name";
+        dl_strncpy( lk_set.name, value, LK_NAME_LEN );
+        lk_sanitize( lk_set.name, LK_NAME_LEN );
+        break;
+     case LK_SET_MASTER:
+        dl_strncpy( lk_set.master, value, sizeof(lk_set.master) );
+        break;
+     case LK_SET_PORT:
+        i = atoi( value );
+        if( i <= 0 || i > 65535 )  return "port is 1 to 65535";
+        lk_set.port = i;
+        break;
+     case LK_SET_PASSCODE:
+        dl_strncpy( lk_set.passcode, value, sizeof(lk_set.passcode) );
+        break;
+    }
+    return lk_settings_apply();
+}
+
+int  LK_Allow_Count( void )  { return lk_set.num_allow; }
+
+const char *  LK_Allow_Get( int i )
+{
+    return ( i >= 0 && i < lk_set.num_allow ) ? lk_set.allow[i] : "";
+}
+
+const char *  LK_Allow_Add( const char * address )
+{
+    int i;
+    if( ! devmode )  return "only in an operator session";
+    if( ! address[0] )  return "no address";
+    for( i = 0; i < lk_set.num_allow; i++ )
+        if( ! strcasecmp( lk_set.allow[i], address ) )  return NULL;   // already there
+    if( lk_set.num_allow >= LK_MAX_ALLOW )  return "allow list is full";
+    dl_strncpy( lk_set.allow[lk_set.num_allow++], address, 128 );
+    return lk_settings_apply();
+}
+
+const char *  LK_Allow_Remove( int i )
+{
+    if( ! devmode )  return "only in an operator session";
+    if( i < 0 || i >= lk_set.num_allow )  return "no such address";
+    memmove( &lk_set.allow[i], &lk_set.allow[i+1], (lk_set.num_allow - i - 1) * 128 );
+    lk_set.num_allow--;
+    return lk_settings_apply();
+}
+
+const char *  LK_Forget_Pins( void )
+{
+    if( ! devmode )  return "only in an operator session";
+    lk_stop();
+    lk_lock();
+    lk_shared.num_pins = 0;
+    lk_pins_save();
+    lk_unlock();
+    lk_start_failed_reported = false;
+    return NULL;
+}
+
 // link_set <role|name|master|port|passcode|allow|unallow> <value>
 static void  Command_LinkSet_f( void )
 {
     const char * key = COM_Argv( 1 );
     const char * val = COM_Argv( 2 );
+    const char * err;
     int i;
 
     if( ! devmode )
@@ -1926,26 +2053,10 @@ static void  Command_LinkSet_f( void )
         CONS_Printf( "link_set role|name|master|port|passcode|allow|unallow <value>\n" );
         return;
     }
-    if( ! strcasecmp( key, "role" ) )
-    {
-        for( i = 0; i < 3; i++ )
-            if( ! strcasecmp( val, lk_role_names[i] ) )  break;
-        if( i == 3 )  { CONS_Printf( "role is off, master or member\n" ); return; }
-        lk_set.role = i;
-    }
-    else if( ! strcasecmp( key, "name" ) )
-    {
-        dl_strncpy( lk_set.name, val, LK_NAME_LEN );
-        lk_sanitize( lk_set.name, LK_NAME_LEN );
-    }
-    else if( ! strcasecmp( key, "master" ) )
-        dl_strncpy( lk_set.master, val, sizeof(lk_set.master) );
-    else if( ! strcasecmp( key, "port" ) )
-    {
-        int p = atoi( val );
-        if( p <= 0 || p > 65535 )  { CONS_Printf( "port 1..65535\n" ); return; }
-        lk_set.port = p;
-    }
+    if( ! strcasecmp( key, "role" ) )          err = LK_Setting_Set( LK_SET_ROLE, val );
+    else if( ! strcasecmp( key, "name" ) )     err = LK_Setting_Set( LK_SET_NAME, val );
+    else if( ! strcasecmp( key, "master" ) )   err = LK_Setting_Set( LK_SET_MASTER, val );
+    else if( ! strcasecmp( key, "port" ) )     err = LK_Setting_Set( LK_SET_PORT, val );
     else if( ! strcasecmp( key, "passcode" ) )
     {
         // The rest of the line, so a passphrase may contain spaces.
@@ -1955,52 +2066,34 @@ static void  Command_LinkSet_f( void )
             if( i > 2 )  strncat( pass, " ", sizeof(pass) - strlen(pass) - 1 );
             strncat( pass, COM_Argv( i ), sizeof(pass) - strlen(pass) - 1 );
         }
-        dl_strncpy( lk_set.passcode, pass, sizeof(lk_set.passcode) );
+        err = LK_Setting_Set( LK_SET_PASSCODE, pass );
     }
-    else if( ! strcasecmp( key, "allow" ) )
-    {
-        if( lk_set.num_allow >= LK_MAX_ALLOW )  { CONS_Printf( "allow list is full\n" ); return; }
-        dl_strncpy( lk_set.allow[lk_set.num_allow++], val, 128 );
-    }
+    else if( ! strcasecmp( key, "allow" ) )    err = LK_Allow_Add( val );
     else if( ! strcasecmp( key, "unallow" ) )
     {
+        err = NULL;
         for( i = 0; i < lk_set.num_allow; i++ )
-        {
-            if( strcasecmp( lk_set.allow[i], val ) )  continue;
-            memmove( &lk_set.allow[i], &lk_set.allow[i+1], (lk_set.num_allow - i - 1) * 128 );
-            lk_set.num_allow--;
-            break;
-        }
+            if( ! strcasecmp( lk_set.allow[i], val ) )  { err = LK_Allow_Remove( i ); break; }
     }
     else
     {
         CONS_Printf( "link_set: unknown setting %s\n", key );
         return;
     }
-
-    if( ! lk_settings_save() )
-        CONS_Printf( "link_set: could not write %s\n", lk_cfgfile );
-    // Apply by restarting the link.
-    lk_stop();
-    lk_start_failed_reported = false;
-    CONS_Printf( "Cabinet Link: %s updated\n", key );
+    if( err )
+        CONS_Printf( "link_set: %s\n", err );
+    else
+        CONS_Printf( "Cabinet Link: %s updated\n", key );
 }
 
 // Forget every pinned cabinet (a replaced master, a reinstalled member).
 static void  Command_LinkForget_f( void )
 {
-    if( ! devmode )
-    {
-        CONS_Printf( "link_forget: only in an operator (-devmode) session\n" );
-        return;
-    }
-    lk_stop();
-    lk_lock();
-    lk_shared.num_pins = 0;
-    lk_pins_save();
-    lk_unlock();
-    lk_start_failed_reported = false;
-    CONS_Printf( "Cabinet Link: forgot every paired cabinet\n" );
+    const char * err = LK_Forget_Pins();
+    if( err )
+        CONS_Printf( "link_forget: %s\n", err );
+    else
+        CONS_Printf( "Cabinet Link: forgot every paired cabinet\n" );
 }
 
 
@@ -2011,24 +2104,20 @@ static void  Command_LinkForget_f( void )
 // Colours read backwards in V_DrawString: 0 is red, V_WHITEMAP is grey.  Red
 // marks what needs the operator.  Glyphs are 7 tall; 9 is the row pitch.
 
-void  LK_Drawer( void )
+void  LK_Drawer( int y, int y_end )
 {
     lk_peer_info_t  peers[LK_MAX_PEERS];
     char  buf[96];
-    int   i, n, y;
+    int   i, n;
     static const char * status_words[] = { "", "CONNECTING", "CHECKING", "ONLINE", "REFUSED", "OFFLINE" };
 
     if( ! lk_inited )
     {
-        lk_draw_fit( 6, 40, 308, 0, "NOT STARTED (SEE CONSOLE)" );
+        lk_draw_fit( 6, y, 308, 0, "NOT STARTED (SEE CONSOLE)" );
         return;
     }
 
-    snprintf( buf, sizeof(buf), "%s   %s   ID %s", lk_role_names[lk_set.role], lk_set.name,
-              lk_id_short[0] ? lk_id_short : "-" );
-    lk_draw_fit( 6, 28, 308, V_WHITEMAP, buf );
-
-    y = 38;
+    // One line: is it running, and this cabinet's id for pairing.
     if( lk_set.role == LK_ROLE_OFF )
         lk_draw_fit( 6, y, 308, V_WHITEMAP, "LINK IS OFF" );
     else if( ! lk_thread )
@@ -2037,47 +2126,23 @@ void  LK_Drawer( void )
         lk_draw_fit( 6, y, 308, 0, buf );
     }
     else
-        lk_draw_fit( 6, y, 308, V_WHITEMAP, "RUNNING" );
-
-    y = 48;
-    if( lk_set.role == LK_ROLE_MEMBER )
     {
-        snprintf( buf, sizeof(buf), "MASTER %.60s PORT %d", lk_set.master[0] ? lk_set.master : "(NONE)",
-                  lk_set.port );
-        lk_draw_fit( 6, y, 308, lk_set.master[0] ? V_WHITEMAP : 0, buf );
+        snprintf( buf, sizeof(buf), "RUNNING   THIS CABINET'S ID %s", lk_id_short[0] ? lk_id_short : "-" );
+        lk_draw_fit( 6, y, 308, V_WHITEMAP, buf );
     }
-    else if( lk_set.role == LK_ROLE_MASTER )
-    {
-        int len;
-        len = snprintf( buf, sizeof(buf), "PORT %d  ALLOWED:", lk_set.port );
-        for( i = 0; i < lk_set.num_allow && len < (int)sizeof(buf) - 2; i++ )
-            len += snprintf( buf + len, sizeof(buf) - len, " %s", lk_set.allow[i] );
-        if( ! lk_set.num_allow )
-            snprintf( buf + len, sizeof(buf) - len, " NOBODY" );
-        lk_draw_fit( 6, y, 308, lk_set.num_allow ? V_WHITEMAP : 0, buf );
-    }
+    if( lk_set.role == LK_ROLE_OFF )
+        return;
 
-    if( lk_set.role != LK_ROLE_OFF )
-    {
-        int plen = strlen( lk_set.passcode );
-        y = 58;
-        if( ! plen )
-            lk_draw_fit( 6, y, 308, 0, "NO PASSCODE SET" );
-        else if( plen < LK_PASSCODE_MIN )
-            lk_draw_fit( 6, y, 308, 0, "PASSCODE IS SHORT: USE 10 OR MORE" );
-        else
-            lk_draw_fit( 6, y, 308, V_WHITEMAP, "PASSCODE SET" );
-    }
-
-    y = 74;
+    y += 14;
     V_DrawString( 6, y, V_WHITEMAP, "CABINET" );
     V_DrawString( 106, y, V_WHITEMAP, "ID" );
     V_DrawString( 176, y, V_WHITEMAP, "STATUS" );
 
+    y += 11;
     n = LK_Peers( peers, LK_MAX_PEERS );
-    if( n == 0 && lk_set.role != LK_ROLE_OFF )
-        lk_draw_fit( 6, 86, 308, V_WHITEMAP, "NO OTHER CABINETS YET" );
-    for( i = 0, y = 86; i < n && y <= 166; i++, y += 9 )
+    if( n == 0 )
+        lk_draw_fit( 6, y, 308, V_WHITEMAP, "NO OTHER CABINETS YET" );
+    for( i = 0; i < n && y <= y_end; i++, y += 9 )
     {
         lk_peer_info_t * p = &peers[i];
         int  bad = ( p->status == LK_PEER_REFUSED );
@@ -2091,7 +2156,7 @@ void  LK_Drawer( void )
         // The reason is what the operator acts on, and trimmed to the status
         // column it lost its meaning ("REFUSED: LOCKED OU"), so it gets a
         // full-width line of its own.
-        if( p->status != LK_PEER_ONLINE && p->reason[0] && y + 9 <= 166 )
+        if( p->status != LK_PEER_ONLINE && p->reason[0] && y + 9 <= y_end )
         {
             y += 9;
             lk_draw_fit( 18, y, 296, bad ? 0 : V_WHITEMAP, p->reason );

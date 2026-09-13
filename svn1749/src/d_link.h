@@ -17,6 +17,7 @@
 // Maximum cabinets a master accepts, beyond itself.  A cabinet is a node to
 // the game netcode, which allows MAXNETNODES (32); the link never needs more.
 #define LK_MAX_PEERS       31
+#define LK_MAX_ALLOW       LK_MAX_PEERS   // addresses on a master's allow list
 #define LK_NAME_LEN        16    // cabinet name, NUL included
 #define LK_ID_SHORT_LEN    10    // "7F3A-91C2" and its NUL
 #define LK_PORT_DEFAULT    5030
@@ -169,8 +170,38 @@ int         LK_Net_Recv( const byte * in, int len, byte * out, int outsize,
 int         LK_Net_Send( const byte * in, int len, byte * out, int outsize,
                          uint32_t ip, uint16_t port );
 
-// The operator page body (Arcade Options -> Cabinet Link).  The caller sets
-// up drawing and the title, as the Audit page does for AU_Drawer.
-void        LK_Drawer( void );
+// The operator page's status block (Arcade Options -> Cabinet Link): whether
+// the link is running, then every other cabinet it can see, from y down to
+// y_end.  The caller sets up drawing and draws the settings rows above it.
+void        LK_Drawer( int y, int y_end );
+
+// --- Settings, for the Cabinet Link page and link_set ---
+//
+// Only in an operator (-devmode) session.  Every change is saved to
+// legacyhome/link/link.cfg at once and restarts the link, exactly as link_set
+// does -- the functions below are what link_set calls.  Each returns NULL when
+// it worked, or a short reason when it did not.
+
+typedef enum
+{
+    LK_SET_ROLE,        // "off", "master", "member"
+    LK_SET_NAME,
+    LK_SET_MASTER,      // the master's address, on a member
+    LK_SET_PORT,        // 1..65535
+    LK_SET_PASSCODE
+} lk_setting_e;
+
+// The value as text -- the passcode in the clear: only an operator sees it.
+void        LK_Setting_Get( lk_setting_e which, char * out, int outsize );
+const char* LK_Setting_Set( lk_setting_e which, const char * value );
+
+// A master's allow list.
+int         LK_Allow_Count( void );
+const char* LK_Allow_Get( int i );
+const char* LK_Allow_Add( const char * address );
+const char* LK_Allow_Remove( int i );
+
+// Forget every paired cabinet (a replaced master, a reinstalled member).
+const char* LK_Forget_Pins( void );
 
 #endif

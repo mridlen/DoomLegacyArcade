@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -653,6 +653,43 @@ case_msgfire() {
     out "$d/member" | sed -n '/pressing fire/,$p' | grep -a "^LINKGAME " | tail -1 | grep -aq " menu=0 " \
         || FAILS="$FAILS
       after fire the joiner was still in a menu: $(out "$d/member" | grep -a '^LINKGAME ' | tail -1)"
+}
+
+# kbd <kind> <text> : the presses that type text on the Cabinet Link page's
+# on-screen keyboard (tools/linktest_kbd.py reads the layout out of m_menu.c).
+kbd() { python3 "$REPO/tools/linktest_kbd.py" "$1" "$2"; }
+
+# Two cabinets that have never been linked, set up entirely from the Cabinet
+# Link page with nothing but a stick and two buttons: no link.cfg, no console.
+# The master allows the member from the list of cabinets it turned away, and
+# the passcode is typed in mixed case, so the lowercase set is used too.
+case_menusetup() {
+    local d=$1 p=$2
+    local pass="Link test 12345" clear20="b b b b b b b b b b b b b b b b b b b b"
+    mkcab "$d/master"; mkcab "$d/member"
+    # Master: role (off -> master), name, passcode, port; then, once the member
+    # has been turned away, allow it from the list.
+    local mkeys="open f d f $clear20 $(kbd name PICAB) d f $(kbd passcode "$pass") d d f $clear20 $(kbd port $p) w20000 u f d f esc esc"
+    # Member: role (off -> master -> member), name, passcode, master, port.
+    local ukeys="open f f d f $clear20 $(kbd name LAPCAB) d f $(kbd passcode "$pass") d f $(kbd master 127.0.0.1) d f $clear20 $(kbd port $p) esc esc"
+    run "$d/master" 95 0 -devmode -linktest -linkkeys "$mkeys"
+    run "$d/member" 95 0 -devmode -linktest -linkkeys "$ukeys"
+    wait
+    expect "the master's script ran" "$d/master" "^LINKLOG .*test: keys done"
+    expect "the member's script ran" "$d/member" "^LINKLOG .*test: keys done"
+    expect_not "no key token was misread" "$d/master" "unknown key token"
+    local mc="$d/master/legacyhome/link/link.cfg" uc="$d/member/legacyhome/link/link.cfg"
+    for want in "role master" "name PICAB" "port $p" "passcode $pass" "allow 127.0.0.1"; do
+        grep -qx "$want" "$mc" 2>/dev/null || FAILS="$FAILS
+      master link.cfg lacks \"$want\": $(tr '\n' '|' < "$mc" 2>/dev/null | sed 's/passcode [^|]*/passcode .../')"
+    done
+    for want in "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "passcode $pass"; do
+        grep -qx "$want" "$uc" 2>/dev/null || FAILS="$FAILS
+      member link.cfg lacks \"$want\": $(tr '\n' '|' < "$uc" 2>/dev/null | sed 's/passcode [^|]*/passcode .../')"
+    done
+    expect "the master turned the member away before it was allowed" "$d/master" "^LINKPEER 127\.0\.0\.1 - refused .*allow list"
+    expect "the master sees the member online" "$d/master" "^LINKPEER 127\.0\.0\.1 [0-9A-F]{4}-[0-9A-F]{4} online [a-z]+ LAPCAB\|"
+    expect "the member sees the master online" "$d/member" "^LINKPEER 127\.0\.0\.1 [0-9A-F]{4}-[0-9A-F]{4} online [a-z]+ PICAB\|"
 }
 
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and
