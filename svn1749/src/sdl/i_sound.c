@@ -166,6 +166,32 @@ typedef struct {
 
 static mix_channel_t  mix_channel[ NUM_CHANNELS ];  // channel
 
+// [Arcade] Serialises mix_channel[] between the game thread, which starts,
+// adjusts and stops sounds, and SDL's audio thread, which mixes them.
+//
+// There was no lock at all in the SDL_mixer build (the SDL_LockAudio pairs
+// were "#ifndef HAVE_MIXER"), and publishing a channel's fields in a careful
+// order was not enough: on the Raspberry Pi 3 the mixer still read a channel
+// as playing with a NULL volume lookup, about one headless demo replay in
+// seven, after that ordering fix had held on x86.  The mixer now never reads
+// a channel the game thread is part way through writing.
+//
+// Held only for single channel writes and for the mixer's copy of the table
+// (see I_UpdateSound_sdl), so the game thread waits at most for a 1KB copy --
+// never for a buffer to be mixed.  An SDL_mutex, not an SDL_SpinLock, so the
+// SDL 1.2 build keeps compiling.
+static SDL_mutex *  mix_lock = NULL;
+
+static inline void  mix_lock_take( void )
+{
+    if( mix_lock )  SDL_LockMutex( mix_lock );
+}
+
+static inline void  mix_lock_give( void )
+{
+    if( mix_lock )  SDL_UnlockMutex( mix_lock );
+}
+
 
 // Pitch to stepping lookup, 16.16 fixed point
 static Sint32 steptable[256];
@@ -284,9 +310,9 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     if (nosoundfx)
         return 0;
 
-#ifndef HAVE_MIXER
-    SDL_LockAudio();
-#endif
+    // [Arcade] Was SDL_LockAudio, and only without SDL_mixer; see mix_lock.
+    // The SFX_id_fin return below used to leave that lock held.
+    mix_lock_take();
 
     // Chainsaw troubles.
     // Play these sound effects only one at a time.
@@ -300,7 +326,11 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
             if ((chanp->data_ptr) && (chanp->sfxid == sfxid))
             {
                 if( S_sfx[sfxid].flags & SFX_id_fin )
-                    return chanp->handle;  // already have one
+                {
+                    handle = chanp->handle;  // already have one
+                    mix_lock_give();
+                    return handle;
+                }
                 // Kill, Reset.
                 chanp->data_ptr = 0;
                 break;
@@ -406,42 +436,25 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     chanp->leftvol_lookup = &vol_lookup[leftvol * 256];
     chanp->rightvol_lookup = &vol_lookup[rightvol * 256];
 
-    // [Arcade] Publish the channel to the mixer thread, last.
+    // [Arcade] Publish the channel to the mixer thread.
     //
-    // I_UpdateSound_sdl runs on SDL's audio thread and decides a channel is
-    // playable from data_ptr alone; it then dereferences leftvol_lookup, set
-    // sixty-odd lines above this in the original ordering.  mix_channel[] is
-    // static, so leftvol_lookup is NULL until a slot's first use -- and a
-    // callback landing in that window read NULL[sample] and killed the whole
-    // process from the audio thread, with the game thread nowhere in the
-    // backtrace.  It only crashes on a slot's first use (16 chances per boot,
-    // all in the first burst of sound), because vol_lookup is a static array,
-    // so afterwards a stale pointer is merely stale -- which is why it is rare
-    // and why the fault looked random.
-    //
-    // The lock that would have covered this is compiled out here: the
-    // SDL_LockAudio/SDL_UnlockAudio pair in this function is guarded by
-    // "#ifndef HAVE_MIXER", and the cabinet builds with HAVE_MIXER=1.  (Do not
-    // simply re-enable them: the SFX_single branch above returns early without
-    // unlocking, so the non-mixer build would deadlock.)  Ordering the stores
-    // needs no lock and costs nothing -- the mixer's own "if(chan_data_ptr)"
-    // test already assumes exactly this discipline.
-    //
-    // The barrier stops the compiler sinking this store above the ones the
-    // mixer reads; x86 does not reorder stores, so that is sufficient here.
-#if defined(__GNUC__) || defined(__clang__)
-    __asm__ __volatile__ ("" ::: "memory");
-#endif
+    // I_UpdateSound_sdl decides a channel is playable from data_ptr alone and
+    // then dereferences leftvol_lookup, which is NULL until a slot's first
+    // use.  A mixer pass that saw one without the other killed the whole
+    // process from SDL's audio thread, with the game thread nowhere in the
+    // backtrace.  The ordering of these stores used to be the only defence
+    // and it did not hold on the Pi; mix_lock is what makes the half-written
+    // channel unobservable now.  data_ptr still goes last, which costs nothing.
     chanp->data_ptr = sfx_data;
 
     // Assign current handle number.
     // Preserved so sounds could be stopped.
+    // [Arcade] Also the mixer's proof that this slot was not restarted while
+    // it was mixing from its copy: every start gives the slot a new handle.
     handle = slot | ((chanp->handle + NUM_CHANNELS) & ~CHANNEL_NUM_MASK);
     chanp->handle = handle;
 
-#ifndef HAVE_MIXER
-    SDL_UnlockAudio();
-#endif
+    mix_lock_give();
 
     // Returns a handle
     return handle;
@@ -455,6 +468,8 @@ void I_UpdateSoundParams(int handle, int vol, int sep, int pitch)
 {
     int slot = handle & CHANNEL_NUM_MASK;
 
+    // [Arcade] Under mix_lock, like every other write to mix_channel[].
+    mix_lock_take();
     if( mix_channel[slot].handle == handle )
     {
         mix_channel_t  *  chanp = & mix_channel[slot];  // channel to use
@@ -511,6 +526,7 @@ void I_UpdateSoundParams(int handle, int vol, int sep, int pitch)
 //        chanp->step = steptable[pitch];
         chanp->step = steptable[pitch] * chanp->samplerate / DOOM_SAMPLERATE;
     }
+    mix_lock_give();
 }
 
 
@@ -518,20 +534,16 @@ void I_UpdateSoundParams(int handle, int vol, int sep, int pitch)
 void I_StopSound(int handle)
 {
     int slot = handle & CHANNEL_NUM_MASK;
+
+    // [Arcade] mix_lock replaces the SDL_LockAudio pair that only the
+    // non-mixer build had, and it now covers the handle test as well.
+    mix_lock_take();
     if( mix_channel[slot].handle == handle )
     {
-        // outside caller should lock
-#ifndef HAVE_MIXER
-        SDL_LockAudio();
-#endif
-
         mix_channel[slot].data_ptr = NULL;
 //        stop_channel( & mix_channel[slot] );
-
-#ifndef HAVE_MIXER
-        SDL_UnlockAudio();
-#endif
     }
+    mix_lock_give();
 }
 
 //   handle : the handle returned by StartSound.
@@ -572,10 +584,32 @@ void I_UpdateSound(void)
 static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
 {
     int chan;
+    // [Arcade] The mixer works on a private copy of the channel table.
+    //
+    // Reading mix_channel[] live, sample by sample, is what let this thread
+    // see a channel the game thread was part way through starting.  So the
+    // table is copied once under mix_lock, mixed from the copy with no lock
+    // held, and only how far each sound got is written back -- under the lock
+    // again, and only to a slot that still holds the same sound.  A sound
+    // started, stopped or restarted meanwhile keeps what the game thread
+    // wrote; a volume change arriving mid-pass is heard from the next buffer.
+    //
+    // No sound starts later than before: this pass fills a whole buffer
+    // (~46ms) in well under a millisecond, so a sound started during it was
+    // already landing in the next buffer nearly every time.
+    mix_channel_t  chan_copy[ NUM_CHANNELS ];
+    byte *         copy_start[ NUM_CHANNELS ];
+
     // Mix current sound data.
     // Data, from raw sound, for right and left.
     if (nosoundfx)
         return;
+
+    mix_lock_take();
+    memcpy( chan_copy, mix_channel, sizeof(chan_copy) );
+    mix_lock_give();
+    for (chan = 0; chan < NUM_CHANNELS; chan++)
+        copy_start[chan] = chan_copy[chan].data_ptr;
 
     // Pointers in audio stream, left, right, end.
     // Left and right channels are multiplexed in the audio stream, alternating.
@@ -602,7 +636,7 @@ static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
         // Now more channels could be set at compile time
         //  as well. Thus loop those  channels.
         // Mixing channel index.
-        register mix_channel_t * chanp = & mix_channel[ 0 ];
+        register mix_channel_t * chanp = & chan_copy[ 0 ];  // [Arcade] the copy
         for (chan = NUM_CHANNELS; chan > 0; chan--)
         {
             register byte * chan_data_ptr = chanp->data_ptr;
@@ -661,6 +695,23 @@ static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
         leftout += step;
         rightout += step;
     }
+
+    // [Arcade] Hand back how far each sound got.  The handle changes on every
+    // I_StartSound for a slot and I_StopSound clears data_ptr, so a slot whose
+    // data_ptr and handle both still match the copy has not been touched.
+    mix_lock_take();
+    for (chan = 0; chan < NUM_CHANNELS; chan++)
+    {
+        mix_channel_t * live = & mix_channel[chan];
+        if( copy_start[chan]
+            && live->data_ptr == copy_start[chan]
+            && live->handle == chan_copy[chan].handle )
+        {
+            live->data_ptr = chan_copy[chan].data_ptr;
+            live->step_remainder = chan_copy[chan].step_remainder;
+        }
+    }
+    mix_lock_give();
 }
 
 
@@ -982,6 +1033,15 @@ void I_StartupSound(void)
 
   setup_mixer_tables();
 
+  // [Arcade] Before the device is opened, since opening it starts the
+  // callback.  Without a lock the engine still runs, as it did before.
+  if( ! mix_lock )
+  {
+      mix_lock = SDL_CreateMutex();
+      if( ! mix_lock )
+          GenPrintf( EMSG_warn, "I_InitSound: no mixer lock (%s)\n", SDL_GetError() );
+  }
+
   // InitMusic
 #ifdef HAVE_MIXER
   // Use SDL_mixer for music
@@ -1166,6 +1226,13 @@ void I_ShutdownSound(void)
 #else
   SDL_CloseAudio();
 #endif
+
+  // [Arcade] Only once the device is closed and the callback cannot run.
+  if( mix_lock )
+  {
+      SDL_DestroyMutex( mix_lock );
+      mix_lock = NULL;
+  }
 
   CONS_Printf("shut down\n");
   soundStarted = false;

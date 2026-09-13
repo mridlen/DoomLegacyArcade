@@ -229,6 +229,10 @@ to anyone else running this port. Each is written up in full in the commit that 
   from SDL's audio thread — with the game thread nowhere in the backtrace. Only ever on the first
   use of each of the sixteen channels, which is the first burst of sound after a level loads, so it
   read as a random crash on startup. It showed up once in about 110 headless demo replays.
+  Reordering those writes fixed it on a PC but **not on a Raspberry Pi**, which still crashed the
+  same way now and then. The sound code and the mixer now share the channel list through a proper
+  lock, and the mixer works from its own copy of it, so it can never see a sound half set up — on
+  any machine. Nothing sounds different and no sound starts later.
 
 **OpenGL**
 

@@ -472,8 +472,14 @@ Output: a short findings section here, and a go / change-course decision.
 
 **Decision: go.** The laptop and the Pi compute the same game, and the stock netcode already plays
 one game between them, including a cabinet with two local players. Nothing found needs the netcode
-replaced, and Mark has played it (finding 2). Still open: step 4 (no Windows machine was
-reachable).
+replaced, and Mark has played it (finding 2).
+
+**PINNED — step 4, the Windows check, is deferred, not dropped** (Mark, 2026-09-13: his Windows box
+is shut down and slow to bring up; revisit when it is running). Before Phase 3 ships at the latest,
+because that is when a Windows cabinet would first play a linked game. What it needs, when it
+happens: build with `build.bat`, replay the laptop's demotest baseline against that binary (same
+wads — Doom 2 v1.9), and play one netgame against the Pi. It is the MinGW compiler and C runtime
+that are new, not the processor.
 
 The machines: laptop x86-64, Fedora, GCC 15; Pi 3 Model B, aarch64 Debian 13, GCC 14. Both on
 Wi-Fi (192.168.1.81 and .68). Both builds use `-O3 -ffast-math` from the `Makefile`. Both
@@ -535,6 +541,8 @@ binaries from b67ef22.
    `I_UpdateSoundParams` and the mixer, which `HAVE_MIXER` builds do not have. Separate work, but
    it matters to a Pi cabinet more than anything in this plan. Core files are on the Pi
    (`coredumpctl list`).
+   - **Fixed 2026-09-13, before Phase 1**: `mix_lock` plus a mixer that works from a copy of the
+     channel table. Write-up and proof in `gotchas.md` (the audio thread entry).
 6. **The IWAD version decides whether scores can be shared, not the game name.** The laptop had
    Doom 2 **v1.666** (`30e3c2d0…`), the Pi **v1.9** (`25e1459c…`). Mark chose v1.9 and the laptop
    was updated (old file kept in `~/games/doom-backup/`). Replaying the laptop's 18 Doom 2 record

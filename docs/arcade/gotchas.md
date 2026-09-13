@@ -278,46 +278,58 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   and a live hazard for the cabinet's **death demos**. The fix is to carry it in the header's spare
   option area, where there is still room.
 
-- **The audio thread killed the process because a channel was published before it was filled in
-  (fixed on x86 — NOT on the Pi, see the note at the end of this entry).** `I_StartSound` (`sdl/i_sound.c`) set `chanp->data_ptr` -- the field the mixer thread
-  tests to decide a channel is playable -- and only ~64 lines later set `chanp->leftvol_lookup`, the
-  pointer the mixer immediately dereferences. `mix_channel[]` is `static`, so `leftvol_lookup` is
-  **NULL until a slot's first use**; a callback landing in that window read `NULL[sample]` and took
-  the whole process down from SDL's audio thread.
+- **The audio thread killed the process: the mixer read a sound channel the game thread was part
+  way through writing (fixed twice — the first fix held on x86 and not on the Pi).**
+  `I_StartSound` (`sdl/i_sound.c`) fills in a slot of `mix_channel[]` on the game thread while
+  `I_UpdateSound_sdl` mixes the same table on SDL's audio thread. The mixer decides a channel is
+  playable from `data_ptr` alone and then dereferences `leftvol_lookup`/`rightvol_lookup`, which are
+  **NULL until a slot's first use** (`mix_channel[]` is `static`). A mixer pass that saw one without
+  the other read `NULL[sample]` and took the whole process down.
   - **It looks random, and it is not.** `vol_lookup` is a static array that is never freed, so after
-    a slot's first use a stale `leftvol_lookup` is merely stale -- a fraction of a buffer mixed at
-    the previous sound's volume, inaudible. Only the **first** use of each of the 16 channels can
-    crash, all of them in the first burst of sound after a level starts. That is why it showed up
-    once in ~110 headless demo replays.
-  - **The lock that would have covered it is compiled out.** The `SDL_LockAudio` /
-    `SDL_UnlockAudio` pair in `I_StartSound` is guarded by `#ifndef HAVE_MIXER`, and the cabinet
-    builds with `HAVE_MIXER=1`. **Do not simply re-enable them**: the `SFX_single` branch near the
-    top of the function `return`s while holding the lock, so the non-mixer build would deadlock.
-  - **Fixed by ordering the stores instead**: everything the mixer reads is filled in first, and
-    `data_ptr` is published last behind a compiler barrier. No lock, no cost, and it is the
-    discipline the mixer's own `if( chan_data_ptr )` test already assumes. The barrier stops the
-    compiler sinking that store; x86 does not reorder stores, so that is enough here.
-  - **Proved in both directions, which is the only way to trust a fix for something this rare.**
-    Inserting `SDL_Delay(20)` between the two stores, *keeping the original order*, turned a
-    1-in-110 fault into **6 of 6 runs segfaulting**, at the same `i_sound.c` line and the same
-    backtrace. With the stores reordered and the same 20ms window still in place: **0 of 6**. A rare
-    race that "stops happening" after a change has proved nothing -- widen the window until it is
-    reliable, then show the fix closes it.
-  - `I_UpdateSoundParams` rewrites `leftvol_lookup` on a live channel with no lock either, but that
-    one cannot crash: the pointer it stores is always valid, an aligned pointer store does not tear
-    on x86, and the worst case is one buffer at the wrong volume. `I_StopSound` only ever clears
-    `data_ptr`, which is always safe.
+    a slot's first use a stale lookup is merely stale. Only the **first** use of each of the 16
+    channels can crash, all in the first burst of sound after a level starts.
+  - **There was no lock at all.** The `SDL_LockAudio`/`SDL_UnlockAudio` pairs were
+    `#ifndef HAVE_MIXER`, and the cabinet builds with `HAVE_MIXER=1`. (The non-mixer build's pair
+    also returned from the `SFX_single` branch with the lock held.)
+  - **First fix — ordering the stores.** `data_ptr` published last, behind a compiler barrier.
+    Proved on x86 by widening the window (`SDL_Delay(20)` between the stores: 6 of 6 crashing in the
+    old order, 0 of 6 reordered), and it held there.
+  - **It did not hold on the Raspberry Pi 3** (aarch64, GCC 14). Found by the Cabinet Link Phase 0
+    runs: `doomu-sl_E1M1_sk2_speed.lmp` under `tools/demotest.sh` crashed 2 of ~120 replays, only
+    while several replays ran at once, same backtrace, one core with `leftvol_lookup` read as NULL and
+    one with `rightvol_lookup`, on channels whose memory afterwards held valid pointers. The Pi
+    binary's disassembly had the lookups stored before `data_ptr` and read after the `data_ptr`
+    test, so the ordering was in force and still not enough; the exact interleaving was never
+    pinned down. **Ordering the writes of shared state is not a substitute for a lock**, and "the
+    disassembly looks right" did not make it one.
+  - **Second fix — a real lock, and the mixer works from a copy.** `mix_lock` (an `SDL_mutex`, so
+    SDL 1.2 still builds) is held by `I_StartSound`, `I_UpdateSoundParams` and `I_StopSound` while
+    they touch a channel. The mixer takes it only to `memcpy` the 16-channel table (1KB), mixes the
+    copy with no lock held, then retakes it to write back how far each sound got — and only to a slot
+    whose `data_ptr` *and* `handle` still match the copy, since every start gives a slot a new
+    handle and a stop clears `data_ptr`. The game thread therefore waits at most for a 1KB copy,
+    never for a buffer to be mixed. A volume change arriving mid-pass is heard one buffer (~46ms)
+    later, and sound starts are not delayed: the pass fills a whole buffer in well under a
+    millisecond, so a sound started during it already landed in the next buffer.
+  - **Proved by widening the window again, against the lock this time**: data_ptr published *before*
+    the lookups with `SDL_Delay(20)` in between (the bug put back on purpose), and the lock switched
+    off by an environment variable in the same binary: **6 of 6 segfaulted** in
+    `I_UpdateSound_sdl`; with the lock on, **0 of 6**. That shows the lock excludes the half-written
+    channel whatever order the stores come in.
+  - **Then on the Pi, unmodified, against the natural crash**: the full `tools/demotest.sh` suite
+    (102 demos, 4 at a time), alternating the old and the fixed binary, four rounds each. **Old: 3
+    segfaults in 408 replays, all in `I_UpdateSound_sdl` at the same line; fixed: 0 in 408.** The
+    load matters and so does the variety: 180 replays of the one demo that had crashed, one at a time
+    or four copies at once, produced **no** crash from the *old* binary — a loop that cannot fail
+    says nothing about a fix, so it was not counted. The laptop suite matches main except one Doom 2
+    demo that is unstable on the unfixed binary too (broken since the IWAD became v1.9), and
+    `make smoke` passes.
   - Read a crash like this with
     `coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt"`; the giveaway is a
     backtrace whose only frames are SDL's audio thread, with the game thread nowhere in it. It
-    happens under `SDL_AUDIODRIVER=dummy` too -- the dummy driver still runs the callback.
-  - **Still crashes on the Raspberry Pi 3 (aarch64), about 1 run in 7** (2026-09-13, found by the
-    Cabinet Link Phase 0 runs): `doomu-sl_E1M1_sk2_speed.lmp` under `tools/demotest.sh`, same
-    backtrace, `leftvol_lookup` (one core) and `rightvol_lookup` (the other) read as NULL on a
-    channel whose memory afterwards is valid. The Pi binary's disassembly has the lookups stored
-    before `data_ptr` and read after the `data_ptr` test, so the ordering fix is in force and is not
-    enough there. Do not treat this entry as closed: the fix is a real lock. Details in
-    `cabinet-link.md`, Phase 0 finding 5.
+    happens under `SDL_AUDIODRIVER=dummy` too — the dummy driver still runs the callback. On the
+    Pi, gdb can read a core against a *copy* of the binary if the original was in a deleted scratch
+    directory (`coredumpctl dump <pid> -o core`, then `gdb <copy> core`).
 
 - **`-synclog`** writes one line of simulation state per tic while recording or playing back, to
   `synclog_rec.txt` / `synclog_play.txt` in the current directory. Record a demo with it, play that
