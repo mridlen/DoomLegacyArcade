@@ -1035,6 +1035,38 @@ its view still turns from `localangle` — and kicks the node after a few.
   joining over Wi-Fi, four a side, everyone walking) two runs had no repair and no kick, the Pi in the
   game with its own four players to the end.
 
+**…and still kicked with real players** (same evening, on that build). Mark's Pi log: a run of
+`Client player_repair` lines where nearly every player's **angle** differed by a little, then the
+kick — and some `Client repair` lines with nonsense (`gametic client 11026 server 266998803`, random
+state `(00600000,00010000)`).
+- **The tests could not see it.** `-linkmoveevery` holds the same buttons for 400 ms, so a tic run with
+  its neighbour's ticcmds — or with none, where the player was not moving anyway — looked exactly like
+  the right one. **`-linkchaos`** now gives every joined panel a new random mix of forward, back, turns,
+  strafe and fire every 50 ms, like people on analog sticks, and case **`chaos8`** (four a side,
+  `LOSS8` percent loss, default 10) fails on any consistency failure or repair at all. With it the
+  desync reproduced **on one machine with no packet loss**.
+- **Cause (upstream): a tic ran on the server with ticcmds its packet did not carry.** A packet carries
+  ticcmds only for the players in `ticcmd_player_mask` when it is sent, and the server makes and sends
+  tics ahead of running them — so the tics made in the moment between a joining cabinet's players
+  being added and the server running that XD_ADDPLAYER went out without their ticcmds, while the
+  server had already stored them (`client_cmd_handler` writes them as they arrive) and ran the tics with
+  them. The tic log showed it exactly: at the tic in question the joining cabinet's first player was
+  strafing on the host and still on the joiner, every other player identical. `SV_Maketic` now gives
+  every player not in the mask a zero ticcmd when the tic is made, so the server runs what it sends;
+  and the client zeroes a tic's ticcmds (not just their flags) when a new packet first fills it, so a
+  player a packet carries nothing for runs with zero rather than whatever the ring slot held.
+- **Verified**: `chaos8` with no loss failed in 2 of 3 runs on the build without this and passed in
+  every run with it; two cabinets' tic logs agreed for 1400 tics, every player's ticcmd included. At
+  10% loss 13 of 14 runs passed and at 30% 2 of 2; the one failure at 10% left no log and did not recur
+  in 13 logged or unlogged runs after it — unexplained. On the real pair with `-linkchaos` (laptop
+  hosting, Pi joining over Wi-Fi, four a side) a run had no repair and no kick; a second was cut short
+  by the laptop running out of memory. `chaos8 lossy8 move8 slowjoin8 rehostview linkgame msgfire
+  noshow campaign` pass, `make smoke` 5/5.
+- Also fixed on the way: `SV_Send_player_desc`, splitting a repair of all players over two packets,
+  kept writing on from where the first ended, so the second re-sent the first players and could run past
+  netbuffer. **Not found**: where the nonsense repair headers come from — they only appear during a
+  repair, which the desync fix above should now make rare.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

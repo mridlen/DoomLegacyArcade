@@ -2576,6 +2576,12 @@ static void SV_Send_player_desc( player_desc_t * pdesc, byte desc_flags, byte pn
             if( errcode >= NE_fail )  goto abort_send;
             entry_count = 0;
             seq_num++;
+            // [Arcade] Start the next part at the start of the descriptions.
+            // It kept writing on from where the first part ended, so the second
+            // part re-sent the first part's players under the new count and ran
+            // on past the end of netbuffer.
+            bufp = (byte*) &pdesc->pd;
+            paksize = 0;
         }
 
         // Player state that would be valid during intermission, or repair.
@@ -5807,6 +5813,11 @@ static void servertic_handler( byte nnode )
         {
             // first packet for this tic, clear old stuff
             D_Clear_ticcmd(btic);
+            // [Arcade] The ticcmds themselves too, not just their flags: a player
+            // this packet carries no ticcmd for runs the tic with a zero one, as
+            // the server does (SV_Maketic), rather than with whatever the slot
+            // held BACKUPTICS tics ago.
+            memset( netcmds[btic], 0, sizeof(netcmds[btic]) );
             netcmd_tic_hash[btic] = start_tic_hash;  // after clear
         }
         // When this was in textcmds, it would only record for those that
@@ -6305,6 +6316,24 @@ void SV_Maketic(void)
             }
         }
     }
+    // [Arcade] The tic runs with exactly the ticcmds it is sent with.  A packet
+    // carries ticcmds only for the players in ticcmd_player_mask *when it is
+    // sent*, and a tic is often made and sent before an earlier tic's
+    // XD_ADDPLAYER has run -- so for a player joining mid-level, the first tics
+    // made after the join went out with no ticcmd for them, while this server
+    // had already stored that player's ticcmds (client_cmd_handler writes them
+    // as they arrive) and ran the tics with them.  The joining cabinet ran the
+    // same tics with nothing: a consistency failure a few tics into every
+    // linked game whose new players were actually moving -- invisible to a
+    // test holding the same buttons for 400 ms, where nothing and the
+    // previous ticcmd look alike.  A player not in the mask gets a zero ticcmd,
+    // here and on every client alike.
+    for( i = 0; i < MAXPLAYERS; i++ )
+    {
+        if( ! ( ticcmd_player_mask & (1u << i) ) )
+            memset( &netcmds[btic][i], 0, sizeof(ticcmd_t) );
+    }
+
     // all tic are now present, make the next
     maketic++;
 }

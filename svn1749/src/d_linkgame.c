@@ -89,6 +89,7 @@ static int         lkg_test_press_secs;     // -linkpressafter S: a real fire pr
 static uint32_t    lkg_test_press_at;
 static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
 static int         lkg_test_move_ms;
+static boolean     lkg_test_chaos;          // -linkchaos: every panel, a new random mix of buttons every 50 ms
 static int         lkg_test_join_panels = 1;
 static boolean     lkg_test_host_in_demo;   // -linkhostindemo: host only while an attract demo plays // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
@@ -629,6 +630,7 @@ void  LKG_Ticker( void )
             if( M_CheckParm( "-linkjoinpanels" ) && M_IsNextParm() )
                 lkg_test_join_panels = atoi( M_GetNextParm() );
             lkg_test_host_in_demo = M_CheckParm( "-linkhostindemo" ) != 0;
+            lkg_test_chaos = M_CheckParm( "-linkchaos" ) != 0;
             if( M_CheckParm( "-linkmoveevery" ) && M_IsNextParm() )
                 lkg_test_move_ms = atoi( M_GetNextParm() );
         }
@@ -641,6 +643,42 @@ void  LKG_Ticker( void )
 
     while( LK_Poll_Event( &ev ) )
         lkg_on_event( &ev );
+
+    // -linktest -linkchaos: people at every joined panel doing something different
+    // nearly every tic -- walking, backing, turning either way, strafing,
+    // firing -- as real players on analog sticks do.  -linkmoveevery holds the
+    // same buttons for 400 ms, so a tic run with its neighbour's ticcmds looked
+    // exactly like the right one and a whole class of desync went unseen.
+    if( lkg_test_chaos && gamestate == GS_LEVEL && netgame )
+    {
+        static uint32_t  next_ms = 0, rng = 987654321u;
+        static byte      held[MAXSPLITSCREENPLAYERS];
+        static const int  gcs[6] = { gc_forward, gc_backward, gc_turnleft, gc_turnright, gc_strafeleft, gc_fire };
+        if( lkg_now() >= next_ms )
+        {
+            int  panel, g;
+            next_ms = lkg_now() + 50;
+            for( panel = 0; panel < lkg_test_join_panels && panel < MAXSPLITSCREENPLAYERS; panel++ )
+            {
+                byte  want;
+                rng = rng * 1664525u + 1013904223u;
+                want = (byte)( rng >> 24 );
+                for( g = 0; g < 6; g++ )
+                {
+                    int key = gamecontrol_pl[panel][gcs[g]][0] ? gamecontrol_pl[panel][gcs[g]][0]
+                                                               : gamecontrol_pl[panel][gcs[g]][1];
+                    boolean now_down = ( want >> g ) & 1, was_down = ( held[panel] >> g ) & 1;
+                    event_t  ev_c;
+                    if( ! key || now_down == was_down )  continue;
+                    memset( &ev_c, 0, sizeof(ev_c) );
+                    ev_c.type = now_down ? ev_keydown : ev_keyup;
+                    ev_c.data1 = key;
+                    D_PostEvent( &ev_c );
+                }
+                held[panel] = want & 0x3F;
+            }
+        }
+    }
 
     // -linktest -linkmoveevery: someone at panel 1 who turns now and then, while
     // a level is up -- held for 200 ms, so the ticcmds built meanwhile see it.

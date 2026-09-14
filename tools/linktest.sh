@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -986,6 +986,30 @@ case_lossy8() {
     tail5=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " | tail -5 | grep -o "p1=[-0-9,]*" | sort -u | wc -l)
     [ "$tail5" -ge 2 ] || FAILS="$FAILS
       the joining cabinet's player 1 stopped moving at the end"
+}
+
+# Eight players, four at each cabinet, every one of them doing something new
+# nearly every tic (-linkchaos), on a lossy link (${LOSS8:-10}% of packets
+# thrown away).  Mark's cabinets with real players still desynced after
+# lossy8 passed: -linkmoveevery holds the same buttons for 400 ms, so a tic run
+# with its neighbour's ticcmds could not be told from the right one.  No
+# consistency failure, no repair, no kick.
+case_chaos8() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 75 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -linkchaos -linknetloss ${LOSS8:-10} -udpport $((p+100))
+    sleep 2
+    run "$d/member" 72 0 -linktest -linkautojoin -linkjoinpanels 4 -linkchaos -linknetloss ${LOSS8:-10} -clientport $((p+101))
+    wait
+    expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+    expect_not "no consistency failure on the host" "$d/master" "Consistency failure|Kick player"
+    expect_not "no repair on the joining cabinet" "$d/member" "Client repair|player_repair"
+    lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " \
+        || FAILS="$FAILS
+      at the end the joining cabinet was not in the eight player game: $(lastline "$d/member" LINKGAME)"
 }
 
 case_convert() {
