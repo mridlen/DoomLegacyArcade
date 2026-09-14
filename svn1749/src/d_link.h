@@ -140,6 +140,35 @@ const char* LK_Game_Id( void );
 // What this cabinet is doing right now, as it tells the others.
 lk_state_e  LK_State( void );
 
+// This cabinet's build, as HELLO tells the others ("v1.2-3-gabc1234"): the
+// same string a peer's build field is compared with.
+const char* LK_Build( void );
+
+// --- Shared scores: the sync channel (d_linkscore.c) ---
+//
+// Opaque chunks between a member and its master only, never relayed: scores
+// sync through the master, which is what keeps two members from having to
+// trust each other's copies.  The receiver pulls (d_linkscore.c asks for a few
+// chunks at a time), so these queues are small and a full one simply means
+// "ask again next tic".
+
+#define LK_SYNC_DATA_MAX   4096
+
+typedef struct
+{
+    byte        peer[LK_FP_BYTES];   // from (Poll) or to (Send)
+    uint16_t    len;
+    byte        data[LK_SYNC_DATA_MAX];
+} lk_sync_msg_t;
+
+boolean     LK_Sync_Send( const byte * peer, const byte * data, int len );
+boolean     LK_Sync_Poll( lk_sync_msg_t * out );
+// The cabinets this one syncs scores with, online right now: a member's master,
+// or every member of a master.
+int         LK_Sync_Peers( lk_peer_info_t * out, int max );
+// SHA-256 (all zero when the link is not built).
+void        LK_Sha256( const byte * data, int len, byte * out32 );
+
 // --- The game channel (docs/arcade/cabinet-link.md, "The game channel") ---
 //
 // While a linked game is on, every UDP packet of the game netcode is sealed

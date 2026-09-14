@@ -1,11 +1,12 @@
-# Cabinet Link: networked cabinets (Phases 1 and 3 built; 2 and 4 still a plan)
+# Cabinet Link: networked cabinets (Phases 1, 2 and 3 built; 4 still a plan)
 
 *Part of the DoomLegacy arcade cabinet build. Read before touching `d_link.c`/`d_link.h`,
-`tools/linktest.sh`, the `HAVE_LINK` build option, or `i_tcp.c` socket code. Written 2026-09-13 as a
-plan before any code; each phase's section is replaced with the record of what was built, what broke
-and how it was verified as it lands. **Phase 1 (identity, pairing, presence) and Phase 3 (invites
-and linked games) are built** — see "Phase 1 — what was built" and "Phase 3 — what was built".
-Shared scores (Phase 2) are still plan.*
+`d_linkgame.c`, `d_linkscore.c`, `hs_merge.c`, `tools/linktest.sh`, the `HAVE_LINK` build option, or
+`i_tcp.c` socket code. Written 2026-09-13 as a plan before any code; each phase's section is replaced
+with the record of what was built, what broke and how it was verified as it lands. **Phase 1
+(identity, pairing, presence), Phase 2 (shared high scores and demos) and Phase 3 (invites and linked
+games) are built** — see the "what was built" section of each. The design sections were written
+first; where the build went another way, the Phase 2 record says so and the design text is marked.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
@@ -284,14 +285,18 @@ ID settles the rest.
 
 ### File format changes (append-only, as before)
 
-- `highscores.dat` gains `set_time cabinet_id demo_sha256`. `set_time` is Unix seconds from the
-  cabinet that set it. Old lines read back with `set_time 0` (oldest) and the local cabinet's ID.
+- `highscores.dat` gains `set_time cabinet_id`. **Built differently:** the demo's SHA-256 is not
+  stored but computed from the file whenever a manifest is built (cached by size and modification
+  time), so it cannot go stale against the demo. `set_time` is Unix seconds from the cabinet that set
+  it. Old lines read back with `set_time 0` (oldest) and the cabinet **unknown** — not the local
+  cabinet's id, which turned the same old record held by two cabinets into two entries.
 - `runs.dat` gains `set_time cabinet_id`. The run board is a union of both cabinets' entries,
   deduplicated on the whole tuple, sorted by the existing `HS_Board_Sort` rules, trimmed to the
   board's size.
-- A **board epoch** in a new header line. `clearhighscores` bumps it. **Without it a cleared board
-  comes straight back from the other cabinet on the next sync**; with it, entries from an older epoch
-  are discarded and the clear spreads instead. Clearing is allowed on the master only, so two
+- A **board epoch** in a new header line. `clearhighscores` on the master sets it — **built as the
+  time of the clear**, not a counter, so a cabinet that missed the clear drops only records set before
+  it. **Without it a cleared board comes straight back from the other cabinet on the next sync**; with
+  it, entries from before the clear are discarded and the clear spreads instead. Clearing is allowed on the master only, so two
   cabinets cannot clear at once and race. **Clearing on the master clears every cabinet** (decided
   2026-09-13) — which is also why a stranger on the network must not be able to send one.
   - Nobody needs to try this by hand on the real cabinets: it is exactly the case the two-instance
@@ -299,8 +304,10 @@ ID settles the rest.
     it gets proven. A member that was switched off during the clear is part of that test too — it
     must lose its old records when it reconnects, not resurrect them.
 - Clock sanity: a Pi without a real-time clock boots in 1970 until NTP answers. A `set_time` before
-  2026-01-01 is sent as unknown (`0`) rather than as a real time, so it can never beat a genuine one
-  on a tie.
+  2026-01-01 is stored as unknown (`0`) rather than as a real time. **Built:** `0` ranks as the
+  *oldest* on a tie, which is the rule a cabinet always applied locally (the first to reach a time
+  keeps its place) — an exact tic tie between an old record and a new one is rare enough that
+  consistency with the local board won. A master with no clock refuses to clear.
 
 ### What is compared, and what is refused
 
@@ -315,23 +322,27 @@ with the same file name.
   commits can simulate differently without any version number changing, which desyncs a netgame and
   makes a shared demo play out wrong. The operator page says which cabinet needs updating.
 - The **ranked ruleset must match**: `HS_Apply_Ranked_Ruleset` pins most gameplay settings, and the
-  handshake hashes the ones it does not (the same list `tools/cfgaudit.py` reports). A mismatch is a
-  warning on the operator page and pauses score sync, because a record under different rules is a
-  different board.
+  handshake hashes the ones it does not. **Built** as the settings a record demo's header carries that
+  the ruleset does not pin (rocket trails, view height, invulnerability sky), checked against
+  `G_BeginRecording` by `tools/hsmerge-test.py`. A mismatch is a warning on the operator page and
+  pauses score sync, because a record under different rules is a different board.
+- **Built:** only the game the cabinet is *running* is shared (its id and its `-sl` twin). Records for
+  other games stay local until both cabinets run that game.
 
 ### Demo transfer
 
 - Demos travel with their `highscores.dat` entry: when the merge picks a remote record, the local
   cabinet requests that demo by SHA-256.
-- Written to `demos/<name>.lmp.tmp`, hash checked, header checked, then **renamed over** the old file
-  on the main thread. Leftover `.tmp` files are deleted at startup.
+- Hash checked, header checked, then written in place on the main thread. **Built:** held in memory
+  until the merge is applied and written with `M_Atomic_Write_Open`/`Close`, rather than parked on disk
+  as `.tmp` files — an apply that never happens leaves nothing behind.
 - **On Windows a rename over an open file fails**, and the attract cycle may be playing that very
   demo. The main thread retries the rename after the demo ends rather than failing the sync.
 - The attract cycle needs no change: it already builds its demo list from the score table.
 
 ### When sync runs
 
-On connect, then whenever a board changes (`HS_Save` / `HS_Runs_Save` nudge the link thread), and
+On connect, then whenever a board changes (every score file write changes `HS_Sync_Generation`), and
 every 10 minutes as a backstop. **Never during a scored run**: the main thread holds received merges
 until the cabinet is back to `IDLE`, so a record appearing mid-run cannot change the target a player
 is chasing or race the local `HS_LevelExit` write.
@@ -718,21 +729,132 @@ not reach stdout once graphics are up, so a headless run saw nothing at first. *
 discovery, Windows sockets, and a role change from master to member keeping its old pins (a member
 enforces any pin it has — `link_forget` after changing role).
 
-### Phase 2 — shared high scores and demos
+### Phase 2 — what was built (2026-09-14)
 
-- Append the new fields and the epoch to `highscores.dat` / `runs.dat`, with old files loading
-  unchanged.
-- The merge as **one pure function** in `hs_stuff.c`, and a test in the style of the existing
-  extracted tests that drives it exhaustively for commutativity, idempotence, associativity over
-  three cabinets, tie-breaking, epochs and old-format lines.
-- Wad fingerprints, build and ruleset checks; demo transfer; deferred application while playing.
-- Last: the cabinet tag on the attract table, if it fits (decision 3).
+Linked cabinets hold one set of high scores. A record set on either appears on the other with its
+demo, a cabinet that was switched off catches up when it comes back, and clearing the scores on the
+master clears them everywhere. A cabinet with the link off plays and scores exactly as before, on the
+new file format.
 
-**Verified by:** the merge test; two headless instances with different boards converging to the same
-files byte for byte; `clearhighscores` on the master spreading instead of being undone; a truncated
-demo refused; a member switched off during a clear losing its old records when it reconnects;
-`make demotest` still passing (the score file change must not touch the simulation).
-Then Mark sets a record on the Pi and watches it appear on the laptop's attract screen.
+**Files**
+- `svn1749/src/hs_merge.c` / `hs_merge.h` — the merge, with **no engine includes**, so
+  `tools/hsmerge-test.py` compiles the real file. It also owns the board ranking
+  (`HSM_Run_Rank_Cmp`, `HSM_Map_Order`, `HSM_Same_Board`): `hs_stuff.c`'s `HS_Run_Cmp` and friends
+  call it, so a local insert and a merge can never rank differently. `hs_run_t` **is** `hsm_run_t`.
+- `svn1749/src/d_linkscore.c` / `.h` — the sync, on the game thread, called from `LK_Ticker` right
+  after `LKG_Ticker`. `hs_stuff.c` keeps ownership of the tables and files; the sync only calls
+  `HS_Sync_Export` / `HS_Sync_Import` / `HS_Sync_Busy` and the demo path helpers.
+- `d_link.c` — a `SYNC` frame (between a member and its master only, never relayed),
+  `LK_Sync_Send` / `LK_Sync_Poll` / `LK_Sync_Peers`, `LK_Sha256`, `LK_Build`. **`LK_PROTO_VERSION` is
+  3**, so an older build is refused at `AUTH` rather than closing on an unknown frame.
+- `d_netfil.c` — `D_Net_Wad_Md5s`: the md5s `Put_Server_FileNeed` sends (soundtrack-only wads left
+  out), for the wad fingerprint.
+
+**File formats** (`hs_stuff.c`). Both files append `set_time cabinet` and carry `# epoch N` in their
+header — a comment line, which older builds skip. Old six and seven field lines load unchanged, as set
+time 0 and cabinet unknown (written `-`). Both files are now written in **canonical order**
+(`HSM_Normalize`: rows by game and map order, each board in rank order), so two cabinets holding the
+same scores hold the same bytes; nothing read the old order. `HS_MAX_MAPS` 64 → 256 and
+`HS_MAX_RUNS` 256 → 1024, because a merged table is the union (the laptop alone used 37 rows of 64).
+- **The first save under this build trims every board to its depth.** The old code only trimmed the
+  board it was inserting into, and the laptop's `runs.dat` still held entries below one deep Survival
+  boards — `doomu E1M1 E1M8 0 speed 14574` under `14330`, `doomu E2M1 E2M1 0 speed 1601` under a
+  completed E2M8 — which no page ever showed. Checked by scoring a level against copies of the live
+  files: every other line of both survived the rewrite.
+- `HS_Run_As_Entry` (the run in progress, as compared against its board) now gets the current time
+  and cabinet, as it will when committed. At set time 0 it counted as the oldest entry and would win a
+  tie it then loses at commit, and the "leading" demo snapshot would belong to a run that placed
+  second.
+- `clearhighscores` is refused on a **member** ("clear them on the master"). On the **master** the
+  epoch becomes the time of the clear, refused if the clock is not set. The files are written empty,
+  carrying the epoch, instead of deleted — a deleted file forgets the epoch.
+
+**The merge** (`HSM_Merge`). Split records keep the best per `(game, map, category, skill)`; boards
+keep the union, each entry once, trimmed to depth; an entry both sides hold keeps whichever initials
+were entered. Every order is total: tics, then set time (0 = oldest), then cabinet id, then the rest
+of the record. Two decisions differ from the plan above:
+- **The epoch is the time of the clear, not a counter.** With a counter, a cabinet switched off during
+  a clear — or one that joins the group later — loses *everything*, including records it set after
+  the clear. As a time, a set behind on epochs keeps its records set at or after it. The price: the
+  merge is associative only among sets on one epoch, because merging two sets trims a board, which can
+  drop a newer, slower entry that a later clear would have left standing. That only bites on the first
+  sync after a clear (from then on every cabinet holds the new epoch), and members sync only with the
+  master, so all cabinets still converge. The test checks exactly that: full associativity on one
+  epoch, and "a merge across epochs is both sides filtered to the new epoch, then merged there".
+- **An old record's cabinet stays unknown.** The first version filled in each side's own id before
+  merging, so two cabinets holding the same pre-Phase-2 record (a copied `runs.dat`, say) held two
+  entries, and a three deep single level board would show one run twice and push a real one off.
+  Caught while designing the byte-for-byte test, before it ran.
+
+**The protocol** (`d_linkscore.c`, little-endian, over `LK_Sync_Send`):
+- `OFFER` (the manifest's SHA-256 and length) when this cabinet's manifest changes, when a peer comes
+  online, and every 10 minutes. A member syncs with its master and a master with every member, so
+  everything meets at the master.
+- The receiver **pulls**: `GET` a manifest or demo by hash, from an offset, four chunks of about 4 KB;
+  the owner answers `DATA` or `NONE`. Nothing is sent that was not asked for, so a link connection's
+  16 KB buffer never fills (a full one closes the connection), and the link thread moves a chunk into
+  a connection only with 8 KB to spare, so presence and invites always fit. A quiet transfer is asked
+  for again after 4 s, six times; then a manifest retries after 30 s, and a demo is given up with its
+  record while the merge goes ahead without it. The laptop's whole Ultimate Doom history, 77 demos,
+  moved in about 4 s.
+- **The manifest** is text: `build`, `game <id> <wad fingerprint>`, `rules <hash>`, `epoch`, then one
+  line per record, for the running game id and its `-sl` twin only. A record goes out only with its
+  demo (split records and Survival entries); single level board entries have no demo of their own.
+  The receiver treats every field as hostile: the game id must be the running game's, map names
+  `MAPnn` or `ExMy`, categories and skills in range, cabinet ids and initials from a fixed alphabet —
+  game ids and map names become demo file names.
+- **Comparable only when** the build (the `git describe` string, so the commit), the wad fingerprint
+  (SHA-256 over the md5s) and the rules hash all match. A mismatch shares no records but **still takes
+  the epoch**, so a clear reaches a cabinet running another game. The operator page says why under
+  that cabinet, in red (`SCORES: DIFFERENT BUILD` / `DIFFERENT WADS` / `DIFFERENT SETTINGS`,
+  `SCORES: PLAYING <game>`), and nothing when all is well.
+- **A received demo** must match its hash, start with the DoomLegacy demo header and end with the
+  demo end marker (`demo_looks_whole`; all 102 of the laptop's pass), or it is refused with its record.
+- **Applied only** when `HS_Sync_Busy` is false (no run being scored, no death demo pending, no
+  initials waiting) and the cabinet is on the attract screen or in its menus — not in a game, not
+  signing, not in an operator session. The merge is re-planned against the local scores at that
+  moment, since they may have moved on. When the epoch moved forward, every record demo the merge no
+  longer references is deleted, as `clearhighscores` does on the master.
+
+**Verified**
+- `tools/hsmerge-test.py`: the laws on 3000 random rounds drawn from a tiny domain (two tic counts,
+  three cabinets, epochs between the set times), pinned cases for each tie rule, and the demo-header
+  rules check. **`--selfcheck`: 12 of 12 breaks go red.** One break first came back green: its
+  replacement text changed nothing, which is what the selfcheck exists to catch.
+- `tools/linktest.sh`, new cases — and four of them run against a build with its protection switched
+  off (applying during a game, accepting a cut-short demo, keeping a cleared record's demo, ignoring
+  different settings), each failing for exactly its own reason:
+  - `scores` — old format against new, each cabinet with records and demos the other lacks: both end
+    with **byte-identical** `highscores.dat` and `runs.dat`, the faster MAP01 and the further (slower)
+    Survival run won, and every record's demo on both is the one that set it.
+  - `scoreclear` — the master clears while the member is off; the member comes back, loses its old
+    record and demo, and its record from after the clear reaches the master.
+  - `scoreclearlive` — synced, then cleared: the member's boards and demos go.
+  - `scorebad` — a demo cut short is refused with its record; the rest merges.
+  - `scorerules` — rocket trails off on one cabinet: nothing shared, and the status says why.
+  - `scorebusy` — the member is in a level: the merge waits in `apply`, then lands after it leaves.
+  - `scoreslarge` — `SCOREHOME=<a legacyhome> GAME=doomu`: a real cabinet's history onto an empty one
+    (skipped without `SCOREHOME`). With the laptop's live files: 77 demos, 62 records, 89 board
+    entries, all identical.
+  - `-linkcmdat S "text"` types console text S seconds after start, in any state.
+    `tools/linktest-demos/` holds the six small real record demos the score cases use.
+- 17 existing link cases pass; `make smoke` 5/5; `make demotest` the same 16 Doom 2 demos desynced as
+  before (the v1.9 swap) and nothing new.
+- The operator page with a settings mismatch, captured in OpenGL: the red line sits under that
+  cabinet and fits.
+
+**Not done**
+- **The cabinet tag on the attract table** (decision 3). Records store the short cabinet id; showing
+  a name needs the names of cabinets that may be switched off (the pins keep them), and the table has
+  to be re-measured at its widest glyphs. Left for Mark to decide.
+- On Windows a demo that is playing cannot be replaced (`M_Atomic_Write_Close`'s rename fails).
+  Windows is pinned.
+- Pre-existing, now more visible: a Survival demo is snapshotted while a run *leads*, so a run that led
+  at a level exit and was then voided (a cheat) leaves its demo in the file with no board entry, and
+  the sync pairs that demo with the board's real entry.
+
+**Needs a person**: set a record on the Pi and watch it appear on the laptop's attract screen, then
+the other way round; clear on the master and watch the member's boards empty.
 
 ### Phase 3 — what was built (2026-09-13)
 

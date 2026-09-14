@@ -202,4 +202,28 @@ const char *  HS_DemoLabel(void);
 void          HS_Set_DemoLabel_For(const char * mapname, skill_e skill,
                                    int cat, boolean single);
 
+// =========================================================================
+//   Shared scores  [Arcade]  (Cabinet Link, d_linkscore.c)
+// =========================================================================
+// hs_stuff.c owns the tables and their files; the link merges a copy with
+// another cabinet's (hs_merge.c) and hands the result back.
+#include "hs_merge.h"
+
+unsigned int  HS_Sync_Generation( void );   // changes whenever a score file is written
+int      HS_Sync_Max_Splits( void );        // capacity an export needs
+int      HS_Sync_Max_Runs( void );
+// Everything this cabinet holds, epoch included.  Records from before shared
+// scores have an empty cabinet id; sha is left zero.
+void     HS_Sync_Export( hsm_set_t * out );
+// A run is being scored, a death demo is still to be written, or initials are
+// waiting: do not import now.
+boolean  HS_Sync_Busy( void );
+// Replace every table with a merged set in canonical order and write both
+// files.  False (nothing changed) when it would not fit.
+boolean  HS_Sync_Import( const hsm_set_t * set );
+// The demo file behind a record.  A single level board entry has none (false).
+void     HS_Sync_Split_Demo_Path( const hsm_split_t * s, char * dest );
+boolean  HS_Sync_Run_Demo_Path( const hsm_run_t * r, char * dest );
+const char *  HS_Sync_Demo_Dir( void );
+
 #endif // HS_STUFF_H

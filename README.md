@@ -1231,7 +1231,30 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   own music. Any other extra wad the host has loaded — maps, patches, textures — the joining cabinet
   must have too, or it is turned away and goes back to its attract screen.
 
-Shared high scores come next.
+**Linked cabinets share their high scores.** A record set on one cabinet — a single level time, a
+Survival run, with its record demo — shows up on the other cabinet's attract screen, boards and
+intermission, and the other way round:
+
+- It happens by itself, a few seconds after the cabinets see each other and whenever a board changes.
+  A cabinet that was switched off catches up when it comes back.
+- Nothing changes while someone is playing, signing initials, or in an operator session: a record
+  arriving then waits until the cabinet is back on its attract screen, so the target a player is
+  chasing never moves under them.
+- Only the game both cabinets are **running** is shared (same IWAD and level pack). Records for other
+  games stay on their cabinet until both run that game.
+- Scores are only shared between cabinets on the **same build** of the game, with the **same wads**,
+  and the same **rocket trails**, **view height** and **invulnerability sky** settings — the settings a
+  record demo carries that the ranked ruleset does not fix. Otherwise the two would not be the same
+  competition, and the Cabinet Link page says so in red under that cabinet (**SCORES: DIFFERENT
+  BUILD**, **DIFFERENT WADS**, **DIFFERENT SETTINGS**, or **SCORES: PLAYING** another game).
+- **`clearhighscores` on the master clears every cabinet**, including one switched off at the time,
+  when it next connects — but a record played on that cabinet *after* the clear is kept. On a member
+  it is refused ("clear them on the master"). The master needs its clock set to clear.
+- A demo that does not arrive whole is refused, and its record with it.
+
+The score files gained two columns — when a record was set and on which cabinet — and are now kept in
+a fixed order. Older files load as they are. The first time a board is saved, entries that had
+slipped below the bottom of a board (never shown anywhere) are dropped.
 
 It needs OpenSSL when the game is built. `tools/build.sh` finds it and turns the link on by itself;
 if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSSL development package

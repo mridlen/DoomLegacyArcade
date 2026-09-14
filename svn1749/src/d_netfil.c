@@ -213,6 +213,23 @@ static boolean  Wad_Is_Audio_Only( const wadfile_t * wf )
     return true;
 }
 
+// [Arcade] Shared scores (d_linkscore.c): the md5sums of the wads a linked game
+// would require, in load order -- the same list Put_Server_FileNeed sends --
+// so two cabinets only share records played on the same content.  16 bytes
+// each into out; returns how many.
+int  D_Net_Wad_Md5s( byte * out, int max )
+{
+    int  i, n = 0;
+    for( i = 0; i < numwadfiles && n < max; i++ )
+    {
+        if( i > 0 && Wad_Is_Audio_Only( wadfiles[i] ) )
+            continue;
+        memcpy( out + 16 * n, wadfiles[i]->md5sum, 16 );
+        n++;
+    }
+    return n;
+}
+
 // By server.
 // Fill the serverinfo packet with wad files loaded by the game on the server.
 byte * Put_Server_FileNeed(void)

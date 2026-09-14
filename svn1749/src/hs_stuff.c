@@ -24,9 +24,14 @@
 #include "s_sound.h"    // cv_rndsoundpitch
 #include "z_zone.h"     // PU_CACHE, for the attract page skill graphic
 #include "hs_stuff.h"
+#include "hs_merge.h"   // [Arcade] shared scores: ranking and the merge
+#include "d_link.h"     // [Arcade] this cabinet's id and role, for shared scores
 #include "au_stuff.h"   // [Arcade] audit counters
 
-#define HS_MAX_MAPS      64
+// [Arcade] 256, was 64.  A cabinet on its own used 37 rows of 64; two cabinets'
+// tables merged (Cabinet Link, shared scores) are the union of both, and a
+// row that does not fit is silently not recorded.
+#define HS_MAX_MAPS      256
 
 // Records are keyed by game as well as map: Doom 2, Plutonia and TNT all
 // have a MAP01, and they are different levels.  The loaded level pack is
@@ -58,6 +63,10 @@
 enum { HS_CAT_speed = 0, HS_CAT_max = 1, HS_CAT_pacifist = 2, HS_CAT_tyson = 3 };
 static const char * hs_catname[HS_NUMCAT] =
     { "speed", "max", "pacifist", "tyson" };
+
+#if HS_NUMCAT != HSM_NUMCAT || HS_NUMSKILLS != HSM_NUMSKILLS || HS_GAMEID_LEN != HSM_GAME_LEN
+#error "hs_merge.h's sizes must match hs_stuff's: they describe the same records"
+#endif
 
 // Time columns are right-justified at x + HS_COL_TIME + cat*HS_COL_STEP.
 // Sized so the skill label (up to "ITYTD") clears the first column and the
@@ -92,6 +101,10 @@ typedef struct
     // of the record, and anything that ever starts a run mid-episode would
     // silently make the inferred range a lie.
     char     startmap[HS_NUMCAT][HS_NUMSKILLS][9];
+    // [Arcade] Shared scores: when and on which cabinet each record was set.
+    // 0 and "" for a record from before they were kept (hs_merge.h).
+    uint32_t settime[HS_NUMCAT][HS_NUMSKILLS];
+    char     cab[HS_NUMCAT][HS_NUMSKILLS][HSM_CAB_LEN];
 } hs_maprecord_t;
 
 static hs_maprecord_t  hs_table[HS_MAX_MAPS];
@@ -121,18 +134,24 @@ static byte  hs_death_demo_pending = 0;   // bitmask of categories
 // -------------------------------------------------------------------------
 // [Arcade] The run board.  See the header for why this is a separate table
 // and a separate file from the per-map splits above.
-#define HS_MAX_RUNS  256
+// [Arcade] 1024, was 256: a merged board is the union of every cabinet's.
+#define HS_MAX_RUNS  1024
 
-typedef struct
-{
-    char   game[HS_GAMEID_LEN];   // carries the "-sl" suffix for single level
-    char   startmap[9];
-    char   endmap[9];
-    byte   skill;
-    byte   cat;
-    tic_t  tics;
-    char   initials[HS_INITIALS_LEN];
-} hs_run_t;
+// [Arcade] The board entry *is* the shared scores' entry (hs_merge.h): game
+// (with "-sl" for single level), start and end map, skill, category, tics,
+// initials, plus when and where it was set.  One type, so ranking a local run
+// and ranking a merged board are the same code.  sha stays zero in memory; the
+// sync fills it in from the demo on disk.
+typedef hsm_run_t  hs_run_t;
+
+// Board epoch: bumped when the master clears the scores, so the clear spreads
+// to every cabinet instead of the old records coming back from the others.
+// Kept in both files' headers.
+static uint32_t  hs_epoch = 0;
+
+// [Arcade] Changes whenever a score file is written, so the link knows there
+// is something new to offer the other cabinets.
+static unsigned int  hs_sync_gen = 0;
 
 static hs_run_t  hs_runs[HS_MAX_RUNS];
 static int       hs_runs_count = 0;
@@ -844,16 +863,53 @@ static void HS_BuildSurvivalDemoPath( char * dest, const char * game,
 }
 
 
+// [Arcade] Shared scores: when a record is set, and where.
+//
+// A clock before 2026 is a Pi that booted without a real-time clock and has
+// not heard from NTP yet; its time is stored as unknown rather than as 1970.
+static uint32_t  HS_Set_Time_Now( void )
+{
+    time_t  t = time( NULL );
+    return ( t >= (time_t) HSM_TIME_VALID_FROM ) ? (uint32_t) t : 0;
+}
+
+// This cabinet's short id, or "" before the link has made one.  "" is also
+// what an old line reads back as: unknown, and it stays that way.
+static const char *  HS_Cab_Here( void )
+{
+    return LK_Id_Short();
+}
+
+// A cabinet id off disk: letters, digits and '-' only, "-" meaning unknown.
+static void  HS_Read_Cab( char * dst, const char * src )
+{
+    int i, n = 0;
+    if( strcmp( src, "-" ) != 0 )
+        for( i = 0; src[i] && n < HSM_CAB_LEN - 1; i++ )
+            if( isalnum( (unsigned char) src[i] ) || src[i] == '-' )
+                dst[n++] = src[i];
+    dst[n] = 0;
+}
+
+// "# epoch N" in either file's header; the larger wins.
+static void  HS_Read_Epoch_Line( const char * line )
+{
+    unsigned int  e;
+    if( sscanf( line, "# epoch %u", &e ) == 1 && e > hs_epoch )
+        hs_epoch = e;
+}
+
 static void HS_Load( void )
 {
     FILE * fr;
-    char   line[128];
+    char   line[160];
     char   game[64];   // wider than HS_GAMEID_LEN; copy in is bounded
     char   mapname[16];
     char   catname[16];
     char   startmap[16];
+    char   cab[16];
     int    skillnum, cat, i;
-    unsigned int  tics;
+    unsigned int  tics, settime;
     int    old_format = 0;
 
     hs_table_count = 0;
@@ -863,14 +919,20 @@ static void HS_Load( void )
 
     while( fgets(line, sizeof(line), fr) )
     {
+        if( line[0] == '#' )
+            HS_Read_Epoch_Line( line );
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
             continue;
         // Fields are only ever *appended*, so an older short line still
         // loads: four fields is a pre-category speed record, five adds the
-        // category, six adds the map the run started on.
+        // category, six adds the map the run started on, seven and eight
+        // when and on which cabinet it was set ([Arcade] shared scores).
         startmap[0] = 0;
-        int nf = sscanf(line, "%63s %15s %d %u %15s %15s",
-                        game, mapname, &skillnum, &tics, catname, startmap);
+        cab[0] = 0;
+        settime = 0;
+        int nf = sscanf(line, "%63s %15s %d %u %15s %15s %u %15s",
+                        game, mapname, &skillnum, &tics, catname, startmap,
+                        &settime, cab);
         if( nf < 4 )
         {
             // Records written before scores were tracked per game cannot be
@@ -912,6 +974,8 @@ static void HS_Load( void )
         // cannot shift on the next read (see HS_Save); it is not a value.
         if( strcmp(startmap, "-") == 0 )  startmap[0] = 0;
         dl_strncpy( rec->startmap[cat][skillnum], startmap, 8 );
+        rec->settime[cat][skillnum] = settime;
+        HS_Read_Cab( rec->cab[cat][skillnum], cab );
     }
 
     fclose(fr);
@@ -923,45 +987,106 @@ static void HS_Load( void )
 }
 
 
-static void HS_Save( void )
+// [Arcade] The split table as the shared scores' list of records, in table
+// order.  out needs room for HS_MAX_SPLITS.
+#define HS_MAX_SPLITS  (HS_MAX_MAPS * HS_NUMCAT * HS_NUMSKILLS)
+
+static int  HS_Splits_Export( hsm_split_t * out )
 {
-    FILE * fw;
-    int    i, sk, cat;
-
-    // [Arcade] Atomic, so a power cut cannot empty the score table.
-    fw = M_Atomic_Write_Open(hs_scorefile);
-    if( ! fw )
-    {
-        GenPrintf(EMSG_warn, "HS_Save: could not write %s\n", hs_scorefile);
-        return;
-    }
-
-    fprintf(fw, "# DoomLegacy arcade high scores:"
-                " wadcombo mapname skill cumulative_tics category startmap\n");
+    int  i, sk, cat, n = 0;
     for( i=0; i<hs_table_count; i++ )
     {
         for( cat=0; cat<HS_NUMCAT; cat++ )
         {
             for( sk=0; sk<HS_NUMSKILLS; sk++ )
             {
-                const char * sm;
+                hsm_split_t * s;
                 if( ! hs_table[i].has_record[cat][sk] )  continue;
-
-                // Never write an empty field: it would shift every field
-                // after it on the next read.  "-" reads back as "no start
-                // map known", the same as a line from before this existed.
-                sm = hs_table[i].startmap[cat][sk];
-                if( sm[0] == 0 )  sm = "-";
-
-                fprintf(fw, "%s %s %d %u %s %s\n",
-                        hs_table[i].game, hs_table[i].mapname, sk,
-                        (unsigned int) hs_table[i].besttime[cat][sk],
-                        hs_catname[cat], sm);
+                s = &out[n++];
+                memset( s, 0, sizeof(*s) );
+                dl_strncpy( s->game, hs_table[i].game, HSM_GAME_LEN-1 );
+                dl_strncpy( s->map, hs_table[i].mapname, 8 );
+                s->skill = sk;
+                s->cat = cat;
+                s->tics = hs_table[i].besttime[cat][sk];
+                dl_strncpy( s->startmap, hs_table[i].startmap[cat][sk], 8 );
+                s->set_time = hs_table[i].settime[cat][sk];
+                dl_strncpy( s->cab, hs_table[i].cab[cat][sk], HSM_CAB_LEN );
             }
         }
     }
+    return n;
+}
+
+// Put a set's scores in canonical order (hs_merge.c), so that two cabinets
+// holding the same scores write the same bytes.  False when out of memory.
+static boolean  HS_Canonical( hsm_set_t * set )
+{
+    hsm_set_t  scratch;
+    boolean    ok;
+    memset( &scratch, 0, sizeof(scratch) );
+    scratch.max_splits = set->nsplits;
+    scratch.max_runs = set->nruns;
+    scratch.splits = malloc( (set->nsplits + 1) * sizeof(hsm_split_t) );
+    scratch.runs = malloc( (set->nruns + 1) * sizeof(hsm_run_t) );
+    ok = scratch.splits && scratch.runs && HSM_Normalize( set, &scratch ) == 0;
+    free( scratch.splits );
+    free( scratch.runs );
+    return ok;
+}
+
+static void HS_Save( void )
+{
+    FILE * fw;
+    int    i;
+    hsm_set_t  set;
+
+    memset( &set, 0, sizeof(set) );
+    set.epoch = hs_epoch;
+    set.splits = malloc( (HS_MAX_SPLITS + 1) * sizeof(hsm_split_t) );
+    if( ! set.splits )
+    {
+        GenPrintf(EMSG_warn, "HS_Save: out of memory\n");
+        return;
+    }
+    set.max_splits = HS_MAX_SPLITS;
+    set.nsplits = HS_Splits_Export( set.splits );
+    // [Arcade] Canonical order rather than table order.  Nothing reads the
+    // file's order -- HS_Load finds rows by key -- and two linked cabinets
+    // holding the same records should hold the same file.
+    if( ! HS_Canonical( &set ) )
+        GenPrintf(EMSG_warn, "HS_Save: out of memory sorting; saved in table order\n");
+
+    // [Arcade] Atomic, so a power cut cannot empty the score table.
+    fw = M_Atomic_Write_Open(hs_scorefile);
+    if( ! fw )
+    {
+        GenPrintf(EMSG_warn, "HS_Save: could not write %s\n", hs_scorefile);
+        free( set.splits );
+        return;
+    }
+
+    fprintf(fw, "# DoomLegacy arcade high scores:"
+                " wadcombo mapname skill cumulative_tics category startmap"
+                " set_time cabinet\n");
+    fprintf(fw, "# epoch %u\n", (unsigned int) hs_epoch);
+    for( i=0; i<set.nsplits; i++ )
+    {
+        const hsm_split_t * s = &set.splits[i];
+        // Never write an empty field: it would shift every field after it on
+        // the next read.  "-" reads back as "not known", the same as a line
+        // from before the field existed.
+        const char * sm = s->startmap[0] ? s->startmap : "-";
+        const char * cab = s->cab[0] ? s->cab : "-";
+
+        fprintf(fw, "%s %s %d %u %s %s %u %s\n",
+                s->game, s->map, (int) s->skill, (unsigned int) s->tics,
+                hs_catname[s->cat], sm, (unsigned int) s->set_time, cab);
+    }
 
     M_Atomic_Write_Close(fw, hs_scorefile);
+    free( set.splits );
+    hs_sync_gen++;
 }
 
 
@@ -977,14 +1102,13 @@ static void  HS_Board_Sort( const hs_run_t * key ); // defined below
 // campaign runs rank on progress first and sit ten deep.
 static boolean  HS_Id_Is_Single( const char * game )
 {
-    size_t n = strlen(game);
-    return (n >= 3) && (strcmp(game + n - 3, "-sl") == 0);
+    return HSM_Id_Is_Single( game );
 }
 
 
 int  HS_Board_Depth( boolean single )
 {
-    return single ? HS_BOARD_DEPTH_SL : HS_BOARD_DEPTH_RUN;
+    return HSM_Board_Depth( single );
 }
 
 
@@ -998,24 +1122,16 @@ int  HS_Board_Depth( boolean single )
 // anything within a single episode.
 int  HS_Episode_Of( const char * mapname )
 {
-    int e, m;
-    if( sscanf(mapname, "E%dM%d", &e, &m) == 2 )  return e;
-    return 1;
+    return HSM_Episode_Of( mapname );
 }
 
 
 // Do two runs compete for the same board places?
+// A single level board is per map.  A Survival board is per *episode*: see
+// HS_Episode_Of for why keying by game alone was wrong.
 static boolean  HS_Same_Board( const hs_run_t * a, const hs_run_t * b )
 {
-    if( a->skill != b->skill || a->cat != b->cat )  return false;
-    if( strncmp(a->game, b->game, HS_GAMEID_LEN-1) != 0 )  return false;
-
-    // A single level board is per map.  A Survival board is per *episode*:
-    // see HS_Episode_Of for why keying by game alone was wrong.
-    if( HS_Id_Is_Single(a->game) )
-        return (strncmp(a->endmap, b->endmap, 8) == 0);
-
-    return (HS_Episode_Of(a->endmap) == HS_Episode_Of(b->endmap));
+    return HSM_Same_Board( a, b );
 }
 
 
@@ -1026,26 +1142,25 @@ static boolean  HS_Same_Board( const hs_run_t * a, const hs_run_t * b )
 // latter was, and a completed episode tops the board because nothing beats
 // it on progress.  Single level runs are all the same map, so progress is
 // constant and this reduces to the time comparison.
+//
+// [Arcade] The rule itself is in hs_merge.c, shared with the merge of two
+// cabinets' boards.  An equal time goes to the entry set first (an old one,
+// with no set time, counts as first), then to the cabinet id -- so a board is
+// ranked the same way here and after a sync, and a local insert of an exactly
+// equal time still stops behind the entry already there.
 static int  HS_Run_Cmp( const hs_run_t * a, const hs_run_t * b )
 {
-    if( ! HS_Id_Is_Single(a->game) )
-    {
-        int pa = HS_MapOrder(a->endmap);
-        int pb = HS_MapOrder(b->endmap);
-        if( pa != pb )  return (pb - pa);   // further is better
-    }
-    if( a->tics != b->tics )  return (a->tics < b->tics) ? -1 : 1;
-    return 0;
+    return HSM_Run_Rank_Cmp( a, b );
 }
 
 
 static void HS_Runs_Load( void )
 {
     FILE * fr;
-    char   line[160];
-    char   game[64], startmap[16], endmap[16], catname[16], initials[16];
+    char   line[200];
+    char   game[64], startmap[16], endmap[16], catname[16], initials[16], cab[16];
     int    skillnum, cat, i;
-    unsigned int tics;
+    unsigned int tics, settime;
 
     hs_runs_count = 0;
 
@@ -1054,12 +1169,17 @@ static void HS_Runs_Load( void )
 
     while( fgets(line, sizeof(line), fr) )
     {
+        if( line[0] == '#' )  HS_Read_Epoch_Line( line );
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )  continue;
 
         initials[0] = 0;
-        int nf = sscanf(line, "%63s %15s %15s %d %15s %u %15s",
+        cab[0] = 0;
+        settime = 0;
+        // [Arcade] set_time and cabinet appended for shared scores; an older
+        // seven field line reads them as unknown.
+        int nf = sscanf(line, "%63s %15s %15s %d %15s %u %15s %u %15s",
                         game, startmap, endmap, &skillnum, catname,
-                        &tics, initials);
+                        &tics, initials, &settime, cab);
         if( nf < 6 )  continue;
         if( skillnum < 0 || skillnum >= HS_NUMSKILLS )  continue;
         if( hs_runs_count >= HS_MAX_RUNS )  break;
@@ -1098,6 +1218,8 @@ static void HS_Runs_Load( void )
         r->cat   = (byte) cat;
         r->tics  = (tic_t) tics;
         dl_strncpy(r->initials, initials, HS_INITIALS_LEN);
+        r->set_time = settime;
+        HS_Read_Cab( r->cab, cab );
     }
 
     fclose(fr);
@@ -1122,21 +1244,42 @@ static void HS_Runs_Save( void )
 {
     FILE * fw;
     int    i;
+    hsm_set_t  set;
+
+    // [Arcade] Canonical order (boards in a fixed order, each in rank order)
+    // rather than the order runs happened to finish in, so two linked
+    // cabinets holding the same boards hold the same file.  HS_Runs_Load
+    // re-sorts each board anyway.
+    memset( &set, 0, sizeof(set) );
+    set.epoch = hs_epoch;
+    set.runs = malloc( (hs_runs_count + 1) * sizeof(hsm_run_t) );
+    if( set.runs )
+    {
+        memcpy( set.runs, hs_runs, hs_runs_count * sizeof(hsm_run_t) );
+        set.nruns = set.max_runs = hs_runs_count;
+        if( ! HS_Canonical( &set ) )
+            GenPrintf(EMSG_warn, "HS_Runs_Save: out of memory sorting; saved in board order\n");
+    }
 
     // [Arcade] Atomic, so a power cut cannot empty the run board.
     fw = M_Atomic_Write_Open(hs_runfile);
     if( ! fw )
     {
         GenPrintf(EMSG_warn, "HS_Runs_Save: could not write %s\n", hs_runfile);
+        free( set.runs );
         return;
     }
 
     fprintf(fw, "# DoomLegacy arcade run board:"
-                " wadcombo startmap endmap skill category tics initials\n");
-    for( i=0; i<hs_runs_count; i++ )
+                " wadcombo startmap endmap skill category tics initials"
+                " set_time cabinet\n");
+    fprintf(fw, "# epoch %u\n", (unsigned int) hs_epoch);
+    for( i=0; i < (set.runs ? set.nruns : hs_runs_count); i++ )
     {
-        const char * ini = hs_runs[i].initials;
-        const char * sm  = hs_runs[i].startmap;
+        const hs_run_t * r = set.runs ? &set.runs[i] : &hs_runs[i];
+        const char * ini = r->initials;
+        const char * sm  = r->startmap;
+        const char * cab = r->cab[0] ? r->cab : "-";
         if( ini[0] == 0 )  ini = "---";
         // Never write an empty field, for the same reason as HS_Save: it
         // would shift every field after it on the next read.  A committed
@@ -1144,13 +1287,15 @@ static void HS_Runs_Save( void )
         // empty one here would silently reparse the *end* map as the start
         // map, which is the kind of corruption that is very hard to see.
         if( sm[0] == 0 )  sm = "-";
-        fprintf(fw, "%s %s %s %d %s %u %s\n",
-                hs_runs[i].game, sm, hs_runs[i].endmap,
-                (int) hs_runs[i].skill, hs_catname[hs_runs[i].cat],
-                (unsigned int) hs_runs[i].tics, ini);
+        fprintf(fw, "%s %s %s %d %s %u %s %u %s\n",
+                r->game, sm, r->endmap,
+                (int) r->skill, hs_catname[r->cat],
+                (unsigned int) r->tics, ini, (unsigned int) r->set_time, cab);
     }
 
     M_Atomic_Write_Close(fw, hs_runfile);
+    free( set.runs );
+    hs_sync_gen++;
 }
 
 
@@ -1332,6 +1477,11 @@ static void  HS_Run_As_Entry( hs_run_t * out, skill_e skill, int cat )
     out->skill = (byte) skill;
     out->cat   = (byte) cat;
     out->tics  = hs_run_tics;
+    // [Arcade] As it will be committed.  Left at 0 it would count as the
+    // oldest entry and win a tie it loses once committed at the real time, and
+    // the "leading" demo snapshot would belong to a run that placed second.
+    out->set_time = HS_Set_Time_Now();
+    dl_strncpy( out->cab, HS_Cab_Here(), HSM_CAB_LEN );
 }
 
 
@@ -1441,6 +1591,7 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
     char              gid[HS_GAMEID_LEN];
     hs_maprecord_t *  rec;
     int               cat;
+    uint32_t          now = HS_Set_Time_Now();   // [Arcade] one time for the split and its board entry
 
     // HS_GameId_Mode hands back one static buffer, so copy before anything
     // else calls it.
@@ -1462,6 +1613,8 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
             rec->besttime[cat][skill]   = tics;
             // One map, so the range is the bare name either way.
             dl_strncpy( rec->startmap[cat][skill], mapname, 8 );
+            rec->settime[cat][skill] = now;
+            dl_strncpy( rec->cab[cat][skill], HS_Cab_Here(), HSM_CAB_LEN );
 
             if( demorecording )
             {
@@ -1487,6 +1640,8 @@ static void  HS_Score_As_Single_Level( const char * mapname, skill_e skill,
         run.skill = (byte) skill;
         run.cat   = (byte) cat;
         run.tics  = tics;
+        run.set_time = now;
+        dl_strncpy( run.cab, HS_Cab_Here(), HSM_CAB_LEN );
         HS_Record_Placement( &run );
     }
 
@@ -1557,6 +1712,8 @@ void  HS_Run_Finished( void )
         run.skill = (byte) hs_run_skill;
         run.cat   = (byte) cat;
         run.tics  = hs_cat_tics[cat];
+        run.set_time = HS_Set_Time_Now();                       // [Arcade] shared scores
+        dl_strncpy( run.cab, HS_Cab_Here(), HSM_CAB_LEN );
 
         HS_Record_Placement( &run );
     }
@@ -1793,6 +1950,8 @@ static void  HS_Seed_Runs_From_Splits( void )
                 run.skill = (byte) sk;
                 run.cat   = (byte) cat;
                 run.tics  = hs_table[i].besttime[cat][sk];
+                run.set_time = hs_table[i].settime[cat][sk];   // [Arcade] the record's own
+                dl_strncpy( run.cab, hs_table[i].cab[cat][sk], HSM_CAB_LEN );
                 HS_Board_Insert( &run );
             }
         }
@@ -1847,6 +2006,30 @@ void Command_ClearHighScores_f( void )
     int  removed = 0;
     DIR * dp;
 
+    // [Arcade] Shared scores.  Linked cabinets hold one set of scores, so a
+    // clear is the master's to make and spreads from there: the epoch becomes
+    // the time of the clear, and every cabinet that syncs drops whatever it
+    // held from before it.  A member clearing on its own would get everything
+    // straight back on its next sync, so it is refused and told where to do it.
+    if( LK_Role() == LK_ROLE_MEMBER )
+    {
+        GenPrintf(EMSG_warn, "High scores are shared with the master cabinet:"
+                             " clear them on the master.\n");
+        return;
+    }
+    if( LK_Role() == LK_ROLE_MASTER )
+    {
+        uint32_t  now = HS_Set_Time_Now();
+        if( now == 0 )
+        {
+            // Without a clock the clear could not be placed against the times
+            // records were set at, and would not spread.
+            GenPrintf(EMSG_warn, "High scores not cleared: this cabinet's clock is not set.\n");
+            return;
+        }
+        hs_epoch = ( now > hs_epoch ) ? now : hs_epoch + 1;
+    }
+
     // Sweep the whole demos directory rather than only the files the current
     // table references, so demos orphaned by a format change (or by editing
     // the score file) are cleaned up too.
@@ -1876,19 +2059,102 @@ void Command_ClearHighScores_f( void )
     hs_runs_count = 0;
     memset(hs_runs, 0, sizeof(hs_runs));
     HS_Run_Reset();
-    if( remove(hs_runfile) == 0 )
-        GenPrintf(EMSG_info, "Run board cleared.\n");
 
-    if( remove(hs_scorefile) != 0 )
-    {
-        // Not an error when nothing has been recorded yet.
-        GenPrintf(EMSG_info, "High scores cleared (no score file present).\n");
-    }
-    else
-    {
-        GenPrintf(EMSG_info, "High scores cleared.\n");
-    }
+    // [Arcade] Written empty rather than deleted: the files carry the epoch,
+    // which has to outlive the clear or the other cabinets' old records come
+    // straight back.
+    HS_Save();
+    HS_Runs_Save();
+    hs_demo_gen++;
+    GenPrintf(EMSG_info, "High scores and run board cleared.\n");
     GenPrintf(EMSG_info, "Removed %d record demo(s).\n", removed);
+}
+
+
+// =========================================================================
+//   Shared scores  [Arcade]
+// =========================================================================
+// The link side (d_linkscore.c) merges this cabinet's scores with another
+// cabinet's and hands the result back here.  hs_stuff.c keeps ownership of the
+// tables and their files; nothing else writes them.
+
+unsigned int  HS_Sync_Generation( void )  { return hs_sync_gen; }
+int   HS_Sync_Max_Splits( void )  { return HS_MAX_SPLITS; }
+int   HS_Sync_Max_Runs( void )    { return HS_MAX_RUNS; }
+const char *  HS_Sync_Demo_Dir( void )  { return hs_demodir; }
+
+void  HS_Sync_Export( hsm_set_t * out )
+{
+    out->epoch = hs_epoch;
+    out->nsplits = HS_Splits_Export( out->splits );
+    out->nruns = ( hs_runs_count <= out->max_runs ) ? hs_runs_count : out->max_runs;
+    memcpy( out->runs, hs_runs, out->nruns * sizeof(hsm_run_t) );
+}
+
+// Not while a run is being scored or its initials are waiting: a record
+// appearing mid-run would change the target the player is chasing, and the
+// placements waiting for initials are found by key on the board as it stands.
+boolean  HS_Sync_Busy( void )
+{
+    return hs_run_levels > 0 || hs_initials_pending || hs_death_demo_pending;
+}
+
+boolean  HS_Sync_Import( const hsm_set_t * set )
+{
+    int  i, rows = 0;
+
+    if( set->nruns > HS_MAX_RUNS )  return false;
+    // Count the rows the splits need before touching the table.
+    for( i = 0; i < set->nsplits; i++ )
+    {
+        if( i == 0 || strcmp( set->splits[i].game, set->splits[i-1].game )
+                   || strcmp( set->splits[i].map, set->splits[i-1].map ) )
+            rows++;   // canonical order keeps a row's records together
+    }
+    if( rows > HS_MAX_MAPS )  return false;
+
+    hs_table_count = 0;
+    memset( hs_table, 0, sizeof(hs_table) );
+    for( i = 0; i < set->nsplits; i++ )
+    {
+        const hsm_split_t * s = &set->splits[i];
+        hs_maprecord_t * rec;
+        if( s->cat >= HS_NUMCAT || s->skill >= HS_NUMSKILLS )  continue;
+        rec = HS_FindOrAddRecord( s->game, s->map );
+        if( ! rec )  continue;
+        rec->has_record[s->cat][s->skill] = true;
+        rec->besttime[s->cat][s->skill] = s->tics;
+        dl_strncpy( rec->startmap[s->cat][s->skill], s->startmap, 9 );
+        rec->settime[s->cat][s->skill] = s->set_time;
+        dl_strncpy( rec->cab[s->cat][s->skill], s->cab, HSM_CAB_LEN );
+    }
+
+    // Canonical order puts each board in rank order, which is the invariant
+    // HS_Board_Entry walks.
+    hs_runs_count = set->nruns;
+    memcpy( hs_runs, set->runs, set->nruns * sizeof(hsm_run_t) );
+    for( i = 0; i < hs_runs_count; i++ )
+        memset( hs_runs[i].sha, 0, HSM_SHA_LEN );
+
+    hs_epoch = set->epoch;
+    HS_Save();
+    HS_Runs_Save();
+    hs_demo_gen++;   // the attract bag picks up demos that arrived
+    return true;
+}
+
+void  HS_Sync_Split_Demo_Path( const hsm_split_t * s, char * dest )
+{
+    HS_BuildDemoPath( dest, s->game, s->map, (skill_e) s->skill, s->cat );
+}
+
+boolean  HS_Sync_Run_Demo_Path( const hsm_run_t * r, char * dest )
+{
+    // Single level boards have no demo of their own; the split record's is it.
+    if( HS_Id_Is_Single( r->game ) )  return false;
+    HS_BuildSurvivalDemoPath( dest, r->game, HS_Episode_Of( r->endmap ),
+                              (skill_e) r->skill, r->cat );
+    return true;
 }
 
 
@@ -2629,23 +2895,10 @@ static const char * hs_skillpatch[HS_NUMSKILLS] =
 // they are played: the run is 15 -> 31 -> 32 -> 16.  Doom 1 is episode
 // major, map minor; E?M9 is a secret level too but sits at the end of its
 // episode, which is where numeric order already puts it.
+// [Arcade] The rule is in hs_merge.c, where the shared scores rank boards by it.
 static int  HS_MapOrder( const char * mapname )
 {
-    int  e, m;
-
-    if( sscanf(mapname, "MAP%d", &m) == 1 )
-    {
-        if( m <= 15 )  return m;          // 1..15
-        if( m == 31 )  return 16;         // secret, straight after MAP15
-        if( m == 32 )  return 17;         // secret, then back out to MAP16
-        if( m <= 30 )  return m + 2;      // 16..30 shifted past the two above
-        return m + 100;                   // MAP33+, if a pack has them
-    }
-
-    if( sscanf(mapname, "E%dM%d", &e, &m) == 2 )
-        return (e * 100) + m;
-
-    return 100000;   // unrecognized: park it at the end
+    return HSM_Map_Order( mapname );
 }
 
 

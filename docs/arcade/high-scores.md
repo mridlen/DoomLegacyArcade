@@ -1094,3 +1094,30 @@ Speed is simply the category that never stops being alive, so its endpoint follo
 `fopen(name, "w")`, so a power cut cannot leave `highscores.dat` or `runs.dat` empty or half
 written. Do not convert them back to a plain `fopen` — see `install-config.md` for why, and for how
 to verify the property.
+
+---
+
+### Shared scores changed the files and the ranking (2026-09-14)
+
+Cabinet Link Phase 2 (`cabinet-link.md`, "Phase 2 — what was built") shares these tables between
+cabinets. What that changed here, for anyone touching `hs_stuff.c`:
+
+- **Two appended fields on every line**, `set_time cabinet` (Unix seconds, or 0; the short cabinet id,
+  or `-`), and a `# epoch N` header line in both files: the time of the master's last
+  `clearhighscores`. Older lines load as set time 0 and cabinet unknown. Keep appending, never
+  reordering: the sync parses these fields from other cabinets too.
+- **Saves are in canonical order**, not table order (`HS_Save`, `HS_Runs_Save` call `HSM_Normalize`),
+  and that **trims every board to its depth** — surplus entries the old code left below a board are
+  dropped on the first save.
+- **Ranking lives in `hs_merge.c`.** `HS_Run_Cmp`, `HS_Same_Board`, `HS_MapOrder`, `HS_Episode_Of` and
+  `HS_Id_Is_Single` are wrappers, and `hs_run_t` is `hsm_run_t`. An exactly equal time now goes to the
+  entry set first (set time 0 counts as first), then to the cabinet id — which is still "the entry
+  already there keeps its place" for anything played on one cabinet. Do not rank a board anywhere
+  else: two cabinets must rank identically or they never agree.
+- **Any new record needs a set time and cabinet** (`HS_Set_Time_Now`, `HS_Cab_Here`), including the
+  in-progress run built for comparison (`HS_Run_As_Entry`), or it ranks as the oldest entry on a tie.
+- `clearhighscores` writes empty files carrying the epoch instead of deleting them, is refused on a
+  linked member, and on a master refuses when the clock is not set.
+- `HS_MAX_MAPS` is 256 and `HS_MAX_RUNS` 1024, since a merged table is the union of the cabinets'.
+- `tools/hsmerge-test.py` also fails if `G_BeginRecording` gains a setting the ranked ruleset does not
+  pin and `lks_rules_hash` (`d_linkscore.c`) does not hash.

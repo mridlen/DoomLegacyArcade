@@ -23,6 +23,7 @@
 #include "m_argv.h"
 #include "v_video.h"
 #include "d_linkgame.h"
+#include "d_linkscore.h"
 
 // Draw text trimmed to fit a column, measured against the real font rather than
 // counted in characters: hu_font is proportional, and names come off the wire.
@@ -77,6 +78,11 @@ boolean     LK_Poll_Event( lk_event_t * ev )  { (void)ev; return false; }
 const byte* LK_My_Fp( void )       { return NULL; }
 boolean     LK_Peer_Find( const byte * fp, lk_peer_info_t * out )  { (void)fp; (void)out; return false; }
 lk_state_e  LK_State( void )       { return LK_STATE_IDLE; }
+const char* LK_Build( void )       { return ""; }
+boolean     LK_Sync_Send( const byte * p, const byte * d, int l )  { (void)p; (void)d; (void)l; return false; }
+boolean     LK_Sync_Poll( lk_sync_msg_t * out )  { (void)out; return false; }
+int         LK_Sync_Peers( lk_peer_info_t * out, int max )  { (void)out; (void)max; return 0; }
+void        LK_Sha256( const byte * d, int l, byte * out )  { (void)d; (void)l; memset( out, 0, 32 ); }
 void        LK_Udp_Host_Begin( void )  { }
 int         LK_Udp_Host_Add_Client( byte * k )  { (void)k; return 0; }
 void        LK_Udp_Client_Begin( byte id, const byte * k )  { (void)id; (void)k; }
@@ -136,7 +142,7 @@ const char* LK_Forget_Pins( void )  { return lk_not_built; }
 #include <stdarg.h>
 #include <time.h>
 
-#define LK_PROTO_VERSION    2   // 2: game id in presence, ROUTE, invites
+#define LK_PROTO_VERSION    3   // 2: game id in presence, ROUTE, invites; 3: SYNC (shared scores)
 #define LK_FP_LEN           32         // SHA-256 of the public key
 #define LK_PASSCODE_MIN     10         // shorter is allowed, but warned about
 #define LK_PBKDF2_ITER      60000
@@ -163,8 +169,13 @@ enum {
     LK_MSG_PING,          // empty
     LK_MSG_PEERLIST,      // u8 count, count x LK_PEERLIST_ENTRY
     LK_MSG_ROUTE,         // target[32], source[32], u8 LK_GM_* type, data
+    LK_MSG_SYNC,          // shared scores: opaque, member <-> master only (d_linkscore.c)
     LK_NUM_MSG
 };
+// A sync chunk is only moved into a connection's send buffer while this much
+// would still be free after it, so presence, pings and invites always fit.
+#define LK_SYNC_RESERVE       8192
+#define LK_SYNC_QUEUE         16
 #define LK_HELLO_LEN          (2+1+1+1+LK_NAME_LEN+32+LK_GAME_LEN)
 #define LK_PRESENCE_LEN       (2+LK_GAME_LEN)
 #define LK_PEERLIST_ENTRY     (LK_NAME_LEN + LK_ID_SHORT_LEN + 32 + 1 + 1 + 48 + LK_FP_BYTES + LK_GAME_LEN)
@@ -178,7 +189,8 @@ static const uint32_t  lk_msg_max[LK_NUM_MSG] =
     LK_PRESENCE_LEN,
     0,
     1 + LK_MAX_PEERS * LK_PEERLIST_ENTRY,
-    LK_ROUTE_HDR + LK_MSG_DATA_MAX
+    LK_ROUTE_HDR + LK_MSG_DATA_MAX,
+    LK_SYNC_DATA_MAX
 };
 
 // ---------------------------------------------------------------------------
@@ -244,6 +256,12 @@ static struct
     int             ev_head, ev_count;
     lk_event_t      outbox[LK_EVENTS];    // source field holds the *target*, zero = everyone
     int             out_head, out_count;
+    // Shared scores' chunks, in and out.  A full ring drops the newest; the
+    // sync asks again.
+    lk_sync_msg_t   sync_in[LK_SYNC_QUEUE];
+    int             sin_head, sin_count;
+    lk_sync_msg_t   sync_out[LK_SYNC_QUEUE];
+    int             sout_head, sout_count;
 } lk_shared;
 
 static int   lk_wake_pipe[2] = { -1, -1 };
@@ -1010,6 +1028,39 @@ static void  lkt_route( const byte * target, const byte * source, byte type,
     }
 }
 
+// Shared scores' chunks the game thread queued.  Each goes only once its
+// connection has room for it with LK_SYNC_RESERVE to spare, so a burst of them
+// can never fill the send buffer (which closes the connection) or crowd out a
+// ping.  One that cannot go yet stays at the head of the queue; one for a
+// cabinet no longer online is dropped, and the sync asks again later.
+static void  lkt_drain_sync( void )
+{
+    for( ;; )
+    {
+        lk_sync_msg_t  m;
+        lk_conn_t *    to = NULL;
+        int i;
+
+        lk_lock();
+        if( lk_shared.sout_count == 0 )  { lk_unlock();  return; }
+        m = lk_shared.sync_out[lk_shared.sout_head];
+        lk_unlock();
+
+        for( i = 0; i < LK_MAX_PEERS; i++ )
+            if( lkt_conn[i].phase == LKC_ONLINE && ! memcmp( lkt_conn[i].peer_fp, m.peer, LK_FP_BYTES ) )
+                { to = &lkt_conn[i];  break; }
+        if( to && to->outlen + 5 + m.len > LK_BUF_SIZE - LK_SYNC_RESERVE )
+            return;   // not yet: wait for this connection to flush
+
+        if( to )
+            lkt_queue( to, LK_MSG_SYNC, m.data, m.len );
+        lk_lock();
+        lk_shared.sout_head = (lk_shared.sout_head + 1) % LK_SYNC_QUEUE;
+        lk_shared.sout_count--;
+        lk_unlock();
+    }
+}
+
 // What the game thread asked to send.
 static void  lkt_drain_outbox( void )
 {
@@ -1110,6 +1161,20 @@ static void  lkt_handle_frame( lk_conn_t * c, byte type, const byte * p, uint32_
             // From a member: whatever source it wrote is replaced by who it is.
             lkt_route( p, c->peer_fp, p[2*LK_FP_BYTES], p + LK_ROUTE_HDR, len - LK_ROUTE_HDR );
         }
+        return;
+     case LK_MSG_SYNC:
+        // Shared scores.  Every connection is a member and its master, so the
+        // peer is always one this cabinet syncs with; nothing is relayed.
+        lk_lock();
+        if( lk_shared.sin_count < LK_SYNC_QUEUE )
+        {
+            lk_sync_msg_t * m = &lk_shared.sync_in[(lk_shared.sin_head + lk_shared.sin_count) % LK_SYNC_QUEUE];
+            memcpy( m->peer, c->peer_fp, LK_FP_BYTES );
+            m->len = len;
+            if( len )  memcpy( m->data, p, len );
+            lk_shared.sin_count++;
+        }
+        lk_unlock();
         return;
      case LK_MSG_PING:
         return;
@@ -1553,8 +1618,10 @@ static int  lkt_main( void * unused )
             if( c->phase >= LKC_AUTH && SSL_has_pending( c->ssl ) )
                 lkt_read( c, my_state, my_panels );
         }
+        lkt_drain_sync();
         for( i = 0; i < LK_MAX_PEERS; i++ )
             if( lkt_conn[i].phase >= LKC_TLS )  lkt_flush( &lkt_conn[i] );
+        lkt_drain_sync();   // flushing may have made room for the next chunk
 
         lkt_publish();
 
@@ -1885,6 +1952,7 @@ void  LK_Ticker( void )
     // Invites and linked games: after the log lines, so a message's effect
     // is printed after the line that says it arrived.
     LKG_Ticker();
+    LKS_Ticker();   // [Arcade] shared scores
 }
 
 // ---------------------------------------------------------------------------
@@ -2163,6 +2231,18 @@ void  LK_Drawer( int y, int y_end )
             y += 9;
             lk_draw_fit( 18, y, 296, bad ? 0 : V_WHITEMAP, p->reason );
         }
+        // [Arcade] Shared scores that are not being shared, and why -- a
+        // different build or different wads would otherwise just never sync,
+        // with nothing on screen to say so.  Nothing when all is well.
+        else if( p->status == LK_PEER_ONLINE && y + 9 <= y_end )
+        {
+            const char * sc = LKS_Peer_Status( p->fp );
+            if( sc[0] && strcmp( sc, "SCORES SHARED" ) )
+            {
+                y += 9;
+                lk_draw_fit( 18, y, 296, 0, sc );
+            }
+        }
     }
 }
 
@@ -2195,6 +2275,64 @@ boolean  LK_Send( const byte * target, byte type, const byte * data, int len )
     lk_wake();
     return ok;
 }
+
+boolean  LK_Sync_Send( const byte * peer, const byte * data, int len )
+{
+    boolean ok = false;
+    if( ! lk_thread || ! peer || len <= 0 || len > LK_SYNC_DATA_MAX )  return false;
+    lk_lock();
+    if( lk_shared.sout_count < LK_SYNC_QUEUE )
+    {
+        lk_sync_msg_t * m = &lk_shared.sync_out[(lk_shared.sout_head + lk_shared.sout_count) % LK_SYNC_QUEUE];
+        memcpy( m->peer, peer, LK_FP_BYTES );
+        m->len = len;
+        memcpy( m->data, data, len );
+        lk_shared.sout_count++;
+        ok = true;
+    }
+    lk_unlock();
+    if( ok )  lk_wake();
+    return ok;
+}
+
+boolean  LK_Sync_Poll( lk_sync_msg_t * out )
+{
+    boolean got = false;
+    if( ! lk_inited || ! lk_mutex )  return false;
+    lk_lock();
+    if( lk_shared.sin_count )
+    {
+        *out = lk_shared.sync_in[lk_shared.sin_head];
+        lk_shared.sin_head = (lk_shared.sin_head + 1) % LK_SYNC_QUEUE;
+        lk_shared.sin_count--;
+        got = true;
+    }
+    lk_unlock();
+    return got;
+}
+
+int  LK_Sync_Peers( lk_peer_info_t * out, int max )
+{
+    lk_peer_info_t  list[LK_MAX_PEERS];
+    int i, n = LK_Peers( list, LK_MAX_PEERS ), k = 0;
+    static const byte zero[LK_FP_BYTES];
+    for( i = 0; i < n && k < max; i++ )
+    {
+        if( list[i].status != LK_PEER_ONLINE || ! memcmp( list[i].fp, zero, LK_FP_BYTES ) )  continue;
+        // A member's first entry is its master; the rest are other members,
+        // seen through the master's roster, which it does not talk to.
+        if( lk_set.role == LK_ROLE_MEMBER && i > 0 )  break;
+        out[k++] = list[i];
+    }
+    return k;
+}
+
+void  LK_Sha256( const byte * data, int len, byte * out32 )
+{
+    SHA256( data, len > 0 ? len : 0, out32 );
+}
+
+const char *  LK_Build( void )  { return lkt_build_short(); }
 
 boolean  LK_Poll_Event( lk_event_t * ev )
 {
@@ -2495,6 +2633,7 @@ static void  lk_net_status( void )
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->x >> FRACBITS : 0,
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->y >> FRACBITS : 0,
                LKG_Mode_Name() );
+    LKS_Status_Print();   // [Arcade] shared scores, per peer
     // Every player in the game, as this cabinet has them: two cabinets in
     // one game must print the same line.
     if( gamestate == GS_LEVEL )

@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -441,6 +441,269 @@ case_nojoin() {
     expect_not "the host did not start a linked game" "$d/master" "starting a linked game"
     expect "the host plays alone" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
     expect_not "the other cabinet never joined" "$d/member" "^LINKGAME gamestate=1 netgame=1"
+}
+
+# --- Shared scores (Phase 2) -------------------------------------------------
+# Record demos for the score cases: six small real Doom 2 record demos, stand-ins
+# for whatever a record's demo is.  Real ones, because the attract cycle may
+# play them while a case runs.
+TDEMOS="$REPO/tools/linktest-demos"
+
+# scorefiles <dir> <highscores lines> <runs lines> : write a cabinet's boards
+scorefiles() {
+    printf '# test\n%s\n' "$2" > "$1/legacyhome/highscores.dat"
+    printf '# test\n%s\n' "$3" > "$1/legacyhome/runs.dat"
+}
+# demo <dir> <test demo> <record demo name>
+demo() { cp "$TDEMOS/$2.lmp" "$1/legacyhome/demos/$3.lmp"; }
+
+# same_file <description> <file a> <file b>
+same_file() {
+    cmp -s "$2" "$3" || FAILS="$FAILS
+      $1: $(basename "$2") differs
+$(diff "$2" "$3" 2>&1 | head -12 | sed 's/^/        /')"
+}
+
+# Two cabinets with different boards, each holding records and demos the other
+# lacks, one on the old file format and one on the new: after syncing they hold
+# the same boards, byte for byte, every record's demo came with it, and on each
+# key the better record won -- a faster single level time, a Survival run that
+# got further even though it was slower.
+case_scores() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    # The master: old format, no set time or cabinet.
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01
+doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP01 MAP01 2 speed 500 AAA
+doom2-sl MAP02 MAP02 2 speed 700 BBB
+doom2 MAP01 MAP05 2 speed 9000 SUR"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    demo "$m" d2 doom2-sl_MAP02_sk2_speed
+    demo "$m" d3 doom2_ep1_sk2_speed
+    # The member: new format, a faster MAP01, a MAP03 the master lacks, and a
+    # Survival run that is faster but did not get as far.
+    scorefiles "$b" "doom2-sl MAP01 2 450 speed MAP01 1789000000 BBBB-2222
+doom2-sl MAP03 3 900 max MAP03 1789000100 BBBB-2222" "doom2-sl MAP01 MAP01 2 speed 450 MEM 1789000000 BBBB-2222
+doom2-sl MAP03 MAP03 3 max 900 MEM 1789000100 BBBB-2222
+doom2 MAP01 MAP03 2 speed 5000 LOW 1789000200 BBBB-2222"
+    demo "$b" d4 doom2-sl_MAP01_sk2_speed
+    demo "$b" d5 doom2-sl_MAP03_sk3_max
+    demo "$b" d6 doom2_ep1_sk2_speed
+
+    run "$m" 40 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 37 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master merged the member's scores" "$m" "^LINKLOG Scores: merged with JOINCAB"
+    expect "the member merged the master's scores" "$b" "^LINKLOG Scores: merged with HOSTCAB"
+    same_file "the two cabinets' split tables" "$m/legacyhome/highscores.dat" "$b/legacyhome/highscores.dat"
+    same_file "the two cabinets' run boards" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat"
+    local want
+    for want in "doom2-sl MAP01 2 450 speed MAP01 1789000000 BBBB-2222" \
+                "doom2-sl MAP02 2 700 speed MAP02 0 -" \
+                "doom2-sl MAP03 3 900 max MAP03 1789000100 BBBB-2222"; do
+        grep -qxF "$want" "$m/legacyhome/highscores.dat" || FAILS="$FAILS
+      the master's split table lacks: $want"
+    done
+    for want in "doom2-sl MAP01 MAP01 2 speed 450 MEM 1789000000 BBBB-2222" \
+                "doom2-sl MAP01 MAP01 2 speed 500 AAA 0 -" \
+                "doom2-sl MAP02 MAP02 2 speed 700 BBB 0 -" \
+                "doom2 MAP01 MAP05 2 speed 9000 SUR 0 -"; do
+        grep -qxF "$want" "$b/legacyhome/runs.dat" || FAILS="$FAILS
+      the member's run board lacks: $want"
+    done
+    grep -q " LOW " "$m/legacyhome/runs.dat" && FAILS="$FAILS
+      a Survival run that did not get as far is still on the board"
+    # Each record's demo is the one that set it, on both cabinets.
+    same_file "the MAP01 record's demo (the member's) on the master" "$TDEMOS/d4.lmp" "$m/legacyhome/demos/doom2-sl_MAP01_sk2_speed.lmp"
+    same_file "the MAP02 record's demo on the member" "$TDEMOS/d2.lmp" "$b/legacyhome/demos/doom2-sl_MAP02_sk2_speed.lmp"
+    same_file "the MAP03 record's demo on the master" "$TDEMOS/d5.lmp" "$m/legacyhome/demos/doom2-sl_MAP03_sk3_max.lmp"
+    same_file "the Survival demo (the master's) on the member" "$TDEMOS/d3.lmp" "$b/legacyhome/demos/doom2_ep1_sk2_speed.lmp"
+}
+
+# A real cabinet's history against an empty cabinet: SCOREHOME=<a legacyhome>
+# copies its highscores.dat, runs.dat and demos onto the master (a copy -- the
+# source is only read), GAME picks which of its games is shared.  Skipped
+# without SCOREHOME.  The member must end with the same files, and every record
+# demo for the shared game identical to the master's.
+case_scoreslarge() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    [ -n "${SCOREHOME:-}" ] && [ -d "$SCOREHOME/demos" ] || { echo "SKIP" > "$d/skip"; return; }
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    cp "$SCOREHOME/highscores.dat" "$SCOREHOME/runs.dat" "$m/legacyhome/"
+    cp "$SCOREHOME"/demos/*.lmp "$m/legacyhome/demos/"
+    scorefiles "$b" "" ""
+
+    run "$m" 60 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 57 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the member merged the master's scores" "$b" "^LINKLOG Scores: merged with HOSTCAB"
+    local f g n=0
+    g="${GAME:-doom2}"
+    for f in "$b"/legacyhome/demos/*.lmp; do
+        n=$((n+1))
+        same_file "a received demo" "$m/legacyhome/demos/$(basename "$f")" "$f"
+    done
+    # Every one of the master's demos for the shared game that has a record.
+    for f in $(grep -v '^#' "$b/legacyhome/highscores.dat" | awk '{print $1"_"$2"_sk"$3"_"$5".lmp"}'); do
+        [ -e "$b/legacyhome/demos/$f" ] || FAILS="$FAILS
+      the member has the record but not its demo: $f"
+    done
+    [ "$n" -gt 0 ] || FAILS="$FAILS
+      no demo reached the member"
+    echo "scoreslarge: $n demo(s) for $g reached the member; $(grep -vc '^#' "$b/legacyhome/highscores.dat") record(s), $(grep -vc '^#' "$b/legacyhome/runs.dat") board entries" > "$d/note"
+}
+
+# The master clears the scores while the member is switched off.  When the
+# member comes back its old records must go -- not come back to the master --
+# while a record it set after the clear stays and reaches the master.
+case_scoreclear() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    # 2100000000 is 2036: set after any clear this test can make.
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02
+doom2-sl MAP03 3 900 max MAP03 2100000000 BBBB-2222" "doom2-sl MAP02 MAP02 2 speed 700 OLD
+doom2-sl MAP03 MAP03 3 max 900 NEW 2100000000 BBBB-2222"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+    demo "$b" d5 doom2-sl_MAP03_sk3_max
+
+    run "$m" 45 0 -linktest -linkcmdat 3 clearhighscores -udpport $((p+100))
+    sleep 12
+    run "$b" 32 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master cleared" "$m" "^LINKTEST console: clearhighscores"
+    expect "the member heard of the clear" "$b" "^LINKLOG Scores: HOSTCAB cleared the high scores; 1 demo"
+    same_file "the two cabinets' split tables" "$m/legacyhome/highscores.dat" "$b/legacyhome/highscores.dat"
+    same_file "the two cabinets' run boards" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat"
+    grep -q "^# epoch [1-9]" "$b/legacyhome/highscores.dat" || FAILS="$FAILS
+      the member did not take the master's epoch: $(grep epoch "$b/legacyhome/highscores.dat")"
+    grep -q "MAP02" "$m/legacyhome/highscores.dat" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat" && FAILS="$FAILS
+      a record from before the clear came back"
+    grep -q "MAP01" "$b/legacyhome/highscores.dat" && FAILS="$FAILS
+      the master's cleared record reached the member"
+    grep -qxF "doom2-sl MAP03 3 900 max MAP03 2100000000 BBBB-2222" "$m/legacyhome/highscores.dat" || FAILS="$FAILS
+      the member's record from after the clear did not reach the master"
+    [ -e "$b/legacyhome/demos/doom2-sl_MAP02_sk2_speed.lmp" ] && FAILS="$FAILS
+      the member kept the demo of a cleared record"
+    same_file "the record from after the clear's demo on the master" "$TDEMOS/d5.lmp" "$m/legacyhome/demos/doom2-sl_MAP03_sk3_max.lmp"
+}
+
+# Both online and synced, then the master clears: the member's boards and
+# demos go too.
+case_scoreclearlive() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP02 MAP02 2 speed 700 BBB"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+
+    run "$m" 45 0 -linktest -linkcmdat 22 clearhighscores -udpport $((p+100))
+    sleep 2
+    run "$b" 42 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "they synced before the clear" "$b" "^LINKLOG Scores: merged with HOSTCAB"
+    expect "the member heard of the clear" "$b" "^LINKLOG Scores: HOSTCAB cleared the high scores; 2 demo"
+    same_file "the two cabinets' split tables" "$m/legacyhome/highscores.dat" "$b/legacyhome/highscores.dat"
+    same_file "the two cabinets' run boards" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat"
+    grep -vq '^#' "$b/legacyhome/highscores.dat" "$b/legacyhome/runs.dat" && FAILS="$FAILS
+      the member still has records after the clear"
+    ls "$b/legacyhome/demos/"*.lmp >/dev/null 2>&1 && FAILS="$FAILS
+      the member still has record demos after the clear: $(ls "$b/legacyhome/demos")"
+}
+
+# A demo that is not whole (cut short) is refused, and so is its record; the
+# rest of the sync goes ahead.
+case_scorebad() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "" ""
+    scorefiles "$b" "doom2-sl MAP01 2 450 speed MAP01 1789000000 BBBB-2222
+doom2-sl MAP03 3 900 max MAP03 1789000100 BBBB-2222" ""
+    head -c 600 "$TDEMOS/d4.lmp" > "$b/legacyhome/demos/doom2-sl_MAP01_sk2_speed.lmp"
+    demo "$b" d5 doom2-sl_MAP03_sk3_max
+
+    run "$m" 35 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 32 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master refused the cut-short demo" "$m" "^LINKLOG Scores: refused a demo from JOINCAB .*: not a whole demo"
+    expect "the rest was merged" "$m" "^LINKLOG Scores: merged with JOINCAB"
+    grep -q "MAP01" "$m/legacyhome/highscores.dat" && FAILS="$FAILS
+      the master took the record whose demo was cut short"
+    [ -e "$m/legacyhome/demos/doom2-sl_MAP01_sk2_speed.lmp" ] && FAILS="$FAILS
+      the cut-short demo was written on the master"
+    same_file "the good record's demo on the master" "$TDEMOS/d5.lmp" "$m/legacyhome/demos/doom2-sl_MAP03_sk3_max.lmp"
+}
+
+# A gameplay setting that record demos carry but the ranked ruleset does not
+# pin -- rocket trails -- differs: those boards are not the same competition,
+# so nothing is shared, and the status says why.
+case_scorerules() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    sed -i '/^rockettrails /d' "$b/legacyhome/config.cfg"
+    echo 'rockettrails "0"' >> "$b/legacyhome/config.cfg"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP02 MAP02 2 speed 700 BBB"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+
+    run "$m" 30 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 27 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master says the settings differ" "$m" "^LINKSCORE peer=JOINCAB .*status=SCORES: DIFFERENT SETTINGS"
+    expect_not "nothing merged on the master" "$m" "^LINKLOG Scores: merged"
+    expect_not "nothing merged on the member" "$b" "^LINKLOG Scores: merged"
+    grep -q "MAP02" "$m/legacyhome/highscores.dat" && FAILS="$FAILS
+      the member's record reached the master anyway"
+}
+
+# The member is in a game when the master's scores arrive: nothing is applied
+# until it is back on the attract screen.
+case_scorebusy() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    scorefiles "$b" "" ""
+
+    run "$m" 45 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 42 0 -linktest -skill 3 -warp 1 -linkcmdat 22 exitgame -clientport $((p+101))
+    wait
+
+    expect "the member played a level" "$b" "^LINKGAME gamestate=1 netgame=0 "
+    expect "the member merged in the end" "$b" "^LINKLOG Scores: merged with HOSTCAB"
+    local left merged
+    left=$(out "$b" | grep -an "^LINKTEST console: exitgame" | head -1 | cut -d: -f1)
+    merged=$(out "$b" | grep -an "^LINKLOG Scores: merged with HOSTCAB" | head -1 | cut -d: -f1)
+    [ -n "$left" ] && [ -n "$merged" ] && [ "$merged" -gt "$left" ] || FAILS="$FAILS
+      the member merged during its game (merge at line ${merged:-none}, left the game at line ${left:-none})"
 }
 
 # nojoin the other way round, as Mark's cabinets were: the member hosts, the
@@ -1186,8 +1449,12 @@ for i in "${!pids[@]}"; do
             failed=$((failed+1))
         fi
     else
-        if [ -z "$f" ]; then
+        if [ -f "$WORK/$c/skip" ] && [ -z "$f" ]; then
+            printf '  SKIP  %s (needs SCOREHOME)\n' "$c"
+            skipped=$((skipped+1))
+        elif [ -z "$f" ]; then
             printf '  PASS  %s\n' "$c"
+            [ -f "$WORK/$c/note" ] && printf '        %s\n' "$(cat "$WORK/$c/note")"
             passed=$((passed+1))
         else
             printf '  FAIL  %s%s\n' "$c" "$f"

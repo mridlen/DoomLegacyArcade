@@ -92,6 +92,9 @@ static int         lkg_test_move_ms;
 static boolean     lkg_test_chaos;          // -linkchaos: every panel, a new random mix of buttons every 50 ms
 static int         lkg_test_cmd_secs;       // -linkcmdafter S "text": console text S s into a linked level
 static const char *lkg_test_cmd;
+static int         lkg_test_at_secs;        // -linkcmdat S "text": console text S s after the link starts
+static const char *lkg_test_at_cmd;
+static uint32_t    lkg_test_start_ms;
 static int         lkg_test_join_panels = 1;
 static boolean     lkg_test_host_in_demo;   // -linkhostindemo: host only while an attract demo plays // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
@@ -640,7 +643,24 @@ void  LKG_Ticker( void )
                 lkg_test_cmd_secs = atoi( M_GetNextParm() );
                 if( M_IsNextParm() )  lkg_test_cmd = M_GetNextParm();
             }
+            if( M_CheckParm( "-linkcmdat" ) && M_IsNextParm() )
+            {
+                lkg_test_at_secs = atoi( M_GetNextParm() );
+                if( M_IsNextParm() )  lkg_test_at_cmd = M_GetNextParm();
+            }
+            lkg_test_start_ms = lkg_now();
         }
+    }
+
+    // -linktest -linkcmdat: console text at a wall-clock time, whatever the
+    // cabinet is doing -- the shared score cases clear the board from the
+    // attract screen and leave a game with it.
+    if( lkg_test_at_cmd && lkg_now() - lkg_test_start_ms >= (uint32_t) lkg_test_at_secs * 1000 )
+    {
+        GenPrintf( EMSG_errlog, "LINKTEST console: %s\n", lkg_test_at_cmd );
+        COM_BufAddText( lkg_test_at_cmd );
+        COM_BufAddText( "\n" );
+        lkg_test_at_cmd = NULL;
     }
 
     // -linktest -linkcmdafter: console text typed S seconds into a linked
