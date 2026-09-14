@@ -1221,6 +1221,11 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   any cabinet is playing, even if the other cabinet has been left with nobody at it; when nobody at
   all has touched the controls for the idle timeout, every cabinet goes back to its attract screen
   together.
+- **The cabinet that starts a linked game sets its timeouts.** The idle timeout, the idle warning and
+  the join screen countdown all come from the cabinet that started the game, so every screen counts
+  down the same numbers and nobody gets dropped early because the other cabinet is set shorter. Your
+  own settings are untouched and apply again to the next game you start. A cabinet with **Join
+  Screen Timeout** set to **Off** has no join screen, so it never invites the other cabinets.
 - If the other cabinet ends the game or drops out, the message that says so ("Server has Shutdown")
   goes away with **fire**, back to the attract screen. It used to need Escape.
 - Either cabinet can start the game, master or member. (Earlier builds could send the joining

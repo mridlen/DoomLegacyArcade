@@ -28,10 +28,12 @@
 //   INVITE  seq, nonce, u8 category, u8 skill, u16 secs, map[9], game[LK_GAME_LEN]
 //   CANCEL  seq, nonce
 //   STATUS  seq, nonce, u8 joined, u8 all_locked, u16 secs_left
-//   START   seq, nonce, u16 host udp port, u8 key id, keys[LK_UDP_KEYS]
+//   START   seq, nonce, u16 host udp port, u8 key id, keys[LK_UDP_KEYS],
+//           u16 idle timeout secs, u16 idle warning secs
 #define LKG_INVITE_LEN   (8 + 1 + 1 + 2 + 9 + LK_GAME_LEN)
 #define LKG_STATUS_LEN   (8 + 1 + 1 + 2)
-#define LKG_START_LEN    (8 + 2 + 1 + LK_UDP_KEYS)
+#define LKG_START_LEN    (8 + 2 + 1 + LK_UDP_KEYS + 2 + 2)
+#define LKG_START_IDLE   (8 + 2 + 1 + LK_UDP_KEYS)   // offset of the idle settings
 
 #define LKG_STATUS_MS    1000     // re-send status this often even unchanged
 #define LKG_SILENT_MS    6000     // a remote this quiet has left
@@ -78,6 +80,8 @@ static uint32_t    lkg_deadline_ms;
 // A linked game in progress
 static uint32_t    lkg_game_ms;
 static boolean     lkg_seen_level;
+// The host's idle timeout and warning, from START: a joined game runs on them.
+static int         lkg_host_idle_secs, lkg_host_warn_secs;
 
 // -linktest hooks (tools/linktest.sh): honoured only with -linktest.
 static int         lkg_test = -1;
@@ -218,6 +222,22 @@ boolean  LKG_Remotes_All_Locked( void )
     return true;
 }
 
+// Every cabinet in a linked game must time out on the same settings.  The
+// idle check already measures everybody's input, so all of them agree on how
+// long the game has been idle -- but each compared it with its own idletimeout,
+// so a joining cabinet set shorter than the host left a game the host was
+// still running, and each screen counted its warning down from its own number.
+// The host's are what count, as the host's rules do.  Taken from START rather
+// than applied as netvars: a netvar overwrites the setting itself, and nothing
+// restores a joining cabinet's own value once the linked game is over.
+boolean  LKG_Host_Idle_Settings( int * timeout_secs, int * warn_secs )
+{
+    if( lkg_mode != LKGM_GAME_CLIENT || ! netgame )  return false;
+    *timeout_secs = lkg_host_idle_secs;
+    *warn_secs = lkg_host_warn_secs;
+    return true;
+}
+
 int  LKG_Remote_Players( void )
 {
     return ( lkg_mode == LKGM_GAME_HOST ) ? lkg_remote_players : 0;
@@ -244,6 +264,10 @@ int  LKG_Host_Start( void )
         put32( p + 4, lkg_nonce );
         put16( p + 8, server_sock_port );
         p[10] = id;
+        // The idle timeout as this cabinet applies it: a -devmode host never
+        // times out (G_Idle_Timeout_Check), so neither does its game.
+        put16( p + LKG_START_IDLE, devmode ? 0 : cv_idletimeout.value );
+        put16( p + LKG_START_IDLE + 2, cv_idlewarntime.value );
         LK_Send( r->fp, LK_GM_START, p, sizeof(p) );
         players += r->joined;
     }
@@ -579,8 +603,12 @@ static void  lkg_on_event( const lk_event_t * ev )
             lkg_set_mode( LKGM_GAME_CLIENT );
             lkg_game_ms = lkg_now();
             lkg_seen_level = false;
-            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: joining %s at %s port %d\n",
-                       lkg_host_name, info.address, get16( p + 8 ) );
+            lkg_host_idle_secs = get16( p + LKG_START_IDLE );
+            lkg_host_warn_secs = get16( p + LKG_START_IDLE + 2 );
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: joining %s at %s port %d"
+                       " (idle timeout %d s, warning %d s)\n",
+                       lkg_host_name, info.address, get16( p + 8 ),
+                       lkg_host_idle_secs, lkg_host_warn_secs );
             M_Join_Remote_Connect( info.address, get16( p + 8 ) );
         }
         break;

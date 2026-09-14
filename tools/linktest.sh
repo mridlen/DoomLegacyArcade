@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1123,6 +1123,32 @@ case_idleall() {
     lastline "$d/master" LINKGAME | grep -aq "^LINKGAME gamestate=[0-9] netgame=0 .* none$" \
         || FAILS="$FAILS
       at the end the host was still in a game: $(lastline "$d/master" LINKGAME)"
+}
+
+# Mark: "idle timeout, idle warning, and join screen timeout should all be shared
+# on a cabinet link, otherwise we might get some weird behavior".  The host's
+# idle settings govern the game.  The host at 900 s, the joining cabinet at the
+# shortest, 15 s, and nobody playing: the joining cabinet must still be in the
+# game at the end, well past its own 15 s.  Fails on the build before -- each
+# cabinet used its own setting, so the joiner left the host's game.
+case_idlehost() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    sed -i -e 's/^idletimeout .*/idletimeout "900"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/master/legacyhome/config.cfg"
+    sed -i -e 's/^idletimeout .*/idletimeout "15"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/member/legacyhome/config.cfg"
+    run "$d/master" 75 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    sleep 2
+    run "$d/member" 72 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the two played together" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect "the joining cabinet took the host's idle settings" "$d/member" "^LINKLOG .*joining HOSTCAB .*idle timeout 900 s, warning 5 s"
+    expect_not "the joining cabinet did not time out on its own 15 s" "$d/member" "^LINKLOG .*linked game over"
+    lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=2 " \
+        || FAILS="$FAILS
+      at the end the joining cabinet was not in the game: $(lastline "$d/member" LINKGAME)"
 }
 
 # Mark: "the first game after booting both cabinet binaries, the joining party

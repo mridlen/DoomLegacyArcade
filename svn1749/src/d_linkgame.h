@@ -43,6 +43,13 @@ int          LKG_Remote_Players( void );
 // A remote cabinet has players in this join screen (presence: HOSTING).
 boolean      LKG_Hosting_Remote( void );
 
+// --- A cabinet in a linked game it joined ---
+
+// The host's idle timeout and idle warning, in seconds (timeout 0 is Off),
+// which a joined game runs on instead of this cabinet's own.  False, leaving
+// both untouched, when this cabinet is not in a linked game it joined.
+boolean      LKG_Host_Idle_Settings( int * timeout_secs, int * warn_secs );
+
 // --- Either side ---
 
 // The join screen was backed out of (Escape).

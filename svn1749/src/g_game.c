@@ -203,6 +203,7 @@
 #include "b_game.h"	//added by AC for acbot
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
+#include "d_linkgame.h"   // [Arcade] a joined linked game's idle settings
 #endif
 
 
@@ -2005,8 +2006,16 @@ static void G_Idle_Timeout_Check( boolean in_menu )
 {
     static int last_warn_secs_shown = -1;
     tic_t idle_tics, timeout_tics, warn_tics;
+    int   idle_secs = cv_idletimeout.value;
+    int   warn_secs = cv_idlewarntime.value;
 
-    if( devmode || cv_idletimeout.value <= 0 )  return;
+    // [Arcade] Cabinet Link: a linked game this cabinet joined runs on the
+    // host's settings, so every cabinet in it times out on the same tic and
+    // counts the same warning down (d_linkgame.c).  Before the Off test: a
+    // cabinet set to Off still leaves a game whose host is not.
+    LKG_Host_Idle_Settings( &idle_secs, &warn_secs );
+
+    if( devmode || idle_secs <= 0 )  return;
 
     // [Arcade] Never close the initials page out from under a player part way
     // through entering their name.  It runs its own countdown
@@ -2044,9 +2053,9 @@ static void G_Idle_Timeout_Check( boolean in_menu )
             last = game_input_tic;
         idle_tics = gametic - last;
     }
-    timeout_tics = (tic_t)cv_idletimeout.value * TICRATE;
-    warn_tics    = (cv_idletimeout.value > cv_idlewarntime.value)
-                    ? (tic_t)(cv_idletimeout.value - cv_idlewarntime.value) * TICRATE
+    timeout_tics = (tic_t)idle_secs * TICRATE;
+    warn_tics    = (idle_secs > warn_secs)
+                    ? (tic_t)(idle_secs - warn_secs) * TICRATE
                     : 0;
 
     if( idle_tics >= timeout_tics )
@@ -2102,7 +2111,7 @@ static void G_Idle_Timeout_Check( boolean in_menu )
     {
         // Not warned for the menu case: D_Display only calls HU_Drawer for
         // GS_LEVEL, so on the attract screen HU_SetTip would draw nothing.
-        int remain_secs = cv_idletimeout.value - (int)(idle_tics / TICRATE);
+        int remain_secs = idle_secs - (int)(idle_tics / TICRATE);
         if( remain_secs != last_warn_secs_shown )
         {
             char idlemsg[64];

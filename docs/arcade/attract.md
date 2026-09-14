@@ -109,7 +109,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     never ended at all. `G_Ticker` now stamps `game_input_tic` whenever any player's ticcmd shows
     movement, buttons, or a changed turn or aim (both absolute in the ticcmd), and in a network game
     the idle time runs from the later of that and `last_input_tic`. Every cabinet runs the same
-    ticcmds, so all of them fire on the same tic. Nothing the simulation reads — `make demotest`
+    ticcmds, so all of them fire on the same tic — **provided they compare it with the same
+    timeout**, which they did not until a joined linked game started using the host's `idletimeout`
+    and `idlewarntime` (2026-09-14, `LKG_Host_Idle_Settings`; `cabinet-link.md`, "Shared timeouts"). Nothing the simulation reads — `make demotest`
     gave the identical 16 desyncs as the build before (the Doom 2 v1.666 demos, see the IWAD switch).
   - Cases `idleshared` (an idle two-panel host, a joining player turning every 2 s, 15 s timeout: the
     game must still be on 45 s in; **fails on the build before** — the host timed out) and `idleall`

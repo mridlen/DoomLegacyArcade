@@ -953,7 +953,8 @@ proof's version byte and is refused):
    The host's screen reads `RASPBERRYPI: 1 IN`. The game starts when every panel that pressed in,
    **on every cabinet**, has locked — or at the host's countdown.
 4. **Start.** `M_Join_Start` calls `LKG_Host_Start` before the server comes up: each cabinet with
-   players in gets `START` (the host's UDP port, a key id, two fresh 32-byte keys); everyone else
+   players in gets `START` (the host's UDP port, a key id, two fresh 32-byte keys, and the host's
+   idle timeout and idle warning — see "Shared timeouts" below); everyone else
    gets `CANCEL`. Remote players count toward coop (`M_NewGame_Go`) and toward the server's wait
    (`M_Arcade_MP_Go`), with a **15 second timeout** so a cabinet that never arrives cannot hang the
    host. The joining cabinet hands its panels to the engine exactly as a local join does and
@@ -1110,6 +1111,32 @@ connect instead (the netcode's own MD5 check).
   countdown). Case `idlejoin`: `idletimeout 15`, invited 20 s after boot, and the press is a **real key
   event** (`-linkpressafter 6` posts panel 1's fire through `D_PostEvent`, so it only joins if the
   screen is still up). It fails on the build before.
+- **Shared timeouts: every cabinet in a linked game runs on the host's** (2026-09-14). Mark: "idle
+  timeout, idle warning, and join screen timeout should all be shared on a cabinet link, otherwise we
+  might get some weird behavior". Two of the three needed work:
+  - **The join screen countdown already was.** `INVITE` carries the host's seconds left and `STATUS`
+    keeps resetting a remote's countdown to them (`M_Join_Set_Countdown`), so a remote's own
+    `jointime` is never consulted for the host's game. Note the host's own **Off** means no join
+    screen, and so no invite: a cabinet set to Off never starts a linked game (`M_Join_Open`).
+  - **The idle timeout and warning were each cabinet's own.** All cabinets already agreed on *how
+    long* the game had been idle (`game_input_tic`, from the ticcmds), but each compared that with its
+    own `idletimeout`: a joiner set shorter than the host dropped out of a game the host was still
+    running and went back to attract, and each screen counted its warning down from its own number.
+    `START` now carries the host's two values (`LKG_START_IDLE`, u16 each; a `-devmode` host sends
+    timeout 0, since it never times out), and `G_Idle_Timeout_Check` takes them through
+    `LKG_Host_Idle_Settings` while the cabinet is `LKGM_GAME_CLIENT` in a netgame — **before** its Off
+    test, so a joiner set to Off still leaves a game whose host is not.
+  - **Not netvars.** `CV_NETVAR` is the engine's way to share a setting, but a netvar received by a
+    client overwrites the cvar itself, and only demo playback (`CV_Restore_User_Settings`) puts user
+    values back — a joining cabinet would have kept the host's idle timeout for its own games after
+    the linked one. `idletimeout` also exceeds a byte, which a plain netvar stores only in `.EV`. A
+    value held by the link and consulted only during the game needs nothing restored. `START` grew
+    four bytes, so both cabinets need this build — already a requirement (`DLA_VERSION`).
+  - Settings changed on the host *during* a game are not re-sent. Only a `-devmode` session can change
+    them, and the idle timeout does not run in one.
+  - Case `idlehost`: host `idletimeout 900`, joiner `15`, nobody playing; the joiner must log the
+    host's values and still be in the game at the end. **Fails on the build before** — the joiner left
+    at 15 s (`netgame=0`, back on its attract screen). `idleshared`, `idleall` still pass.
   - Verified: 26 link cases pass (`pair` failed once in a batch of eleven — its third engine never
     showed up, with the laptop short of memory — and passed on its own); `make smoke` 5/5.
 
@@ -1322,9 +1349,8 @@ had closed, but nothing was running underneath it.
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).
-- Idle timeout and arcade death **in a linked game**: `G_Idle_Timeout_Check` and
-  `G_Arcade_Death_Check` were written for one machine. What happens when the joining cabinet's player
-  walks away, or the host's does, is untested.
+- Arcade death **in a linked game**: `G_Arcade_Death_Check` was written for one machine. (The idle
+  timeout has since been covered headlessly: `idleshared`, `idleall`, `idlehost`.)
 - A Deathmatch against a Campaign opened at the same time (should be two separate games).
 - Pulling a cable mid-game, and playing on the Pi 3 over Wi-Fi for longer than a test run.
 
