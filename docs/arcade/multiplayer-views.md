@@ -345,9 +345,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     falls back to `PLAYER N`. Measured against DOOM2.WAD's STCFN: the cabinet's names are 59–90 wide,
     so every one fits a 2x2 or stacked cell (160+) and only `cv_split4`'s 80-wide cells cut —
     "P4 DESTROYER" (90) to "P4 DESTROY".
-  - **`cv_jointime`** ("jointime", default 20s, `CV_SAVE`) is the countdown, and
+  - **`cv_jointime`** ("jointime", default 30s, `CV_SAVE`) is the countdown, and
     **`cv_localplayers`** the panel count — both operator settings under **Options → Arcade
-    Options**, so only a `-devmode` session writes them. `jointime 0` or a single panel
+    Options** (the countdown as "Join Screen Timeout" on its Timeouts page), so only a `-devmode` session writes them. `jointime 0` or a single panel
     skips the page entirely and the game starts exactly as it always did.
   - **A player's identity follows their panel too.** `cv_playername[N]`, `cv_playercolor[N]` and
     `cv_skin[N]` (`name`/`name2`..`name4`, `color`..`color4`, `skin`..`skin4`) are **panel N's**

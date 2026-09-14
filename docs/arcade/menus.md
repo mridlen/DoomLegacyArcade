@@ -945,7 +945,8 @@ for one more — so seven rows moved to two new pages hung off it, to leave room
 - **Disable/Enable Menu Options >>** (`MenuDisableMenu`/`MenuDisableDef`, titled "Menu Options"):
   Cheats Menu, Multiplayer Menu, Quit Menu, Game Options — every switch for how much menu a player
   is given.
-- **Timeouts >>** (`TimeoutsMenu`/`TimeoutsDef`): Initials Timeout, Idle Timeout, Idle Warning.
+- **Timeouts >>** (`TimeoutsMenu`/`TimeoutsDef`): Initials Timeout, Idle Timeout, Idle Warning,
+  and Join Screen Timeout (below).
 
 Arcade Options is ten rows now (`y 40..137, room for 6 more`); the new pages are four and three.
 The two links sit where the rows were, after Boot Game.
@@ -961,6 +962,27 @@ The two links sit where the rows were, after Boot Game.
   and 108 for "Initials Timeout"), so it runs 60..272. That is past the 260 where a value column
   ends, but a submenu row draws no value, and it clears the 320-wide screen by 48. A cvar row with a
   label that long would collide; a longer link would need measuring again.
+
+### Join Screen Timeout
+
+`cv_jointime` moved from Players & Views ("Join Time") to the end of the Timeouts page, and became
+a named list — `Off`, 20, 30, 45, 60 — with the default raised from 20 to 30.
+
+- **The label was chosen by measurement.** "Multiplayer Join Timeout" was the first choice: 174
+  wide against `STCFN`, so 60..234, while `Off` (24) right-justified to 260 starts at 236 — a **2px**
+  gap, tighter than the 4px "Two Player Split" squeeze that got that label shortened. "Join Screen
+  Timeout" is 136 and leaves 40; on a page titled Timeouts, "Join" alone would also have done (85).
+- **`Off` keeps what 0 always meant: no join screen**, the game starts with panel 1 alone. Not
+  "wait for ever" — that would hold an unattended cabinet on the page for a player who walked off,
+  and a Cabinet Link invite sends this number as its countdown, where for ever has no encoding.
+- **A list refuses anything not in it** (`CV_Set` → `error`, the setting keeps its value), which is
+  the point — a 3 second countdown is nobody's join screen — but it broke `tools/linktest.sh`, whose
+  `nojoin` and `nojoinmaster` cases used `jointime 6`. They use 20 now, with the runs 14s longer.
+  **A cabinet whose config holds an unlisted value (the old range allowed 0..60) comes up at the
+  default 30** and `M_Verify_Config` reports the line; re-save from a `-devmode` session.
+- **The config line wins over the new default**: a cabinet that already has `jointime "20"` keeps
+  20 until the operator picks 30 on the page. See `CLAUDE.md` on `config.cfg` overriding compiled
+  defaults.
 
 ## The Video Modes page, and paging a list that used to be truncated
 

@@ -594,8 +594,20 @@ static void CV_Panelorder_OnChange( void )
 // pressed in.  Operator setting like the two above.  0 skips the wait, which
 // starts the game with panel 1 alone -- useful on a single panel cabinet that
 // still has cv_localplayers set high for testing.
-CV_PossibleValue_t jointime_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
-consvar_t cv_jointime = {"jointime", "20", CV_SAVE, jointime_cons_t };
+//
+// A named list rather than a 0..60 range, like the idle timeouts (g_game.c):
+// a countdown of a few seconds is too short for anyone to walk up and press
+// in, and nothing stopped an operator setting one.  Off keeps its old
+// meaning -- no join screen -- rather than "wait for ever", which on an
+// unattended cabinet would hold the screen for a player who wandered off, and
+// which a Cabinet Link invite (it sends this as its countdown) cannot express.
+// A value not in the list is refused and the setting keeps its default, so
+// tools/linktest.sh uses 20 rather than a shorter countdown.
+//
+// Default 30, up from 20: less frantic for someone new to the cabinet.
+CV_PossibleValue_t jointime_cons_t[] = {
+    {0,"Off"}, {20,"20"}, {30,"30"}, {45,"45"}, {60,"60"}, {0,NULL} };
+consvar_t cv_jointime = {"jointime", "30", CV_SAVE, jointime_cons_t };
 
 // [Arcade] Seconds the initials entry page waits before accepting whatever
 // is on it.  Operator setting like the rest of this group.
@@ -5420,8 +5432,9 @@ void M_DrawSlider (int x, int y, int range)
 
 // [Arcade] Split off the Arcade Options page, which was full -- 16 rows from
 // y=40 reaches the bottom of a 200 unit screen with nothing to spare, and
-// "4 Player Split" had nowhere to go.  These five belong together anyway: how
-// many people can play, and how the screen is divided between them.
+// "4 Player Split" had nowhere to go.  These belong together anyway: how
+// many people can play, and how the screen is divided between them.  (Join
+// Time was here too; it is "Join Screen Timeout" on the Timeouts page now.)
 //
 // Operator settings, like the page they came from: Arcade Options is only
 // reachable under -devmode, and this hangs off it.
@@ -5431,7 +5444,6 @@ menuitem_t PlayerViewsMenu[]=
     {IT_STRING | IT_CVAR,0, "2 Player Split"  , &cv_splitvertical , 0},
     {IT_STRING | IT_CVAR,0, "3-4 Player Split", &cv_split4        , 0},
     {IT_STRING | IT_CVAR,0, "Screen Order"    , &cv_panelorder    , 0},
-    {IT_STRING | IT_CVAR,0, "Join Time"       , &cv_jointime      , 0},
 };
 
 menu_t  PlayerViewsDef =
@@ -5495,6 +5507,11 @@ menuitem_t TimeoutsMenu[]=
     {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
     {IT_STRING | IT_CVAR,0, "Idle Timeout"    , &cv_idletimeout    , 0},
     {IT_STRING | IT_CVAR,0, "Idle Warning"    , &cv_idlewarntime   , 0},
+    // [Arcade] Moved from Players & Views, where it was "Join Time".  Not
+    // "Multiplayer Join Timeout": measured against STCFN that label is 174
+    // wide and ends at 234, two pixels short of an "Off" value starting at
+    // 236.  This one is 136 and leaves 40.
+    {IT_STRING | IT_CVAR,0, "Join Screen Timeout", &cv_jointime      , 0},
 };
 
 menu_t  TimeoutsDef =

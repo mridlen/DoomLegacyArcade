@@ -101,6 +101,12 @@ Discord is likely to get you banned.
   by default, with a 15-second warning counting down first. Both are set under **Options → Arcade
   Options → Timeouts** (`Idle Timeout`, `Idle Warning`), and neither applies in a `-devmode`
   session.
+- **A join screen that waits long enough.** When a multiplayer game starts, the join screen gives
+  the other panels **30 seconds** to press in — less frantic for someone new to the cabinet than
+  the old 20. **Options → Arcade Options → Timeouts → Join Screen Timeout** picks 20, 30, 45 or 60
+  seconds, or **Off**, which skips the join screen altogether and starts with panel 1 alone. A
+  panel that is already in can still press Use to start straight away. The same countdown is what
+  other cabinets get when Cabinet Link invites them.
 - **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
   in, so the cabinet can offer several games from one menu.
 
@@ -118,7 +124,7 @@ Discord is likely to get you banned.
 - **A Players and Views page** (Options → Arcade Options → **Players & Views**) gathers everything
   about how many people can play and how the screen is divided: how many control panels the cabinet
   has, whether two players get stacked halves or side-by-side, whether three or four get a 2x2 grid
-  or four columns, which quadrant each panel drives, and how long the join screen waits.
+  or four columns, and which quadrant each panel drives.
 - **A Performance page** (Options → Video Options → **Performance Options**) holds the settings that
   trade picture for speed: **Framerate Cap**, **Render Threads**, **8bpp Draw** and **Show
   Ticrate**. Render Threads is what lets a Pi run a four-way split at full speed; it applies to the
@@ -1014,7 +1020,7 @@ panel 2's view on the far side of the screen from where panel 2 is standing; the
 columns instead, and every player watches their own side. Reading order is kept for four people on
 gamepads sitting wherever they like, which is what they will expect.
 
-**Join Time** is how long the join screen waits, in seconds; `0` skips the page entirely.
+How long the join screen waits is on the Timeouts page, below.
 
 Set the panel count first, then run the guided setup for each panel. Panels 3 and 4 have no preset
 bindings on purpose — the two built-in schemes are chosen so one keyboard can drive two players, and
@@ -1542,7 +1548,7 @@ resets the ruleset automatically, so starting a fresh game normally clears it.
 
 **The join screen never appears, or panels 3 and 4 have no settings pages.**
 `Control Panels`, on the Options → Arcade Options → **Players & Views** page, is still at 1. Nothing
-about the extra panels shows up until the cabinet is told how many it has. Check `Join Time` isn't 0
+about the extra panels shows up until the cabinet is told how many it has. Check `Join Screen Timeout` (Arcade Options → Timeouts) isn't Off
 while you're there.
 
 **Replacement music isn't playing.**

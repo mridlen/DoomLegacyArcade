@@ -355,7 +355,8 @@ case_bigframe() {
 # ports so they can share one machine: -udpport is the port a host serves on,
 # -clientport the one a joining cabinet sends from.
 
-# gamecfg <dir> <jointime> : a short countdown, one panel
+# gamecfg <dir> <jointime> : a short countdown, one panel.  20 is the shortest
+# jointime accepts -- it is a named list, and anything else is refused.
 gamecfg() {
     sed -i -e "s/^jointime .*/jointime \"$2\"/" -e "s/^localplayers .*/localplayers \"${LOCALPLAYERS:-1}\"/" \
         "$1/legacyhome/config.cfg"
@@ -431,10 +432,10 @@ case_nojoin() {
     mkcab "$d/master"; mkcab "$d/member"
     cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
     cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
-    gamecfg "$d/master" 6; gamecfg "$d/member" 6
-    run "$d/master" 34 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 48 0 -linktest -linkautohost deathmatch -udpport $((p+100))
     sleep 2
-    run "$d/member" 32 0 -linktest -clientport $((p+101))
+    run "$d/member" 46 0 -linktest -clientport $((p+101))
     wait
     expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet"
     expect "nobody joined, so the invite ended there" "$d/member" "^LINKLOG .*HOSTCAB's invite is over"
@@ -786,11 +787,11 @@ case_nojoinmaster() {
     KEEPDEMOS=1 mkcab "$d/master"; KEEPDEMOS=1 mkcab "$d/member"
     cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
     cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
-    gamecfg "$d/master" 6; gamecfg "$d/member" 6
-    run "$d/master" 75 0 -linktest -udpport $((p+102)) -clientport $((p+101))
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 89 0 -linktest -udpport $((p+102)) -clientport $((p+101))
     # The master's first record demo starts about 20 s in: invite during it.
     sleep ${NJDELAY:-24}
-    run "$d/member" 48 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
+    run "$d/member" 62 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
     wait
     expect "the master was invited" "$d/master" "^LINKLOG .*LAPCAB invited this cabinet"
     expect "the member plays alone" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
