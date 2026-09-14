@@ -1121,6 +1121,29 @@ eight players). Their names, colours, weapon preferences and artifact uses never
   names and colours (`D_Panel_Of`), so with panels joining out of order a player gets another panel's
   weapon order and autoaim.
 
+**An invited cabinet nobody pressed in on "froze at 0 seconds"** (Mark). It had gone nowhere: the page
+had closed, but nothing was running underneath it.
+- **Cause:** an invite that arrives during an attract **record demo** stops the demo on the way to
+  opening the join screen, leaving `gamestate` 0 (GS_NULL). When the invite ended (`LK_GM_CANCEL`, the
+  grace timeout, or a START with nobody in) `M_Join_Remote_Close` only cleared the menus — no
+  `D_StartTitle`, which is what backing out of any menu on the attract screen does — so the cabinet sat
+  in GS_NULL indefinitely with the join screen's last frame, countdown at 0, still on the panel. An invite
+  that lands on a title *page* has nothing stopped, the page cycle carries on, and that is the only way
+  any test had ever delivered one: `nojoin` passed throughout, and its end state was never checked.
+- **Found** with a temporary once-per-2-seconds print of the loop state in `TryRunTics`: tics ran
+  normally and the invite closed, but `gs=0 demo_ctrl=2 demoplay=0` for good afterwards. (Not the
+  `trail=` value, which stops moving whenever no gameplay tic runs, on a title page too — that briefly
+  looked like a stopped clock.)
+- **Fix**: `M_Join_Remote_Back_To_Attract` — `D_StartTitle()` unless a real level is running, which an
+  invite never opens over — from `M_Join_Remote_Close` and from `M_Join_Remote_Connect`'s
+  nobody-joined return.
+- **Test**: `nojoinmaster` — Mark's direction (the member hosts, the master is invited), record demos
+  kept, and the host started `NJDELAY` (24) seconds late so the invite lands during the master's first
+  demo, which the case checks from the status line before the invite. It then requires the master's
+  last status after "invite is over" to be the attract cycle (`gamestate` 1 or 4, `menu=0`, `none`).
+  Without the fix: `gamestate=0 ... menu=0 ... none`, red. With it: the title page, then the next demo.
+  `nojoin noshow convert memberpress demojoin linkgame` pass, `make smoke` 5/5.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -441,6 +441,34 @@ case_nojoin() {
     expect_not "the host did not start a linked game" "$d/master" "starting a linked game"
     expect "the host plays alone" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
     expect_not "the other cabinet never joined" "$d/member" "^LINKGAME gamestate=1 netgame=1"
+}
+
+# nojoin the other way round, as Mark's cabinets were: the member hosts, the
+# master is invited during its attract cycle and nobody there presses in.
+case_nojoinmaster() {
+    local d=$1 p=$2
+    KEEPDEMOS=1 mkcab "$d/master"; KEEPDEMOS=1 mkcab "$d/member"
+    cfg "$d/master" "role master" "name PICAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name LAPCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 6; gamecfg "$d/member" 6
+    run "$d/master" 75 0 -linktest -udpport $((p+102)) -clientport $((p+101))
+    # The master's first record demo starts about 20 s in: invite during it.
+    sleep ${NJDELAY:-24}
+    run "$d/member" 48 0 -linktest -linkautohost deathmatch -udpport $((p+100)) -clientport $((p+103))
+    wait
+    expect "the master was invited" "$d/master" "^LINKLOG .*LAPCAB invited this cabinet"
+    expect "the member plays alone" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+    expect_not "the master never joined" "$d/master" "^LINKGAME gamestate=1 netgame=1"
+    local before after
+    before=$(out "$d/master" | sed -n '1,/LAPCAB invited this cabinet/p' | grep -a '^LINKGAME ' | tail -1)
+    case "$before" in "LINKGAME gamestate=1 netgame=0 "*) ;; *) FAILS="$FAILS
+      the invite did not arrive during an attract demo (NJDELAY): $before" ;; esac
+    # Mark's freeze: the page closed (menu=0) with the demo it had stopped
+    # still stopped, gamestate 0, the join screen's last frame on the panel.
+    # The attract cycle must be running again: a title page or a demo.
+    after=$(out "$d/master" | sed -n '/LAPCAB.s invite is over/,$p' | grep -a '^LINKGAME ' | tail -1)
+    case "$after" in "LINKGAME gamestate="[14]" netgame=0 "*" menu=0 "*" none") ;; *) FAILS="$FAILS
+      after the invite the master was not back in the attract cycle: ${after:-no status}" ;; esac
 }
 
 case_stranger() {

@@ -1191,6 +1191,8 @@ Deathmatch or a Campaign on one cabinet invites the others**:
 - Press fire there to join, as you would locally. Each cabinet keeps its own screen — nobody from
   the other cabinet takes a quarter of yours. The host's join screen shows who is coming
   (`RASPBERRYPI: 1 IN`).
+- If nobody on a cabinet presses in, its join screen closes when the host's game starts and it goes
+  back to its attract screen, as if the invite had never come.
 - The game starts when everyone who pressed in, on every cabinet, has locked in — or when the
   countdown runs out. If a cabinet that joined never turns up, the host waits 15 seconds and starts
   without it.

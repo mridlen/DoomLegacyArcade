@@ -4654,6 +4654,20 @@ void  M_Join_Convert_To_Remote( int secs )
     join_endtic = (int)gametic + secs * TICRATE;
 }
 
+// [Arcade] The other cabinet's game went ahead without anyone here: back to
+// the attract cycle.  An invite only takes over the attract screen or the
+// menus over it, and one that arrives during a record demo stops the demo
+// (gamestate GS_NULL) -- so just closing the page left nothing running and
+// the last frame drawn, the join screen at 0 seconds, stayed on the panel.
+// Backing out of a menu restarts the title the same way.  Never over a real
+// game, which an invite does not open on anyway.
+static void  M_Join_Remote_Back_To_Attract( void )
+{
+    if( gamestate == GS_LEVEL && ! demoplayback )
+        return;
+    D_StartTitle();
+}
+
 void  M_Join_Remote_Close( void )
 {
     if( join_active && join_remote )
@@ -4661,6 +4675,7 @@ void  M_Join_Remote_Close( void )
         join_active = false;
         join_remote = false;
         M_Clear_Menus( true );
+        M_Join_Remote_Back_To_Attract();
     }
 }
 
@@ -4681,7 +4696,11 @@ void  M_Join_Remote_Connect( const char * host, int port )
             joined_panel[joined++] = panel;
     }
     M_Clear_Menus( true );
-    if( joined == 0 )  return;
+    if( joined == 0 )
+    {
+        M_Join_Remote_Back_To_Attract();
+        return;
+    }
 
     for( i=0; i<joined; i++ )
     {
