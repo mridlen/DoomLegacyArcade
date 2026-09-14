@@ -365,6 +365,19 @@ gamecfg() {
 # The last LINKGAME / LINKNET line an engine printed.
 lastline() { out "$1" | grep -a "^$2 " | tail -1; }
 
+# Host and joiner, in the same game, run the smoke trail phase in step.
+# trail= is game_comp_tic minus gametic, fixed for the length of a game, so
+# it compares across two status lines printed at different tics. Unsynced it
+# differs on essentially every run, not only when a rocket happens to fly --
+# which is the only time the desync itself shows.
+same_trail() {
+    local h j
+    h=$(out "$1" | grep -a "^LINKGAME gamestate=1 netgame=1 server=1 " | tail -1 | grep -o ' trail=[-0-9]*')
+    j=$(out "$2" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 " | tail -1 | grep -o ' trail=[-0-9]*')
+    [ -n "$h" ] && [ "$h" = "$j" ] || FAILS="$FAILS
+      the two cabinets' smoke trail phase differs: host${h:- none} joiner${j:- none}"
+}
+
 case_linkgame() {
     local d=$1 p=$2
     mkcab "$d/master"; mkcab "$d/member"
@@ -410,6 +423,7 @@ case_campaign() {
     expect "the other cabinet was invited to a campaign" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to CAMPAIGN"
     expect "the host is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
     expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    same_trail "$d/master" "$d/member"
 }
 
 case_nojoin() {
@@ -993,20 +1007,23 @@ case_lossy8() {
 # thrown away).  Mark's cabinets with real players still desynced after
 # lossy8 passed: -linkmoveevery holds the same buttons for 400 ms, so a tic run
 # with its neighbour's ticcmds could not be told from the right one.  No
-# consistency failure, no repair, no kick.
+# consistency failure, no repair, no kick.  CAT8=campaign plays it as a
+# campaign instead of a deathmatch: Mark's first campaign after a clean
+# deathmatch desynced on the smoke trail phase (see same_trail).
 case_chaos8() {
     local d=$1 p=$2
     LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
     cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
     cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
     LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
-    run "$d/master" 75 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -linkchaos -linknetloss ${LOSS8:-10} -udpport $((p+100))
+    run "$d/master" 75 0 -linktest -linkautohost ${CAT8:-deathmatch} -linkjoinpanels 4 -linkchaos -linknetloss ${LOSS8:-10} -udpport $((p+100))
     sleep 2
     run "$d/member" 72 0 -linktest -linkautojoin -linkjoinpanels 4 -linkchaos -linknetloss ${LOSS8:-10} -clientport $((p+101))
     wait
     expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
     expect_not "no consistency failure on the host" "$d/master" "Consistency failure|Kick player"
     expect_not "no repair on the joining cabinet" "$d/member" "Client repair|player_repair"
+    same_trail "$d/master" "$d/member"
     lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " \
         || FAILS="$FAILS
       at the end the joining cabinet was not in the eight player game: $(lastline "$d/member" LINKGAME)"

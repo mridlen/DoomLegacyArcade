@@ -186,7 +186,8 @@
 
 // The addition of wait messages should be transparent to previous network
 // versions.
-const int  NETWORK_VERSION = 26; // separate version number for network protocol (obsolete)
+// [Arcade] 27: game_comp_tic in random_state_t and PT_SERVERCFG.
+const int  NETWORK_VERSION = 27; // separate version number for network protocol (obsolete)
 
 
 #define JOININGAME
@@ -1873,6 +1874,7 @@ static boolean SV_Send_ServerConfig( byte to_node, byte command )
     netbuffer->u.servercfg.serverplayer    = serverplayer;
     netbuffer->u.servercfg.num_game_players= num_game_players;
     write_N32( & netbuffer->u.servercfg.gametic, gametic );
+    write_N32( & netbuffer->u.servercfg.game_comp_tic, game_comp_tic );  // [Arcade]
     netbuffer->u.servercfg.clientnode      = to_node;  // client node (in server space)
     netbuffer->u.servercfg.gamestate       = gamestate;
     netbuffer->u.servercfg.command         = command;
@@ -2145,6 +2147,7 @@ static void get_random_state( random_state_t * rs )
     rs->b_rand_index = B_Rand_GetIndex(); // to sync B_Random
     write_N32( &rs->e_rand1, E_Rand_Get( & rand2 ) ); // to sync E_Random
     write_N32( &rs->e_rand2, rand2 );
+    write_N32( &rs->game_comp_tic, game_comp_tic );  // [Arcade]
 }
 
 typedef enum  {
@@ -2200,6 +2203,16 @@ static void
                    msg, u1, o_ernd1, o_ernd2, u2, rs_ernd1, rs_ernd2 );
         if( mode == RSC_client_set )
             E_Rand_Set( rs_ernd1, rs_ernd2 ); // to sync E_Random
+    }
+
+    // [Arcade] The trail phase, see random_state_t.
+    rs_ernd1 = read_N32( &rs->game_comp_tic );
+    if( game_comp_tic != rs_ernd1 )
+    {
+        GenPrintf( EMSG_warn, "%s: %s game_comp_tic %u %s %u\n",
+                   msg, u1, game_comp_tic, u2, rs_ernd1 );
+        if( mode == RSC_client_set )
+            game_comp_tic = rs_ernd1;
     }
 }
 
@@ -5172,6 +5185,10 @@ static void server_cfg_handler( byte nnode )
     {
         // Clients not on the server, update to server time.
         maketic = gametic = cl_need_tic = read_N32( &  netbuffer->u.servercfg.gametic );
+        // [Arcade] game_comp_tic runs from program start, so without this
+        // the two cabinets' smoke trail phases differ and the first rocket
+        // or lost soul trail puts P_Random out of step.
+        game_comp_tic = read_N32( &  netbuffer->u.servercfg.game_comp_tic );
     }
 
     // Client keeps server state, even on the server.

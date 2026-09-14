@@ -349,6 +349,9 @@ typedef struct {
    byte        p_rand_index; // to sync P_Random
    byte        b_rand_index; // to sync B_Random
    N32_t       e_rand1, e_rand2;  // to sync E_Random
+   // [Arcade] The smoke trail and tracer phase (game_comp_tic % 4) decides
+   // tic by tic whether a P_Random is drawn, so it is shared state too.
+   N32_t       game_comp_tic;
 } random_state_t;
 
 // Repair messages triggered by consistency fault.
@@ -414,6 +417,7 @@ typedef struct {
    byte        gamestate;
    byte        command;   // CTRL_ command
    N32_t       playerdetected; // playeringame vector in bit field
+   N32_t       game_comp_tic;  // [Arcade] goes with gametic, see random_state_t
 // unaligned
    byte        netvar_buf[NETVAR_BUFF_LEN];
 } serverconfig_pak_t;

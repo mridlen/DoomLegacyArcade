@@ -1067,6 +1067,35 @@ state `(00600000,00010000)`).
   netbuffer. **Not found**: where the nonsense repair headers come from — they only appear during a
   repair, which the desync fix above should now make rare.
 
+**…then a campaign desynced right after a clean deathmatch** (same build, eight players). Mark's
+laptop log, joining: `Client repair: gametic 9336, update client P_random index 157 to server 158`,
+more repairs, then game over. The random index one out with every ticcmd agreeing means one cabinet
+drew a `P_Random` the other did not.
+- **Found by logging every `P_Random` caller.** A temporary ring recorded the tic, the index and
+  `__builtin_return_address(0)` relative to `P_Random` (marked `noinline`) on both cabinets, dumped
+  30 tics after the first fault; `addr2line` on the first caller that differed named it. `chaos8` with
+  `CAT8=campaign` (new) reproduced it with no loss in 2 of 4 runs, while the deathmatch case never had.
+  The logs agreed to the call until **`A_SmokeTrailer`** (`p_fab.c`), drawn in tic 201 on the joiner
+  and tic 202 on the host.
+- **Cause: `game_comp_tic` was never shared.** The rocket and lost soul trail (and the revenant tracer,
+  `A_Tracer`) puff only when `game_comp_tic % 4 == 0`, and each puff draws a `P_Random`. That counter
+  was made for demos (it goes into the demo header) and counts from program start; a joining cabinet
+  took the server's `gametic` in `PT_SERVERCFG` but kept its own `game_comp_tic`, so the two phases
+  matched only by luck. The first trail after that is a desync. The deathmatch test never fired
+  anything with a trail, which is why only campaign showed it.
+- **Fix**: `PT_SERVERCFG` carries `game_comp_tic` with `gametic` and the client takes both;
+  `random_state_t` carries it too, so the state, wait and repair messages that already reset the random
+  indexes put it right as well (and say so in the log). **`NETWORK_VERSION` is 27**: the packets changed
+  shape, so a cabinet on an older build is refused at join rather than misreading them — both cabinets
+  need this build.
+- **Test that fails every time, not only when a rocket flies**: `game_comp_tic - gametic` is constant
+  through a game, so the status line prints it as `trail=` and `same_trail` (in `campaign` and
+  `chaos8`) requires host and joiner to print the same. With the two assignments disabled `campaign`
+  failed (`host trail=-62 joiner trail=-69`); with them both cabinets printed `trail=-63` on every line.
+  `chaos8 CAT8=campaign` passed 6 of 6 runs with the tic logs identical for 1400 tics (trails were
+  actually drawn in one; the `same_trail` check is what covers the rest). `campaign linkgame chaos8`
+  (both kinds) `move8 rehostview iwadversion musicwad memberhost` pass, `make smoke` 5/5.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

@@ -2483,12 +2483,15 @@ static void  lk_net_status( void )
                modes[lku_mode], lku_sealed, lku_opened, lku_dropped,
                lku_ns_n ? (double) lku_ns / lku_ns_n / 1000.0 : 0.0 );
     GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d menu=%d"
-               " views=%d viewport=%dx%d screen=%dx%d locals=%d,%d,%d,%d p1=%d,%d %s\n",
+               " views=%d viewport=%dx%d screen=%dx%d locals=%d,%d,%d,%d trail=%d p1=%d,%d %s\n",
                (int) gamestate, netgame, server, LKG_Players_In_Game(), consoleplayer,
                M_Message_Text() ? 2 : menuactive ? 1 : 0,
                D_NumViews(), rdraw_viewwidth, rdraw_viewheight, vid.width, vid.height,
                localplayer[0] == 255 ? -1 : localplayer[0], localplayer[1] == 255 ? -1 : localplayer[1],
                localplayer[2] == 255 ? -1 : localplayer[2], localplayer[3] == 255 ? -1 : localplayer[3],
+               // Smoke trail phase against the game clock: fixed during a
+               // game, so two cabinets in one game must print the same.
+               (int)( game_comp_tic - gametic ),
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->x >> FRACBITS : 0,
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->y >> FRACBITS : 0,
                LKG_Mode_Name() );
