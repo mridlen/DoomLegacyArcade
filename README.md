@@ -798,7 +798,10 @@ launch.
 On a cabinet with more than one control panel, a **join screen** appears once the game has been
 chosen — after the skill on a Campaign, after the map on a Deathmatch. Each panel presses
 **fire** to be counted in, and the screen is laid out as the game is about to be: press fire and
-watch your own square claim itself.
+watch your own square claim itself. Each square is headed with that panel's **player name** (set on
+its `PlayerN config` page), not a number — with two cabinets in one game, "PLAYER 1" is at both of
+them. A name too long for its square, which only happens with four side by side, is cut short; a
+panel with no name set shows `PLAYER N`.
 
 **Pressing in opens your own setup in your square**: **COLOR**, **CROSSHAIR** and **CONTROLS**
 (Tank or WASD) — the same settings as your panel's `PlayerN config` page, so what you pick there

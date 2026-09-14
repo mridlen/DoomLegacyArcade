@@ -339,6 +339,12 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **Join screen** (`m_menu.c`, `M_Join_*`, `JoinDef`). After the skill is chosen and before the
   game starts, each control panel presses fire to be counted in. Laid out as the view grid it is
   about to become, so a player presses and watches **their own cell** claim itself.
+  - **Each cell is headed with `cv_playername[panel]`**, not `PLAYER N` (Mark: with two linked
+    cabinets "PLAYER 1" is at both). The name is cut a character at a time until
+    `V_StringWidth` fits `cw - 4`, then trailing spaces go so it centres on letters; an empty name
+    falls back to `PLAYER N`. Measured against DOOM2.WAD's STCFN: the cabinet's names are 59–90 wide,
+    so every one fits a 2x2 or stacked cell (160+) and only `cv_split4`'s 80-wide cells cut —
+    "P4 DESTROYER" (90) to "P4 DESTROY".
   - **`cv_jointime`** ("jointime", default 20s, `CV_SAVE`) is the countdown, and
     **`cv_localplayers`** the panel count — both operator settings under **Options → Arcade
     Options**, so only a `-devmode` session writes them. `jointime 0` or a single panel

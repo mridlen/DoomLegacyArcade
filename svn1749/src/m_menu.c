@@ -3836,7 +3836,25 @@ static void  M_Join_Drawer( void )
         byte st  = join_pressed[panel];
         int  opt = (st == JOIN_OUT) ? 0 : V_WHITEMAP;
 
-        snprintf(buf, sizeof(buf), "PLAYER %d", panel+1);
+        // [Arcade] The panel's player name, not its number: with two
+        // cabinets in one game "PLAYER 1" is at both, the name is not.  A
+        // name too wide for the cell -- four side by side are 80 wide -- is
+        // cut to fit, measured with the font rather than counted in
+        // characters.  No name set falls back to the number.
+        {
+            const char * name = cv_playername[panel].string;
+            if( name && name[0] )
+            {
+                size_t n;
+                snprintf(buf, sizeof(buf), "%s", name);
+                for( n = strlen(buf); n > 1 && V_StringWidth(buf) > cw - 4; )
+                    buf[--n] = '\0';
+                while( n > 1 && buf[n-1] == ' ' )
+                    buf[--n] = '\0';   // not centred on a cut-off space
+            }
+            else
+                snprintf(buf, sizeof(buf), "PLAYER %d", panel+1);
+        }
         V_DrawString( cx + (cw - V_StringWidth(buf))/2, cy, opt, buf );
 
         if( st == JOIN_OUT )
