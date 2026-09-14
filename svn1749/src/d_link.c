@@ -17,6 +17,7 @@
 #include "command.h"
 #include "m_menu.h"
 #include "r_state.h"   // rdraw_viewwidth, for the status line
+#include "g_game.h"    // players[], for the status line
 #include "m_misc.h"
 #include "i_system.h"
 #include "m_argv.h"
@@ -2379,6 +2380,24 @@ int  LK_Net_Recv( const byte * in, int len, byte * out, int outsize, uint32_t ip
 
     if( ! lk_inited || lk_set.role == LK_ROLE_OFF )  return -1;
 
+    // -linktest -linknetloss P: throw away P percent of the linked game's
+    // packets, as a poor Wi-Fi link does (tools/linktest.sh).  Its own random
+    // numbers -- never the game's.
+    if( lku_mode != LKU_NONE )
+    {
+        static int  loss = -1;
+        static uint32_t  seed = 12345;
+        if( loss < 0 )
+            loss = ( M_CheckParm( "-linktest" ) && M_CheckParm( "-linknetloss" ) && M_IsNextParm() )
+                   ? atoi( M_GetNextParm() ) : 0;
+        if( loss > 0 )
+        {
+            seed = seed * 1103515245u + 12345u;
+            if( (int)( (seed >> 16) % 100 ) < loss )
+                return 0;
+        }
+    }
+
     if( lku_mode == LKU_NONE || len < LK_UDP_OVERHEAD || len - LK_UDP_OVERHEAD > outsize )
         goto drop;
     t0 = lk_ns_now();
@@ -2464,12 +2483,14 @@ static void  lk_net_status( void )
                modes[lku_mode], lku_sealed, lku_opened, lku_dropped,
                lku_ns_n ? (double) lku_ns / lku_ns_n / 1000.0 : 0.0 );
     GenPrintf( EMSG_errlog, "LINKGAME gamestate=%d netgame=%d server=%d players=%d console=%d menu=%d"
-               " views=%d viewport=%dx%d screen=%dx%d locals=%d,%d,%d,%d %s\n",
+               " views=%d viewport=%dx%d screen=%dx%d locals=%d,%d,%d,%d p1=%d,%d %s\n",
                (int) gamestate, netgame, server, LKG_Players_In_Game(), consoleplayer,
                M_Message_Text() ? 2 : menuactive ? 1 : 0,
                D_NumViews(), rdraw_viewwidth, rdraw_viewheight, vid.width, vid.height,
                localplayer[0] == 255 ? -1 : localplayer[0], localplayer[1] == 255 ? -1 : localplayer[1],
                localplayer[2] == 255 ? -1 : localplayer[2], localplayer[3] == 255 ? -1 : localplayer[3],
+               ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->x >> FRACBITS : 0,
+               ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->y >> FRACBITS : 0,
                LKG_Mode_Name() );
 }
 

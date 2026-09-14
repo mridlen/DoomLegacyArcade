@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -927,6 +927,65 @@ case_slowjoin8() {
     expect "the host has all eight" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=8 "
     expect_not "the joining cabinet refused no textcmd" "$d/member" "textcmd exceed buffer"
     expect "the joining cabinet has all eight, four of them its own" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+}
+
+# Eight players, four at each cabinet, and everybody walking and turning.  Mark:
+# on the joining cabinet player 1 "could only turn left and right", and it was
+# "booted out of the game in a matter of seconds" -- the host discards a joiner's
+# ticcmds when its consistency check fails and kicks it after a few, and turning
+# still shows because the view angle comes from the panel.  No case before moved
+# anybody.  The joiner must stay in, with no consistency failure on the host.
+case_move8() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 75 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -linkmoveevery 1000 ${NETLOSS:+-linknetloss $NETLOSS} -udpport $((p+100))
+    sleep 2
+    run "$d/member" 72 0 -linktest -linkautojoin -linkjoinpanels 4 -linkmoveevery 1000 ${NETLOSS:+-linknetloss $NETLOSS} -clientport $((p+101))
+    wait
+    expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+    expect_not "no consistency failure on the host" "$d/master" "Consistency failure|Kick player"
+    expect_not "the joining cabinet was not kicked" "$d/member" "kicked|Kicked"
+    lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " \
+        || FAILS="$FAILS
+      at the end the joining cabinet was not in the eight player game: $(lastline "$d/member" LINKGAME)"
+    # Player 1 on the joining cabinet really walked.
+    local first last
+    first=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " | head -1 | grep -o "p1=[-0-9,]*")
+    last=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " | tail -1 | grep -o "p1=[-0-9,]*")
+    [ -n "$first" ] && [ "$first" != "$last" ] || FAILS="$FAILS
+      the joining cabinet's player 1 never moved ($first -> $last)"
+}
+
+# move8 on a bad link: 30% of the game's packets thrown away on both cabinets
+# (-linknetloss), as a poor Wi-Fi link does.  Mark's joining Pi could only turn,
+# then was kicked within seconds; the tic logs showed it running tics whose
+# ticcmds had never arrived -- section bits from two different server packets
+# counted as one packet (d_clisrv.c, start_tic_hash).  What a player sees is
+# what is checked: the joiner stays in the game and its player keeps walking.
+# (A rare single repair is allowed: the host's player repair heals it.)  The
+# build before was kicked in 4 runs of 4.
+case_lossy8() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    run "$d/master" 75 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -linkmoveevery 1000 -linknetloss ${LOSS8:-30} -udpport $((p+100))
+    sleep 2
+    run "$d/member" 72 0 -linktest -linkautojoin -linkjoinpanels 4 -linkmoveevery 1000 -linknetloss ${LOSS8:-30} -clientport $((p+101))
+    wait
+    expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+    expect_not "the joining cabinet was not kicked" "$d/master" "Kick player"
+    lastline "$d/member" LINKGAME | grep -aq "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " \
+        || FAILS="$FAILS
+      at the end the joining cabinet was not in the eight player game: $(lastline "$d/member" LINKGAME)"
+    local tail5
+    tail5=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " | tail -5 | grep -o "p1=[-0-9,]*" | sort -u | wc -l)
+    [ "$tail5" -ge 2 ] || FAILS="$FAILS
+      the joining cabinet's player 1 stopped moving at the end"
 }
 
 case_convert() {

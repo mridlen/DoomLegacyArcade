@@ -994,6 +994,47 @@ neither the host/joiner order:
 - Noticed, not fixed: `Send_localtextcmd` sends textcmds for local players 1 and 2 only, so a name or
   colour change from panels 3 and 4 never reaches the other machines.
 
+**…and then the joiner was kicked** (same day). With those fixed, Mark: "only being able to turn left
+and right (player 1), and then got booted out of the game in a matter of seconds". The Pi's terminal
+showed a run of `Client repair` / `Client player_repair` lines (positions and momentum different,
+ammo 31 against 32, armour 64 against 0) and then the game ended: a **consistency failure**. The server
+drops a client's ticcmds for a tic whose consistency does not match — so the player stops moving while
+its view still turns from `localangle` — and kicks the node after a few.
+- **Reproduced**: first on the real pair (four a side, everyone walking with the reworked
+  `-linkmoveevery`, which now holds forward and turn on every joined panel; `Consistency failure (
+  server=52C client=52B ), msg tic 78, Kick node 1`), then locally on demand with **`-linktest
+  -linknetloss P`**, which throws away P percent of the linked game's packets in `LK_Net_Recv` (its
+  own random numbers). At 30% the build before was kicked in 4 runs of 4.
+- **Found** with a temporary per-tic ring (a hash of every player's ticcmd, the textcmd, consistency
+  and the random index, kept in memory and written out only at the first fault — writing each tic to
+  the terminal changed the Pi's timing enough to hide the failure in eight real-pair runs). The first
+  difference was a tic whose ticcmds, on the joiner, hashed to exactly **eight all-zero ticcmds**: it
+  ran tics whose ticcmds had never arrived.
+- **Cause — upstream, and invisible at two players.** `servertic_handler` recognised a packet's
+  sections by `btic_hash(start_tic)`, which is `start_tic >> 4`: every packet starting in the same
+  sixteen tics was "the same packet", so the section bits of two different packets (a resend with a
+  different length, a different split) added up to 0xFF, "all received", for tics whose ticcmds were in
+  a section that never arrived. With two players a packet is one section that marks itself complete;
+  eight players and a lossy link split them all the time. It also cleared, on a new packet, tics that
+  were already complete but not yet run, and judged readiness on the packet's first tic, which could be
+  one of those. Now: a packet is its start tic, tic count and player mask (`start_tic_hash`, 32 bits);
+  tics before `cl_need_tic` are never cleared, marked or written; readiness is judged on `cl_need_tic`.
+  The copy loop also now counts `num_cmds` per ticcmd (it counted per tic, so a section ending part way
+  through a tic read the rest of that tic from past its ticcmds).
+- **And four players a node, not two**, in the server code the kick exposed: a consistency kick and a
+  quit or timeout removed only players 1 and 2 of a node (the other two stayed in the game, unplayed —
+  `players=6` after the kick); `SV_Maketic` filled a missed tic from player 2's slot for players 2–4
+  and never for 3 and 4; `SV_Reset_NetNode` cleared slots 1 and 2 only.
+- **Verified**: `lossy8` (move8 at 30% loss; checks what a player sees — still in, still walking) passes,
+  and fails on the build before (dropped out of the game). At 30% loss the fixed build ran 12 times with
+  no kick; two runs had a single consistency repair the server's player repair healed (a joiner's player
+  missing its ticcmd for one tic, still unexplained at that loss rate). `move8` (no loss), `slowjoin8`,
+  `rehostview`, `joinview`, `linkgame`, `campaign`, `nojoin`, `noshow`, `msgfire`, `memberpress`,
+  `idleshared`, `demojoin`, `stranger`, `iwadname`, `pair` pass; `make smoke` 5/5; `make demotest` the
+  same 16 desynced demos (by name) as the build before. On the real pair (laptop hosting, Pi 3
+  joining over Wi-Fi, four a side, everyone walking) two runs had no repair and no kick, the Pi in the
+  game with its own four players to the end.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).

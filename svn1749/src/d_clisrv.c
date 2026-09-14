@@ -802,7 +802,7 @@ static byte     update_player_count_request = 0;  // for XNetCmd, as the list is
 // Index for netcmds and textcmds
 #define BTIC_INDEX( tic )  ((tic)%BACKUPTICS)
 // Index using BTIC_INDEX
-static byte     netcmd_tic_hash[BACKUPTICS];  // tic hash for the BACKUPTIC
+static uint32_t netcmd_tic_hash[BACKUPTICS];  // [Arcade] which packet filled the BACKUPTIC, 0 = none
 static byte     netseq[BACKUPTICS];   // bit per tic packet seq, ready=0xFF
 ticcmd_t        netcmds[BACKUPTICS][MAXPLAYERS];
 
@@ -927,11 +927,7 @@ static void  generic_network_error_handler( byte errcode, const char * who )
         network_error_print( errcode, who );     
 }
 
-static byte btic_hash( tic_t tic )
-{
-    // Overlap with the BTIC_INDEX (tic % BACKUPTICS) is wasted.
-    return (byte) (tic >> 4);
-}
+// [Arcade] btic_hash (tic >> 4) is gone: see start_tic_hash in the servertic handler.
 
 // By Client, Server
 int ExpandTics (int low)
@@ -4194,8 +4190,13 @@ void D_Init_ClientServer (void)
 static void SV_Reset_NetNode(byte nnode)
 {
     nnode_state[nnode] = NOS_idle;
-    nnode_to_player[0][nnode] = 255;
-    nnode_to_player[1][nnode] = 255;
+    // [Arcade] All four slots.  Only 0 and 1 were cleared, so a cabinet's third
+    // and fourth players kept the player numbers of an earlier game.
+    {
+        byte pind;
+        for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+            nnode_to_player[pind][nnode] = 255;
+    }
     nettics[nnode]=gametic;
     nextsend_tic[nnode]=gametic;
     join_waiting[nnode]=0;
@@ -5102,15 +5103,18 @@ static void client_quit_handler( byte nnode, byte client_pn )
         SV_Send_NetXCmd_p2(XD_KICK, client_pn, reason);  // kick player
         nnode_to_player[0][nnode] = 255;
 
-        byte pn2 = nnode_to_player[1][nnode];  // splitscreen player at the nnode
-        if( pn2 < MAXPLAYERS )
+        // [Arcade] Every other player at the node, not just the second: a four
+        // panel cabinet leaving left its third and fourth players in the game.
+        byte pind;
+        for( pind = 1; pind < MAXSPLITSCREENPLAYERS; pind++ )
         {
-            if( playeringame[pn2] )
+            byte pn2 = nnode_to_player[pind][nnode];
+            if( pn2 < MAXPLAYERS )
             {
-               // kick player2
-               SV_Send_NetXCmd_p2(XD_KICK, pn2, reason);
+                if( playeringame[pn2] )
+                    SV_Send_NetXCmd_p2(XD_KICK, pn2, reason);
+                nnode_to_player[pind][nnode] = 255;
             }
-            nnode_to_player[1][nnode] = 255;
         }
     }
     Net_CloseConnection(nnode, 0);
@@ -5310,15 +5314,13 @@ static void SV_consistency_fault( byte nnode, tic_t fault_tic, int btic )
         SV_Send_player_repair( 255, 3, nnode );
 #else
         // Kick all players at the nnode.
-        byte pn = nnode_to_player[0][nnode];
-        SV_Send_NetXCmd_p2(XD_KICK, pn, KICK_MSG_CON_FAIL);
-        GenPrintf(EMSG_warn, "Kick player %d\n", pn );
-        DEBFILE(va("Kick player %d\n", pn ));
-
-        pn = nnode_to_player[1][nnode];
-        if( pn < MAXPLAYERS )
+        // [Arcade] All of them: it kicked the first two, and a four panel
+        // cabinet's third and fourth players stayed in the game unplayed.
+        byte pind;
+        for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
         {
-            // Kick splitscreen player
+            byte pn = nnode_to_player[pind][nnode];
+            if( pn >= MAXPLAYERS )  continue;
             SV_Send_NetXCmd_p2(XD_KICK, pn, KICK_MSG_CON_FAIL);
             GenPrintf(EMSG_warn, "Kick player %d\n", pn );
             DEBFILE(va("Kick player %d\n", pn ));
@@ -5730,7 +5732,7 @@ static void servertic_handler( byte nnode )
     uint16_t buflen;
     uint32_t cmd_player_mask;
     tic_t  start_tic, end_tic, ti;
-    byte   start_tic_hash;
+    uint32_t start_tic_hash;  // [Arcade] which packet, see below
     byte   packetflags;
     byte   seqbits;
     byte   cmds_offset, num_cmds, num_txt;
@@ -5779,11 +5781,28 @@ static void servertic_handler( byte nnode )
     // All extension packet have the same start_tic.
     // Do clear separately so out-of-order packets cannot invoke errors.
     // Otherwise, would have to appear in both ticcmds and textcmds code.
-    start_tic_hash = btic_hash( start_tic ); 
+    //
+    // [Arcade] Which packet a section belongs to is its start tic, its tic
+    // count and its player mask -- the header every extension section of one
+    // packet repeats.  It was btic_hash(start_tic), start_tic >> 4: every
+    // packet starting in the same sixteen tics counted as the same packet, so
+    // section bits from two different packets added up to "all received" for
+    // tics whose ticcmds were in a section that never arrived, and the client
+    // ran them with no ticcmds -- nobody moving on this cabinet while the
+    // server's players moved, a consistency failure, and the kick.  A packet is
+    // one section with two players, which is why it never showed; eight players
+    // and a lossy link split them all the time.  (Seen as all-zero ticcmds for
+    // two tics running in a joiner's tic log, 30% packet loss.)
+    start_tic_hash = 0x80000000u
+        | ( ( (uint32_t)start_tic * 131u + netbuffer->u.serverpak.numtics * 7u
+              + read_N32( &netbuffer->u.serverpak.cmd_player_mask ) * 2654435761u ) & 0x7FFFFFFFu );
     for( ti=start_tic; ti<end_tic; ti++ )
     {
         // client only
         btic = BTIC_INDEX( ti );
+        // [Arcade] A tic before cl_need_tic is already complete, and may not
+        // have been run yet: never clear it or add another packet's bits to it.
+        if( ti < cl_need_tic )  continue;
         if( netcmd_tic_hash[btic] != start_tic_hash )
         {
             // first packet for this tic, clear old stuff
@@ -5818,21 +5837,30 @@ static void servertic_handler( byte nnode )
         for( ; ti<end_tic; ti++)
         {
             if( num_cmds == 0 )  break;  // limited to ticcmd in this packet
-            num_cmds --;
 
             // Copy the tics
             btic = BTIC_INDEX( ti );
             // btic limited to BACKUPTICS-1
 
             netcmd_p = netcmds[btic];  // player dest
+            boolean  keep = ( ti < cl_need_tic );  // [Arcade] complete already: read past, do not write
 
             // when extension packet, cmds_offset is non-zero
-            for( j = cmds_offset; j<num_ticcmd_per_tic; j++ )
+            // [Arcade] num_cmds is a count of *ticcmds* (the server counts one
+            // per player per tic), and it was decremented once per tic: a
+            // packet section that ends part way through a tic -- the server
+            // splits them at NUM_SERVERTIC_CMD, which eight players do not
+            // divide -- read the rest of that tic from past its ticcmds.  The
+            // extension section normally wrote over it; one that arrived first
+            // did not.
+            for( j = cmds_offset; j<num_ticcmd_per_tic && num_cmds; j++ )
             {
                 // Use list of pid generated from cmd_player_mask.
                 byte pn = ticcmd_pid[j];
-                TicCmdCopy( &netcmd_p[pn], /*src*/ (ticcmd_t*) bufpos );
+                if( ! keep )
+                    TicCmdCopy( &netcmd_p[pn], /*src*/ (ticcmd_t*) bufpos );
                 bufpos += sizeof(ticcmd_t);
+                num_cmds --;
             }
             cmds_offset = 0;
         }
@@ -5856,14 +5884,20 @@ static void servertic_handler( byte nnode )
 
         btic = BTIC_INDEX( ti );
         tcbuf = & textcmdbuff[btic];
-        memcpy(&tcbuf->buff, &stcp->textitem, buflen);
-        tcbuf->len = buflen;
+        if( ti >= cl_need_tic )  // [Arcade] not into a tic already complete
+        {
+            memcpy(&tcbuf->buff, &stcp->textitem, buflen);
+            tcbuf->len = buflen;
+        }
         // Cannot add field sizes as the structure might be padded.
         bufpos += sizeof_servertic_textcmd_t( buflen );  // tic, len(2 bytes), buf
     }
 
     // Only advance to the next tic when all packet extensions are received.
-    if( netseq[ BTIC_INDEX(start_tic) ] == 0xFF )
+    // [Arcade] Judged on the first tic still needed, which this packet cleared
+    // and only its own sections have marked -- start_tic may be a complete tic
+    // whose bits came from an earlier packet.
+    if( netseq[ BTIC_INDEX(cl_need_tic) ] == 0xFF )
         cl_need_tic = end_tic;
 
     return;
@@ -6253,16 +6287,21 @@ void SV_Maketic(void)
 #endif
             // Copy the previous tic
             bticprev = BTIC_INDEX(maketic-1);
-            for(i=0; i<playerpernode[nnode]; i++)
+            for(i=0; i<playerpernode[nnode] && i<MAXSPLITSCREENPLAYERS; i++)
             {
                 // All players at the node
+                // [Arcade] Each by its own slot.  It read slot 1 for every
+                // player after the first, so players 3 and 4 of a cabinet were
+                // never given their previous ticcmd and player 2 was copied
+                // three times.
+                player = nnode_to_player[i][nnode];
+                if( player >= MAXPLAYERS )  continue;
                 netcmds[btic][player] = netcmds[bticprev][player];
 #ifdef TICCMD_148
                 netcmds[btic][player].ticflags &= ~TC_received;
 #else
                 netcmds[btic][player].angleturn &= ~TICCMD_RECEIVED;
 #endif
-                player = nnode_to_player[1][nnode];
             }
         }
     }

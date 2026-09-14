@@ -648,23 +648,28 @@ void  LKG_Ticker( void )
     {
         static uint32_t  down_at = 0;
         static boolean   held = false;
-        int  key = gamecontrol_pl[0][gc_turnright][0] ? gamecontrol_pl[0][gc_turnright][0]
-                                                      : gamecontrol_pl[0][gc_turnright][1];
+        static const int  gcs[2] = { gc_turnright, gc_forward };
+        int  panel, g;
         event_t  ev_turn;
-        memset( &ev_turn, 0, sizeof(ev_turn) );
-        ev_turn.data1 = key;
-        if( ! held && lkg_now() - down_at >= (uint32_t) lkg_test_move_ms )
+        boolean  press = ! held && lkg_now() - down_at >= (uint32_t) lkg_test_move_ms;
+        boolean  release = held && lkg_now() - down_at >= 400;
+        if( press || release )
         {
-            ev_turn.type = ev_keydown;
-            D_PostEvent( &ev_turn );
-            held = true;
-            down_at = lkg_now();
-        }
-        else if( held && lkg_now() - down_at >= 200 )
-        {
-            ev_turn.type = ev_keyup;
-            D_PostEvent( &ev_turn );
-            held = false;
+            // Every panel pressed in: turn and walk forward together, so the
+            // players really move and a simulation that drifts shows.
+            for( panel = 0; panel < lkg_test_join_panels && panel < MAXSPLITSCREENPLAYERS; panel++ )
+                for( g = 0; g < 2; g++ )
+                {
+                    int key = gamecontrol_pl[panel][gcs[g]][0] ? gamecontrol_pl[panel][gcs[g]][0]
+                                                               : gamecontrol_pl[panel][gcs[g]][1];
+                    if( ! key )  continue;
+                    memset( &ev_turn, 0, sizeof(ev_turn) );
+                    ev_turn.data1 = key;
+                    ev_turn.type = press ? ev_keydown : ev_keyup;
+                    D_PostEvent( &ev_turn );
+                }
+            held = press;
+            if( press )  down_at = lkg_now();
         }
     }
 
