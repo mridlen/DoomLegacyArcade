@@ -4282,6 +4282,18 @@ static void  M_Initials_Drawer( void )
     int   i, secs;
     int   cx = BASEVIDWIDTH/2 - INITIALS_PITCH;   // centre of the first cell
 
+    // [Arcade] A solid black page, not the menus' see-through fade.  Asked
+    // over a corpse, the view behind is the damage flash at its reddest, and
+    // this page's text is red: it all but vanished.  The whole screen in
+    // pixels, with the menu centring taken off for the fill -- a 320x200 box
+    // leaves bars wherever the scale is not exact, and in OpenGL a fill and
+    // V_DrawString disagree on the menu origin (HU_Draw_Rankings_In_Cell),
+    // so a panel sized to the text could slide off it.  The tint itself is
+    // held off by R_Update_View_Palette, or black would come out red too.
+    V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART );
+    V_DrawVidFill( 0, 0, vid.width, vid.height, 0 );  // black
+    V_SetupDraw( 0 | V_SCALEPATCH | V_SCALESTART | V_CENTERMENU );  // as M_Drawer
+
     V_DrawString( (BASEVIDWIDTH - V_StringWidth("NEW HIGH SCORE"))/2,
                   40, V_WHITEMAP, "NEW HIGH SCORE" );
 

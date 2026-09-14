@@ -703,6 +703,27 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       in, the page closes and use works again.
     - Multiplayer cannot reach this: `HS_Player_Died` returns early there, so the prompt is never
       armed in the first place.
+    - **Over a death the page was red on red, and a black backdrop alone would not have fixed it.**
+      The page used only the menus' see-through `V_FadeScreen`, its text is red (option `0`), and
+      behind it was the damage flash at its reddest -- which never fades, because a single player
+      game pauses while any menu is up (`G_Ticker`, `menuactive && !netgame`), so `damagecount`
+      stays put for as long as the page does. The flash is a palette effect in **both** renderers
+      (`V_SetPalette` in software, a GL tint averaged into every surface via
+      `HWR_SetFlashPalette`), so it tints the page's own text and any backdrop it draws: a black
+      fill comes out red too. Two parts, then: `R_Update_View_Palette` calls `ST_Palette0` instead
+      of the flash while `M_Initials_Active()`, and `M_Initials_Drawer` fills the **whole screen**
+      black with `V_DrawVidFill` before drawing. Whole screen in pixels, with `V_CENTERMENU` taken
+      off for the fill and put back after -- a panel sized to the text would have to agree with
+      `V_DrawString` on the menu origin, which in OpenGL it does not (`HU_Draw_Rankings_In_Cell`), and
+      `V_DrawVidFill` offsets by `drawinfo.drawp`, so a screen-sized fill under the menu centring
+      would run off the end of the buffer. The flash resumes when the page closes.
+    - Verified with a temporary command setting `damagecount 100` and opening the page, with a
+      switch to disable both parts so one binary gave the before and after, captured under
+      `offscreen`: OpenGL at 1024x768 went from mean RGB 109/8/7 (the reported red wash, text
+      barely visible) to 5/1/1 with the text clear; Software 8bit at 1366x768 -- off-centre, so
+      the `drawp` offset is non-zero -- filled edge to edge. A software capture cannot show the
+      palette tint (it is written with the base palette), so the palette half rests on the GL
+      capture and on `ST_Palette0` being the same reset `D_DoAdvanceDemo` already relies on.
   - **Raised from `M_Ticker`, not from the run-end path.** `Command_ExitGame_f` only *arms* it
     (`HS_Initials_Pending`). Opening from the ticker keeps it independent of the order things
     happen in on the way back to the title — `M_SingleLevel_Finished` calls `Command_ExitGame_f`

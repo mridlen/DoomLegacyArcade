@@ -1409,6 +1409,18 @@ void R_Update_View_Palette( player_t * player )
 {
     if( !player || !player->mo )  return;
 
+    // [Arcade] No tint while the initials page is up.  It is asked over the
+    // corpse on a Survival death, and a flash is a palette effect in both
+    // renderers -- it tints the page's own text and backdrop along with the
+    // view, so red text on a black page still came out red on red.  The game
+    // is paused behind the page, so damagecount never decays and the flash
+    // would otherwise last as long as the page does.
+    if( M_Initials_Active() )
+    {
+        ST_Palette0();  // Doom and Heretic
+        return;
+    }
+
 #ifndef NO_PALETTE_FLASH
     if( EN_heretic )
         H_PaletteFlash( player );

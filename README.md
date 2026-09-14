@@ -72,7 +72,9 @@ Discord is likely to get you banned.
   — "who got furthest, and fastest among those" has one answer — and three per map for Single Level.
   Finish a run that makes the board and you are asked for three initials. The page opens on the
   last player's initials, so a regular playing run after run confirms with one press; it goes back
-  to `AAA` once the cabinet has been left alone and the next person is a stranger.
+  to `AAA` once the cabinet has been left alone and the next person is a stranger. The page is on a
+  solid black screen, and a death's red damage flash is switched off while it is up, so it stays
+  readable when you are asked for your initials straight after dying.
 - **Record demos.** The run that set each record is saved and replayed in the attract cycle,
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
