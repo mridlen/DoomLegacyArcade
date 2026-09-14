@@ -187,7 +187,8 @@
 // The addition of wait messages should be transparent to previous network
 // versions.
 // [Arcade] 27: game_comp_tic in random_state_t and PT_SERVERCFG.
-const int  NETWORK_VERSION = 27; // separate version number for network protocol (obsolete)
+// [Arcade] 28: PT_TEXTCMD from a client carries up to four local players.
+const int  NETWORK_VERSION = 28; // separate version number for network protocol (obsolete)
 
 
 #define JOININGAME
@@ -1163,10 +1164,15 @@ static void Send_localtextcmd( void )
     if( ! ((cl_mode == CLM_connected) && (network_state >= NETS_open)) )
         goto clear_buffer;
 
-    // Send textcmd of main player, and splitscreen player, in one packet.
-    num_textcmd = 0;  // currenly only need 2
+    // Send textcmd of every local player, in one packet.
+    // [Arcade] Was the first two only, so a joining cabinet's players 3 and
+    // 4 never sent a name, colour, weapon preference or artifact use: they
+    // queued in localtextcmd[2..3], never left, and the host showed them as
+    // "player 7" and "player 8".  Four full buffers are ~1030 bytes, inside
+    // a packet.
+    num_textcmd = 0;
     ip = & netbuffer->u.textcmdpak.textitem;
-    for( pind=0; pind<2; pind++)
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++)
     {
         // No test for playeringame, so that quit message is not blocked.
         textbuf_t * ltcp = &localtextcmd[pind];  // local textcmd
@@ -1194,8 +1200,8 @@ static void Send_localtextcmd( void )
 
     // Clear NetXCmd that would overflow the buffers.
 clear_buffer:
-    localtextcmd[0].len = 0;
-    localtextcmd[1].len = 0;
+    for( pind=0; pind<MAXSPLITSCREENPLAYERS; pind++)
+        localtextcmd[pind].len = 0;
     return;
 }
 
@@ -1237,14 +1243,15 @@ static void net_textcmd_handler( byte nnode )
 #endif
 
     num_textitem = netbuffer->u.textcmdpak.num_textitem;
-    if( num_textitem > 3 )  // currently only need 2
+    // [Arcade] One item per local player: was "> 3", which dropped the whole
+    // packet -- panels 1 and 2 with it -- when all four had something queued.
+    if( num_textitem > MAXSPLITSCREENPLAYERS )
         goto drop_packet;  // corrupt packet
 
     while( num_textitem-- > 0 )
     {
         // Detect corrupt packets, limit decode to netbuffer.
-        // Only 2 pind, so only 2 textcmd_item, yet.
-        if( ((byte*)ip) > (((byte*)& netbuffer->u.textcmdpak.textitem) + (2 * sizeof_textcmd_item_t(MAXTEXTCMD+1))) )
+        if( ((byte*)ip) > (((byte*)& netbuffer->u.textcmdpak.textitem) + (MAXSPLITSCREENPLAYERS * sizeof_textcmd_item_t(MAXTEXTCMD+1))) )
             goto drop_packet; // corrupt packet
 
         // incoming length

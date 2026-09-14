@@ -2495,6 +2495,18 @@ static void  lk_net_status( void )
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->x >> FRACBITS : 0,
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->y >> FRACBITS : 0,
                LKG_Mode_Name() );
+    // Every player in the game, as this cabinet has them: two cabinets in
+    // one game must print the same line.
+    if( gamestate == GS_LEVEL )
+    {
+        char  buf[MAXPLAYERS * (MAXPLAYERNAME + 8) + 1];
+        int   i, len = 0;
+        for( i = 0; i < MAXPLAYERS; i++ )
+            if( playeringame[i] )
+                len += snprintf( buf + len, sizeof(buf) - len, " %d=%s/%d", i, player_names[i], players[i].skincolor );
+        buf[len] = '\0';
+        GenPrintf( EMSG_errlog, "LINKNAMES%s\n", buf );
+    }
 }
 
 boolean  LK_Built( void )  { return true; }

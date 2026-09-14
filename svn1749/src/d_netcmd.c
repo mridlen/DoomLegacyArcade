@@ -642,14 +642,23 @@ void Got_NetXCmd_WeaponPref(xcmd_t * xc)
     if( *(xc->curpos++) )  p->GF_flags |= GF_autoaim;
 }
 
+// Sent when a player joins, so the new node learns everyone already here.
 void D_Send_PlayerConfig(void)
 {
+    byte pind;
+
     Send_NameColor_pind(0);
     Send_WeaponPref_pind(0);
-    if( cv_splitscreen.EV && ( localplayer[1] < MAXPLAYERS ))
+    // [Arcade] Every local player, not only a splitscreen second: players 3
+    // and 4 already in the game were never re-announced, so the cabinet that
+    // joined showed them as "player N".
+    for( pind = 1; pind < MAXSPLITSCREENPLAYERS; pind++ )
     {
-        Send_NameColor_pind(1);
-        Send_WeaponPref_pind(1);
+        if( localplayer[pind] < MAXPLAYERS )
+        {
+            Send_NameColor_pind(pind);
+            Send_WeaponPref_pind(pind);
+        }
     }
 }
 

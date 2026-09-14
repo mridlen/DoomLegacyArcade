@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -971,6 +971,46 @@ case_move8() {
     last=$(out "$d/member" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 players=8 " | tail -1 | grep -o "p1=[-0-9,]*")
     [ -n "$first" ] && [ "$first" != "$last" ] || FAILS="$FAILS
       the joining cabinet's player 1 never moved ($first -> $last)"
+}
+
+# setnames <dir> <prefix> <color1> .. <color4> : panel N is named <prefix>N
+setnames() {
+    local d=$1 pre=$2
+    sed -i -e '/^name[234]\? /d' -e '/^color[234]\? /d' "$d/legacyhome/config.cfg"
+    printf 'name "%s1"\nname2 "%s2"\nname3 "%s3"\nname4 "%s4"\ncolor "%s"\ncolor2 "%s"\ncolor3 "%s"\ncolor4 "%s"\n' \
+        "$pre" "$pre" "$pre" "$pre" "$3" "$4" "$5" "$6" >> "$d/legacyhome/config.cfg"
+}
+
+# Four a side, every panel with its own name and colour, and the joining
+# cabinet renames panel 4 and recolours panel 3 part way through.  Mark: a
+# joining cabinet's players 3 and 4 were "player 7" and "player 8" on the
+# intermission -- Send_localtextcmd sent the first two players' text commands
+# only.  Both cabinets must end with the same eight names and colours.
+case_names8() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    setnames "$d/master" HA 1 2 3 4; setnames "$d/member" JB 5 6 7 8
+    run "$d/master" 70 0 -linktest -linkautohost deathmatch -linkjoinpanels 4 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 67 0 -linktest -linkautojoin -linkjoinpanels 4 -linkcmdafter 15 "name4 JB4NEW; color3 9" -clientport $((p+101))
+    wait
+    expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 .* locals=4,5,6,7 "
+    expect "the joining cabinet renamed panel 4" "$d/member" "^LINKTEST console: name4 JB4NEW"
+    local h j n
+    h=$(lastline "$d/master" LINKNAMES); j=$(lastline "$d/member" LINKNAMES)
+    for n in HA1/1 HA2/2 HA3/3 HA4/4 JB1/5 JB2/6 JB3/9 JB4NEW/8; do
+        case "$h" in *"=$n"*) ;; *) FAILS="$FAILS
+      the host does not have $n: $h" ;; esac
+        case "$j" in *"=$n"*) ;; *) FAILS="$FAILS
+      the joining cabinet does not have $n: $j" ;; esac
+    done
+    [ -n "$h" ] && [ "$h" = "$j" ] || FAILS="$FAILS
+      the two cabinets list different players:
+        host:   $h
+        joiner: $j"
 }
 
 # move8 on a bad link: 30% of the game's packets thrown away on both cabinets

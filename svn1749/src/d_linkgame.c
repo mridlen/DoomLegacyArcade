@@ -90,6 +90,8 @@ static uint32_t    lkg_test_press_at;
 static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
 static int         lkg_test_move_ms;
 static boolean     lkg_test_chaos;          // -linkchaos: every panel, a new random mix of buttons every 50 ms
+static int         lkg_test_cmd_secs;       // -linkcmdafter S "text": console text S s into a linked level
+static const char *lkg_test_cmd;
 static int         lkg_test_join_panels = 1;
 static boolean     lkg_test_host_in_demo;   // -linkhostindemo: host only while an attract demo plays // -linkjoinpanels N: -linkautojoin locks N panels        // -linkmoveevery MS: a player at the panel, turning     // -linkpollsleep N: N ms between ticker start and events
 static int         lkg_test_host_after;     // -linkhostafter N: host after N linked games
@@ -633,6 +635,27 @@ void  LKG_Ticker( void )
             lkg_test_chaos = M_CheckParm( "-linkchaos" ) != 0;
             if( M_CheckParm( "-linkmoveevery" ) && M_IsNextParm() )
                 lkg_test_move_ms = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linkcmdafter" ) && M_IsNextParm() )
+            {
+                lkg_test_cmd_secs = atoi( M_GetNextParm() );
+                if( M_IsNextParm() )  lkg_test_cmd = M_GetNextParm();
+            }
+        }
+    }
+
+    // -linktest -linkcmdafter: console text typed S seconds into a linked
+    // level, on wall time -- a tic "wait" in autoexec runs far behind with a
+    // dozen engines to a core.
+    if( lkg_test_cmd && gamestate == GS_LEVEL && netgame )
+    {
+        static uint32_t  level_at = 0;
+        if( ! level_at )  level_at = lkg_now() | 1;
+        if( lkg_now() - level_at >= (uint32_t) lkg_test_cmd_secs * 1000 )
+        {
+            GenPrintf( EMSG_errlog, "LINKTEST console: %s\n", lkg_test_cmd );
+            COM_BufAddText( lkg_test_cmd );
+            COM_BufAddText( "\n" );
+            lkg_test_cmd = NULL;
         }
     }
 

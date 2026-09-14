@@ -1095,6 +1095,31 @@ drew a `P_Random` the other did not.
   `chaos8 CAT8=campaign` passed 6 of 6 runs with the tic logs identical for 1400 tics (trails were
   actually drawn in one; the `same_trail` check is what covers the rest). `campaign linkgame chaos8`
   (both kinds) `move8 rehostview iwadversion musicwad memberhost` pass, `make smoke` 5/5.
+- Mark played it: fixed.
+
+**A joining cabinet's players 3 and 4 were "player 7" and "player 8"** on the intermission (Mark,
+eight players). Their names, colours, weapon preferences and artifact uses never left the cabinet.
+- **Cause (upstream, two players assumed):** a client's text commands queue per local player in
+  `localtextcmd[pind]`, and `Send_localtextcmd` sent and cleared `[0]` and `[1]` only, so `[2]` and
+  `[3]` filled and sat there. The server's `net_textcmd_handler` would not have taken them either: it
+  dropped any `PT_TEXTCMD` with more than 3 items — the whole packet, panels 1 and 2 included — and
+  bounded the decode at two items. `D_Send_PlayerConfig`, which re-announces a node's players when
+  someone joins, covered pind 0 and a splitscreen pind 1 only.
+- **Fix**: all three loop over `MAXSPLITSCREENPLAYERS`. **`NETWORK_VERSION` is 28**, since a 27 host
+  drops a four-item packet whole. On one cabinet this also means panels 3 and 4's weapon preference and
+  autoaim now reach their players (they were sent through the same buffers); `demotest` shows no new
+  desync — the 16 Doom 2 demos already known to desync, and three Ultimate Doom demos that end at a
+  different tic than the old baseline on the build before this one too, with no desync.
+- **Test**: `names8` — four a side, every panel its own name and colour (`setnames`), and the joining
+  cabinet renames panel 4 and recolours panel 3 15 s into the level with the new **`-linkcmdafter S
+  "text"`** (console text S seconds of wall time into a linked level; a tic `wait` runs far behind in
+  the harness). The status now prints **`LINKNAMES`**, every player in the game as `pn=name/colour`,
+  and both cabinets must end with the same eight including the rename. Without the fix both listed
+  `6=Player 7/0 7=Player 8/0`; with it `6=JB3/9 7=JB4NEW/8`. `names8 chaos8 campaign linkgame move8
+  joinview msgfire menusetup iwadversion memberhost` pass, `make smoke` 5/5.
+- Not changed: `Send_WeaponPref_pind` still reads `cv_weaponpref[pind]` rather than the panel's, unlike
+  names and colours (`D_Panel_Of`), so with panels joining out of order a player gets another panel's
+  weapon order and autoaim.
 
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
