@@ -5447,6 +5447,69 @@ menu_t  PlayerViewsDef =
 };
 
 //===========================================================================
+//                   MENU OPTIONS (ENABLE/DISABLE) MENU  [Arcade]
+//===========================================================================
+
+// [Arcade] Split off the Arcade Options page, which had reached fifteen rows
+// and room for one more.  These four are the operator's switches for how much
+// menu a player is given; each takes a whole entry off (or puts it back on)
+// a page the player can reach, applied in M_Configure under ! devmode.
+//
+// Operator settings, like the page they came from: Arcade Options is only
+// reachable under -devmode, and this hangs off it.  Nothing indexes this
+// array by position, so rows can be added anywhere.
+menuitem_t MenuDisableMenu[]=
+{
+    {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu     , 0},
+    {IT_STRING | IT_CVAR,0, "Multiplayer Menu", &cv_multiplayermenu, 0},
+    {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu       , 0},
+    {IT_STRING | IT_CVAR,0, "Game Options"    , &cv_gameoptionsmenu, 0},
+};
+
+menu_t  MenuDisableDef =
+{
+    "M_OPTTTL",
+    "Menu Options",
+    MenuDisableMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(MenuDisableMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+//===========================================================================
+//                          TIMEOUTS MENU  [Arcade]
+//===========================================================================
+
+// [Arcade] Every "how long before the cabinet gives up on a player" setting,
+// split off Arcade Options with the menu switches above.
+//
+// The idle-to-title timeout was console/config only, so the one setting that
+// decides how long a paying player may stand still before the cabinet takes
+// the game away from them could not be tuned on the machine.  Idle Timeout
+// and Idle Warning are named lists (g_game.c) rather than ranges, so the page
+// cannot produce a value that cuts a game short.
+menuitem_t TimeoutsMenu[]=
+{
+    {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
+    {IT_STRING | IT_CVAR,0, "Idle Timeout"    , &cv_idletimeout    , 0},
+    {IT_STRING | IT_CVAR,0, "Idle Warning"    , &cv_idlewarntime   , 0},
+};
+
+menu_t  TimeoutsDef =
+{
+    "M_OPTTTL",
+    "Timeouts",
+    TimeoutsMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(TimeoutsMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+//===========================================================================
 //                        ARCADE OPTIONS MENU  [Arcade]
 //===========================================================================
 
@@ -5459,22 +5522,12 @@ menuitem_t MenuOptionsMenu[]=
     // -- the lockdown addresses menu items by hardcoded index.
     {IT_SUBMENU| IT_WHITESTRING,0, "Players & Views >>", &PlayerViewsDef, 0},
     {IT_STRING | IT_CVAR,0, "Boot Game"       , &cv_defaultgame   , 0},
-    {IT_STRING | IT_CVAR,0, "Cheats Menu"     , &cv_cheatsmenu    , 0},
-    {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu      , 0},
-    // [Arcade] Which menus a player may reach, beside the two above that say
-    // the same kind of thing.  Inserted rather than appended: nothing indexes
-    // MenuOptionsMenu by position (`grep -n "MenuOptionsMenu\[" m_menu.c` is
-    // empty) and numitems is a sizeof, so rows can go where they read best.
-    {IT_STRING | IT_CVAR,0, "Multiplayer Menu", &cv_multiplayermenu, 0},
-    {IT_STRING | IT_CVAR,0, "Game Options"    , &cv_gameoptionsmenu, 0},
-    {IT_STRING | IT_CVAR,0, "Initials Timeout", &cv_initialstimeout, 0},
-    // [Arcade] The idle-to-title timeout was console/config only, so the one
-    // setting that decides how long a paying player may stand still before
-    // the cabinet takes the game away from them could not be tuned on the
-    // machine.  Both are named lists (g_game.c) rather than ranges, so the
-    // page cannot produce a value that cuts a game short.
-    {IT_STRING | IT_CVAR,0, "Idle Timeout"    , &cv_idletimeout   , 0},
-    {IT_STRING | IT_CVAR,0, "Idle Warning"    , &cv_idlewarntime  , 0},
+    // [Arcade] The menu switches and the timeouts have their own pages, to
+    // leave this one room.  Nothing indexes MenuOptionsMenu by position
+    // (`grep -n "MenuOptionsMenu\[" m_menu.c` is empty) and numitems is a
+    // sizeof, so rows can go where they read best.
+    {IT_SUBMENU| IT_WHITESTRING,0, "Disable/Enable Menu Options >>", &MenuDisableDef, 0},
+    {IT_SUBMENU| IT_WHITESTRING,0, "Timeouts >>"     , &TimeoutsDef     , 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},

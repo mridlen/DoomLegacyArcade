@@ -97,7 +97,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   game via `Command_ExitGame_f()` and warns
   beforehand through the existing `HU_SetTip` centered-text mechanism, or restarts the program when
   a level pack is loaded (see the game selector). Tunable via `cv_idletimeout` / `cv_idlewarntime`
-  (default 60s/15s, `Off` disables) from **Options > Arcade Options**, rows "Idle Timeout" and
+  (default 60s/15s, `Off` disables) from **Options > Arcade Options > Timeouts**, rows "Idle Timeout" and
   "Idle Warning". Skipped in devmode and demo playback. **Local splitscreen sets
   `netgame`**, so the check used to test `(!netgame || cv_splitscreen.EV)`; gating on `!netgame` alone
   meant no two player game ever timed out, which is exactly when an unattended cabinet needs it.
@@ -117,7 +117,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `-linkmoveevery MS` holds panel 1's turn for 200 ms every MS, `-linkjoinpanels N` presses N panels
     in.
 
-  - **Both cvars are named lists, and are on the Arcade Options page.** They used to be
+  - **Both cvars are named lists, and are on a menu page** (Arcade Options, now its Timeouts page). They used to be
     `MIN`..`MAX` ranges reachable only from the console or a hand-edited `config.cfg`, which was
     wrong twice over. The setting that decides how long a paying player may stand still before the
     cabinet takes the game away from them could not be changed on the machine at all; and the

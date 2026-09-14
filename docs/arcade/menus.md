@@ -348,8 +348,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   tree; the new one says what is on it — every row is a cabinet setting, none of them is about menus.
 
 - **Multiplayer Menu / Game Options** — `cv_multiplayermenu` / `cv_gameoptionsmenu`, two operator
-  switches for how much menu a player is given, inserted after "Quit Menu" because they say the
-  same kind of thing it and "Cheats Menu" do. Both `CV_SAVE`, both applied in `M_Configure` under
+  switches for how much menu a player is given, beside "Quit Menu" and "Cheats Menu" because they say
+  the same kind of thing — all four now on their own page, see "Menu switches and timeouts got their
+  own pages" below. Both `CV_SAVE`, both applied in `M_Configure` under
   `! devmode` — the usual reason, `config.cfg` is not loaded when `M_Init` runs.
 
   - **Both default On, and that is the rule rather than a preference**: a switch added so somebody
@@ -373,7 +374,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       options — unlike `GameOptionsMenu`'s own last row, which the lockdown indexes from the end
       for exactly that reason.
 
-  - Geometry: 14 rows now, `tools/menufit-test.py` reports `y 40..177, room for 2 more`. Measured
+  - Geometry *when these went in on Arcade Options* (they have since moved): 14 rows,
+    `tools/menufit-test.py` reported `y 40..177, room for 2 more`. Measured
     against the real `STCFN` lumps, "Game Options" the *label* is the wider new one at **125**
     ("Multiplayer Menu" is 122, against "Initials Timeout" at 108 already on the page), so it runs
     60..185 while an `Off` value (24 wide, right-justified to 260) starts at 236 — a 51px gap. (The
@@ -384,8 +386,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   operator row. Written up in `attract.md`; noted here only because it is a row on this page.
 
 - **Idle Timeout / Idle Warning** — `cv_idletimeout` / `cv_idlewarntime`, inserted after "Initials
-  Timeout" so the three timeouts sit together. Written up in `attract.md`; noted here for the
-  geometry and for why inserting rather than appending was safe.
+  Timeout" so the three timeouts sit together — which they still do, on the **Timeouts** page now.
+  Written up in `attract.md`; noted here for the geometry and for why inserting rather than
+  appending was safe.
   - **`MenuOptionsMenu` is the one arcade page nothing indexes by position.** The lockdown hides
     its whole entry in the parent (`OptionsMenu[9]`) rather than touching rows inside it, and
     `grep -n "MenuOptionsMenu\[" m_menu.c` is empty. So rows can go anywhere in it — which is not
@@ -582,7 +585,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   survives, as it guards irreversible data loss.
 
 - **Quit Game entry** — **`cv_quitmenu`** ("quitmenu", default **Off**, `CV_SAVE`), under
-  **Options → Arcade Options** as "Quit Menu". An arcade cabinet has no Quit button: quitting drops
+  **Options → Arcade Options → Disable/Enable Menu Options** as "Quit Menu". An arcade cabinet has no Quit button: quitting drops
   the player onto a desktop they should never see, and on an unattended machine nothing brings the
   game back. Off by default, so a stock player session cannot reach it; a `-devmode` session always
   keeps the row whatever this says, so the operator is never locked in.
@@ -657,7 +660,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     references — see the `grep` list under Single Level mode, which uses the same discipline.
   - Devmode only by default, hidden by the usual `IT_HIDDEN` treatment with `MainDef.lastOn` moved
     off it — but an operator can leave it up for players with **`cv_cheatsmenu`** ("cheatsmenu",
-    default Off, `CV_SAVE`), under **Options → Arcade Options**. A cabinet at a
+    default Off, `CV_SAVE`), under **Options → Arcade Options → Disable/Enable Menu Options**. A cabinet at a
     party is not the same machine as a cabinet keeping scores; cheating voids the run either way.
     - **The hiding therefore lives in `M_Configure`, not `M_Init`'s lockdown**, for the same reason
       as `cv_localplayers` and the game selector: `config.cfg` is not loaded until long after `M_Init`
@@ -932,6 +935,32 @@ the same way, by hanging off a page that is only reachable under `-devmode`.
 
 Forward-declared as a tentative definition — `menu_t PlayerViewsDef;` up beside `AuditDef` — which
 is how this file already handles a menu that has to be named before it is defined.
+
+
+## Menu switches and timeouts got their own pages
+
+Arcade Options had grown back to fifteen rows — `tools/menufit-test.py` put the last at y 180, room
+for one more — so seven rows moved to two new pages hung off it, to leave room for what comes next:
+
+- **Disable/Enable Menu Options >>** (`MenuDisableMenu`/`MenuDisableDef`, titled "Menu Options"):
+  Cheats Menu, Multiplayer Menu, Quit Menu, Game Options — every switch for how much menu a player
+  is given.
+- **Timeouts >>** (`TimeoutsMenu`/`TimeoutsDef`): Initials Timeout, Idle Timeout, Idle Warning.
+
+Arcade Options is ten rows now (`y 40..137, room for 6 more`); the new pages are four and three.
+The two links sit where the rows were, after Boot Game.
+
+- **Safe for the same reason as the Players and Views split**: nothing indexes `MenuOptionsMenu`,
+  and none of the seven cvars is looked up through a menu row — the lockdown and `M_Configure` read
+  the cvars themselves. `grep -n "MenuOptionsMenu\|MenuDisable\|TimeoutsMenu" m_menu.c` is the
+  arrays, their `menu_t`s and the two links. No config changes: the cvars keep their names.
+- **Defined above `MenuOptionsMenu`**, as `PlayerViewsDef` is, so the links need no forward
+  declaration.
+- **"Disable/Enable Menu Options >>" is the widest label in the operator menus**, measured against
+  the real `STCFN` lumps at **212** (the method reproduces this file's 122 for "Multiplayer Menu"
+  and 108 for "Initials Timeout"), so it runs 60..272. That is past the 260 where a value column
+  ends, but a submenu row draws no value, and it clears the 320-wide screen by 48. A cvar row with a
+  label that long would collide; a longer link would need measuring again.
 
 ## The Video Modes page, and paging a list that used to be truncated
 

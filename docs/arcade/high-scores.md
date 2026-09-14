@@ -653,7 +653,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       forms were then captured with `screenshot` under `SDL_VIDEODRIVER=offscreen` (black under
       `dummy`) with an in-level control shot in the same run.
   - **`cv_initialstimeout`** ("initialstimeout", default **60s**, `CV_SAVE`), under
-    **Options → Arcade Options** with the other operator settings. Generous on purpose: nothing is
+    **Options → Arcade Options → Timeouts** with the other timeouts. Generous on purpose: nothing is
     waiting on it (the cabinet is already back on the attract screen behind the page), and a player
     who just earned a place should not be racing a timer. `0` disables the timeout, which leaves
     the page up until somebody presses fire — supervised machines only.

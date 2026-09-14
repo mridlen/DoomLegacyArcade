@@ -98,8 +98,8 @@ Discord is likely to get you banned.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive, and a
   breakdown of all four ammo types, stacked above the keys. Both are single player only.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself — 60 seconds
-  by default, with a 15-second warning counting down first. Both are console settings
-  (`idletimeout`, `idlewarntime`) rather than menu rows, and neither applies in a `-devmode`
+  by default, with a 15-second warning counting down first. Both are set under **Options → Arcade
+  Options → Timeouts** (`Idle Timeout`, `Idle Warning`), and neither applies in a `-devmode`
   session.
 - **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
   in, so the cabinet can offer several games from one menu.
@@ -138,7 +138,7 @@ Discord is likely to get you banned.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
   readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
   except the position readout, which only shows information.
-- **A configurable initials timeout** (Options → Arcade Options, 60 seconds by default), for how long
+- **A configurable initials timeout** (Options → Arcade Options → **Timeouts**, 60 seconds by default), for how long
   the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
   already back on the attract screen behind the page — so it can afford to be patient.
 - **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
@@ -147,16 +147,15 @@ Discord is likely to get you banned.
   the attract screen silent, `100` is the old behaviour. Defaults to 50. **Pressing anything brings
   the sound straight back up to normal** — the menu you land on should not be quieter than the demo
   that got your attention — and it drops back down again if you walk away without starting a game.
-- **Quit is off the menu.** **Options → Arcade Options → Quit Menu** puts the Quit Game entry back
-  for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
+- **Quit is off the menu.** **Options → Arcade Options → Disable/Enable Menu Options → Quit Menu**
+  puts the Quit Game entry back for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
   never see. A `-devmode` session always keeps Quit whatever the setting says, so the operator is
   never locked in.
-- **Two switches for how much menu a player gets.** **Options → Arcade Options → Multiplayer Menu**
-  takes the **Multiplayer** row off New Game, leaving Campaign, Deathmatch and Single Level — the
+- **Switches for how much menu a player gets**, all on **Options → Arcade Options →
+  Disable/Enable Menu Options** alongside Cheats Menu and Quit Menu. **Multiplayer Menu** takes the **Multiplayer** row off New Game, leaving Campaign, Deathmatch and Single Level — the
   three rows somebody standing at the cabinet actually presses. It takes away the settings page, not
   the game: **Deathmatch is not affected**, and neither is anything a player can already start.
-  **Options → Arcade Options → Game Options** takes the **Game Options** page out of the Options
-  menu, so the gameplay rules an operator has settled — weapon switching, jumping, monster
+  **Game Options** takes the **Game Options** page out of the Options menu, so the gameplay rules an operator has settled — weapon switching, jumping, monster
   behaviour — are not there to be rewritten between runs. Both ship **On**, which is what the
   cabinet did before they existed, and both are ignored in a `-devmode` session.
 - **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
@@ -1134,7 +1133,7 @@ Pi's real screen, or pass `--headless` to measure without one.
 
 ### Cheats
 
-**Options → Arcade Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
+**Options → Arcade Options → Disable/Enable Menu Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
 players: god mode, all weapons and keys, no clipping, exit level, and **Show Coordinates**. It ships
 off, in which case the entry is operator-only and reachable just in a `-devmode` session.
 
