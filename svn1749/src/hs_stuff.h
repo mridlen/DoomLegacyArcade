@@ -51,7 +51,13 @@ const char *  HS_Unranked_Reason(void); // name of first differing cvar, or NULL
 const char *  HS_Run_Unranked_Mark(void);
 
 void  HS_Init(void);
-void  Command_ClearHighScores_f(void);   // console: clearhighscores
+void  Command_ClearHighScores_f(void);   // console: clearhighscores (keeps a backup first)
+// [Arcade] Put a backup's scores back: NULL for the newest clearhighscores
+// backup, a backup's name, or any folder with highscores.dat / runs.dat / demos.
+// Merged in under the current clear time, so the records spread to linked
+// cabinets instead of being cleared again.  Master (or unlinked) only.
+void  HS_Restore_Scores(const char * folder);
+void  Command_RestoreHighScores_f(void);   // console: restorehighscores [folder]
 void  HS_NewGame(void);
 // [Arcade] Reset the intermission's per-run display state when a demo starts.
 // A replayed record demo spans several levels and passes through real level

@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -559,6 +559,79 @@ case_scoreslarge() {
     [ "$n" -gt 0 ] || FAILS="$FAILS
       no demo reached the member"
     echo "scoreslarge: $n demo(s) for $g reached the member; $(grep -vc '^#' "$b/legacyhome/highscores.dat") record(s), $(grep -vc '^#' "$b/legacyhome/runs.dat") board entries" > "$d/note"
+}
+
+# A clear is undone: the master's clear keeps a backup, the member takes the
+# clear, then restorehighscores on the master brings every record and demo back
+# on both -- under the clear's time, so the member keeps them rather than
+# clearing them again.  A restore on the member is refused.
+case_scorerestore() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA
+doom2 MAP01 MAP05 2 speed 9000 SUR"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    demo "$m" d3 doom2_ep1_sk2_speed
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP02 MAP02 2 speed 700 BBB"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+
+    run "$m" 55 0 -linktest -linkcmdat 14 clearhighscores -linkcmdat 30 restorehighscores -udpport $((p+100))
+    sleep 2
+    run "$b" 52 0 -linktest -linkcmdat 40 restorehighscores -clientport $((p+101))
+    wait
+
+    expect "they synced before the clear" "$b" "^LINKLOG Scores: merged with HOSTCAB"
+    expect "the clear made a backup" "$m" "^High scores backed up to scores-backup/.* \\(3 record demo"
+    expect "the member took the clear" "$b" "^LINKLOG Scores: HOSTCAB cleared the high scores"
+    expect "the master restored" "$m" "^High scores restored from .*scores-backup/.*: 2 record\\(s\\) and 3 board entries now \\(was 0 and 0\\), 3 demo\\(s\\) copied"
+    expect "the member's restore was refused" "$b" "restore them on the master"
+    same_file "the two cabinets' split tables" "$m/legacyhome/highscores.dat" "$b/legacyhome/highscores.dat"
+    same_file "the two cabinets' run boards" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat"
+    grep -q "^# epoch [1-9]" "$b/legacyhome/highscores.dat" || FAILS="$FAILS
+      the restore lost the clear's time: $(grep epoch "$b/legacyhome/highscores.dat")"
+    local want
+    for want in "doom2-sl MAP01 2 500 speed MAP01 0 -" "doom2-sl MAP02 2 700 speed MAP02 0 -"; do
+        grep -qxF "$want" "$b/legacyhome/highscores.dat" || FAILS="$FAILS
+      the member did not get back: $want"
+    done
+    grep -qxF "doom2 MAP01 MAP05 2 speed 9000 SUR 0 -" "$b/legacyhome/runs.dat" || FAILS="$FAILS
+      the member did not get the Survival run back"
+    same_file "the MAP01 demo back on the member" "$TDEMOS/d1.lmp" "$b/legacyhome/demos/doom2-sl_MAP01_sk2_speed.lmp"
+    same_file "the MAP02 demo back on the member" "$TDEMOS/d2.lmp" "$b/legacyhome/demos/doom2-sl_MAP02_sk2_speed.lmp"
+    same_file "the Survival demo back on the member" "$TDEMOS/d3.lmp" "$b/legacyhome/demos/doom2_ep1_sk2_speed.lmp"
+    same_file "the MAP02 demo back on the master" "$TDEMOS/d2.lmp" "$m/legacyhome/demos/doom2-sl_MAP02_sk2_speed.lmp"
+}
+
+# An old copy of a cabinet's scores, restored by folder after a clear has
+# already spread: exactly the files copying back by hand could not bring back.
+case_scorerestorepath() {
+    local d=$1 p=$2 m="$1/master" b="$1/member" old="$1/oldhome"
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    printf '# test\n# epoch 1789000000\n' > "$m/legacyhome/highscores.dat"
+    printf '# test\n# epoch 1789000000\n' > "$m/legacyhome/runs.dat"
+    cp "$m/legacyhome/highscores.dat" "$m/legacyhome/runs.dat" "$b/legacyhome/"
+    mkdir -p "$old/demos"
+    printf '# old\ndoom2-sl MAP01 2 500 speed MAP01\n' > "$old/highscores.dat"
+    printf '# old\ndoom2-sl MAP01 MAP01 2 speed 500 OLD\n' > "$old/runs.dat"
+    cp "$TDEMOS/d1.lmp" "$old/demos/doom2-sl_MAP01_sk2_speed.lmp"
+
+    run "$m" 40 0 -linktest -linkcmdat 8 "restorehighscores $old" -udpport $((p+100))
+    sleep 2
+    run "$b" 37 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master restored the old folder" "$m" "^High scores restored from $old: 1 record"
+    same_file "the two cabinets' split tables" "$m/legacyhome/highscores.dat" "$b/legacyhome/highscores.dat"
+    same_file "the two cabinets' run boards" "$m/legacyhome/runs.dat" "$b/legacyhome/runs.dat"
+    grep -qxF "doom2-sl MAP01 2 500 speed MAP01 0 -" "$b/legacyhome/highscores.dat" || FAILS="$FAILS
+      the old record did not reach the member (or was cleared again)"
+    grep -qxF "# epoch 1789000000" "$b/legacyhome/highscores.dat" || FAILS="$FAILS
+      the clear's time was not kept"
+    same_file "the old record's demo on the member" "$TDEMOS/d1.lmp" "$b/legacyhome/demos/doom2-sl_MAP01_sk2_speed.lmp"
 }
 
 # The master clears the scores while the member is switched off.  When the

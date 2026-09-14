@@ -4095,6 +4095,11 @@ restart_command:
     if( M_CheckParm("-clearhighscores") )
         Command_ClearHighScores_f();
 
+    // [Arcade] -restorehighscores [folder] : put a backup back (the newest one
+    // clearhighscores made, a backup by name, or any folder of score files).
+    if( M_CheckParm("-restorehighscores") )
+        HS_Restore_Scores( M_IsNextParm() ? M_GetNextParm() : NULL );
+
     // [Arcade] -clearaudit : reset the operator bookkeeping counters, the
     // same way, and for the same reason -- no console needed.
     if( M_CheckParm("-clearaudit") )
@@ -5194,7 +5199,8 @@ static void Help( void )
        (
         "-devparm        Develop mode\n"
         "-devmode        Unlock full menu (e.g. Multiplayer)\n"
-        "-clearhighscores  Erase recorded times and record demos\n"
+        "-clearhighscores  Erase recorded times and record demos (backed up first)\n"
+        "-restorehighscores [folder]  Put backed-up scores back (newest backup if none)\n"
         "-clearaudit  Reset the operator audit counters\n"
         "-synclog        Log per-tic state while recording/playing a demo\n"
 #ifdef DEVPARM_LOADING

@@ -1544,7 +1544,7 @@ boolean M_Atomic_tmpname( const char * filename, char * buf, size_t bufsize )
 // Open a write handle for filename.  The writes actually land in
 // "<filename>.tmp" and do not replace filename until M_Atomic_Write_Close.
 // Returns NULL on failure, having written nothing.
-FILE *  M_Atomic_Write_Open( const char * filename )
+static FILE *  M_Atomic_Open_Mode( const char * filename, const char * mode )
 {
     char tmpname[MAX_WADPATH + 8];
 
@@ -1553,7 +1553,19 @@ FILE *  M_Atomic_Write_Open( const char * filename )
         GenPrintf(EMSG_warn, "M_Atomic_Write_Open: name too long: %s\n", filename);
         return NULL;
     }
-    return fopen( tmpname, "w" );
+    return fopen( tmpname, mode );
+}
+
+FILE *  M_Atomic_Write_Open( const char * filename )
+{
+    return M_Atomic_Open_Mode( filename, "w" );
+}
+
+// [Arcade] The same for binary data -- a record demo.  "w" is text mode on
+// Windows, which would turn every 0x0A in a demo into 0x0D 0x0A.
+FILE *  M_Atomic_Write_Open_Binary( const char * filename )
+{
+    return M_Atomic_Open_Mode( filename, "wb" );
 }
 
 // Flush, sync, and rename the temp file over filename.  Always closes fw.

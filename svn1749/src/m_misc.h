@@ -146,6 +146,8 @@ uint32_t str_to_uint32( const char * str );
 // Use these instead of fopen(name,"w")/fclose for any file that must survive
 // the cabinet being switched off at the wall.
 FILE *  M_Atomic_Write_Open( const char * filename );
+// The same, opened in binary mode: for anything that is not text (a demo).
+FILE *  M_Atomic_Write_Open_Binary( const char * filename );
 
 // Always closes fw.  Returns false with filename untouched if the commit
 // failed, so the previous contents survive.

@@ -756,8 +756,8 @@ static void  lks_apply( lks_peer_t * p )
         rd = lks_find_ready( sha );
         if( ! rd )  return;   // cannot happen: planned just now
         // Atomic, like every file here: a power cut leaves the old demo or the
-        // new one, never half of either (M_Atomic_Write_Open).
-        f = M_Atomic_Write_Open( path );
+        // new one, never half of either (M_Atomic_Write_Open_Binary).
+        f = M_Atomic_Write_Open_Binary( path );
         if( ! f )  return;
         fwrite( rd->data, 1, rd->len, f );
         M_Atomic_Write_Close( f, path );

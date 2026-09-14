@@ -856,6 +856,59 @@ of the record. Two decisions differ from the plan above:
 **Needs a person**: set a record on the Pi and watch it appear on the laptop's attract screen, then
 the other way round; clear on the master and watch the member's boards empty.
 
+#### Undoing a clear: backups and `restorehighscores` (2026-09-14)
+
+**What happened first.** The morning Phase 2 shipped, Mark cleared on the laptop (the master) and then
+put a backup `legacyhome` back — and the scores stayed cleared. Reconstructed from file times: the
+laptop cleared at 08:08:08 and the Pi took the clear at 08:08:55; the backup copied back had been
+taken at 08:10:44, *after* the clear (the pre-clear copy, taken at 08:07, had landed inside
+`legacyhome` rather than beside it). And even a good copy on the laptop alone would have been cleared
+again: the Pi still held the clear time, so at the next sync the laptop's restored records — all set
+before it — would be dropped. Restoring both cabinets' own backups with both programs off recovered
+everything. The design was working as written; it just made "put the old files back" a trap.
+
+**Built**
+- **`clearhighscores` keeps a copy first**: `legacyhome/scores-backup/<YYYYMMDD-HHMMSS>/` holds
+  `highscores.dat`, `runs.dat` and every `demos/*.lmp`, each copied atomically. If any copy fails the
+  backup is removed and **nothing is cleared**. Nothing to keep (no records, no demos) makes no backup.
+  The newest ten are kept; pruning removes only the files the backup code writes, so a folder with
+  anything else in it stays. On a master the epoch now moves only after the backup succeeds.
+- **`restorehighscores [folder]`** (console) and **`-restorehighscores [folder]`** (startup, after
+  `-clearhighscores`): no argument restores the newest backup, a name picks a backup, anything else is a
+  folder holding `highscores.dat` and/or `runs.dat` and optionally `demos/` — an old `legacyhome`.
+  - The backup is read by **the same parser as the live files** (`HS_Read_Splits_File` /
+    `HS_Read_Runs_File`, which `HS_Load` and `HS_Runs_Load` now call), so old formats restore exactly
+    as they would load.
+  - It is **merged** with the current scores (`HSM_Merge`), not copied over them, so a record set since
+    the clear is kept, and **both sides are put under the current epoch** (or the backup's, if later).
+    That is the whole mechanism: the restored records count as held under the clear, so the member —
+    also at that epoch — takes them in a plain union, instead of the master's own file falling behind
+    and the member clearing it again.
+  - **Demos**: a merged record that is still this cabinet's own keeps its demo; one that came from the
+    backup gets the backup's demo copied in (atomically, binary), or — when the backup has none — the
+    replaced record's demo is deleted so it is not shown as the new record's run. Survival boards the
+    same way, by their top entry. Then `HS_Sync_Import`, which saves and lets the sync offer the result.
+  - Refused on a **member** ("restore them on the master") and **during a game** or with a run,
+    death demo or initials pending.
+- `M_Atomic_Write_Open_Binary` (`m_misc.c`): `M_Atomic_Write_Open` is text mode, which on Windows would
+  turn every `0x0A` in a demo into `0x0D 0x0A`. The sync's demo writes (`d_linkscore.c`) use it too now.
+- `-linkcmdat` now takes up to four occurrences, so one cabinet can clear and then restore.
+
+**Verified**
+- `scorerestore`: synced cabinets; the master clears (backup of 3 demos made), the member empties;
+  `restorehighscores` on the master brings back 2 records, 3 board entries and 3 demos, the member
+  receives all three demos, both files identical and still carrying the clear's epoch. The member's own
+  `restorehighscores` is refused.
+- `scorerestorepath`: both cabinets already cleared (epoch in their files); an old-format folder
+  restored by path on the master reaches the member.
+- **Both shown red** with the restore taking the backup's epoch instead of keeping the clear's: the
+  restored records never reached the member (and in the second case the two files ended at different
+  epochs).
+- Pruning, standalone: eleven old backups plus a clear kept the newest ten; the oldest, holding a file
+  the backup code does not write, was emptied of its own files and left standing.
+- All eight other score cases (`scoreslarge` with the laptop's live files: 79 demos, 63 records, 92
+  board entries), `pair`, `linkgame`, `names8`, `tools/hsmerge-test.py`, `make smoke` 5/5.
+
 ### Phase 3 — what was built (2026-09-13)
 
 Starting a Deathmatch or a Campaign on one cabinet invites every other cabinet that is idle (or in

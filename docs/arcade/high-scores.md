@@ -1117,7 +1117,11 @@ cabinets. What that changed here, for anyone touching `hs_stuff.c`:
 - **Any new record needs a set time and cabinet** (`HS_Set_Time_Now`, `HS_Cab_Here`), including the
   in-progress run built for comparison (`HS_Run_As_Entry`), or it ranks as the oldest entry on a tie.
 - `clearhighscores` writes empty files carrying the epoch instead of deleting them, is refused on a
-  linked member, and on a master refuses when the clock is not set.
+  linked member, and on a master refuses when the clock is not set. It **keeps a backup first**
+  (`legacyhome/scores-backup/<YYYYMMDD-HHMMSS>/`, newest ten kept) and clears nothing if the backup
+  fails; **`restorehighscores [folder]`** merges a backup back in under the current epoch. Both files
+  are parsed by `HS_Read_Splits_File` / `HS_Read_Runs_File`, shared by the loaders and the restore —
+  change the format there, once. Details in `cabinet-link.md`, "Undoing a clear".
 - `HS_MAX_MAPS` is 256 and `HS_MAX_RUNS` 1024, since a merged table is the union of the cabinets'.
 - `tools/hsmerge-test.py` also fails if `G_BeginRecording` gains a setting the ranked ruleset does not
   pin and `lks_rules_hash` (`d_linkscore.c`) does not hash.

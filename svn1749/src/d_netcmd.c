@@ -349,6 +349,7 @@ void D_Register_ClientCommands(void)
     COM_AddCommand("kill", Command_Kill, CC_command);
     COM_AddCommand("setpos", Command_SetPos_f, CC_command);  // [Arcade]
     COM_AddCommand("clearhighscores", Command_ClearHighScores_f, CC_command);  // [Arcade]
+    COM_AddCommand("restorehighscores", Command_RestoreHighScores_f, CC_command);  // [Arcade]
 
     COM_AddCommand("chatmacro", Command_Chatmacro_f, CC_chat);   // hu_stuff.c
     COM_AddCommand("setcontrol", Command_Setcontrol_f, CC_control);

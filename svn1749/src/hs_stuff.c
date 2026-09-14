@@ -4,10 +4,12 @@
 
 #include <unistd.h>     // access()
 #include <sys/types.h>
+#include <sys/stat.h>   // [Arcade] score backups: is it a folder
 #include <dirent.h>     // demo directory sweep in Command_ClearHighScores_f
 #include <time.h>       // seed for the attract demo shuffle
 
 #include "doomincl.h"
+#include "command.h"    // [Arcade] COM_Argc/COM_Argv, restorehighscores
 #include "doomdef.h"
 #include "doomstat.h"
 #include "d_main.h"
@@ -32,6 +34,7 @@
 // tables merged (Cabinet Link, shared scores) are the union of both, and a
 // row that does not fit is silently not recorded.
 #define HS_MAX_MAPS      256
+#define HS_MAX_SPLITS    (HS_MAX_MAPS * HS_NUMCAT * HS_NUMSKILLS)   // every record a full table holds
 
 // Records are keyed by game as well as map: Doom 2, Plutonia and TNT all
 // have a MAP01, and they are different levels.  The loaded level pack is
@@ -836,8 +839,10 @@ static hs_maprecord_t * HS_FindOrAddRecord( const char * game, const char * mapn
 
 // Demo files carry the game too: a Doom 2 MAP01 demo would replay against
 // the wrong level under Plutonia or TNT.
-static void HS_BuildDemoPath( char * dest, const char * game,
-                              const char * mapname, skill_e skill, int cat )
+// [Arcade] The demo directory is a parameter so a backup's demos
+// (HS_Restore_Scores) are named exactly as the live ones.
+static void HS_BuildDemoPath_In( char * dest, const char * dir, const char * game,
+                                 const char * mapname, skill_e skill, int cat )
 {
     char relname[96];
     // Bound the parts explicitly; map name is at most 8 ("MAPxx"/"ExMy").
@@ -845,7 +850,13 @@ static void HS_BuildDemoPath( char * dest, const char * game,
     // it would let two packs share a demo file.
     snprintf(relname, sizeof(relname), "%.39s_%.8s_sk%d_%s.lmp",
              game, mapname, (int)skill, hs_catname[cat]);
-    cat_filename(dest, hs_demodir, relname);
+    cat_filename(dest, dir, relname);
+}
+
+static void HS_BuildDemoPath( char * dest, const char * game,
+                              const char * mapname, skill_e skill, int cat )
+{
+    HS_BuildDemoPath_In( dest, hs_demodir, game, mapname, skill, cat );
 }
 
 
@@ -853,13 +864,19 @@ static void HS_BuildDemoPath( char * dest, const char * game,
 // matching the board it belongs to -- not one per map, which is what the
 // per-map scheme produced.  "ep<N>" cannot collide with a map name because
 // map names are MAPxx or ExMy.
-static void HS_BuildSurvivalDemoPath( char * dest, const char * game,
-                                      int episode, skill_e skill, int cat )
+static void HS_BuildSurvivalDemoPath_In( char * dest, const char * dir, const char * game,
+                                         int episode, skill_e skill, int cat )
 {
     char relname[96];
     snprintf(relname, sizeof(relname), "%.39s_ep%d_sk%d_%s.lmp",
              game, episode, (int)skill, hs_catname[cat]);
-    cat_filename(dest, hs_demodir, relname);
+    cat_filename(dest, dir, relname);
+}
+
+static void HS_BuildSurvivalDemoPath( char * dest, const char * game,
+                                      int episode, skill_e skill, int cat )
+{
+    HS_BuildSurvivalDemoPath_In( dest, hs_demodir, game, episode, skill, cat );
 }
 
 
@@ -892,14 +909,21 @@ static void  HS_Read_Cab( char * dst, const char * src )
 }
 
 // "# epoch N" in either file's header; the larger wins.
-static void  HS_Read_Epoch_Line( const char * line )
+static void  HS_Read_Epoch_Line( const char * line, uint32_t * epoch )
 {
     unsigned int  e;
-    if( sscanf( line, "# epoch %u", &e ) == 1 && e > hs_epoch )
-        hs_epoch = e;
+    if( sscanf( line, "# epoch %u", &e ) == 1 && e > *epoch )
+        *epoch = e;
 }
 
-static void HS_Load( void )
+// [Arcade] Read a highscores.dat into records: the live file (HS_Load) and a
+// backup being restored (HS_Restore_Scores) go through this same parser, so a
+// backup is read exactly as the cabinet would read it.  Returns how many
+// records (at most max), or -1 when the file cannot be opened.  *epoch is
+// raised to the file's "# epoch" line; *old_format counts lines from before
+// per-game scoring, which are dropped.
+static int  HS_Read_Splits_File( const char * path, hsm_split_t * out, int max,
+                                 uint32_t * epoch, int * old_format )
 {
     FILE * fr;
     char   line[160];
@@ -908,19 +932,16 @@ static void HS_Load( void )
     char   catname[16];
     char   startmap[16];
     char   cab[16];
-    int    skillnum, cat, i;
+    int    skillnum, cat, i, n = 0;
     unsigned int  tics, settime;
-    int    old_format = 0;
 
-    hs_table_count = 0;
-
-    fr = fopen(hs_scorefile, "r");
-    if( ! fr )  return;
+    fr = fopen(path, "r");
+    if( ! fr )  return -1;
 
     while( fgets(line, sizeof(line), fr) )
     {
         if( line[0] == '#' )
-            HS_Read_Epoch_Line( line );
+            HS_Read_Epoch_Line( line, epoch );
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )
             continue;
         // Fields are only ever *appended*, so an older short line still
@@ -937,7 +958,7 @@ static void HS_Load( void )
         {
             // Records written before scores were tracked per game cannot be
             // attributed to one, so they are dropped rather than guessed at.
-            old_format ++;
+            (*old_format) ++;
             continue;
         }
         if( skillnum < 0 || skillnum >= HS_NUMSKILLS )
@@ -961,24 +982,57 @@ static void HS_Load( void )
                           catname, game, mapname, hs_catname[HS_CAT_speed]);
         }
 
-        hs_maprecord_t * rec = HS_FindOrAddRecord(game, mapname);
-        if( ! rec )  continue;
-        rec->has_record[cat][skillnum] = true;
-        rec->besttime[cat][skillnum]   = (tic_t) tics;
-        // No start map recorded -- either a line written before this field
-        // existed, or one HS_Save wrote "-" into because it did not know.
-        // *Both must read back as empty.*  Taking the "-" literally makes it
-        // a map name that differs from this record's map, which is exactly
-        // what the caption treats as a range: it produced "--E4M1" and
-        // "SINGLE LEVEL: --E1M1".  The placeholder is written so the field
-        // cannot shift on the next read (see HS_Save); it is not a value.
-        if( strcmp(startmap, "-") == 0 )  startmap[0] = 0;
-        dl_strncpy( rec->startmap[cat][skillnum], startmap, 8 );
-        rec->settime[cat][skillnum] = settime;
-        HS_Read_Cab( rec->cab[cat][skillnum], cab );
+        if( n >= max )  break;
+        {
+            hsm_split_t * s = &out[n++];
+            memset( s, 0, sizeof(*s) );
+            dl_strncpy( s->game, game, HS_GAMEID_LEN-1 );
+            dl_strncpy( s->map, mapname, 8 );
+            s->skill = skillnum;
+            s->cat = cat;
+            s->tics = tics;
+            // No start map recorded -- either a line written before this
+            // field existed, or one HS_Save wrote "-" into because it did not
+            // know.  *Both must read back as empty.*  Taking the "-" literally
+            // makes it a map name that differs from this record's map, which
+            // is exactly what the caption treats as a range: it produced
+            // "--E4M1" and "SINGLE LEVEL: --E1M1".  The placeholder is written
+            // so the field cannot shift on the next read (see HS_Save); it is
+            // not a value.
+            if( strcmp(startmap, "-") == 0 )  startmap[0] = 0;
+            dl_strncpy( s->startmap, startmap, 8 );
+            s->set_time = settime;
+            HS_Read_Cab( s->cab, cab );
+        }
     }
 
     fclose(fr);
+    return n;
+}
+
+static void HS_Load( void )
+{
+    hsm_split_t * s = malloc( (HS_MAX_SPLITS + 1) * sizeof(hsm_split_t) );
+    int  i, n, old_format = 0;
+
+    hs_table_count = 0;
+    if( ! s )
+    {
+        GenPrintf(EMSG_warn, "HS_Load: out of memory\n");
+        return;
+    }
+    n = HS_Read_Splits_File( hs_scorefile, s, HS_MAX_SPLITS, &hs_epoch, &old_format );
+    for( i = 0; i < n; i++ )
+    {
+        hs_maprecord_t * rec = HS_FindOrAddRecord( s[i].game, s[i].map );
+        if( ! rec )  continue;
+        rec->has_record[s[i].cat][s[i].skill] = true;
+        rec->besttime[s[i].cat][s[i].skill]   = (tic_t) s[i].tics;
+        dl_strncpy( rec->startmap[s[i].cat][s[i].skill], s[i].startmap, 8 );
+        rec->settime[s[i].cat][s[i].skill] = s[i].set_time;
+        dl_strncpy( rec->cab[s[i].cat][s[i].skill], s[i].cab, HSM_CAB_LEN );
+    }
+    free( s );
 
     if( old_format )
         GenPrintf(EMSG_info,
@@ -989,7 +1043,6 @@ static void HS_Load( void )
 
 // [Arcade] The split table as the shared scores' list of records, in table
 // order.  out needs room for HS_MAX_SPLITS.
-#define HS_MAX_SPLITS  (HS_MAX_MAPS * HS_NUMCAT * HS_NUMSKILLS)
 
 static int  HS_Splits_Export( hsm_split_t * out )
 {
@@ -1154,22 +1207,24 @@ static int  HS_Run_Cmp( const hs_run_t * a, const hs_run_t * b )
 }
 
 
-static void HS_Runs_Load( void )
+// [Arcade] Read a runs.dat into board entries, in file order: the live file
+// (HS_Runs_Load) and a backup being restored share it.  Returns how many (at
+// most max), or -1 when the file cannot be opened.  *epoch is raised to the
+// file's "# epoch" line.
+static int  HS_Read_Runs_File( const char * path, hsm_run_t * out, int max, uint32_t * epoch )
 {
     FILE * fr;
     char   line[200];
     char   game[64], startmap[16], endmap[16], catname[16], initials[16], cab[16];
-    int    skillnum, cat, i;
+    int    skillnum, cat, i, n = 0;
     unsigned int tics, settime;
 
-    hs_runs_count = 0;
-
-    fr = fopen(hs_runfile, "r");
-    if( ! fr )  return;
+    fr = fopen(path, "r");
+    if( ! fr )  return -1;
 
     while( fgets(line, sizeof(line), fr) )
     {
-        if( line[0] == '#' )  HS_Read_Epoch_Line( line );
+        if( line[0] == '#' )  HS_Read_Epoch_Line( line, epoch );
         if( line[0] == '#' || line[0] == '\n' || line[0] == 0 )  continue;
 
         initials[0] = 0;
@@ -1182,7 +1237,7 @@ static void HS_Runs_Load( void )
                         &tics, initials, &settime, cab);
         if( nf < 6 )  continue;
         if( skillnum < 0 || skillnum >= HS_NUMSKILLS )  continue;
-        if( hs_runs_count >= HS_MAX_RUNS )  break;
+        if( n >= max )  break;
 
         cat = HS_CAT_speed;
         for( i = 0; i < HS_NUMCAT; i++ )
@@ -1209,7 +1264,7 @@ static void HS_Runs_Load( void )
         if( strcmp(initials, "---") == 0 )  initials[0] = 0;
         if( strcmp(startmap, "-") == 0 )    startmap[0] = 0;
 
-        hs_run_t * r = &hs_runs[hs_runs_count++];
+        hs_run_t * r = &out[n++];
         memset(r, 0, sizeof(*r));
         dl_strncpy(r->game, game, HS_GAMEID_LEN-1);
         dl_strncpy(r->startmap, startmap, 8);
@@ -1223,6 +1278,15 @@ static void HS_Runs_Load( void )
     }
 
     fclose(fr);
+    return n;
+}
+
+static void HS_Runs_Load( void )
+{
+    int  i, n;
+
+    n = HS_Read_Runs_File( hs_runfile, hs_runs, HS_MAX_RUNS, &hs_epoch );
+    hs_runs_count = ( n > 0 ) ? n : 0;
 
     // Re-establish "stored order is rank order", which HS_Board_Entry walks
     // to hand out places.  Insertion maintains it, but runs.dat is a plain
@@ -1997,6 +2061,333 @@ void HS_Init( void )
 // segfaults in P_SetupPsprites on a NULL player->weaponinfo.
 // This mirrors how the -record command-line option begins recording
 // before any game has started.
+// =========================================================================
+//   Score backups and restore  [Arcade]
+// =========================================================================
+// clearhighscores keeps a copy of what it is about to delete in
+// legacyhome/scores-backup/<YYYYMMDD-HHMMSS>/ (highscores.dat, runs.dat,
+// demos/), and restorehighscores puts a backup back.  With linked cabinets a
+// clear spreads by its time (see hs_merge.h), so copying old files back by
+// hand is undone at the next sync; a restore merges the backup into the
+// scores *under the current clear time*, which makes its records count as
+// set since the clear, and they spread to the other cabinets like new ones.
+
+#define HS_BACKUP_DIR   "scores-backup"
+#define HS_BACKUPS_KEPT 10
+
+// Copy one file, atomically.  False if the source cannot be read or the copy
+// cannot be written.
+static boolean  HS_Copy_File( const char * src, const char * dst )
+{
+    FILE * fr = fopen( src, "rb" );
+    FILE * fw;
+    char   buf[16384];
+    size_t n;
+    boolean ok = true;
+
+    if( ! fr )  return false;
+    fw = M_Atomic_Write_Open_Binary( dst );
+    if( ! fw )  { fclose( fr ); return false; }
+    while( (n = fread( buf, 1, sizeof(buf), fr )) > 0 )
+        if( fwrite( buf, 1, n, fw ) != n )  { ok = false; break; }
+    if( ferror( fr ) )  ok = false;
+    fclose( fr );
+    if( ! M_Atomic_Write_Close( fw, dst ) )  ok = false;
+    return ok;
+}
+
+static boolean  HS_Is_Dir( const char * path )
+{
+    struct stat st;
+    return stat( path, &st ) == 0 && S_ISDIR( st.st_mode );
+}
+
+static boolean  HS_Is_Lmp( const char * name )
+{
+    const char * ext = strrchr( name, '.' );
+    return ext && strcasecmp( ext, ".lmp" ) == 0;
+}
+
+// A backup's name is its time, so names sort oldest first.  Returns how many
+// (at most max) went into names[][32], sorted.
+static int  HS_List_Backups( char names[][32], int max )
+{
+    char  root[MAX_WADPATH];
+    DIR * dp;
+    struct dirent * de;
+    int   n = 0, i, j;
+
+    cat_filename( root, legacyhome, HS_BACKUP_DIR );
+    dp = opendir( root );
+    if( ! dp )  return 0;
+    while( (de = readdir( dp )) != NULL && n < max )
+    {
+        char full[MAX_WADPATH];
+        int  y, mo, d, h, mi, s;
+        if( sscanf( de->d_name, "%4d%2d%2d-%2d%2d%2d", &y, &mo, &d, &h, &mi, &s ) != 6 )  continue;
+        cat_filename( full, root, de->d_name );
+        if( ! HS_Is_Dir( full ) )  continue;
+        dl_strncpy( names[n++], de->d_name, 32 );
+    }
+    closedir( dp );
+    for( i = 1; i < n; i++ )
+        for( j = i; j > 0 && strcmp( names[j-1], names[j] ) > 0; j-- )
+        {
+            char t[32];
+            strcpy( t, names[j] );  strcpy( names[j], names[j-1] );  strcpy( names[j-1], t );
+        }
+    return n;
+}
+
+// Remove a backup this code made: only the files it writes, then the folders.
+// Anything else someone put in there keeps the folder standing.
+static void  HS_Remove_Backup( const char * name )
+{
+    char  dir[MAX_WADPATH], demos[MAX_WADPATH], f[MAX_WADPATH];
+    DIR * dp;
+    struct dirent * de;
+
+    cat_filename( f, legacyhome, HS_BACKUP_DIR );
+    cat_filename( dir, f, name );
+    cat_filename( demos, dir, "demos" );
+    dp = opendir( demos );
+    while( dp && (de = readdir( dp )) != NULL )
+    {
+        if( ! HS_Is_Lmp( de->d_name ) )  continue;
+        cat_filename( f, demos, de->d_name );
+        remove( f );
+    }
+    if( dp )  closedir( dp );
+    rmdir( demos );
+    cat_filename( f, dir, "highscores.dat" );  remove( f );
+    cat_filename( f, dir, "runs.dat" );        remove( f );
+    rmdir( dir );
+}
+
+// Copy the scores and every record demo into a new backup, before a clear.
+// Nothing to keep (no records, no demos) is not a failure and makes no backup.
+// On success the backup's name goes into name (empty when none was needed).
+static boolean  HS_Backup_Scores( char * name, int namesize )
+{
+    char  root[MAX_WADPATH], dir[MAX_WADPATH], demos[MAX_WADPATH], src[MAX_WADPATH], dst[MAX_WADPATH];
+    char  stamp[32];
+    char  backups[64][32];
+    DIR * dp;
+    struct dirent * de;
+    int   copied = 0, failed = 0, n, i;
+    time_t now = time( NULL );
+    boolean have_demo = false;
+
+    name[0] = 0;
+    dp = opendir( hs_demodir );
+    while( dp && (de = readdir( dp )) != NULL )
+        if( HS_Is_Lmp( de->d_name ) )  { have_demo = true; break; }
+    if( dp )  closedir( dp );
+    if( hs_table_count == 0 && hs_runs_count == 0 && ! have_demo )
+        return true;
+
+    strftime( stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime( &now ) );
+    cat_filename( root, legacyhome, HS_BACKUP_DIR );
+    I_mkdir( root, 0700 );
+    cat_filename( dir, root, stamp );
+    if( HS_Is_Dir( dir ) )   // two clears in one second
+    {
+        strcat( stamp, "-2" );
+        cat_filename( dir, root, stamp );
+    }
+    I_mkdir( dir, 0700 );
+    cat_filename( demos, dir, "demos" );
+    I_mkdir( demos, 0700 );
+    if( ! HS_Is_Dir( demos ) )  return false;
+
+    // The files as they are on disk: they are what a restore reads back.
+    HS_Save();
+    HS_Runs_Save();
+    cat_filename( dst, dir, "highscores.dat" );
+    if( ! HS_Copy_File( hs_scorefile, dst ) )  failed++;
+    cat_filename( dst, dir, "runs.dat" );
+    if( ! HS_Copy_File( hs_runfile, dst ) )  failed++;
+
+    dp = opendir( hs_demodir );
+    while( dp && (de = readdir( dp )) != NULL )
+    {
+        if( ! HS_Is_Lmp( de->d_name ) )  continue;
+        cat_filename( src, hs_demodir, de->d_name );
+        cat_filename( dst, demos, de->d_name );
+        if( HS_Copy_File( src, dst ) )  copied++;  else  failed++;
+    }
+    if( dp )  closedir( dp );
+
+    if( failed )
+    {
+        HS_Remove_Backup( stamp );
+        return false;
+    }
+    dl_strncpy( name, stamp, namesize );
+    GenPrintf( EMSG_errlog, "High scores backed up to %s/%s (%d record demo(s)).\n",
+               HS_BACKUP_DIR, stamp, copied );
+
+    // Keep the newest few: each is about a megabyte, and a Pi has an SD card.
+    n = HS_List_Backups( backups, 64 );
+    for( i = 0; i < n - HS_BACKUPS_KEPT; i++ )
+        HS_Remove_Backup( backups[i] );
+    return true;
+}
+
+// Console command and -restorehighscores: put a backup's scores back.
+//   (nothing)   the newest backup clearhighscores made
+//   a name      one of those, by name ("20260914-080808")
+//   a folder    any folder holding highscores.dat and/or runs.dat, and
+//               optionally demos/ -- an old copy of legacyhome, say
+void  HS_Restore_Scores( const char * arg )
+{
+    char  src[MAX_WADPATH], demos[MAX_WADPATH], path[MAX_WADPATH], from[MAX_WADPATH];
+    char  backups[64][32];
+    hsm_set_t  cur, bak, merged;
+    uint32_t   bak_epoch = 0;
+    int   ns, nr, old_format = 0, i, j, copied = 0, removed = 0;
+    int   before_s = 0, before_r = 0;
+
+    if( LK_Role() == LK_ROLE_MEMBER )
+    {
+        GenPrintf( EMSG_warn, "High scores are shared with the master cabinet:"
+                              " restore them on the master.\n" );
+        return;
+    }
+    if( HS_Sync_Busy() || ( gamestate == GS_LEVEL && ! demoplayback ) )
+    {
+        GenPrintf( EMSG_warn, "High scores not restored: not during a game.\n" );
+        return;
+    }
+
+    // Which folder.
+    if( ! arg || ! arg[0] )
+    {
+        int n = HS_List_Backups( backups, 64 );
+        if( n == 0 )
+        {
+            GenPrintf( EMSG_warn, "High scores not restored: there is no backup in %s.\n", HS_BACKUP_DIR );
+            return;
+        }
+        cat_filename( path, legacyhome, HS_BACKUP_DIR );
+        cat_filename( src, path, backups[n-1] );
+    }
+    else
+    {
+        cat_filename( path, legacyhome, HS_BACKUP_DIR );
+        cat_filename( src, path, arg );
+        if( ! HS_Is_Dir( src ) )
+            dl_strncpy( src, arg, MAX_WADPATH );
+    }
+
+    memset( &cur, 0, sizeof(cur) );
+    memset( &bak, 0, sizeof(bak) );
+    memset( &merged, 0, sizeof(merged) );
+    cur.max_splits = bak.max_splits = HS_MAX_SPLITS;
+    cur.max_runs = bak.max_runs = HS_MAX_RUNS;
+    merged.max_splits = 2 * HS_MAX_SPLITS;
+    merged.max_runs = 2 * HS_MAX_RUNS;
+    cur.splits = malloc( cur.max_splits * sizeof(hsm_split_t) );
+    bak.splits = malloc( bak.max_splits * sizeof(hsm_split_t) );
+    merged.splits = malloc( merged.max_splits * sizeof(hsm_split_t) );
+    cur.runs = malloc( cur.max_runs * sizeof(hsm_run_t) );
+    bak.runs = malloc( bak.max_runs * sizeof(hsm_run_t) );
+    merged.runs = malloc( merged.max_runs * sizeof(hsm_run_t) );
+    if( ! cur.splits || ! bak.splits || ! merged.splits || ! cur.runs || ! bak.runs || ! merged.runs )
+    {
+        GenPrintf( EMSG_warn, "High scores not restored: out of memory.\n" );
+        goto done;
+    }
+
+    cat_filename( path, src, "highscores.dat" );
+    ns = HS_Read_Splits_File( path, bak.splits, bak.max_splits, &bak_epoch, &old_format );
+    cat_filename( path, src, "runs.dat" );
+    nr = HS_Read_Runs_File( path, bak.runs, bak.max_runs, &bak_epoch );
+    if( ns < 0 && nr < 0 )
+    {
+        GenPrintf( EMSG_warn, "High scores not restored: no highscores.dat or runs.dat in %s.\n", src );
+        goto done;
+    }
+    bak.nsplits = ( ns > 0 ) ? ns : 0;
+    bak.nruns = ( nr > 0 ) ? nr : 0;
+
+    HS_Sync_Export( &cur );
+    before_s = cur.nsplits;
+    before_r = cur.nruns;
+    // Both under the current clear time -- or the backup's, if it is later --
+    // so nothing in either is dropped for predating a clear: that is the point.
+    cur.epoch = bak.epoch = ( bak_epoch > hs_epoch ) ? bak_epoch : hs_epoch;
+    if( HSM_Merge( &cur, &bak, &merged ) != 0 )
+    {
+        GenPrintf( EMSG_warn, "High scores not restored: too many records.\n" );
+        goto done;
+    }
+
+    // Demos.  A record that is still this cabinet's own keeps its demo; one
+    // that came from the backup gets the backup's, or -- when the backup has
+    // none for it -- loses the demo of the record it replaced, which would
+    // otherwise be shown as this record's run.
+    cat_filename( demos, src, "demos" );
+    for( i = 0; i < merged.nsplits; i++ )
+    {
+        const hsm_split_t * m = &merged.splits[i];
+        boolean own = false;
+        for( j = 0; j < cur.nsplits && ! own; j++ )
+        {
+            const hsm_split_t * c = &cur.splits[j];
+            own = ! strcmp( c->game, m->game ) && ! strcmp( c->map, m->map )
+                  && c->cat == m->cat && c->skill == m->skill && HSM_Split_Cmp( c, m ) == 0;
+        }
+        if( own )  continue;
+        HS_BuildDemoPath_In( from, demos, m->game, m->map, (skill_e) m->skill, m->cat );
+        HS_BuildDemoPath( path, m->game, m->map, (skill_e) m->skill, m->cat );
+        if( access( from, R_OK ) == 0 )
+        {
+            if( HS_Copy_File( from, path ) )  copied++;
+        }
+        else if( remove( path ) == 0 )
+            removed++;
+    }
+    for( i = 0; i < merged.nruns; i++ )
+    {
+        const hsm_run_t * m = &merged.runs[i];
+        const hsm_run_t * top = NULL;
+        if( HS_Id_Is_Single( m->game ) )  continue;   // no demo of its own
+        if( i > 0 && HSM_Same_Board( &merged.runs[i-1], m ) )  continue;   // only a board's top has one
+        for( j = 0; j < cur.nruns && ! top; j++ )
+            if( HSM_Same_Board( &cur.runs[j], m ) )  top = &cur.runs[j];   // stored order is rank order
+        if( top && HSM_Run_Rank_Cmp( top, m ) == 0 )  continue;
+        HS_BuildSurvivalDemoPath_In( from, demos, m->game, HS_Episode_Of( m->endmap ), (skill_e) m->skill, m->cat );
+        HS_BuildSurvivalDemoPath( path, m->game, HS_Episode_Of( m->endmap ), (skill_e) m->skill, m->cat );
+        if( access( from, R_OK ) == 0 )
+        {
+            if( HS_Copy_File( from, path ) )  copied++;
+        }
+        else if( remove( path ) == 0 )
+            removed++;
+    }
+
+    if( ! HS_Sync_Import( &merged ) )
+    {
+        GenPrintf( EMSG_warn, "High scores not restored: the result does not fit the tables.\n" );
+        goto done;
+    }
+    GenPrintf( EMSG_errlog, "High scores restored from %s: %d record(s) and %d board entr%s now"
+               " (was %d and %d), %d demo(s) copied%s.\n",
+               src, merged.nsplits, merged.nruns, merged.nruns == 1 ? "y" : "ies",
+               before_s, before_r, copied, removed ? ", stale demos removed" : "" );
+
+done:
+    free( cur.splits );  free( bak.splits );  free( merged.splits );
+    free( cur.runs );    free( bak.runs );    free( merged.runs );
+}
+
+void  Command_RestoreHighScores_f( void )
+{
+    HS_Restore_Scores( COM_Argc() > 1 ? COM_Argv( 1 ) : NULL );
+}
+
+
 // Console command: clear all recorded times and their record-holder demos.
 // Clears the in-memory table too, so a later record cannot write the old
 // entries back out -- which is why deleting highscores.dat by hand while
@@ -2017,16 +2408,30 @@ void Command_ClearHighScores_f( void )
                              " clear them on the master.\n");
         return;
     }
+    if( LK_Role() == LK_ROLE_MASTER && HS_Set_Time_Now() == 0 )
+    {
+        // Without a clock the clear could not be placed against the times
+        // records were set at, and would not spread.
+        GenPrintf(EMSG_warn, "High scores not cleared: this cabinet's clock is not set.\n");
+        return;
+    }
+
+    // [Arcade] Keep a copy first, so a clear can be undone with
+    // restorehighscores.  No copy, no clear: an unrecoverable wipe on a
+    // cabinet whose SD card was full is not a trade worth making.
+    {
+        char  backup[32];
+        if( ! HS_Backup_Scores( backup, sizeof(backup) ) )
+        {
+            GenPrintf(EMSG_warn, "High scores not cleared: could not make a backup in %s.\n",
+                      HS_BACKUP_DIR);
+            return;
+        }
+    }
+
     if( LK_Role() == LK_ROLE_MASTER )
     {
         uint32_t  now = HS_Set_Time_Now();
-        if( now == 0 )
-        {
-            // Without a clock the clear could not be placed against the times
-            // records were set at, and would not spread.
-            GenPrintf(EMSG_warn, "High scores not cleared: this cabinet's clock is not set.\n");
-            return;
-        }
         hs_epoch = ( now > hs_epoch ) ? now : hs_epoch + 1;
     }
 

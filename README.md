@@ -1249,7 +1249,9 @@ intermission, and the other way round:
   BUILD**, **DIFFERENT WADS**, **DIFFERENT SETTINGS**, or **SCORES: PLAYING** another game).
 - **`clearhighscores` on the master clears every cabinet**, including one switched off at the time,
   when it next connects — but a record played on that cabinet *after* the clear is kept. On a member
-  it is refused ("clear them on the master"). The master needs its clock set to clear.
+  it is refused ("clear them on the master"). The master needs its clock set to clear. To undo a
+  clear, use `-restorehighscores` on the master (see "Resetting the high scores") — copying old score
+  files back by hand gets cleared again at the next sync.
 - A demo that does not arrive whole is refused, and its record with it.
 
 The score files gained two columns — when a record was set and on which cabinet — and are now kept in
@@ -1389,7 +1391,28 @@ From the console, or at launch:
 
 This clears both tables — `highscores.dat` and the `runs.dat` leaderboard with its initials — *and*
 deletes the saved record demos. Deleting the files by hand is not enough: the tables are held in
-memory while the game runs and get written back out.
+memory while the game runs and get written back out. **Take `-clearhighscores` off again afterwards**:
+it clears on every start it is given.
+
+**Every clear keeps a copy first**, in `legacyhome/scores-backup/<date>-<time>/` (the scores and all
+the record demos, about a megabyte). The newest ten are kept. If the copy cannot be made, nothing is
+cleared.
+
+**To undo a clear, restore instead of copying files back:**
+
+```sh
+./doomlegacyarcade -restorehighscores                     # the newest backup
+./doomlegacyarcade -restorehighscores 20260914-080808     # a backup by name
+./doomlegacyarcade -restorehighscores /path/to/old/legacyhome   # any folder with score files
+```
+
+(or `restorehighscores [folder]` at the console). The backup is **merged** with the scores the cabinet
+has now, so a record set since the clear is not lost, and each restored record gets its demo back.
+**With linked cabinets, restore on the master.** Copying old score files back by hand does not work
+there: every cabinet remembers when the scores were cleared and drops older records again at the next
+sync. A restore marks the restored records as belonging after the clear, so they reach the other
+cabinets like new ones. A member refuses to restore, and nobody can restore during a game. Take
+`-restorehighscores` off afterwards too.
 
 ### Taking a screenshot
 
@@ -1421,7 +1444,8 @@ like any other, so they only stick from a `-devmode` session.
 | Flag | Effect |
 | --- | --- |
 | `-devmode` | Unlock menus, save settings, disable the ruleset (or press Scroll Lock at the attract screen) |
-| `-clearhighscores` | Wipe scores and record demos at startup |
+| `-clearhighscores` | Wipe scores and record demos at startup (a backup is kept first) |
+| `-restorehighscores [folder]` | Put backed-up scores back, merged with the current ones (newest backup if no folder) |
 | `-clearaudit` | Reset the operator audit counters at startup |
 | `-game <name>` | Start a specific game (`doomu`, `doom2`, `plutonia`, `tnt`) |
 | `-warp <map>` | Jump straight to a map |
