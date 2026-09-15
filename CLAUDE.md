@@ -30,7 +30,7 @@ expected lumps differ before committing.
 dependencies by test-compiling, writes `make_options`, orders `make depend` before the parallel
 build). Use it unless there is a reason not to; `docs/arcade/building.md` explains its design and
 what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents (MSYS2 ucrt64); they now build
-`doomlegacyarcade.exe` end to end and stage its 12 runtime DLLs into `svn1749\bin` (derived by walking the
+`doomlegacyarcade.exe` end to end, with Cabinet Link when OpenSSL is installed, and stage its 14 runtime DLLs into `svn1749\bin` (derived by walking the
 import tables — SDL2_mixer's codec DLLs make the list longer than anyone guesses, and it is not
 stable enough to hardcode). The binary loads but has not been played.
 
@@ -312,7 +312,8 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
   finished frame lands on the panel — a thing **screenshots cannot see**, since the capture is of
-  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py` and
+  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py`, `tools/restartquote-test.py` (the Windows restart's command-line
+  quoting, round-tripped through the documented splitting rules) and
   `tools/menufit-test.py` (where every generic menu page's rows land: a row past the 200-line
   screen is silently not drawn, and an `IT_YOFFSET` link can end up sharing a y with a row inserted
   above it) lift

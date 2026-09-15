@@ -127,7 +127,7 @@ step fails. OpenSSL is in every `pkg_list`, and a missing OpenSSL alone still tr
 `--install-deps`, because that is how CI builds release binaries. `d_link.o` depends on
 `make_options` in the Makefile, so the change rebuilds that one object. Verified on the Pi's existing
 `make_options`: probe found OpenSSL 3.5, the line was appended, `d_link.c` alone got `-DHAVE_LINK`,
-binary links `libssl.so.3`. **`build.ps1` does not do this yet** — Windows Cabinet Link is pinned.
+binary links `libssl.so.3`. `build.ps1` does the same on Windows, see *Cabinet Link on Windows* below.
 
 ## `BUILD=<dir>` needs its own make_options *inside* that directory
 
@@ -338,6 +338,22 @@ order of magnitude and is why the instruction failed in practice:
 The check that settles whether the set is complete is `LoadLibraryW` on the exe **with MSYS2 removed
 from `PATH`** — it resolves the entire import graph without running the program, so it cannot be
 fooled by a DLL that happens to be on PATH, and it returns an error instead of a modal dialog.
+
+### Cabinet Link on Windows (2026-09-15)
+
+`build.ps1` probes OpenSSL (`mingw-w64-ucrt-x86_64-openssl`) and sets `HAVE_LINK`, by the same rules
+as build.sh above: optional, installed by `-InstallDeps`, and appended to a reused `make_options` that
+has no `HAVE_LINK=` line. Two details differ from the other probes:
+
+- **The probe links `-lws2_32 -lcrypt32` as well as `-lssl -lcrypto`**, matching the Makefile's Windows
+  line, so a probe that passes means the real link will too.
+- **`-InstallDeps` with only OpenSSL missing installs it and stops**, rather than building without
+  it. The general rule is that an optional miss never stops a build. It still holds without
+  `-InstallDeps`: the build goes ahead with the link compiled out.
+
+With the link in, the DLL walk stages `libssl-3-x64.dll` and `libcrypto-3-x64.dll` too: fourteen DLLs,
+not twelve. The CI checks both are there. The engine side of the port is in `cabinet-link.md`
+(*Windows port*).
 
 ## Verified
 

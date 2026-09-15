@@ -529,7 +529,9 @@ is shut down and slow to bring up; revisit when it is running). Before Phase 3 s
 because that is when a Windows cabinet would first play a linked game. What it needs, when it
 happens: build with `build.bat`, replay the laptop's demotest baseline against that binary (same
 wads — Doom 2 v1.9), and play one netgame against the Pi. It is the MinGW compiler and C runtime
-that are new, not the processor.
+that are new, not the processor. **The code side is done** (2026-09-15, *Windows port* below): the
+link now builds for Windows, so this check can include a linked game as well. The check itself is
+still pinned.
 
 The machines: laptop x86-64, Fedora, GCC 15; Pi 3 Model B, aarch64 Debian 13, GCC 14. Both on
 Wi-Fi (192.168.1.81 and .68). Both builds use `-O3 -ffast-math` from the `Makefile`. Both
@@ -624,8 +626,8 @@ switching the option rebuilds one file, never leaving other objects built the ot
 existing `make_options`** that has no `HAVE_LINK=` line — it never regenerates one, so without that the
 laptop and the Pi would never have got the link. An explicit `HAVE_LINK=0` is left alone; `HAVE_LINK=1`
 without OpenSSL is warned about. OpenSSL is in every distribution's `pkg_list`, and a missing OpenSSL
-triggers `--install-deps`, because CI builds the release binaries that way. **`tools/build.ps1` does not
-enable it yet** — Windows is pinned (step 4); `d_link.c` is POSIX sockets only until then.
+triggers `--install-deps`, because CI builds the release binaries that way. `tools/build.ps1` does the
+same on Windows since 2026-09-15 — see *Windows port* below.
 
 **Settings** live in `legacyhome/link/link.cfg` (mode 0600, gitignored everywhere as `link/`):
 `role master|member|off`, `name`, `master <host>`, `port` (default 5030), `passcode <rest of the line>`,
@@ -1629,6 +1631,91 @@ wads a *netgame* may want are not copied (they are not required, see the music w
 **Not done**: the picked game is not persisted — a master switched off forgets it, and a cabinet that
 boots later keeps its Boot Game. Two picks made on two cabinets within the same second may each
 restart the other once before settling on the one the master heard last.
+
+### Windows port — what was built (2026-09-15)
+
+Until now a Windows build always compiled the link out: `tools/build.ps1` never probed OpenSSL, and
+`d_link.c` was POSIX sockets only. **Read this before touching socket code in `d_link.c`**, which now
+has to compile both ways. The Makefile already had the Windows libraries (`-lssl -lcrypto -lws2_32
+-lcrypt32`).
+
+**Built**
+- **`tools/build.ps1`** probes OpenSSL by linking, like build.sh, and it is optional the same way: a miss
+  prints the `pacman` line and builds with the link compiled out. `-InstallDeps` installs it, including
+  when it is the only thing missing. The script writes `HAVE_LINK=1` into `make_options`, *appending*
+  it to a reused file that has no `HAVE_LINK=` line. An explicit line is the operator's; `HAVE_LINK=1`
+  with OpenSSL gone is warned about. Its closing message gives the firewall rule (below).
+- **CI** fails the Windows job if `make_options` lacks `HAVE_LINK=1` or `libssl-*.dll`/`libcrypto-*.dll`
+  were not staged. The link is optional to the script, so a release without it would otherwise build
+  green. The DLL walk finds the two OpenSSL DLLs by itself: fourteen DLLs now, not twelve.
+- **`d_link.c`, the socket layer.** The rest of the file was already portable, and `d_linkgame.c`,
+  `d_linkscore.c` and `d_linksel.c` already built on Windows (they do not test `HAVE_LINK`). The
+  game's UDP channel goes through `i_tcp.c`, which always had Winsock.
+  - The Winsock headers go after `doomincl.h`, as in `i_tcp.c`, since `doomtype.h` has already
+    pulled in `windows.h`. An `#error` stops a build with `_WIN32_WINNT < 0x0600`, where `WSAPoll` and
+    `inet_ntop` do not exist.
+  - Descriptors stay `int`. A `SOCKET` handle value fits, `INVALID_SOCKET` truncates to -1, and
+    OpenSSL's `SSL_set_fd` takes an `int` on Windows too.
+  - `lk_closesocket`/`lk_poll`/`lk_sock_errno` map to `closesocket`/`WSAPoll`/`WSAGetLastError`.
+    `ioctlsocket(FIONBIO)` replaces the `fcntl` switch.
+  - **A non-blocking connect in progress is `WSAEWOULDBLOCK`**, not `WSAEINPROGRESS`, which means
+    something else on Winsock. Mapping it to the obvious name would fail every member's connect.
+  - `lk_sock_strerror`: `strerror()` knows none of Winsock's codes and would print "Unknown error" for
+    all of them, so on Windows the text comes from `FormatMessage`. The error is also captured
+    before the failed socket is closed, which could overwrite it. That was a latent bug on Linux
+    too.
+  - **The wake pipe is a loopback UDP socket pair on Windows** (`lk_wake_open`), because `WSAPoll`
+    accepts sockets and nothing else. A packet from anything else on 127.0.0.1 only wakes the
+    thread early.
+  - `WSAStartup(2,2)` at the top of `LK_Init`, before `gethostname`. `i_tcp.c` starts Winsock only
+    for a network game, and asks for 1.1. The calls are counted, so the two do not interfere.
+  - The listening socket uses `SO_EXCLUSIVEADDRUSE`, not `SO_REUSEADDR`. On Windows `SO_REUSEADDR`
+    lets another program bind the port while the master is listening on it, and Windows does not
+    hold a listening port in TIME_WAIT, which is the only reason POSIX needs it.
+  - No `SIGPIPE` (a failed send just fails) and no `fchmod(0600)`: Windows has no mode bits, so
+    `link.cfg` and the key take the permissions of the folder `legacyhome` is in.
+- **Program restart on Windows** (`M_Restart_Windows`, `m_menu.c`). Select Game Sync, game switching,
+  pack unloading and Devmode Restart all restart the program, and `execvp` is unusable here. The C
+  runtime's exec starts a new process and ends this one, but it joins the arguments with plain
+  spaces, so a `-file` pack under `C:\Users\...\My Games\` came back as two nonsense file names and
+  the restart silently lost the pack. It also passed this process's handles, sockets included, to
+  the new one. Now:
+  - `M_Restart_Quote_Arg` quotes each argument by the `CommandLineToArgvW` rules.
+  - The arguments are UTF-8 from SDL's WinMain and are converted for `CreateProcessW`.
+  - The executable comes from `GetModuleFileNameW`, not `argv[0]`.
+  - Handles are not inherited, and the process then `exit(0)`s as `I_Quit` does.
+  - **Consequence: the restarted program is a new process.** Anything that launches the cabinet
+    and waits for it to exit sees an exit at every restart. A "restart it when it quits" wrapper
+    would start a second copy. Launch the exe directly, from a shortcut or the Startup folder.
+
+**Verified**
+- Linux, the same tree with `HAVE_LINK=1`: builds with no new warnings, and `tools/linktest.sh` (every
+  case) passes. That covers the POSIX side of every shim, whose behaviour must not have moved.
+- `tools/restartquote-test.py --selfcheck` extracts `M_Restart_Quote_Arg` verbatim, compiles it
+  natively and round-trips 18 awkward arguments plus 3000 random argument lists. The awkward ones
+  include spaces, embedded quotes, trailing backslashes, the empty argument and non-Latin names.
+  The splitting side is a Python implementation of the Windows rules, itself checked against the
+  five examples Microsoft publishes. The self-check reinstates six quoting bugs and each goes red.
+- Windows: the GitHub Actions job compiles and links it with MinGW-w64 ucrt64 and OpenSSL 3, and
+  stages the DLLs. That is **compile and link only**.
+
+**Not verified — needs the Windows box (the pinned step 4)**
+- That any of it runs: that a Windows master accepts the Pi and a Windows member reaches the Pi,
+  presence, invites, a linked game, the score sync, Select Game Sync's restart and Copy Missing Wads.
+- `PEM_write_PrivateKey`/`PEM_read_X509` are handed a `FILE *` opened by the game. That is safe only
+  because MSYS2's OpenSSL and the game share the UCRT. An MSVC-built OpenSSL would need
+  `OPENSSL_Applink`. The first start creates `link/cabinet.key`, which is the test.
+- **Windows Firewall** prompts the first time a master listens. On a fullscreen cabinet the prompt is
+  behind the game, and the link just never connects. Allow it once from an administrator prompt:
+  `netsh advfirewall firewall add rule name="Doom Legacy Arcade" dir=in action=allow program="<run dir>\doomlegacyarcade.exe"`.
+- Before Windows 10 version 2004, `WSAPoll` never reports a refused non-blocking connect. A member
+  pointed at a master that is not running then says "timed out before authenticating" after 10 s
+  instead of "connection refused".
+
+**Not done**
+- A demo the attract cycle is playing still cannot be replaced by the score sync on Windows (see
+  Phase 2).
+- The determinism check from Phase 0 step 4.
 
 ### Phase 4 — past two cabinets
 

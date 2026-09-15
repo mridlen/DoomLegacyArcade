@@ -129,19 +129,64 @@ const char* LK_Forget_Pins( void )  { return lk_not_built; }
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <poll.h>
-#include <fcntl.h>
+#ifdef __WIN32__
+// [Arcade] Winsock, in the same place i_tcp.c puts it: doomtype.h has already
+// included windows.h.  A Winsock socket is a SOCKET, not a file descriptor, but
+// the kernel handle values fit an int and INVALID_SOCKET truncates to -1, so
+// the int descriptors below stay; OpenSSL's SSL_set_fd takes an int here too.
+# include <winsock2.h>
+# include <ws2tcpip.h>
+# if _WIN32_WINNT < 0x0600
+#  error "Cabinet Link needs _WIN32_WINNT >= 0x0600 (Vista) for WSAPoll and inet_ntop"
+# endif
+#else
+# include <sys/socket.h>
+# include <netinet/in.h>
+# include <netinet/tcp.h>
+# include <arpa/inet.h>
+# include <netdb.h>
+# include <poll.h>
+# include <fcntl.h>
+# include <signal.h>
+#endif
 #include <unistd.h>
 #include <errno.h>
-#include <signal.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <time.h>
+
+// [Arcade] The socket calls that differ between POSIX and Winsock.  Everything
+// else (socket, bind, listen, accept, connect, getaddrinfo, send, recv) has the
+// same name and shape on both.
+#ifdef __WIN32__
+# define lk_closesocket( fd )   closesocket( fd )
+# define lk_poll                WSAPoll
+# define lk_sock_errno()        WSAGetLastError()
+  // A non-blocking connect that has started reports WSAEWOULDBLOCK, not
+  // WSAEINPROGRESS (which means a blocking call is already in progress).
+# define LK_EINPROGRESS         WSAEWOULDBLOCK
+#else
+# define lk_closesocket( fd )   close( fd )
+# define lk_poll                poll
+# define lk_sock_errno()        errno
+# define LK_EINPROGRESS         EINPROGRESS
+#endif
+
+// A socket error as text.  strerror() knows nothing of Winsock's codes, so on
+// Windows it would print "Unknown error" for every one of them.
+static const char *  lk_sock_strerror( int err, char * buf, int size )
+{
+#ifdef __WIN32__
+    int n = FormatMessageA( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                            NULL, err, 0, buf, size, NULL );
+    while( n > 0 && ( buf[n-1] == '\r' || buf[n-1] == '\n' || buf[n-1] == ' ' || buf[n-1] == '.' ) )
+        buf[--n] = 0;
+    if( n <= 0 )  snprintf( buf, size, "error %d", err );
+#else
+    snprintf( buf, size, "%s", strerror( err ) );
+#endif
+    return buf;
+}
 
 #define LK_PROTO_VERSION    4   // 2: game id in presence, ROUTE, invites; 3: SYNC (shared scores); 4: Select Game Sync messages
 #define LK_FP_LEN           32         // SHA-256 of the public key
@@ -265,6 +310,9 @@ static struct
     int             sout_head, sout_count;
 } lk_shared;
 
+// Written by the game thread to wake the link thread out of poll(): [0] is
+// polled, [1] is written.  A pipe on POSIX; on Windows a connected pair of
+// loopback UDP sockets, because WSAPoll accepts sockets and nothing else.
 static int   lk_wake_pipe[2] = { -1, -1 };
 
 static void  lk_lock( void )    { SDL_LockMutex( lk_mutex ); }
@@ -289,7 +337,11 @@ static void  lk_wake( void )
     if( lk_wake_pipe[1] >= 0 )
     {
         char c = 1;
+#ifdef __WIN32__
+        if( send( lk_wake_pipe[1], &c, 1, 0 ) < 0 )  { /* full: already awake */ }
+#else
         if( write( lk_wake_pipe[1], &c, 1 ) < 0 )  { /* full: already awake */ }
+#endif
     }
 }
 
@@ -414,8 +466,12 @@ static void  lk_settings_load( void )
 static FILE *  lk_private_open( const char * filename )
 {
     FILE * fw = M_Atomic_Write_Open( filename );
+#ifndef __WIN32__
+    // Windows has no mode bits: the file takes the permissions of the folder
+    // legacyhome is in, which on a cabinet PC is its only user's anyway.
     if( fw )
         fchmod( fileno( fw ), 0600 );
+#endif
     return fw;
 }
 
@@ -763,7 +819,7 @@ static void  lkt_close( lk_conn_t * c, const char * reason, boolean count_fail )
         }
     }
     if( c->ssl )  SSL_free( c->ssl );
-    if( c->fd >= 0 )  close( c->fd );
+    if( c->fd >= 0 )  lk_closesocket( c->fd );
     OPENSSL_cleanse( c->key, sizeof(c->key) );
     memset( c, 0, sizeof(*c) );
     c->fd = -1;
@@ -1272,8 +1328,13 @@ static void  lkt_handshake( lk_conn_t * c )
 
 static boolean  lkt_set_nonblocking( int fd )
 {
+#ifdef __WIN32__
+    u_long on = 1;
+    return ioctlsocket( fd, FIONBIO, &on ) == 0;
+#else
     int fl = fcntl( fd, F_GETFL, 0 );
     return fl >= 0 && fcntl( fd, F_SETFL, fl | O_NONBLOCK ) == 0;
+#endif
 }
 
 static lk_conn_t *  lkt_free_slot( void )
@@ -1326,7 +1387,7 @@ static void  lkt_accept( void )
             if( lkt_allow_ip[i].s_addr == sa.sin_addr.s_addr )  { allowed = 1; break; }
         if( ! allowed && ! lk_selfcheck_off( "allow" ) )
         {
-            close( fd );
+            lk_closesocket( fd );
             lkt_refusal( addr, NULL, lkt_set.num_allow ? "not on the allow list"
                                                        : "allow list is empty" );
             continue;
@@ -1334,14 +1395,14 @@ static void  lkt_accept( void )
         lo = lkt_lockout_find( sa.sin_addr, false );
         if( lo && lo->until && lk_now() < lo->until && ! lk_selfcheck_off( "lockout" ) )
         {
-            close( fd );
+            lk_closesocket( fd );
             lkt_refusal( addr, NULL, "locked out after repeated failures" );
             continue;
         }
         c = lkt_free_slot();
         if( ! c || ! lkt_set_nonblocking( fd ) )
         {
-            close( fd );
+            lk_closesocket( fd );
             lkt_refusal( addr, NULL, "too many cabinets" );
             continue;
         }
@@ -1381,7 +1442,7 @@ static void  lkt_member_connect( void )
     fd = socket( AF_INET, SOCK_STREAM, 0 );
     if( fd < 0 || ! lkt_set_nonblocking( fd ) )
     {
-        if( fd >= 0 )  close( fd );
+        if( fd >= 0 )  lk_closesocket( fd );
         freeaddrinfo( res );
         return;
     }
@@ -1392,10 +1453,10 @@ static void  lkt_member_connect( void )
     dl_strncpy( c->addr, lkt_set.master, sizeof(c->addr) );
     c->started = c->last_rx = c->last_tx = lk_now();
     c->phase = LKC_TCP;
-    if( connect( fd, res->ai_addr, res->ai_addrlen ) < 0 && errno != EINPROGRESS )
+    if( connect( fd, res->ai_addr, res->ai_addrlen ) < 0 && lk_sock_errno() != LK_EINPROGRESS )
     {
-        char why[64];
-        snprintf( why, sizeof(why), "connect: %s", strerror( errno ) );
+        char why[64], msg[48];
+        snprintf( why, sizeof(why), "connect: %s", lk_sock_strerror( lk_sock_errno(), msg, sizeof(msg) ) );
         freeaddrinfo( res );
         lkt_close( c, why, false );
         return;
@@ -1407,11 +1468,12 @@ static void  lkt_member_connected( lk_conn_t * c )
 {
     int err = 0;
     socklen_t el = sizeof(err);
-    getsockopt( c->fd, SOL_SOCKET, SO_ERROR, &err, &el );
+    // (void*): Winsock declares the option buffer char*, POSIX void*.
+    getsockopt( c->fd, SOL_SOCKET, SO_ERROR, (void*) &err, &el );
     if( err )
     {
-        char why[64];
-        snprintf( why, sizeof(why), "connect: %s", strerror( err ) );
+        char why[64], msg[48];
+        snprintf( why, sizeof(why), "connect: %s", lk_sock_strerror( err, msg, sizeof(msg) ) );
         lkt_close( c, why, false );
         return;
     }
@@ -1641,7 +1703,10 @@ static int  lkt_main( void * unused )
             if( c->phase == LKC_TCP || c->outlen > 0 )  pfd[np].events |= POLLOUT;
             pfd_conn[np++] = i;
         }
-        if( poll( pfd, np, 500 ) <= 0 )  continue;
+        // On Windows before 10 version 2004, WSAPoll does not report a refused
+        // non-blocking connect at all; the member then gives up through
+        // LK_HANDSHAKE_MS ("timed out before authenticating") instead.
+        if( lk_poll( pfd, np, 500 ) <= 0 )  continue;
 
         for( i = 0; i < np; i++ )
         {
@@ -1650,7 +1715,11 @@ static int  lkt_main( void * unused )
             if( pfd_conn[i] == -1 )
             {
                 char buf[64];
+#ifdef __WIN32__
+                while( recv( lk_wake_pipe[0], buf, sizeof(buf), 0 ) > 0 )  { }
+#else
                 while( read( lk_wake_pipe[0], buf, sizeof(buf) ) > 0 )  { }
+#endif
                 continue;
             }
             if( pfd_conn[i] == -2 )
@@ -1688,7 +1757,7 @@ static int  lkt_main( void * unused )
             lkt_flush( &lkt_conn[i] );
     for( int i = 0; i < LK_MAX_PEERS; i++ )
         lkt_close( &lkt_conn[i], NULL, false );
-    if( lkt_listen >= 0 )  { close( lkt_listen ); lkt_listen = -1; }
+    if( lkt_listen >= 0 )  { lk_closesocket( lkt_listen ); lkt_listen = -1; }
     lk_lock();
     lk_shared.done = 1;
     lk_unlock();
@@ -1732,8 +1801,44 @@ static SSL_CTX *  lk_make_ctx( boolean server )
 
 static char  lk_status_reason[96] = "";
 
+// Create lk_wake_pipe.  See its declaration for why Windows differs.
+static boolean  lk_wake_open( void )
+{
+#ifdef __WIN32__
+    struct sockaddr_in  sa;
+    socklen_t  salen = sizeof(sa);
+    int  rd = socket( AF_INET, SOCK_DGRAM, 0 );
+    int  wr = socket( AF_INET, SOCK_DGRAM, 0 );
+
+    memset( &sa, 0, sizeof(sa) );
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl( INADDR_LOOPBACK );
+    sa.sin_port = 0;   // any free port; getsockname says which
+    if( rd < 0 || wr < 0
+        || bind( rd, (struct sockaddr*) &sa, sizeof(sa) ) < 0
+        || getsockname( rd, (struct sockaddr*) &sa, &salen ) < 0
+        || connect( wr, (struct sockaddr*) &sa, sizeof(sa) ) < 0
+        || ! lkt_set_nonblocking( rd ) || ! lkt_set_nonblocking( wr ) )
+    {
+        if( rd >= 0 )  lk_closesocket( rd );
+        if( wr >= 0 )  lk_closesocket( wr );
+        return false;
+    }
+    lk_wake_pipe[0] = rd;
+    lk_wake_pipe[1] = wr;
+#else
+    if( pipe( lk_wake_pipe ) < 0 )  return false;
+    lkt_set_nonblocking( lk_wake_pipe[0] );
+    lkt_set_nonblocking( lk_wake_pipe[1] );
+#endif
+    return true;
+}
+
 static boolean  lk_start( void )
 {
+    int   sock_err = 0;
+    char  sock_msg[64];
+
     lk_status_reason[0] = 0;
     if( lk_thread )  return true;
     if( lk_set.role == LK_ROLE_OFF )  return false;
@@ -1757,8 +1862,11 @@ static boolean  lk_start( void )
         GenPrintf( EMSG_warn, "Cabinet Link: the passcode is shorter than %d characters\n",
                    LK_PASSCODE_MIN );
 
-    // A peer that vanishes mid-write must not kill the process.
+#ifndef __WIN32__
+    // A peer that vanishes mid-write must not kill the process.  (Winsock
+    // has no SIGPIPE: the send simply fails.)
     signal( SIGPIPE, SIG_IGN );
+#endif
 
     lkt_set = lk_set;
     memset( lkt_conn, 0, sizeof(lkt_conn) );
@@ -1787,8 +1895,18 @@ static boolean  lk_start( void )
         int one = 1;
         lkt_listen = socket( AF_INET, SOCK_STREAM, 0 );
         if( lkt_listen < 0 )
+        {
+            sock_err = lk_sock_errno();
             goto sockfail;
+        }
+#ifdef __WIN32__
+        // Not SO_REUSEADDR: on Windows that lets another program bind the same
+        // port while this one is listening on it.  Windows does not hold a
+        // listening port in TIME_WAIT, which is the only reason POSIX needs it.
+        setsockopt( lkt_listen, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (void*) &one, sizeof(one) );
+#else
         setsockopt( lkt_listen, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one) );
+#endif
         memset( &sa, 0, sizeof(sa) );
         sa.sin_family = AF_INET;
         sa.sin_port = htons( lk_set.port );
@@ -1796,18 +1914,20 @@ static boolean  lk_start( void )
         if( bind( lkt_listen, (struct sockaddr*) &sa, sizeof(sa) ) < 0
             || listen( lkt_listen, 8 ) < 0 || ! lkt_set_nonblocking( lkt_listen ) )
         {
-            close( lkt_listen );
+            sock_err = lk_sock_errno();   // before the close can overwrite it
+            lk_closesocket( lkt_listen );
             lkt_listen = -1;
             goto sockfail;
         }
         lkt_resolve_allow();
     }
 
-    if( lk_wake_pipe[0] < 0 )
+    if( lk_wake_pipe[0] < 0 && ! lk_wake_open() )
     {
-        if( pipe( lk_wake_pipe ) < 0 )  goto sockfail;
-        lkt_set_nonblocking( lk_wake_pipe[0] );
-        lkt_set_nonblocking( lk_wake_pipe[1] );
+        snprintf( lk_status_reason, sizeof(lk_status_reason), "could not create the wake channel" );
+        GenPrintf( EMSG_warn, "Cabinet Link: %s\n", lk_status_reason );
+        if( lkt_listen >= 0 )  { lk_closesocket( lkt_listen ); lkt_listen = -1; }
+        return false;
     }
 
     lk_lock();
@@ -1819,7 +1939,7 @@ static boolean  lk_start( void )
     lk_thread = SDL_CreateThread( lkt_main, "cabinet-link", NULL );
     if( ! lk_thread )
     {
-        if( lkt_listen >= 0 )  { close( lkt_listen ); lkt_listen = -1; }
+        if( lkt_listen >= 0 )  { lk_closesocket( lkt_listen ); lkt_listen = -1; }
         snprintf( lk_status_reason, sizeof(lk_status_reason), "could not start the link thread" );
         return false;
     }
@@ -1831,7 +1951,7 @@ static boolean  lk_start( void )
 
 sockfail:
     snprintf( lk_status_reason, sizeof(lk_status_reason), "cannot listen on port %d: %s",
-              lk_set.port, strerror( errno ) );
+              lk_set.port, lk_sock_strerror( sock_err, sock_msg, sizeof(sock_msg) ) );
     GenPrintf( EMSG_warn, "Cabinet Link: %s\n", lk_status_reason );
     return false;
 }
@@ -2680,6 +2800,22 @@ boolean  LK_Built( void )  { return true; }
 void  LK_Init( void )
 {
     if( lk_inited )  return;
+#ifdef __WIN32__
+    // Winsock must be started before any socket call -- gethostname() in
+    // lk_settings_defaults() included.  i_tcp.c starts it too, but only once
+    // a network game is set up, and asks for version 1.1, which predates
+    // getaddrinfo and WSAPoll.  WSAStartup counts its callers, so the two do
+    // not interfere; there is no WSACleanup, as the process is exiting (or
+    // being replaced by a restart) when the link stops for good.
+    {
+        WSADATA  wsa;
+        if( WSAStartup( MAKEWORD(2,2), &wsa ) != 0 )
+        {
+            GenPrintf( EMSG_warn, "Cabinet Link: Winsock did not start; disabled\n" );
+            return;
+        }
+    }
+#endif
     cat_filename( lk_dir, legacyhome, "link" );
     cat_filename( lk_cfgfile, lk_dir, "link.cfg" );
     cat_filename( lk_keyfile, lk_dir, "cabinet.key" );
