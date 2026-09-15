@@ -1838,6 +1838,40 @@ re-sends its joined and locked counts every second, and the host re-checks on ea
   locked in (`LKG_Log_Waiting`). `memberpress` checks the remote lines. The next time this
   happens, the host's log says what it was waiting for.
 
+**7. Linked games with the Windows cabinet time out: it keeps going silent** (2026-09-15; open).
+The laptop master's log shows the Windows member authenticating and then, 15 s later, "stopped
+responding". It repeats all session, on the attract screen as much as in a game, while the Pi on
+the same master never drops. A drop mid-game ends the linked game. Invites and the join screen
+still work, because they happen in the seconds after each reconnect.
+- **Not yet traced.** The master's "stopped responding" means *it* received nothing for 15 s with
+  the connection still open. Had the member closed it, the master would say "disconnected" or
+  "connection lost". Under Wine, the Windows build never went silent. The laptop's Dropbox LAN
+  sync with the same Windows machine is healthy (MSS 1460, near-zero retransmits), so a plain
+  network fault is less likely.
+- **Built to trace it** (the `link-silence-trace` branch):
+  - **`-logfile <file>`** (`CON_Logfile_Write`, `console.c`): everything that goes to the
+    terminal, appended with a wall-clock time per line and flushed per write. The Windows exe
+    has no console, so this is the only way to see its side. It survives a program restart
+    because the argument is kept.
+  - **`lkt_log_trouble`**: when a connection is dropped for silence, or a receive or send fails
+    on an online one, it logs:
+    - ms since last heard and last sent, with the TLS and socket error codes;
+    - bytes and messages each way, and the last message type each way;
+    - bytes still waiting to send, send stalls (`WANT_WRITE`), bytes unread in this end's socket
+      (`FIONREAD`) and in TLS;
+    - on Linux, `TCP_INFO`: unacked, retransmits, rtt, and the kernel's own last data in/out.
+  - Reading it: bytes unread in the socket means this end stopped reading; retransmits climbing
+    means packets are lost; neither, with the kernel quiet too, means the other program stopped
+    sending.
+  - `linktest.sh silentmember` freezes a member with `SIGSTOP` (the engine, not its `timeout`
+    wrapper, which the first version froze by mistake) and checks all four lines on the master,
+    and the member's timestamped `-logfile`. On it the master reads "heard 15072 ms ago, sent
+    5025 ms ago", "0 bytes unread in socket", "tcp unacked 0, retransmitting 0". That is the
+    signature of the other program going quiet with its kernel still acknowledging.
+- Note that OpenSSL 3 reports a peer that vanished without a TLS close as `SSL_ERROR_SSL`
+  ("ssl err 1"), not `SSL_ERROR_SYSCALL`, so a killed cabinet reads as "receive failed ... ssl
+  err 1".
+
 ### Phase 4 — past two cabinets
 
 The scaling work below, done with N headless instances. Only as far as it proves worthwhile.

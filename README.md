@@ -1343,6 +1343,11 @@ know there:
 - Switching games restarts the program as a new process. Start the cabinet from a shortcut or the
   Startup folder, not from a script that relaunches it whenever it exits, or you will get two
   copies.
+- The Windows program has no console window, so nothing it prints is visible. To see its side of
+  a link problem, start it with **`-logfile cabinet.log`** (add it to the shortcut's target). Every
+  message goes into that file, with the time on each line, and it keeps writing after a game
+  switch restarts the program. The option works on Linux too, and a log from each cabinet can be
+  lined up by time.
 
 One cabinet is the **master**; the others are **members** and connect to it. Set them up in an
 operator session (*Devmode Restart*, or `./doomlegacyarcade -devmode`) from **Options → Arcade

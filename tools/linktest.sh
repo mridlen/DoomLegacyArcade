@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1302,6 +1302,38 @@ case_joinview() {
       the joining cabinet drew more than one view: $last"
     echo "$last" | grep -aEq " viewport=([0-9]+)x([0-9]+) screen=\1x\2 " || FAILS="$FAILS
       the joining cabinet's view is not the whole screen: $last"
+}
+
+# A member that goes silent with its connection still open -- frozen here with
+# SIGSTOP, which is what a Windows member looked like from its master.  The
+# master drops it as "stopped responding" and says what the connection was
+# doing: how long since each way, the bytes and messages, what was left unsent
+# or unread, and on Linux the kernel's retransmit counters.  The member also
+# writes -logfile, which must carry its link log with a time on each line.
+case_silentmember() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name FROZENCAB" "master 127.0.0.1" "port $p" "$PASS"
+    run "$d/master" 45 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$d/member" 42 0 -linktest -clientport $((p+101)) -logfile "$d/member/cab.log"
+    sleep 12
+    local pid
+    # The engine itself, not the timeout wrapper that runs it.
+    pid=$(pgrep -f -- "^\./doomlegacyarcade .*-clientport $((p+101)) -logfile" | head -1)
+    [ -n "$pid" ] && kill -STOP "$pid"
+    sleep 22
+    [ -n "$pid" ] && kill -CONT "$pid"
+    wait
+    [ -n "$pid" ] || FAILS="$FAILS
+      could not find the member's process to freeze"
+    expect "the master dropped the frozen member" "$d/master" "^LINKLOG .*FROZENCAB at 127\.0\.0\.1: stopped responding"
+    expect "the master said how long it was silent" "$d/master" "^LINKLOG Cabinet Link: FROZENCAB: silent -- heard [0-9]+ ms ago, sent [0-9]+ ms ago"
+    expect "the master said what had passed" "$d/master" "^LINKLOG Cabinet Link: FROZENCAB: in [0-9]+ bytes/[0-9]+ msgs \(last [A-Z]+\), out [0-9]+ bytes"
+    expect "the master said what was left unsent or unread" "$d/master" "^LINKLOG Cabinet Link: FROZENCAB: [0-9]+ bytes waiting to send, [0-9]+ send stalls, [0-9]+ bytes unread in socket"
+    expect "the master gave the kernel's view" "$d/master" "^LINKLOG Cabinet Link: FROZENCAB: tcp unacked [0-9]+, retransmitting"
+    expect_file "the member's -logfile has its link log, timestamped" "$d/member/cab.log" "^[0-2][0-9]:[0-5][0-9]:[0-5][0-9] LINKLOG Cabinet Link: 127\.0\.0\.1 authenticated"
 }
 
 # Everyone locks in, the host first: the game starts then, not when the
