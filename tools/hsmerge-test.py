@@ -52,7 +52,7 @@ def rules_check(linkscore_src=None):
     pinned = set(re.findall(r'&(cv_\w+)', tbl[:tbl.index('\n};')]))
     ls = linkscore_src if linkscore_src is not None else open(os.path.join(SRCDIR, 'd_linkscore.c')).read()
     fn = ls[ls.index('static void  lks_rules_hash'):]
-    hashed = set(re.findall(r'(cv_\w+)\.EV', fn[:fn.index('\n}')]))
+    hashed = set(re.findall(r'(cv_\w+)\.(?:EV|value)', fn[:fn.index('\n}')]))
     return ['%s is in the demo header but neither pinned by the ranked ruleset nor in lks_rules_hash' % cv
             for cv in sorted(header - pinned - hashed)]
 
@@ -420,7 +420,7 @@ def main():
     if '--selfcheck' in sys.argv:
         bad = 0
         ls = open(os.path.join(SRCDIR, 'd_linkscore.c')).read()
-        broken = ls.replace('    v[0] = cv_rocket_trails.EV;\n', '')
+        broken = ls.replace('    v[0] = (byte) cv_rocket_trails.value;\n', '')
         red = broken != ls and rules_check(broken) != []
         print('  %s  rocket trails left out of the rules hash' % ('red ' if red else 'GREEN'))
         if not red:

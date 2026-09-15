@@ -1773,9 +1773,42 @@ the host waits out `jointime` and plays alone, which from the host looks like a 
   box), and the host starts with one player.
 - Copy Missing Wads does not help: it copies an IWAD a member *lacks*, never one it has in
   another version.
-- **Not done:** neither the score status nor the join refusal says which wad differs, or shows
-  the two versions. An operator has to compare MD5s by hand (`certutil -hashfile DOOM.WAD MD5` on
-  Windows).
+- **In the event it was not the IWAD.** Mark copied the laptop's `DOOM.WAD` and `DOOM2.WAD` beside
+  the Windows exe, confirmed the MD5s, and the page still said DIFFERENT WADS. It was
+  `legacy.wad`: the laptop was running an old copy.
+
+**3. Which wad differs is now on the page** (2026-09-15, the `link-wad-diff` branch). Each score
+manifest carries a `wad <md5> <name>` line for every fingerprinted wad (`lks_my_wads`, from
+`D_Net_Wad_Md5s`, which now also hands back the paths). A cabinet from before these lines skips
+them, and one that sends none still gets plain DIFFERENT WADS.
+- `lks_explain_wads` matches by content first, as the netgame's IWAD check does, then by name. It
+  gives `SCORES: DIFFERENT DOOM2.WAD` (same name, other bytes), `SCORES: legacy.wad ONLY HERE`,
+  `SCORES: ONLY THERE: pack.wad` or `SCORES: WADS IN ANOTHER ORDER`.
+- Both lists are printed once per change as `LINKLOG Scores: <cabinet>: <md5> <name>` lines, not
+  with every manifest.
+- `linktest.sh scorewads` covers a member on Doom 2 v1.666: both sides name DOOM2.WAD, both MD5s
+  are printed, and the difference is printed once. `scorewadextra` covers a member with an extra
+  one-lump PWAD, and checks the message on each side.
+- Still not done: the netgame's own refusal on the joining cabinet names only the IWAD.
+
+**4. SCORES: DIFFERENT SETTINGS between two identical cabinets.** Once `legacy.wad` matched, the
+page said this instead, and the two configs were identical. `lks_rules_hash` read the *effective*
+values (`.EV`) of rocket trails, view height and the invulnerability sky. An attract demo sets
+those from its own header while it plays, and `playdemo_restore_settings` puts them back only when
+it ends. A stock Ultimate Doom demo runs the sky as Vanilla (instrumented: `sky=1/0`, value/EV, mid
+demo). The manifest is cached for minutes, and the other cabinet's is judged whenever it arrives,
+so a cabinet part way through a demo reported a different ruleset. The hash now reads `.value`,
+the configured setting. Outside a demo that equals `.EV`, so a cabinet on the older build still
+agrees. `tools/hsmerge-test.py` accepts either form.
+- **Unseen until now because the link tests run Doom 2**, whose own demos are v1.06 and refused, so
+  no case ever had an attract demo playing. `linktest.sh scoreattract` runs two identical
+  Ultimate Doom cabinets out of step: the member starts 20 s after the master, whose first demo
+  begins about 16 s in. It failed before the fix and passes after. Run in step, both play the same
+  demo at once, the two wrong hashes agree, and it passed against the bug, which is why the
+  stagger is there.
+- Writing that case showed a second bug. The score sync copied a cabinet's name once, when the
+  cabinet was first listed, which can be before its name has arrived. It then stayed blank for
+  good (`LINKSCORE peer=`). `LKS_Ticker` now refreshes the name from the link's list every tick.
 
 ### Phase 4 — past two cabinets
 

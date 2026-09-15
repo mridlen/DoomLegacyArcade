@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -782,6 +782,106 @@ case_scorerules() {
     expect_not "nothing merged on the member" "$b" "^LINKLOG Scores: merged"
     grep -q "MAP02" "$m/legacyhome/highscores.dat" && FAILS="$FAILS
       the member's record reached the master anyway"
+}
+
+# The member runs another release of the same IWAD: nothing is shared, and the
+# status names the wad rather than saying only "different wads" -- which sent a
+# person to check DOOM.WAD by hand, find it identical, and still see the
+# message.  Both wad lists are printed with their md5s.
+case_scorewads() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    local old="$HOME/games/doom-backup/DOOM2.WAD.v1.666"
+    [ -f "$old" ] || { FAILS="$FAILS
+      no $old to test with"; return; }
+    mkcab "$m"; mkcab "$b"
+    mkdir -p "$b/oldiwad"
+    ln -s "$old" "$b/oldiwad/DOOM2.WAD"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP02 MAP02 2 speed 700 BBB"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+
+    run "$m" 30 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 27 0 -linktest -clientport $((p+101)) -iwad "$b/oldiwad/DOOM2.WAD"
+    wait
+
+    expect "the member really loaded the old version" "$b" "Added file .*/oldiwad/DOOM2\.WAD"
+    expect "the master names the wad that differs" "$m" "^LINKSCORE peer=JOINCAB .*status=SCORES: DIFFERENT DOOM2\.WAD"
+    expect "the member names it too" "$b" "^LINKSCORE peer=HOSTCAB .*status=SCORES: DIFFERENT DOOM2\.WAD"
+    expect "the master prints its own v1.9 md5" "$m" "^LINKLOG Scores: this cabinet: 25e1459ca71d321525f84628f45ca8cd DOOM2\.WAD"
+    expect "the master prints the member's v1.666 md5" "$m" "^LINKLOG Scores: JOINCAB: 30e3c2d0350b67bfbf47271970b74b2f DOOM2\.WAD"
+    expect_not "nothing merged on the master" "$m" "^LINKLOG Scores: merged"
+    # Printed once per change, not with every manifest.
+    local nlog
+    nlog=$(out "$m" | grep -ac "^LINKLOG Scores: JOINCAB: SCORES: DIFFERENT")
+    [ "$nlog" = 1 ] || FAILS="$FAILS
+      the master printed the wad difference $nlog times (expected once)"
+}
+
+# Two cabinets with identical settings, both on the attract screen playing the
+# stock demos.  A demo sets rocket trails, view height and the invulnerability
+# sky from its header while it plays, so a rules hash taken from the effective
+# values mid-demo said "SCORES: DIFFERENT SETTINGS" between two identical
+# cabinets.  Ultimate Doom, because DOOM2.WAD's own demos are v1.06, which the
+# engine refuses: every other case here runs with no attract demo at all, which
+# is how this went unseen.
+case_scoreattract() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    [ -f "$WADDIR/DOOM.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/DOOM.WAD to test with"; return; }
+    mkcab "$m"; mkcab "$b"
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+
+    # Out of step, as two real cabinets are: the member comes online while the
+    # master is part way through a demo (its first starts about 16 s in).  Run
+    # in step, both play the same demo at once, the two wrong hashes agree, and
+    # the case passes against the bug.
+    GAME=doomu NODRAW= run "$m" 60 0 -linktest -udpport $((p+100))
+    sleep 20
+    GAME=doomu NODRAW= run "$b" 38 0 -linktest -clientport $((p+101))
+    wait
+
+    expect "the master played an attract demo" "$m" "^Level: E[1-4]M[1-9] .* demo "
+    expect "the member played an attract demo" "$b" "^Level: E[1-4]M[1-9] .* demo "
+    expect "the master shares scores with the member" "$m" "^LINKSCORE peer=JOINCAB .*status=SCORES SHARED"
+    expect_not "the master never calls identical settings different" "$m" "^LINKSCORE peer=JOINCAB .*status=SCORES: DIFFERENT SETTINGS"
+    expect_not "the member never calls identical settings different" "$b" "^LINKSCORE peer=HOSTCAB .*status=SCORES: DIFFERENT SETTINGS"
+}
+
+# The member loads a wad the master does not: each side says which, and where.
+case_scorewadextra() {
+    local d=$1 p=$2 m="$1/master" b="$1/member"
+    mkcab "$m"; mkcab "$b"
+    # A one-lump PWAD that is not audio, so it counts.
+    python3 - "$b/extra.wad" <<'PYEOF'
+import struct, sys
+data = b"linktest extra wad\n"
+off = 12 + len(data)
+with open(sys.argv[1], "wb") as f:
+    f.write(struct.pack("<4sii", b"PWAD", 1, off))
+    f.write(data)
+    f.write(struct.pack("<ii8s", 12, len(data), b"LTEXTRA"))
+PYEOF
+    cfg "$m" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$b" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    scorefiles "$m" "doom2-sl MAP01 2 500 speed MAP01" "doom2-sl MAP01 MAP01 2 speed 500 AAA"
+    demo "$m" d1 doom2-sl_MAP01_sk2_speed
+    scorefiles "$b" "doom2-sl MAP02 2 700 speed MAP02" "doom2-sl MAP02 MAP02 2 speed 700 BBB"
+    demo "$b" d2 doom2-sl_MAP02_sk2_speed
+
+    run "$m" 30 0 -linktest -udpport $((p+100))
+    sleep 2
+    run "$b" 27 0 -linktest -clientport $((p+101)) -file "$b/extra.wad"
+    wait
+
+    expect "the member loaded the extra wad" "$b" "Added file .*extra\.wad"
+    expect "the master says the member has a wad it lacks" "$m" "^LINKSCORE peer=JOINCAB .*status=SCORES: ONLY THERE: extra\.wad"
+    expect "the member says it has a wad the master lacks" "$b" "^LINKSCORE peer=HOSTCAB .*status=SCORES: extra\.wad ONLY HERE"
+    expect_not "nothing merged on the master" "$m" "^LINKLOG Scores: merged"
 }
 
 # The member is in a game when the master's scores arrive: nothing is applied
