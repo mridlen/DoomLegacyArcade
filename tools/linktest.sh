@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1304,6 +1304,60 @@ case_joinview() {
       the joining cabinet's view is not the whole screen: $last"
 }
 
+# Everyone locks in, the host first: the game starts then, not when the
+# countdown runs out.  linkgame covers the other order (the joiner is locked in
+# before the host), which starts at once; this is the order where the host is
+# already waiting and the joiner's lock-in has to arrive over the link.
+case_lockinlate() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 30; gamecfg "$d/member" 30
+    if [ -n "${LOCKIN_THIRD:-}" ]; then
+        # A third cabinet, on the same game, that nobody walks up to.
+        mkcab "$d/third"
+        cfg "$d/third" "role member" "name IDLECAB" "master 127.0.0.1" "port $p" "$PASS"
+        gamecfg "$d/third" 30
+    fi
+    if [ -n "${LOCKIN_THIRD:-}" ]; then
+        # Both members first, so both are online and idle when the host
+        # invites: it invites as soon as it sees one, and a cabinet that comes
+        # online after that is not invited, which would test nothing.
+        run "$d/third" 62 0 -linktest -clientport $((p+102))
+        run "$d/member" 62 0 -linktest -linkautopress -linklockafter 5 -clientport $((p+101))
+        sleep 4
+        run "$d/master" 58 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+    else
+        run "$d/master" 60 0 -linktest -linkautohost deathmatch -udpport $((p+100))
+        sleep 2
+        # Presses in at once (the host locks in when it sees that), locks in 5 s later.
+        run "$d/member" 56 0 -linktest -linkautopress -linklockafter 5 -clientport $((p+101))
+    fi
+    wait
+    if [ -n "${LOCKIN_THIRD:-}" ]; then
+        expect "the idle cabinet was invited" "$d/third" "^LINKLOG .*HOSTCAB invited this cabinet to DEATHMATCH"
+        expect "the joiner was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to DEATHMATCH"
+    fi
+    expect "the joiner locked in late" "$d/member" "^LINKLOG .*test: locking in"
+    expect "the host started a linked game" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    # Status lines are 2 s apart.  Invite to start takes about 5 s plus the
+    # lock-in's trip; a countdown run out is 30 s, fifteen lines.
+    local n
+    n=$(out "$d/master" | awk '/invited other cabinets/ {f=1; n=0; next}
+                               f && /starting a linked game/ {print n; exit}
+                               f && /^LINKGAME / {n++}')
+    [ -n "$n" ] && [ "$n" -le 6 ] || FAILS="$FAILS
+      the host started ${n:-?} status lines (~$(( ${n:-0} * 2 )) s) after inviting: it waited out the 30 s countdown"
+}
+
+# The same with a third cabinet online that nobody plays: it is invited too,
+# and must not hold the game until the countdown ends.
+case_lockinthird() {
+    LOCKIN_THIRD=1 case_lockinlate "$@"
+}
+
 # memberhost the way a person plays it: on a four panel cabinet, fire joins and
 # the player is still picking a colour when the host's countdown runs out.
 case_memberpress() {
@@ -1320,6 +1374,9 @@ case_memberpress() {
     expect "the master tried to join it" "$d/master" "^LINKLOG .*joining LAPCAB at 127\.0\.0\.1 port $((p+100))"
     expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
     expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    # The host says why it waited out the countdown, and on whom.
+    expect "the host logged the joiner in but not locked in" "$d/member" "^LINKLOG .*join screen: PICAB has 1 in, not all locked in"
+    expect "the host logged whom the countdown waited on" "$d/member" "^LINKLOG .*join screen: the countdown ran out waiting on PICAB \(1 in, not all locked in\)"
 }
 
 # The arrangement Mark's cabinets use and linkgame does not: a *member* starts

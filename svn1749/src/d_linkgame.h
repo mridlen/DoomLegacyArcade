@@ -35,6 +35,7 @@ boolean      LKG_Would_Invite( byte category );
 void         LKG_Host_Begin( byte category, const char * map, byte skill, int secs );
 // Every panel that pressed in on another cabinet has locked in (or none did).
 boolean      LKG_Remotes_All_Locked( void );
+void         LKG_Log_Waiting( void );   // [Arcade] the countdown ran out: who never locked in
 // The join screen is starting the game: send START to the cabinets with
 // players in and begin the sealed game channel.  Returns their player count.
 int          LKG_Host_Start( void );
