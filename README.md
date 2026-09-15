@@ -654,7 +654,7 @@ it as it stands). If MSYS2 is not installed the script tells you how to get it; 
 empty — which is how it arrives — it lists the packages to install and can install them for you.
 Confirmed on Windows 11: the script builds `doomlegacyarcade.exe` end to end and stages the runtime
 DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a longer list
-than anyone guesses (fourteen with Cabinet Link's OpenSSL). **The resulting binary has not been played**, only started, so
+than anyone guesses (sixteen, with Cabinet Link's OpenSSL). **The resulting binary has not been played**, only started, so
 treat the first real session as the shakedown.
 
 There is no unit test suite. The two checks that exist are `make smoke`, which starts the built

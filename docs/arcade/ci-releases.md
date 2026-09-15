@@ -145,7 +145,7 @@ runnable directory. The package is that, plus the wads beside the binary:
 
 ```
 doomlegacy-arcade-<version>-linux-x86_64/
-    doomlegacyarcade               (or doomlegacyarcade.exe + 14 DLLs on Windows)
+    doomlegacyarcade               (or doomlegacyarcade.exe + 16 DLLs on Windows)
     legacyhome/config.cfg
     legacy.wad  dogs.wad
     LICENSE  README.md  README_install.txt

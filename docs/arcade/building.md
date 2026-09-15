@@ -351,8 +351,10 @@ has no `HAVE_LINK=` line. Two details differ from the other probes:
   it. The general rule is that an optional miss never stops a build. It still holds without
   `-InstallDeps`: the build goes ahead with the link compiled out.
 
-With the link in, the DLL walk stages `libssl-3-x64.dll` and `libcrypto-3-x64.dll` too: fourteen DLLs,
-not twelve. The CI checks both are there. The engine side of the port is in `cabinet-link.md`
+With the link in, the DLL walk stages `libssl-3-x64.dll` and `libcrypto-3-x64.dll` too: sixteen DLLs
+on the first CI run. That is fourteen without them: the "twelve" elsewhere in this file predates the
+vendored node builder, whose C++ runtime added `libstdc++-6.dll` and `libgcc_s_seh-1.dll`, which is
+the reason the list is derived and never hardcoded. The CI checks both are there. The engine side of the port is in `cabinet-link.md`
 (*Windows port*).
 
 ## Verified

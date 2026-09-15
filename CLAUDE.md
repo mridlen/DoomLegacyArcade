@@ -30,7 +30,7 @@ expected lumps differ before committing.
 dependencies by test-compiling, writes `make_options`, orders `make depend` before the parallel
 build). Use it unless there is a reason not to; `docs/arcade/building.md` explains its design and
 what it protects against. `tools/build.ps1` + `build.bat` are the Windows equivalents (MSYS2 ucrt64); they now build
-`doomlegacyarcade.exe` end to end, with Cabinet Link when OpenSSL is installed, and stage its 14 runtime DLLs into `svn1749\bin` (derived by walking the
+`doomlegacyarcade.exe` end to end, with Cabinet Link when OpenSSL is installed, and stage its 16 runtime DLLs into `svn1749\bin` (derived by walking the
 import tables — SDL2_mixer's codec DLLs make the list longer than anyone guesses, and it is not
 stable enough to hardcode). The binary loads but has not been played.
 

@@ -1647,7 +1647,7 @@ has to compile both ways. The Makefile already had the Windows libraries (`-lssl
   with OpenSSL gone is warned about. Its closing message gives the firewall rule (below).
 - **CI** fails the Windows job if `make_options` lacks `HAVE_LINK=1` or `libssl-*.dll`/`libcrypto-*.dll`
   were not staged. The link is optional to the script, so a release without it would otherwise build
-  green. The DLL walk finds the two OpenSSL DLLs by itself: fourteen DLLs now, not twelve.
+  green. The DLL walk finds the two OpenSSL DLLs by itself: the first CI run staged sixteen.
 - **`d_link.c`, the socket layer.** The rest of the file was already portable, and `d_linkgame.c`,
   `d_linkscore.c` and `d_linksel.c` already built on Windows (they do not test `HAVE_LINK`). The
   game's UDP channel goes through `i_tcp.c`, which always had Winsock.
