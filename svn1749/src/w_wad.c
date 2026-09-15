@@ -356,7 +356,7 @@ static void  W_Md5_Cache_Save( void )
     M_Atomic_Write_Close( f, fn );
 }
 
-static void  W_Md5_File( const char * path, byte * md5 )
+void  W_Md5_File( const char * path, byte * md5 )
 {
     struct stat  st;
     FILE * fhandle;

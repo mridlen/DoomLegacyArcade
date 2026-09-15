@@ -664,6 +664,10 @@ consvar_t cv_chasecamdemo = {"chasecamdemo", "1", CV_SAVE, CV_OnOff };
 // it (Arcade Options -> Cabinet Link Options).  Off by default: turning it on
 // changes what the other cabinets do, which is the operator's call.
 consvar_t cv_link_gamesync = {"link_gamesync", "0", CV_SAVE, CV_OnOff };
+// [Arcade] Copy Missing Wads: a member that cannot follow a pick because it
+// lacks the IWAD or level pack gets it from the master (d_linksel.c).  The
+// master's setting; Off by default -- it writes files on another machine.
+consvar_t cv_link_copywads = {"link_copywads", "0", CV_SAVE, CV_OnOff };
 
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has
 // no Quit button -- quitting drops the player out to a desktop they should
@@ -5560,7 +5564,7 @@ static char  m_link_pack_path[MAX_WADPATH];   // the pack M_Link_Game_Why_Not fo
 
 const char * M_Link_Game_Why_Not( const char * game_id )
 {
-    static char  why[48];
+    static char  why[64];
     char  pack[LK_GAME_LEN];
     boolean  cut;
     int  gs, i;
@@ -5623,6 +5627,78 @@ const char * M_Link_Follow_Game( const char * game_id, boolean link_selected )
     else
         M_Restart_Program_Ex( gameselect_arg[gs], false, pack[0] ? pack_path : NULL, devmode, link_selected );
     return "COULD NOT RESTART";   // not reached
+}
+
+int  M_Link_Missing( const char * game_id )
+{
+    char  pack[LK_GAME_LEN], path[MAX_WADPATH];
+    boolean cut;
+    int  gs = M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut );
+    if( gs < 0 )  return 0;
+    if( ! D_Game_Available( gameselect_arg[gs] ) )  return 1;
+    if( pack[0] && ! M_LevelPack_Find( pack, cut,
+                     strcasecmp( gameselect_arg[gs], "doomu" ) ? LPM_mapxx : LPM_exmy, path ) )
+        return 2;
+    return 0;
+}
+
+boolean  M_Link_Wad_Path( const char * game_id, int what, char * path )
+{
+    char  pack[LK_GAME_LEN];
+    boolean cut;
+    int  gs = M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut );
+    if( gs < 0 )  return false;
+    if( what == 1 )
+        return D_Game_Path( gameselect_arg[gs], path );
+    if( what == 2 && pack[0] )
+        return M_LevelPack_Find( pack, cut,
+                    strcasecmp( gameselect_arg[gs], "doomu" ) ? LPM_mapxx : LPM_exmy, path );
+    return false;
+}
+
+// The name comes from the master.  Only a name that part of the game may have
+// is taken -- an IWAD file name from the game table, a pack's own name with
+// .wad -- and only into the two directories the engine reads them from.
+boolean  M_Link_Wad_Dest( const char * game_id, int what, const char * offered, char * dest )
+{
+    char  pack[LK_GAME_LEN], dir[MAX_WADPATH];
+    const char * name, * c;
+    boolean cut;
+    int  gs = M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut );
+
+    if( gs < 0 || ! offered || ! offered[0] )  return false;
+    for( c = offered; *c; c++ )
+        if( ! ( isalnum( (unsigned char) *c ) || *c == '.' || *c == '-' || *c == '_' || *c == '+' ) )
+            return false;
+    if( offered[0] == '.' )  return false;
+
+    if( what == 1 )
+    {
+        const char * wads = D_Progdir_Wads();
+        name = D_Game_Iwad_Name( gameselect_arg[gs], offered );
+        if( ! wads || ! name )  return false;
+        dl_strncpy( dir, wads, sizeof(dir) );
+    }
+    else if( what == 2 && pack[0] )
+    {
+        char  stem[LK_GAME_LEN];
+        const char * ext = strrchr( offered, '.' );
+        int  len;
+        if( ! ext || strcasecmp( ext, ".wad" ) )  return false;
+        len = ext - offered;
+        if( len <= 0 || len >= (int) sizeof(stem) )  return false;
+        memcpy( stem, offered, len );
+        stem[len] = 0;
+        if( ! M_Link_Pack_Match( stem, pack, cut ) )  return false;
+        name = offered;
+        cat_filename( dir, legacyhome, LEVELPACK_DIR );
+    }
+    else
+        return false;
+
+    I_mkdir( dir, 0755 );
+    cat_filename( dest, dir, name );
+    return access( dest, F_OK ) != 0;   // never over a file that is there
 }
 
 void  M_Link_Test_Select( const char * name )
@@ -7797,6 +7873,7 @@ boolean  M_Link_Page_Key( const event_t * ev )
 menuitem_t LinkOptionsMenu[] =
 {
     {IT_STRING | IT_CVAR, 0, "Select Game Sync", &cv_link_gamesync, 0},
+    {IT_STRING | IT_CVAR, 0, "Copy Missing Wads", &cv_link_copywads, 0},
 };
 
 // Draw text word-wrapped to width, measured with the menu font rather than
@@ -7831,14 +7908,15 @@ static void  M_Draw_LinkOptions( void )
 {
     int  y;
     M_DrawGenericMenu();
-    y = LinkOptionsDef.y + 30;
+    y = LinkOptionsDef.y + 40;
     if( LK_Role() != LK_ROLE_MASTER )
         y = M_Link_Wrap( 24, y, 272, 0, "THIS CABINET IS NOT THE MASTER: ONLY THE MASTER'S SETTINGS COUNT." ) + 6;
-    M_Link_Wrap( 24, y, 272, V_WHITEMAP,
+    y = M_Link_Wrap( 24, y, 272, V_WHITEMAP,
                  "SELECT GAME SYNC: A GAME CHOSEN ON SELECT GAME ON ANY LINKED CABINET IS "
-                 "CHOSEN ON THE OTHERS TOO. A CABINET IN A GAME SWITCHES WHEN IT IS OVER. "
-                 "ONE WITHOUT THAT GAME INSTALLED STAYS WHERE IT IS, AND THE CABINET LINK "
-                 "PAGE SAYS SO UNDER IT." );
+                 "CHOSEN ON THE OTHERS TOO. A CABINET IN A GAME SWITCHES WHEN IT IS OVER." ) + 6;
+    M_Link_Wrap( 24, y, 272, V_WHITEMAP,
+                 "COPY MISSING WADS: ONE WITHOUT THAT GAME GETS IT FROM THE MASTER - AN IWAD "
+                 "INTO WADS BESIDE THE PROGRAM, A LEVEL PACK INTO LEVELS - THEN SWITCHES." );
 }
 
 menu_t  LinkOptionsDef =
@@ -13027,6 +13105,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_gameoptionsmenu,  // [Arcade]
   &cv_chasecamdemo,     // [Arcade]
   &cv_link_gamesync,    // [Arcade] Select Game Sync
+  &cv_link_copywads,    // [Arcade] Copy Missing Wads
   &cv_initialstimeout,  // [Arcade]
 
     // p_mobj.c

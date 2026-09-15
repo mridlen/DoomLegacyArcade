@@ -28,7 +28,12 @@
 #include "i_system.h"
 #include "command.h"
 #include "m_misc.h"
-#include "w_wad.h"     // numwadfiles, for the status line
+#include "w_wad.h"     // numwadfiles, for the status line; W_Md5_File
+#include "md5.h"
+
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -62,6 +67,54 @@ static uint32_t  lksel_serial;
 static uint32_t  lksel_self_done;             // master: the selection this cabinet dealt with
 static char      lksel_self_note[LKSEL_NOTE_LEN];
 static lksel_peer_t  lksel_peers[LK_MAX_PEERS];
+
+// Copy Missing Wads: its state is here, its code further down.
+enum { LKC_WANT = LKSEL_SYNC_FIRST, LKC_OFFER, LKC_NONE, LKC_GET, LKC_DATA };
+
+#define LKC_NAME_LEN     64
+#define LKC_DATA_HDR     (1 + 16 + 4)
+#define LKC_CHUNK        (LK_SYNC_DATA_MAX - LKC_DATA_HDR)
+#define LKC_WINDOW       12
+#define LKC_MAX_SIZE     (192u*1024*1024)   // the largest IWAD is 18 MB
+#define LKC_STALL_TICS   (3*TICRATE)
+#define LKC_WANT_TICS    (30*TICRATE)   // no offer this long: give up
+#define LKC_ASK_TICS     (3*TICRATE)    // ask again this often until then
+#define LKC_AWAY_TICS    (60*TICRATE)   // a master gone this long mid-copy: give up
+#define LKC_OFFERS       4
+
+extern consvar_t  cv_link_copywads;   // m_menu.c
+
+// master: files it has offered, served by md5
+typedef struct
+{
+    boolean   used;
+    byte      md5[16];
+    uint32_t  size;
+    char      path[MAX_WADPATH];
+    char      name[LKC_NAME_LEN];
+} lkc_offer_t;
+static lkc_offer_t  lkc_offers[LKC_OFFERS];
+static int          lkc_next_offer;
+static int          lkc_test_corrupt = -1;   // -linktest -linkcorruptwad (int: boolean is an enum, and may be unsigned)
+
+// member: the one copy in progress
+enum { LKCM_NONE, LKCM_WANTED, LKCM_COPYING };
+static int          lkc_phase = LKCM_NONE;
+static char         lkc_game[LK_GAME_LEN];
+static byte         lkc_what;
+static byte         lkc_md5[16];
+static uint32_t     lkc_size, lkc_got, lkc_win_end;
+static char         lkc_name[LKC_NAME_LEN];
+static char         lkc_dest[MAX_WADPATH], lkc_part[MAX_WADPATH + 8];
+static FILE *       lkc_file;
+static struct md5_ctx  lkc_ctx;
+static tic_t        lkc_last, lkc_started;
+static boolean      lkc_paused;
+static boolean      lkc_master_back = true;   // false: reconnected mid-copy, offer not seen again yet
+static char         lkc_pending[LK_GAME_LEN];   // the pick to follow once copied
+
+static void  lkc_want( const char * game );
+static void  lkc_member_tick( void );
 
 // member: the last selection it could not follow, re-sent whenever its master
 // comes back online -- a master restarted into an operator session has
@@ -224,6 +277,9 @@ void  LKSEL_Status_Print( void )
     GenPrintf( EMSG_errlog, "LINKSEL sync=%d game=%s wads=%d target=%s announce=%d note=%s\n",
                cv_link_gamesync.EV, LK_Game_Id(), numwadfiles, lksel_target[0] ? lksel_target : "-",
                lksel_announce, lksel_self_note[0] ? lksel_self_note : "-" );
+    if( lkc_phase != LKCM_NONE )
+        GenPrintf( EMSG_errlog, "LINKCOPY phase=%d name=%s got=%u size=%u paused=%d\n",
+                   lkc_phase, lkc_name[0] ? lkc_name : "-", (unsigned) lkc_got, (unsigned) lkc_size, lkc_paused );
     {
         int i;
         for( i = 0; i < LK_MAX_PEERS; i++ )
@@ -283,6 +339,8 @@ static void  lksel_on_switch( const lk_event_t * ev )
 
     // A choice made here, not yet told to the master, is the newer one.
     if( lksel_announce )  return;
+    if( lkc_pending[0] && strcasecmp( lkc_pending, game ) )
+        lkc_pending[0] = 0;   // a newer pick replaces one waiting on a copy
     if( ! strcasecmp( game, LK_Game_Id() ) )  return;
     // Busy: the master asks again once this cabinet is free.
     if( ! lksel_can_switch_now( LK_State() ) )  return;
@@ -311,6 +369,8 @@ static void  lksel_on_switch( const lk_event_t * ev )
     memcpy( lksel_cannot + 4 + LK_GAME_LEN, reason, LKSEL_REASON_LEN );
     lksel_have_cannot = true;
     LK_Send( master.fp, LK_GM_GAME_CANNOT, lksel_cannot, LKSEL_CANNOT_LEN );
+    // Copy Missing Wads: the master says whether it will.
+    lkc_want( game );
 }
 
 static void  lksel_on_cannot( const lk_event_t * ev )
@@ -350,6 +410,392 @@ void  LKSEL_On_Event( const lk_event_t * ev )
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+//  Copy Missing Wads
+// ---------------------------------------------------------------------------
+//
+// A member that cannot follow a pick because it lacks the IWAD or the level
+// pack asks its master for that one file.  The master finds its own copy by the
+// same rules the Select Game page uses -- never by a path it is sent -- and
+// offers its name, size and md5 (remembered by W_Md5_File, so offering a wad
+// the master has loaded costs it nothing).  The member pulls it a window of
+// chunks at a time over the sync channel, as score demos travel, into
+// "<file>.part"; checks size and md5; and renames it into place: an IWAD into
+// wads/ beside the program (searched early), a pack into legacyhome/levels/.
+// It never writes over a file that is there.  Then it follows the pick, if it
+// is still the latest one.  A member in a game pauses the copy -- a copy must
+// never cost a player a frame.
+//
+// Sync payloads (little-endian), member <-> master only:
+//   WANT   u8 32, u8 what (1 IWAD, 2 pack), game[LK_GAME_LEN]
+//   OFFER  u8 33, u8 what, md5[16], u32 size, name[64], game[LK_GAME_LEN]
+//   NONE   u8 34, reason[48]
+//   GET    u8 35, md5[16], u32 offset, u8 chunks
+//   DATA   u8 36, md5[16], u32 offset, bytes
+
+static const char *  lkc_what_word( const char * game, int what )
+{
+    static char  w[LK_GAME_LEN];
+    const char * plus = strchr( game, '+' );
+    if( what == 2 && plus )
+        snprintf( w, sizeof(w), "LEVEL PACK %s", plus + 1 );
+    else
+        snprintf( w, sizeof(w), "%.*s", plus ? (int)( plus - game ) : (int) strlen( game ), game );
+    lksel_upper( w );
+    return w;
+}
+
+static boolean  lkc_master_fp( byte * fp )
+{
+    lk_peer_info_t  master;
+    if( LK_Role() != LK_ROLE_MEMBER || LK_Sync_Peers( &master, 1 ) < 1 )  return false;
+    memcpy( fp, master.fp, LK_FP_BYTES );
+    return true;
+}
+
+static void  lkc_send_get( void )
+{
+    byte  msg[1 + 16 + 4 + 1], fp[LK_FP_BYTES];
+    uint32_t chunks = ( lkc_size - lkc_got + LKC_CHUNK - 1 ) / LKC_CHUNK;
+    if( chunks > LKC_WINDOW )  chunks = LKC_WINDOW;
+    if( ! lkc_master_fp( fp ) )  return;
+    msg[0] = LKC_GET;
+    memcpy( msg + 1, lkc_md5, 16 );
+    put32( msg + 17, lkc_got );
+    msg[21] = (byte) chunks;
+    if( LK_Sync_Send( fp, msg, sizeof(msg) ) )
+        lkc_win_end = lkc_got + chunks * LKC_CHUNK;
+    lkc_last = I_GetTime();
+}
+
+static void  lkc_abandon( const char * why )
+{
+    if( lkc_file )  { fclose( lkc_file );  lkc_file = NULL; }
+    if( lkc_phase == LKCM_COPYING )  remove( lkc_part );
+    if( why )
+    {
+        snprintf( lksel_self_note, sizeof(lksel_self_note), "GAME SYNC: NO %s - %s",
+                  lkc_what_word( lkc_game, lkc_what ), why );
+        lksel_upper( lksel_self_note );
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copy of %s failed: %s\n",
+                   lkc_name[0] ? lkc_name : lkc_game, why );
+    }
+    lkc_phase = LKCM_NONE;
+}
+
+// Ask the master for lkc_game's part lkc_what.  Sent again until it answers:
+// the master may be restarting -- following that very pick -- and a message
+// sent into a closing connection is gone.
+static void  lkc_send_want( void )
+{
+    byte  msg[2 + LK_GAME_LEN], fp[LK_FP_BYTES];
+    lkc_last = I_GetTime();
+    if( ! lkc_master_fp( fp ) )  return;
+    msg[0] = LKC_WANT;
+    msg[1] = lkc_what;
+    memset( msg + 2, 0, LK_GAME_LEN );
+    dl_strncpy( (char*) msg + 2, lkc_game, LK_GAME_LEN );
+    LK_Sync_Send( fp, msg, sizeof(msg) );
+}
+
+// A member that cannot run game: ask for the first part of it that it lacks.
+static void  lkc_want( const char * game )
+{
+    int  what = M_Link_Missing( game );
+
+    if( ! what )  return;
+    if( lkc_phase != LKCM_NONE )
+    {
+        if( ! strcasecmp( lkc_game, game ) )  return;   // already under way
+        lkc_abandon( NULL );                            // a newer pick replaces it
+    }
+    lkc_phase = LKCM_WANTED;
+    lkc_what = what;
+    lkc_name[0] = 0;
+    dl_strncpy( lkc_game, game, LK_GAME_LEN );
+    dl_strncpy( lkc_pending, game, LK_GAME_LEN );
+    lkc_started = I_GetTime();
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: asking the master for %s\n", lkc_what_word( game, what ) );
+    lkc_send_want();
+}
+
+static void  lkc_finish( void )
+{
+    byte  md5[16];
+    int   fail;
+
+    md5_finish_ctx( &lkc_ctx, md5 );
+    fail = ( fflush( lkc_file ) != 0 );
+#ifndef _WIN32
+    if( ! fail )  fail = ( fsync( fileno( lkc_file ) ) != 0 );
+#endif
+    fail |= ( fclose( lkc_file ) != 0 );
+    lkc_file = NULL;
+    if( fail )  { lkc_abandon( "COULD NOT WRITE IT" );  return; }
+    if( memcmp( md5, lkc_md5, 16 ) )  { lkc_abandon( "IT ARRIVED DAMAGED" );  return; }
+    if( access( lkc_dest, F_OK ) == 0 || rename( lkc_part, lkc_dest ) != 0 )
+    {
+        lkc_abandon( "COULD NOT PUT IT IN PLACE" );
+        return;
+    }
+    lkc_phase = LKCM_NONE;
+    lksel_self_note[0] = 0;
+    lksel_have_cannot = false;
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copied %s from the master to %s\n", lkc_name, lkc_dest );
+    // A pack may still be missing after its IWAD: ask for that next.
+    if( M_Link_Missing( lkc_game ) )
+        lkc_want( lkc_game );
+}
+
+static void  lkc_master_want( const lk_sync_msg_t * m )
+{
+    byte  msg[1 + 1 + 16 + 4 + LKC_NAME_LEN + LK_GAME_LEN];
+    char  game[LK_GAME_LEN], path[MAX_WADPATH];
+    const char * why = NULL, * base, * c;
+    struct stat  st;
+    lkc_offer_t * o;
+    lksel_peer_t * s;
+    lk_peer_info_t  peers[LK_MAX_PEERS];
+    int  what = m->data[1], i;
+
+    if( LK_Role() != LK_ROLE_MASTER || m->len != 2 + LK_GAME_LEN )  return;
+    lksel_field( game, m->data + 2, LK_GAME_LEN );
+    if( ! M_Link_Game_Id_Valid( game ) || ( what != 1 && what != 2 ) )  return;
+
+    if( ! cv_link_copywads.EV )
+        why = "COPY MISSING WADS IS OFF";
+    else if( ! M_Link_Wad_Path( game, what, path ) || stat( path, &st ) != 0 )
+        why = "THE MASTER DOES NOT HAVE IT";
+    else if( st.st_size <= 0 || (uint64_t) st.st_size > LKC_MAX_SIZE )
+        why = "TOO BIG TO COPY";
+    if( why )
+    {
+        byte  none[1 + LKSEL_REASON_LEN];
+        none[0] = LKC_NONE;
+        memset( none + 1, 0, LKSEL_REASON_LEN );
+        dl_strncpy( (char*) none + 1, why, LKSEL_REASON_LEN );
+        LK_Sync_Send( m->peer, none, sizeof(none) );
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s asked for %s: %s\n",
+                   lksel_peer_name( m->peer ), lkc_what_word( game, what ), why );
+        return;
+    }
+
+    for( base = c = path; *c; c++ )
+        if( *c == '/' || *c == '\\' )  base = c + 1;
+    // One offer per file: the md5 names it on the wire.
+    for( i = 0; i < LKC_OFFERS; i++ )
+        if( lkc_offers[i].used && ! strcmp( lkc_offers[i].path, path ) )  break;
+    if( i == LKC_OFFERS )
+    {
+        i = lkc_next_offer;
+        lkc_next_offer = ( lkc_next_offer + 1 ) % LKC_OFFERS;
+    }
+    o = &lkc_offers[i];
+    o->used = true;
+    dl_strncpy( o->path, path, sizeof(o->path) );
+    dl_strncpy( o->name, base, sizeof(o->name) );
+    o->size = (uint32_t) st.st_size;
+    W_Md5_File( path, o->md5 );
+
+    msg[0] = LKC_OFFER;
+    msg[1] = (byte) what;
+    memcpy( msg + 2, o->md5, 16 );
+    put32( msg + 18, o->size );
+    memset( msg + 22, 0, LKC_NAME_LEN + LK_GAME_LEN );
+    dl_strncpy( (char*) msg + 22, o->name, LKC_NAME_LEN );
+    dl_strncpy( (char*) msg + 22 + LKC_NAME_LEN, game, LK_GAME_LEN );
+    LK_Sync_Send( m->peer, msg, sizeof(msg) );
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copying %s (%u bytes) to %s\n",
+               o->name, (unsigned) o->size, lksel_peer_name( m->peer ) );
+    s = lksel_slot( m->peer, peers, LK_Peers( peers, LK_MAX_PEERS ) );
+    if( s )
+    {
+        snprintf( s->note, sizeof(s->note), "GAME SYNC: COPYING %s", o->name );
+        lksel_upper( s->note );
+    }
+}
+
+static void  lkc_master_get( const lk_sync_msg_t * m )
+{
+    byte  msg[LK_SYNC_DATA_MAX];
+    lkc_offer_t * o = NULL;
+    uint32_t offset;
+    int  i, chunks;
+    FILE * f;
+
+    if( LK_Role() != LK_ROLE_MASTER || m->len != 1 + 16 + 4 + 1 )  return;
+    for( i = 0; i < LKC_OFFERS; i++ )
+        if( lkc_offers[i].used && ! memcmp( lkc_offers[i].md5, m->data + 1, 16 ) )
+            { o = &lkc_offers[i];  break; }
+    offset = get32( m->data + 17 );
+    chunks = m->data[21];
+    if( ! o || offset >= o->size || chunks < 1 || chunks > LKC_WINDOW )  return;
+    if( lkc_test_corrupt < 0 )
+        lkc_test_corrupt = M_CheckParm( "-linktest" ) && M_CheckParm( "-linkcorruptwad" );
+
+    f = fopen( o->path, "rb" );
+    if( ! f )  return;
+    if( fseek( f, offset, SEEK_SET ) == 0 )
+    {
+        for( i = 0; i < chunks && offset < o->size; i++ )
+        {
+            size_t n = fread( msg + LKC_DATA_HDR, 1, LKC_CHUNK, f );
+            if( n == 0 )  break;
+            msg[0] = LKC_DATA;
+            memcpy( msg + 1, o->md5, 16 );
+            put32( msg + 17, offset );
+            if( lkc_test_corrupt && offset == 0 )
+                msg[LKC_DATA_HDR + n/2] ^= 0x5A;   // the test: one byte damaged in transit
+            if( ! LK_Sync_Send( m->peer, msg, LKC_DATA_HDR + n ) )
+                break;   // queue full: the member asks again
+            offset += n;
+        }
+    }
+    fclose( f );
+
+    {
+        lk_peer_info_t  peers[LK_MAX_PEERS];
+        lksel_peer_t * s = lksel_slot( m->peer, peers, LK_Peers( peers, LK_MAX_PEERS ) );
+        if( s )
+        {
+            if( offset >= o->size )
+                snprintf( s->note, sizeof(s->note), "GAME SYNC: COPIED %s", o->name );
+            else
+                snprintf( s->note, sizeof(s->note), "GAME SYNC: COPYING %s %u%%", o->name,
+                          (unsigned)( (uint64_t) offset * 100 / o->size ) );
+            lksel_upper( s->note );
+        }
+    }
+}
+
+static void  lkc_member_offer( const lk_sync_msg_t * m )
+{
+    char  name[LKC_NAME_LEN], game[LK_GAME_LEN];
+    uint32_t size;
+
+    if( m->len != 1 + 1 + 16 + 4 + LKC_NAME_LEN + LK_GAME_LEN )  return;
+    if( lkc_phase == LKCM_COPYING && ! memcmp( m->data + 2, lkc_md5, 16 ) )
+    {
+        lkc_master_back = true;
+        lkc_send_get();   // the same file offered again: carry on from where it got to
+        return;
+    }
+    if( lkc_phase != LKCM_WANTED )  return;
+    lksel_field( name, m->data + 22, LKC_NAME_LEN );
+    lksel_field( game, m->data + 22 + LKC_NAME_LEN, LK_GAME_LEN );
+    size = get32( m->data + 18 );
+    if( strcasecmp( game, lkc_game ) || m->data[1] != lkc_what )  return;
+    dl_strncpy( lkc_name, name, sizeof(lkc_name) );
+    if( size == 0 || size > LKC_MAX_SIZE )  { lkc_abandon( "TOO BIG TO COPY" );  return; }
+    if( ! M_Link_Wad_Dest( game, lkc_what, name, lkc_dest ) )
+    {
+        lkc_abandon( "NOWHERE TO PUT IT" );
+        return;
+    }
+    snprintf( lkc_part, sizeof(lkc_part), "%s.part", lkc_dest );
+    lkc_file = fopen( lkc_part, "wb" );
+    if( ! lkc_file )  { lkc_abandon( "COULD NOT WRITE IT" );  return; }
+    memcpy( lkc_md5, m->data + 2, 16 );
+    lkc_size = size;
+    lkc_got = 0;
+    md5_init_ctx( &lkc_ctx );
+    lkc_phase = LKCM_COPYING;
+    lkc_paused = false;
+    lkc_master_back = true;
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copying %s (%u bytes) from the master\n", name, (unsigned) size );
+    lkc_send_get();
+}
+
+static void  lkc_member_data( const lk_sync_msg_t * m )
+{
+    uint32_t offset, n;
+    if( lkc_phase != LKCM_COPYING || m->len <= LKC_DATA_HDR || memcmp( m->data + 1, lkc_md5, 16 ) )  return;
+    offset = get32( m->data + 17 );
+    n = m->len - LKC_DATA_HDR;
+    if( offset != lkc_got || lkc_got + n > lkc_size )  return;   // a repeat, or out of order
+    if( fwrite( m->data + LKC_DATA_HDR, 1, n, lkc_file ) != n )  { lkc_abandon( "COULD NOT WRITE IT" );  return; }
+    md5_process_bytes( m->data + LKC_DATA_HDR, n, &lkc_ctx );
+    lkc_got += n;
+    lkc_last = I_GetTime();
+    snprintf( lksel_self_note, sizeof(lksel_self_note), "GAME SYNC: COPYING %s %u%%", lkc_name,
+              (unsigned)( (uint64_t) lkc_got * 100 / lkc_size ) );
+    lksel_upper( lksel_self_note );
+    if( lkc_got == lkc_size )
+        lkc_finish();
+    else if( lkc_got >= lkc_win_end && ! lkc_paused )
+        lkc_send_get();
+}
+
+void  LKSEL_On_Sync( const lk_sync_msg_t * m )
+{
+    switch( m->data[0] )
+    {
+     case LKC_WANT:   lkc_master_want( m );  break;
+     case LKC_GET:    lkc_master_get( m );  break;
+     case LKC_OFFER:  lkc_member_offer( m );  break;
+     case LKC_DATA:   lkc_member_data( m );  break;
+     case LKC_NONE:
+        if( lkc_phase == LKCM_WANTED && m->len == 1 + LKSEL_REASON_LEN )
+        {
+            char  why[LKSEL_REASON_LEN];
+            lksel_field( why, m->data + 1, LKSEL_REASON_LEN );
+            lkc_pending[0] = 0;
+            lkc_abandon( why );
+        }
+        break;
+    }
+}
+
+// Member, every tick: keep a copy moving, and follow the pick once it is here.
+static void  lkc_member_tick( void )
+{
+    tic_t now = I_GetTime();
+    boolean free_now = lksel_can_switch_now( LK_State() );
+
+    if( lkc_phase == LKCM_WANTED )
+    {
+        if( now - lkc_started > LKC_WANT_TICS )
+        {
+            lkc_pending[0] = 0;
+            lkc_abandon( "THE MASTER DID NOT ANSWER" );
+        }
+        else if( lksel_master_online && now - lkc_last > LKC_ASK_TICS )
+            lkc_send_want();
+    }
+    if( lkc_phase == LKCM_COPYING )
+    {
+        if( ! lksel_master_online )
+        {
+            // Restarting, perhaps: it offers the file again when it is back.
+            if( now - lkc_last > LKC_AWAY_TICS )
+            {
+                lkc_pending[0] = 0;
+                lkc_abandon( "THE MASTER WENT AWAY" );
+            }
+        }
+        else if( ! lkc_master_back && now - lkc_last > LKC_STALL_TICS )
+            lkc_send_want();   // back: its offers were forgotten in its restart
+        else if( ! free_now )
+            lkc_paused = true;   // a game is on: not a byte until it is over
+        else if( lkc_paused || now - lkc_last > LKC_STALL_TICS )
+        {
+            lkc_paused = false;
+            lkc_send_get();
+        }
+    }
+    if( lkc_phase == LKCM_NONE && lkc_pending[0] && free_now )
+    {
+        char  game[LK_GAME_LEN];
+        dl_strncpy( game, lkc_pending, LK_GAME_LEN );
+        lkc_pending[0] = 0;
+        if( ! M_Link_Missing( game ) && strcasecmp( game, LK_Game_Id() ) )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: switching to %s, selected on the link\n", game );
+            M_Link_Follow_Game( game, false );   // does not return when it restarts
+        }
+    }
+}
+
 // Master: tell every cabinet that has not dealt with the latest pick, and is
 // free to switch, to switch now.
 static void  lksel_send_switches( void )
@@ -368,13 +814,15 @@ static void  lksel_send_switches( void )
         if( p->status != LK_PEER_ONLINE || ! memcmp( p->fp, zero, LK_FP_BYTES ) )  continue;
         if( ! p->game[0] )  continue;   // connected, but has not said what it runs yet
         s = lksel_slot( p->fp, peers, n );
-        if( ! s || s->done_serial == lksel_serial )  continue;
+        if( ! s )  continue;
         if( ! strcasecmp( p->game, lksel_target ) )
         {
+            // Followed -- perhaps after a copy, whose progress note goes too.
             s->done_serial = lksel_serial;
             s->note[0] = 0;
             continue;
         }
+        if( s->done_serial == lksel_serial )  continue;
         if( ! lksel_can_switch_now( p->state ) )
         {
             if( s->waited_serial != lksel_serial )
@@ -457,7 +905,14 @@ static void  lksel_member_tick( void )
     lksel_target[0] = 0;
     if( online && ! lksel_master_online && lksel_have_cannot )
         LK_Send( master.fp, LK_GM_GAME_CANNOT, lksel_cannot, LKSEL_CANNOT_LEN );
+    if( online && ! lksel_master_online && lkc_phase != LKCM_NONE )
+    {
+        lkc_master_back = false;
+        if( lkc_phase == LKCM_WANTED )
+            lkc_send_want();
+    }
     lksel_master_online = online;
+    lkc_member_tick();
 
     if( lksel_announce && online )
     {

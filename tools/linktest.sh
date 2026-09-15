@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1592,6 +1592,7 @@ case_gamesyncmissing() {
     expect "the member without TNT said why" "$d/follower" "^LINKLOG .*cannot switch to tnt: TNT NOT INSTALLED"
     expect "the master shows it under that cabinet" "$d/master" "^LINKSELPEER FOLLOWER GAME SYNC: TNT NOT INSTALLED$"
     expect_not "and did not say it was switching" "$d/follower" "^LINKLOG .*switching to"
+    expect "and copying was not offered, since it is off" "$d/follower" "^LINKLOG .*copy of tnt failed: COPY MISSING WADS IS OFF"
     expect_game "$d/chooser" tnt; expect_game "$d/follower" doom2
     [ "$(starts "$d/follower")" = 1 ] || FAILS="$FAILS
       the member without TNT restarted"
@@ -1674,6 +1675,70 @@ case_gamesyncpack() {
         [ "$(starts "$d/$c")" = 1 ] || FAILS="$FAILS
       $c restarted (a pack into an empty slot needs no restart)"
     done
+}
+
+# Copy Missing Wads: the master picks TNT; a member without it gets the
+# master's copy into wads/ beside its program, and switches.
+case_gamesynccopy() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    echo 'link_copywads "1"' >> "$d/master/legacyhome/config.cfg"
+    rm -f "$d/follower/TNT.WAD" "$d/follower/tnt.wad"
+    mkdir -p "$d/follower/home"
+    run "$d/master" 90 0 -linktest -linkselectat 12 tnt
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 87 0
+    wait
+    expect "the master sent it" "$d/master" "^LINKLOG .*copying TNT\.WAD \([0-9]+ bytes\) to FOLLOWER"
+    expect "the member copied it beside its program" "$d/follower" "^LINKLOG .*copied TNT\.WAD from the master to .*/follower/wads/TNT\.WAD"
+    expect "and switched to it, from there" "$d/follower" "Added file .*/follower/wads/TNT\.WAD"
+    expect_game "$d/follower" tnt
+    cmp -s "$d/follower/wads/TNT.WAD" "$WADDIR/TNT.WAD" || FAILS="$FAILS
+      the copied TNT.WAD differs from the master's"
+    [ -z "$(ls "$d/follower/wads/"*.part 2>/dev/null)" ] || FAILS="$FAILS
+      a .part file was left behind"
+    expect "the master's page said it was copied" "$d/master" "^LINKSELPEER .* GAME SYNC: COPIED TNT\.WAD$"
+}
+
+# The same for a level pack, into legacyhome/levels/.
+case_gamesynccopypack() {
+    local d=$1 p=$2
+    gamesynccabs "$d" "$p"
+    echo 'link_copywads "1"' >> "$d/master/legacyhome/config.cfg"
+    mkdir -p "$d/master/legacyhome/levels"
+    mkpack "$d/master/legacyhome/levels/syncpack.wad"
+    run "$d/master" 70 0 -linktest -linkselectat 12 syncpack
+    sleep 2
+    run "$d/follower" 67 0
+    wait
+    expect "the member copied the pack into levels" "$d/follower" "^LINKLOG .*copied syncpack\.wad from the master to .*/follower/legacyhome/levels/syncpack\.wad"
+    expect_game "$d/follower" doom2+syncpack
+    cmp -s "$d/follower/legacyhome/levels/syncpack.wad" "$d/master/legacyhome/levels/syncpack.wad" || FAILS="$FAILS
+      the copied pack differs from the master's"
+}
+
+# One byte damaged in transit (-linkcorruptwad on the master): the member must
+# refuse the file, leave nothing behind, and stay on its own game.
+case_gamesynccopybad() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    echo 'link_copywads "1"' >> "$d/master/legacyhome/config.cfg"
+    rm -f "$d/follower/TNT.WAD" "$d/follower/tnt.wad"
+    mkdir -p "$d/follower/home"
+    run "$d/master" 80 0 -linktest -linkselectat 12 tnt -linkcorruptwad
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 77 0
+    wait
+    expect "the member refused it" "$d/follower" "^LINKLOG .*copy of TNT\.WAD failed: IT ARRIVED DAMAGED"
+    [ ! -e "$d/follower/wads/TNT.WAD" ] || FAILS="$FAILS
+      the damaged TNT.WAD was installed"
+    [ -z "$(ls "$d/follower/wads/"* 2>/dev/null)" ] || FAILS="$FAILS
+      something was left in wads/: $(ls "$d/follower/wads/")"
+    expect_game "$d/follower" doom2
 }
 
 # --------------------------------------------------------------------------

@@ -2756,6 +2756,32 @@ game_desc_t *  D_GameDesc( int i )
 boolean  D_Game_Available( const char * idstr )
 {
     char  pathbuf[MAX_WADPATH];
+    return D_Game_Path( idstr, pathbuf );
+}
+
+const char * D_Progdir_Wads( void )
+{
+    return progdir_wads;
+}
+
+const char * D_Game_Iwad_Name( const char * idstr, const char * offered )
+{
+    int  gmi, w;
+    for( gmi = 0; gmi < NUM_GDESC; gmi++ )
+    {
+        game_desc_t * gmtp = & game_desc_table[gmi];
+        if( ! gmtp->idstr || strcasecmp( gmtp->idstr, idstr ) != 0 )
+            continue;
+        for( w = 0; w < 3 && gmtp->iwad_filename[w]; w++ )
+            if( offered && strcasecmp( offered, gmtp->iwad_filename[w] ) == 0 )
+                return offered;
+        return gmtp->iwad_filename[0];
+    }
+    return NULL;
+}
+
+boolean  D_Game_Path( const char * idstr, char * pathbuf )
+{
     int   gmi, w;
 
     if( ! idstr )  return false;

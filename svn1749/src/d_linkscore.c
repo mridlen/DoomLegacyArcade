@@ -27,6 +27,7 @@
 #include "doomstat.h"
 #include "d_link.h"
 #include "d_linkscore.h"
+#include "d_linksel.h"
 #include "d_netfil.h"
 #include "hs_stuff.h"
 #include "hs_merge.h"
@@ -1028,7 +1029,13 @@ void  LKS_Ticker( void )
     }
 
     while( LK_Sync_Poll( &m ) )
-        lks_on_message( &m );
+    {
+        // [Arcade] Copy Missing Wads shares the sync channel (d_linksel.c).
+        if( m.len >= 1 && m.data[0] >= LKSEL_SYNC_FIRST )
+            LKSEL_On_Sync( &m );
+        else
+            lks_on_message( &m );
+    }
 
     lks_build_manifest();
 

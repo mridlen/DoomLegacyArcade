@@ -225,6 +225,8 @@ void W_Shutdown(void);
 // load and add a wadfile to the active wad files, return wad file number
 // (you can get wadfile_t pointer: the return value indexes wadfiles[])
 int     W_Load_WadFile (const char *filename);
+// [Arcade] A file's md5, remembered in legacyhome/wadmd5.txt while it is unchanged.
+void    W_Md5_File( const char * path, byte * md5 );
 
 //added 4-1-98 initmultiplefiles now return 1 if all ok 0 else
 //             so that it stops with a message if a file was not found

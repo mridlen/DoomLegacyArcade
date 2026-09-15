@@ -1487,6 +1487,62 @@ member picking TNT) showed where the laptop's part went:
   every start, boot included, not only a switch. On a Pi 3 hashing an 18 MB IWAD is slower still.
 - `gamesync` checks the pick went out before the restart. The Pi's own figures were not measured.
 
+#### Copy Missing Wads (2026-09-14)
+
+Mark: "Can there be an option to copy wads from the master to the members? Not sure the best landing
+place for them? Maybe alongside the binary would be the best location (and less OS dependent)?"
+
+**This reverses a line of the original plan** ("A file written to disk because a network peer said so
+has no place on a cabinet"), on the operator's say: it is **`link_copywads`**, the master's setting,
+Off by default. What still holds from that rule is that the *game netcode's* downloads stay off in a
+linked game; this is a separate, narrow path.
+
+**What is copied, and where.** Only what a pick needs and the member lacks (`M_Link_Missing`): the
+IWAD, then the level pack if that is missing too. The master finds its own copy by the Select Game
+rules (`M_Link_Wad_Path`: `D_Game_Path` for an IWAD, `M_LevelPack_Find` for a pack) — a path never
+crosses the wire. The member takes only a name that part may have (`M_Link_Wad_Dest`: an IWAD name from
+`game_desc_table` for that game, or `<pack>.wad`; letters, digits, `. - _ +`) into one of two places:
+- **IWADs: `wads/` beside the program** (`D_Progdir_Wads`). The engine already searched it
+  (`owner_wad_search_order`, `doomwaddir[2]`, ahead of `~/games/doom`), on every OS, so no search
+  change was needed — which is what makes "alongside the binary" the right landing place, as Mark
+  guessed; the subfolder keeps the program's own directory tidy.
+- **Packs: `legacyhome/levels/`**, the only place Select Game lists them.
+Nothing is written over an existing file.
+
+**The transfer** (`d_linksel.c`, "Copy Missing Wads") rides the score sync's channel — member↔master
+only, pulled by the receiver — with its own message kinds from 32 up, which `LKS_Ticker` hands over.
+`WANT` (what, game) → `OFFER` (what, md5, size, name) or `NONE` (reason) → `GET` (md5, offset, 12
+chunks) → `DATA`. The member writes `<file>.part`, runs the md5 as it goes, fsyncs, compares, then
+renames. **The md5 is the one `W_Md5_File` remembers**, so offering a wad the master has loaded costs it
+no read; the link is TLS between cabinets that proved the passcode, so the check only has to catch
+damage, not an attacker. 192 MB cap.
+- The member re-sends `WANT` every 3 s until answered (30 s), and on reconnecting: **the first version
+  lost every request**, because the master that picks a game restarts to follow it, and the `WANT`
+  went into a closing connection. A copy whose master goes away pauses, and resumes from where it got
+  to when the master offers the same md5 again.
+- **A copy pauses while its cabinet is in a game** (no GETs until it is idle or in menus): a copy must
+  never cost a player a frame.
+- Once copied, the member follows the pick if it is still the latest and the cabinet is free.
+
+**Verified** — `tools/linktest.sh`:
+- `gamesynccopy` — the master picks TNT; a member without it (HOME with no `~/games/doom`) copies
+  `TNT.WAD` into `wads/`, restarts with it *loaded from there*, identical to the master's file, no
+  `.part` left; the master's page reads `COPIED TNT.WAD`. 18 MB in about 20 s on the laptop.
+- `gamesynccopypack` — the same for a pack into `legacyhome/levels/`, then `doom2+syncpack`.
+- `gamesynccopybad` — `-linktest -linkcorruptwad` damages one byte on the master: refused, nothing left
+  in `wads/`, still on Doom 2. **Shown red** with the md5 comparison removed: the damaged file was
+  installed, and the engine then crashed loading it.
+- `gamesyncmissing` now also checks that with copying off the member says so.
+- **A test switch that corrupted every copy**: `lkc_test_corrupt` was first a `boolean` set to `-1` for
+  "not read yet". `boolean` is an enum here and can be unsigned, so `< 0` was never true and the flag
+  stayed on: every copy "arrived damaged" and was correctly refused. Use `int` for a tri-state.
+- All eight Select Game Sync cases, `pair unbound linkgame iwadname iwadversion musicwad scores
+  scorebusy` pass; `scores` failed once in a batch of fifteen beside an 18 MB copy and passed alone and
+  again beside it — not explained. `make smoke` 5/5; the options page captured in OpenGL.
+
+**Not done**: throughput is the sync channel's (a window of 12 × 4 KB, paced by the game loop); the soundtrack
+wads a *netgame* may want are not copied (they are not required, see the music wad fix above).
+
 **Not done**: the picked game is not persisted — a master switched off forgets it, and a cabinet that
 boots later keeps its Boot Game. Two picks made on two cabinets within the same second may each
 restart the other once before settling on the one the master heard last.

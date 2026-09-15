@@ -90,6 +90,14 @@ boolean  M_Link_Game_Id_Valid( const char * game_id );
 const char * M_Link_Follow_Game( const char * game_id, boolean link_selected );
 // Why this cabinet could not switch to that game, or NULL when it could.
 const char * M_Link_Game_Why_Not( const char * game_id );
+// Copy Missing Wads (d_linksel.c).  What this cabinet lacks to run that game:
+// 0 nothing, 1 the IWAD, 2 the level pack.
+int      M_Link_Missing( const char * game_id );
+// A master: where its own copy of that part of the game is (MAX_WADPATH).
+boolean  M_Link_Wad_Path( const char * game_id, int what, char * path );
+// A member: where a copy offered as that file name goes (MAX_WADPATH).  False
+// when the name is not one that part may have, or the file is already there.
+boolean  M_Link_Wad_Dest( const char * game_id, int what, const char * offered, char * dest );
 // tools/linktest.sh (-linkselectat): choose an IWAD short name or a level
 // pack name on the Select Game page.
 void  M_Link_Test_Select( const char * name );

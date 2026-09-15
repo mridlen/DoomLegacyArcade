@@ -60,6 +60,14 @@ void  owner_wad_search_order( void );
 // [Arcade] Is the IWAD for the -game short name (e.g. "doom2") available?
 // Only valid after the doomwaddir search paths are set up.
 boolean  D_Game_Available( const char * idstr );
+// [Arcade] The same, writing where it was found (MAX_WADPATH).
+boolean  D_Game_Path( const char * idstr, char * pathbuf );
+// [Arcade] The wads directory beside the program, searched early for IWADs
+// (NULL when the program directory is unknown).  Cabinet Link copies land here.
+const char * D_Progdir_Wads( void );
+// [Arcade] A file name the IWAD search accepts for this game: offered, when it
+// is one of them (any case), else the first.  NULL for an unknown game.
+const char * D_Game_Iwad_Name( const char * idstr, const char * offered );
 
 extern consvar_t cv_home, cv_doomwaddir, cv_iwad;
 extern consvar_t cv_screenshot_type, cv_screenshot_dir;

@@ -39,6 +39,11 @@ void          LKSEL_Before_Restart( const char * game );
 const char *  LKSEL_Peer_Status( const byte * fp );
 const char *  LKSEL_Self_Status( void );
 
+// Copy Missing Wads: sync messages of kind LKSEL_SYNC_FIRST and up (the score
+// sync's own kinds are below it), handed over by LKS_Ticker.
+#define LKSEL_SYNC_FIRST   32
+void          LKSEL_On_Sync( const lk_sync_msg_t * m );
+
 // One LINKSEL status line (-linkstatus), terminal only.
 void          LKSEL_Status_Print( void );
 

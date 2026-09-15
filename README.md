@@ -1270,6 +1270,25 @@ Select Game Sync** set to **On** (it is **Off** until you turn it on):
 - Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator
   session is never switched by someone else's pick.
 
+**Copy Missing Wads: the master hands over the game a member doesn't have.** With **Options → Arcade
+Options → Cabinet Link Options → Copy Missing Wads** set to **On** on the master (it is **Off** until you
+turn it on), a cabinet that can't follow a pick because it lacks the IWAD or the level pack gets the
+master's copy, then switches:
+
+- An IWAD lands in a **`wads`** folder beside the game program (created if needed) — the game looks
+  there for IWADs on every operating system, before its other wad folders. A level pack lands in
+  **`legacyhome/levels/`**, where Select Game lists packs.
+- The master's Cabinet Link page shows it under that cabinet: **GAME SYNC: COPYING TNT.WAD 45%**, then
+  **COPIED TNT.WAD**. On the laptop an 18 MB IWAD took about 20 seconds; expect longer on a Pi over
+  Wi-Fi. It only happens once — after that the cabinet has the file.
+- Only the file the pick needs is sent, and only a file Select Game could offer (the four IWADs and the
+  packs in `levels/`) — never the soundtrack wads or anything else. It is checked against the master's
+  copy when it arrives; a file that arrives damaged is thrown away and the cabinet stays on its game
+  (**GAME SYNC: NO TNT - IT ARRIVED DAMAGED**). A file already there is never overwritten.
+- A cabinet that starts a game while a copy is under way pauses the copy until the game is over, so
+  nobody playing is slowed down by it.
+- With it off, a cabinet that lacks the game says **COPY MISSING WADS IS OFF** instead.
+
 **Linked cabinets share their high scores.** A record set on one cabinet — a single level time, a
 Survival run, with its record demo — shows up on the other cabinet's attract screen, boards and
 intermission, and the other way round:
