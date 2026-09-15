@@ -1689,15 +1689,19 @@ has to compile both ways. The Makefile already had the Windows libraries (`-lssl
     would start a second copy. Launch the exe directly, from a shortcut or the Startup folder.
 
 **Verified**
-- Linux, the same tree with `HAVE_LINK=1`: builds with no new warnings, and `tools/linktest.sh` (every
-  case) passes. That covers the POSIX side of every shim, whose behaviour must not have moved.
+- Linux, the same tree with `HAVE_LINK=1`: builds with no new warnings. `tools/linktest.sh -j 3`
+  passed 57 of 61 cases; `scoreslarge` skips without `SCOREHOME`. It ran alongside a compile, and
+  `memberpress`, `musicwad` and `demojoin` failed, all three at the point where a game is joined.
+  Re-run alone (`-j 1`), all three passed. This covers the POSIX side of every shim, whose behaviour
+  must not have moved.
 - `tools/restartquote-test.py --selfcheck` extracts `M_Restart_Quote_Arg` verbatim, compiles it
   natively and round-trips 18 awkward arguments plus 3000 random argument lists. The awkward ones
   include spaces, embedded quotes, trailing backslashes, the empty argument and non-Latin names.
   The splitting side is a Python implementation of the Windows rules, itself checked against the
   five examples Microsoft publishes. The self-check reinstates six quoting bugs and each goes red.
-- Windows: the GitHub Actions job compiles and links it with MinGW-w64 ucrt64 and OpenSSL 3, and
-  stages the DLLs. That is **compile and link only**.
+- Windows (PR #17's CI run): the probe found OpenSSL and wrote `HAVE_LINK=1`. `d_link.c` compiled
+  with `-DHAVE_LINK` under MinGW-w64 ucrt64 with no warnings, the exe linked, and sixteen DLLs were
+  staged, `libssl-3-x64.dll` and `libcrypto-3-x64.dll` among them. That is **compile and link only**.
 
 **Not verified — needs the Windows box (the pinned step 4)**
 - That any of it runs: that a Windows master accepts the Pi and a Windows member reaches the Pi,
