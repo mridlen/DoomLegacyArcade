@@ -1373,6 +1373,7 @@ second into every linked game.
 - **Test**: `wipejoin` — the host with `screenlink "None"`, the joiner with `"Melt"` (which runs to its
   2 s limit under the dummy driver); the host's first `stall_ms` must be under 400. Build without the
   fix: 1118 ms, red.
+- Mark played it: fixed.
 
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
