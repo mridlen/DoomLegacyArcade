@@ -123,6 +123,16 @@ static boolean   lks_alloc_failed = false;
 
 static uint32_t  lks_now( void )  { return SDL_GetTicks(); }
 
+// [Arcade] Milliseconds from then to now, never "negative".  LKS_Ticker reads
+// now before it handles the messages that stamp last_ms, so a stamp can be
+// later than now and the plain subtraction wraps to 49 days: a transfer that
+// had just answered read as stalled, was asked for again, and after
+// LKS_RETRIES gave up as "stopped answering".  See lk_since in d_link.c.
+static uint32_t  lks_since( uint32_t now, uint32_t then )
+{
+    return ( now > then ) ? now - then : 0;
+}
+
 // ---------------------------------------------------------------------------
 //  Little helpers
 
@@ -1046,7 +1056,7 @@ void  LKS_Ticker( void )
 
         // Offer what we hold when it changed, or as a backstop.
         if( lks_man_valid && ( memcmp( p->offered, lks_man_sha, 32 )
-                               || now - p->offer_ms > LKS_REOFFER_MS ) )
+                               || lks_since( now, p->offer_ms ) > LKS_REOFFER_MS ) )
             lks_send_offer( p );
 
         // A manifest it offered that we have not read yet.
@@ -1061,7 +1071,7 @@ void  LKS_Ticker( void )
         }
 
         // A transfer that went quiet: ask again, then give up on it.
-        if( ( p->phase == LKSP_MANIFEST || p->phase == LKSP_DEMO ) && now - p->last_ms > LKS_STALL_MS )
+        if( ( p->phase == LKSP_MANIFEST || p->phase == LKSP_DEMO ) && lks_since( now, p->last_ms ) > LKS_STALL_MS )
         {
             if( ++p->retries > LKS_RETRIES )
             {
@@ -1084,7 +1094,7 @@ void  LKS_Ticker( void )
         }
 
         // Apply when nobody is mid-run, signing initials, or in a game.
-        if( p->phase == LKSP_APPLY && now - p->last_ms > LKS_APPLY_POLL_MS )
+        if( p->phase == LKSP_APPLY && lks_since( now, p->last_ms ) > LKS_APPLY_POLL_MS )
         {
             lk_state_e st = LK_State();
             p->last_ms = now;

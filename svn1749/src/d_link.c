@@ -363,6 +363,19 @@ static void  lk_fp_short( const byte * fp, char * out )
 
 static uint32_t  lk_now( void )  { return SDL_GetTicks(); }
 
+// [Arcade] Milliseconds from then to now, never "negative".  lkt_main reads
+// now once per pass and then stamps connections as it goes, so a stamp can be
+// a millisecond or two *later* than now.  The plain unsigned subtraction wraps
+// to 49 days, and the check it feeds fires at once: a member's connection was
+// closed as "timed out before authenticating" straight after connect()
+// whenever resolving and connecting crossed a millisecond.  On Linux that is
+// almost never; on Windows it was most attempts.  Same fix as lkg_since in
+// d_linkgame.c.
+static uint32_t  lk_since( uint32_t now, uint32_t then )
+{
+    return ( now > then ) ? now - then : 0;
+}
+
 // tools/linktest.sh --selfcheck builds with LK_SELFCHECK and switches off one
 // named check at a time (LK_SELFCHECK=passcode, ...) to prove that the test for
 // it can fail.  In every normal build this is the constant false and the checks
@@ -1599,7 +1612,7 @@ static void  lkt_publish( void )
         }
         for( i = 0; i < 8 && n < LK_MAX_PEERS; i++ )
         {
-            if( ! lkt_refused[i].when || now - lkt_refused[i].when > LK_REFUSED_SHOW_MS )  continue;
+            if( ! lkt_refused[i].when || lk_since( now, lkt_refused[i].when ) > LK_REFUSED_SHOW_MS )  continue;
             list[n++] = lkt_refused[i].info;
         }
     }
@@ -1639,7 +1652,7 @@ static int  lkt_main( void * unused )
         now = lk_now();
 
         // Timers first.
-        if( lkt_set.role == LK_ROLE_MASTER && now - lkt_allow_resolved > 60000 )
+        if( lkt_set.role == LK_ROLE_MASTER && lk_since( now, lkt_allow_resolved ) > 60000 )
             lkt_resolve_allow();
         if( lkt_set.role == LK_ROLE_MEMBER && lkt_conn[0].phase == LKC_EMPTY
             && now >= lkt_next_attempt )
@@ -1649,9 +1662,9 @@ static int  lkt_main( void * unused )
         {
             lk_conn_t * c = &lkt_conn[i];
             if( c->phase == LKC_EMPTY )  continue;
-            if( c->phase != LKC_ONLINE && now - c->started > LK_HANDSHAKE_MS )
+            if( c->phase != LKC_ONLINE && lk_since( now, c->started ) > LK_HANDSHAKE_MS )
                 lkt_close( c, "timed out before authenticating", ! c->outbound );
-            else if( c->phase == LKC_ONLINE && now - c->last_rx > LK_DEAD_MS )
+            else if( c->phase == LKC_ONLINE && lk_since( now, c->last_rx ) > LK_DEAD_MS )
                 lkt_close( c, "stopped responding", false );
             else if( c->phase == LKC_ONLINE )
             {
@@ -1663,7 +1676,7 @@ static int  lkt_main( void * unused )
                     memcpy( pr + 2, lkt_my_game, LK_GAME_LEN );
                     lkt_queue( c, LK_MSG_PRESENCE, pr, sizeof(pr) );
                 }
-                else if( now - c->last_tx > LK_PING_MS )
+                else if( lk_since( now, c->last_tx ) > LK_PING_MS )
                     lkt_queue( c, LK_MSG_PING, NULL, 0 );
             }
         }
