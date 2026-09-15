@@ -1721,6 +1721,62 @@ has to compile both ways. The Makefile already had the Windows libraries (`-lssl
   Phase 2).
 - The determinism check from Phase 0 step 4.
 
+#### First run on a real Windows cabinet (2026-09-15)
+
+Mark set up a Windows member (DESKTOP-202K7KS) against the laptop master. It authenticated, then went
+quiet and was dropped as "stopped responding", over and over; a linked game "timed out"; and the
+Cabinet Link page said **SCORES: DIFFERENT WADS**. These turned out to be two separate problems.
+
+**1. A stamp later than `now` read as 49 days old** (fixed, PR #18). `lkt_main` reads the clock
+once per pass, then `lkt_member_connect` stamps `c->started` with a fresh reading. The handshake
+check `now - c->started` is unsigned, so when resolving and connecting crossed a millisecond it
+wrapped, and the new connection was closed as "timed out before authenticating" straight after
+`connect()`. On Linux a numeric address resolves in far less than a millisecond, so it never
+showed; on Windows it hit most attempts. `LKS_Ticker` had the same shape: messages stamp `last_ms`
+after `now` is read, so a transfer that had just answered read as stalled. Every elapsed-time check
+in `d_link.c` and `d_linkscore.c` now goes through `lk_since`/`lks_since`. `d_linkgame.c` already
+had `lkg_since` for exactly this, found on the Pi. **Any new timer in the link code needs the same
+helper**; the stamp and the read are never in a guaranteed order.
+- **Reproduced three ways.**
+  - The Windows CI build under Wine, as a member of a Linux master: "timed out before
+    authenticating" on every attempt, and the master logged "TLS handshake failed".
+    `WINEDEBUG=+winsock` showed `closesocket` straight after the in-progress `connect`, with no
+    `WSAPoll` between. That is what pointed away from Winsock and at the timer.
+  - On Linux with a temporary `SDL_Delay(3)` in `lkt_member_connect`: `linktest.sh pair` fails
+    with the old subtraction and passes with the fix.
+  - The PR #18 Windows build under Wine: it pairs on the first attempt, stays online, is invited
+    to Deathmatch and plays a two-player linked game (about 2,100 sealed packets each way, 0
+    dropped).
+  - `linktest.sh -j 1 pair passcode lockout linkgame memberpress scores scoreclear gamesync` passes
+    on Linux; those cases exercise every timer the fix touched. The full suite was killed twice for
+    low memory on the laptop, and has not been run on this change.
+- **Wine is a good first test for the Windows build**, though not a substitute for Windows: its
+  Winsock is a layer over Linux sockets. The setup that works: a private `WINEPREFIX`,
+  `DISPLAY=`, `SDL_VIDEODRIVER=dummy`, `drawmode "Software 8bit"`, the package's `legacyhome`
+  with a `link.cfg`, and the IWADs linked beside the exe. Use ports away from 5230 upward, which
+  `linktest.sh` uses.
+- Not proven: that the clock bug is the *whole* of "stopped responding", which was the master's
+  view of an authenticated member going silent. The Wine member never went silent after the
+  fix. If a real Windows cabinet still does, its own log is the next thing to read. Run the exe
+  from a command prompt with `> out.txt 2>&1`, since the exe has no console.
+
+**2. SCORES: DIFFERENT WADS is a different IWAD, and it also blocks the linked game.** The score
+fingerprint is the MD5 of every loaded wad (`D_Net_Wad_Md5s`). The laptop's `legacy.wad` and
+`dogs.wad` match the repository's, which is what the Windows package ships, so the difference is the
+IWAD. The laptop has Ultimate Doom 1.9 (`DOOM.WAD` `c4fe9fd920207691a9f493668e0a2083`) and Doom 2 v1.9
+(`25e1459ca71d321525f84628f45ca8cd`); a copy from the 2024 Steam/GOG re-release, for one, has
+different contents under the same name. The same mismatch refuses the join. The joiner gets the
+on-screen "You cannot connect to this server since it uses a different version of DOOM.WAD", and
+the host waits out `jointime` and plays alone, which from the host looks like a timeout.
+- Verified under Wine with the member on Doom 2 v1.666. The link stays online throughout, so a
+  wad mismatch does **not** cause "stopped responding". The member reads as `menu` (the message
+  box), and the host starts with one player.
+- Copy Missing Wads does not help: it copies an IWAD a member *lacks*, never one it has in
+  another version.
+- **Not done:** neither the score status nor the join refusal says which wad differs, or shows
+  the two versions. An operator has to compare MD5s by hand (`certutil -hashfile DOOM.WAD MD5` on
+  Windows).
+
 ### Phase 4 — past two cabinets
 
 The scaling work below, done with N headless instances. Only as far as it proves worthwhile.
