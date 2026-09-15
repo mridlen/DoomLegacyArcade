@@ -929,6 +929,9 @@ then goes black for the startup sequence, which takes a second or two. Level pac
 into the running session with no restart, and only unloading one restarts, since the engine has no
 way to remove a wad it has already read.
 
+With linked cabinets and **Select Game Sync** on, a game or pack picked here is picked on the other
+cabinets too — see "Connecting cabinets together".
+
 **What works:** ordinary level wads, including Boom-format maps, and DeHackEd/BEX patches
 (including MBF21). **What doesn't:** GZDoom mods. There is no DECORATE or ZScript in this engine,
 so Brutal Doom and similar cannot run, and `.pk3` files are not supported at all.
@@ -1242,6 +1245,29 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   soundtrack pack such as `IDKFAv2.wad`) is not required of the other cabinet; each cabinet plays its
   own music. Any other extra wad the host has loaded — maps, patches, textures — the joining cabinet
   must have too, or it is turned away and goes back to its attract screen.
+
+**Select Game Sync: one cabinet picks the game, the others follow.** Invites only reach cabinets
+running the same game, so a linked game of anything but the cabinets' boot game used to mean walking
+to each cabinet and picking it there first. With **Options → Arcade Options → Cabinet Link Options →
+Select Game Sync** set to **On** (it is **Off** until you turn it on):
+
+- A game picked on **Options → Select Game** on *any* linked cabinet — Ultimate Doom, Doom II,
+  Plutonia, TNT, or a level pack — is picked on every other cabinet too. Each one shows `SWITCHING
+  GAME...` and restarts, exactly as if someone had picked it there (a level pack loads without a
+  restart, as it does by hand).
+- A cabinet in the middle of a game, signing the high score board, on a join screen or in an
+  operator session is **not** interrupted: it switches once it is back on its attract screen. Someone
+  browsing its menus *is* interrupted, as an invite would.
+- **A cabinet that doesn't have that game installed stays on the game it has.** Nothing breaks; the
+  master's Cabinet Link page shows why in red under that cabinet — **GAME SYNC: TNT NOT INSTALLED**,
+  or **GAME SYNC: NO LEVEL PACK DWANGO5** for a pack that is not in its `legacyhome/levels/`. A pack
+  counts as the same if its file has the same name, whatever the capitals.
+- Each cabinet follows a pick once. If its idle timeout later unloads the level pack it followed, it
+  is not pulled back onto it; the next pick on any cabinet is followed again.
+- Only the master has the setting, and only the master shows **Cabinet Link Options** — its setting
+  decides for every cabinet. Like every operator setting, it is saved from a `-devmode` session.
+- Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator
+  session is never switched by someone else's pick.
 
 **Linked cabinets share their high scores.** A record set on one cabinet — a single level time, a
 Survival run, with its record demo — shows up on the other cabinet's attract screen, boards and

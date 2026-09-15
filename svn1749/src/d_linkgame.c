@@ -9,6 +9,7 @@
 #include "doomstat.h"
 #include "d_link.h"
 #include "d_linkgame.h"
+#include "d_linksel.h"
 #include "d_clisrv.h"
 #include "d_main.h"
 #include "m_menu.h"
@@ -421,6 +422,7 @@ void  LKG_Test_Keys( void )
     script += n;
 
     if( ! strcmp( tok, "open" ) )        M_Link_Page_Open();
+    else if( ! strcmp( tok, "arcade" ) ) M_Link_Arcade_Open();
     else if( ! strcmp( tok, "u" ) )      lkg_post_key( lkg_panel_key( gc_forward ), 0 );
     else if( ! strcmp( tok, "d" ) )      lkg_post_key( lkg_panel_key( gc_backward ), 0 );
     else if( ! strcmp( tok, "l" ) )      lkg_post_key( lkg_panel_key( gc_turnleft ), 0 );
@@ -527,6 +529,12 @@ static void  lkg_on_event( const lk_event_t * ev )
     if( ev->type == LK_GM_INVITE )
     {
         lkg_on_invite( ev );
+        return;
+    }
+    // [Arcade] Select Game Sync shares this queue; its messages are its own.
+    if( ev->type == LK_GM_GAME_SELECTED || ev->type == LK_GM_GAME_SWITCH || ev->type == LK_GM_GAME_CANNOT )
+    {
+        LKSEL_On_Event( ev );
         return;
     }
     if( ev->len < 8 )  return;

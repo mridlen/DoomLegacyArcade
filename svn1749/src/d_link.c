@@ -24,6 +24,7 @@
 #include "v_video.h"
 #include "d_linkgame.h"
 #include "d_linkscore.h"
+#include "d_linksel.h"    // [Arcade] Select Game Sync
 
 // Draw text trimmed to fit a column, measured against the real font rather than
 // counted in characters: hu_font is proportional, and names come off the wire.
@@ -142,7 +143,7 @@ const char* LK_Forget_Pins( void )  { return lk_not_built; }
 #include <stdarg.h>
 #include <time.h>
 
-#define LK_PROTO_VERSION    3   // 2: game id in presence, ROUTE, invites; 3: SYNC (shared scores)
+#define LK_PROTO_VERSION    4   // 2: game id in presence, ROUTE, invites; 3: SYNC (shared scores); 4: Select Game Sync messages
 #define LK_FP_LEN           32         // SHA-256 of the public key
 #define LK_PASSCODE_MIN     10         // shorter is allowed, but warned about
 #define LK_PBKDF2_ITER      60000
@@ -1953,6 +1954,7 @@ void  LK_Ticker( void )
     // is printed after the line that says it arrived.
     LKG_Ticker();
     LKS_Ticker();   // [Arcade] shared scores
+    LKSEL_Ticker(); // [Arcade] Select Game Sync
 }
 
 // ---------------------------------------------------------------------------
@@ -2243,7 +2245,23 @@ void  LK_Drawer( int y, int y_end )
                 lk_draw_fit( 18, y, 296, 0, sc );
             }
         }
+        // [Arcade] Select Game Sync: it could not follow the game chosen, and
+        // why -- otherwise that cabinet just stays on its own game, silently.
+        if( y + 9 <= y_end )
+        {
+            const char * gs = LKSEL_Peer_Status( p->fp );
+            if( gs[0] )
+            {
+                y += 9;
+                lk_draw_fit( 18, y, 296, 0, gs );
+            }
+        }
     }
+    // [Arcade] ...and this cabinet itself, when it could not.
+    if( n == 0 )
+        y += 9;   // under "NO OTHER CABINETS YET"
+    if( LKSEL_Self_Status()[0] && y <= y_end )
+        lk_draw_fit( 6, y + 3, 308, 0, LKSEL_Self_Status() );
 }
 
 // ---------------------------------------------------------------------------
@@ -2634,6 +2652,7 @@ static void  lk_net_status( void )
                ( localplayer[0] < MAXPLAYERS && players[localplayer[0]].mo ) ? players[localplayer[0]].mo->y >> FRACBITS : 0,
                LKG_Mode_Name() );
     LKS_Status_Print();   // [Arcade] shared scores, per peer
+    LKSEL_Status_Print(); // [Arcade] Select Game Sync
     // Every player in the game, as this cabinet has them: two cabinets in
     // one game must print the same line.
     if( gamestate == GS_LEVEL )

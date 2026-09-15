@@ -1,11 +1,12 @@
 # Cabinet Link: networked cabinets (Phases 1, 2 and 3 built; 4 still a plan)
 
 *Part of the DoomLegacy arcade cabinet build. Read before touching `d_link.c`/`d_link.h`,
-`d_linkgame.c`, `d_linkscore.c`, `hs_merge.c`, `tools/linktest.sh`, the `HAVE_LINK` build option, or
-`i_tcp.c` socket code. Written 2026-09-13 as a plan before any code; each phase's section is replaced
-with the record of what was built, what broke and how it was verified as it lands. **Phase 1
-(identity, pairing, presence), Phase 2 (shared high scores and demos) and Phase 3 (invites and linked
-games) are built** — see the "what was built" section of each. The design sections were written
+`d_linkgame.c`, `d_linkscore.c`, `d_linksel.c`, `hs_merge.c`, `tools/linktest.sh`, the `HAVE_LINK`
+build option, or `i_tcp.c` socket code. Written 2026-09-13 as a plan before any code; each phase's
+section is replaced with the record of what was built, what broke and how it was verified as it
+lands. **Phase 1 (identity, pairing, presence), Phase 2 (shared high scores and demos) and Phase 3
+(invites and linked games) are built**, and Select Game Sync after them — see the "what was built"
+section of each. The design sections were written
 first; where the build went another way, the Phase 2 record says so and the design text is marked.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
@@ -466,7 +467,7 @@ with the link off is exactly the one this page switches on).
 
 **Verified**:
 - `tools/linktest.sh menusetup`: two cabinets with **no `link.cfg`**, set up entirely by button presses
-  through the input queue (`-linktest -linkkeys "<tokens>"`: `open`, `u d l r f b` for panel 1's
+  through the input queue (`-linktest -linkkeys "<tokens>"`: `open`, `arcade` (Arcade Options), `u d l r f b` for panel 1's
   stick, fire and use, `esc enter bs`, `c=X` a typed key, `wN`, `shot`). The presses that type text come
   from **`tools/linktest_kbd.py`, which reads `lkt_sets` out of `m_menu.c`** and models
   `M_Link_Text_Move`, so the test types on the keyboard that ships. The master goes off → master, names
@@ -1353,6 +1354,113 @@ had closed, but nothing was running underneath it.
   timeout has since been covered headlessly: `idleshared`, `idleall`, `idlehost`.)
 - A Deathmatch against a Campaign opened at the same time (should be two separate games).
 - Pulling a cable mid-game, and playing on the Pi 3 over Wi-Fi for longer than a test run.
+
+### Select Game Sync — what was built (2026-09-14)
+
+Mark: "when someone changes the game (e.g. doomu -> doom2), the game should change on all cabinets if
+they are not already playing a game, otherwise linked games of non-default games would be a
+challenge" — then: "this needs to be an option ... Should only show up on the master. That way the
+operator can decide", on a page of its own because more link settings are coming, and "there might
+be an issue if the wads are not installed on the other system".
+
+Invites only go to cabinets running the same game id (IWAD plus level pack), so before this a linked
+TNT deathmatch needed someone to pick TNT on every cabinet first.
+
+**What it does.** With **`link_gamesync`** on (the master's setting; off by default), a game picked
+on the Select Game page of any cabinet — an IWAD, loading a pack, switching packs or unloading one —
+is followed by every other cabinet that is on its attract screen or in its menus, the states an
+invite may interrupt. A cabinet in a game, signing the board, on a join screen or in an operator
+session follows once it is back to one of those. A cabinet that cannot follow stays where it is.
+
+**Files**
+- `svn1749/src/d_linksel.c` / `d_linksel.h` — the protocol and its state, on the game thread,
+  `LKSEL_Ticker` from `LK_Ticker` after the score sync. Its three message types come in through
+  `LKG_Ticker`'s event poll (one queue), which hands them over.
+- `m_menu.c` — `cv_link_gamesync`; `M_Restart_Program_Ex` (a pack path to load after the restart, and
+  `-linkselected`); `M_Link_Game_Id_Valid` / `M_Link_Game_Why_Not` / `M_Link_Follow_Game`; the
+  **Cabinet Link Options** page (`LinkOptionsDef`, a generic menu with a wrapped explanation) and
+  `M_Draw_ArcadeOptions`, which hides its Arcade Options row unless this cabinet is a master.
+- `d_link.c` — `LK_PROTO_VERSION` **4** (a v3 cabinet would close the connection on the unknown
+  message types; now it is refused at `AUTH` instead), and the page's red lines.
+
+**The protocol** — three `ROUTE`d game messages:
+- `GAME_SELECTED` (game id), a member to its master: a player picked this here.
+- `GAME_SWITCH` (serial, game id), the master to a member. A member acts only on one whose source is
+  its own master (the master rewrites a relayed member's source, so no member can order another).
+- `GAME_CANNOT` (serial, game id, reason), a member to its master.
+
+**Design decisions**
+- **A pick is an event, not a standing target.** The master keeps the latest pick and a serial, and
+  each cabinet deals with a pick once: it follows, or says it cannot. Treating the pick as "the group
+  game" instead fought the level pack rules: a cabinet's idle timeout unloads its pack by restarting
+  (`menus.md`), and a standing target would load it straight back, on a cabinet whose attract demos a
+  pack makes wrong. A busy cabinet has not dealt with the pick yet, so it still follows when free.
+- **The pick lives in the master's memory, and survives only the restarts it causes.** A pick that
+  restarts the program adds `-linkselected`; the new process announces it (a member once the link is
+  up, a master to itself). `M_Restart_Program_Ex` strips `-linkselected` from every other restart — a
+  devmode toggle carrying it would re-announce an old pick to every cabinet. A master that restarts
+  to follow a member's pick passes it too, so it still tells the members that had not followed yet.
+- **Wads that are not installed.** Everything a game id names comes off the network, so it is only
+  compared with what the cabinet has: the IWAD part must be one of the Select Game page's own `-game`
+  names and `D_Game_Available`; the pack part is matched, case-insensitively and cut short the way
+  `levelpack_name` is, against the `.wad` files in `legacyhome/levels/`, and must hold maps for that
+  IWAD (`M_LevelPack_MapStyle`). No path is ever built from the id. The check runs **before** the
+  restart — without it a cabinet re-execs with `-game tnt` and no TNT, which the selfcheck below shows.
+- **Why it could not is shown where the operator looks.** The member replies `GAME_CANNOT`; the master
+  draws `GAME SYNC: TNT NOT INSTALLED` / `GAME SYNC: NO LEVEL PACK DWANGO5` in red under that cabinet
+  on the Cabinet Link page, and a master that cannot follow a member's pick draws its own under the
+  list. **The first wording, `GAME SYNC: NO TNT HERE - FINAL DOOM: TNT IS NOT INSTALLED`, was cut at
+  "TNT IS" on the page** — found on the OpenGL capture, the same way "REFUSED: LOCKED OU" was — so
+  reasons are short, important words first, and use the `-game` name. A member re-sends its last
+  `GAME_CANNOT` whenever its master comes back online: an operator restarting the master into
+  `-devmode` to look at the page has restarted away the master's memory of it.
+- **A pack into an empty slot loads in place**, as the page does it (`M_LevelPack_Add`, shared with
+  `M_SelectGame`); anything else restarts with the pack as `-file`, by exactly the path
+  `M_Scan_LevelPacks` builds, so the new process shows it as loaded.
+- **An operator session passes a pick on but is never switched.** It is not a player (the presence
+  table), and an operator mid-change must not be restarted from another cabinet.
+- **Off means nothing is recorded**: a pick made while it is off is logged and forgotten, so turning it
+  on later does not replay an old one.
+- **The page is on a master only.** Arcade Options' last row, hidden by its drawer from the live role
+  (the role can change underneath it on the Cabinet Link page), the way `M_Update_EndGame_Row` hides
+  End Game. Last, because a hidden row still takes its place.
+
+**Verified** — `tools/linktest.sh`, five new cases, all pass (`-linktest -linkselectat S name` picks
+an IWAD or pack on the Select Game page S seconds in; `LINKSEL` / `LINKSELPEER` status lines, `wads=`
+the number of wads really loaded, since `addfile` reports only to the console):
+- `gamesync` — a member picks TNT: the master follows (and still holds the pick after its restart),
+  the other member follows, and each engine starts exactly twice.
+- `gamesyncoff` — the same with the setting off: logged, nothing follows.
+- `gamesyncmissing` — the master picks TNT; one member has no `TNT.WAD` (and a `HOME` with no
+  `~/games/doom`, which the IWAD search also reads): it says why, does not restart and does not claim
+  to be switching; the master shows `GAME SYNC: TNT NOT INSTALLED`; the other member follows.
+- `gamesyncbusy` — a member in a level: the master logs that it waits, the member switches only after
+  its game ends (`-linkcmdat 40 exitgame`).
+- `gamesyncpack` — the master loads a pack built from DOOM2.WAD's own MAP01; a member holding it as
+  `SyncPack.wad` loads it in place (one more wad, no restart); one without it says `NO LEVEL PACK`.
+- **Each shown red** with its protection taken out: the setting ignored (`gamesyncoff`), the installed
+  check removed (`gamesyncmissing`: the member restarted into a game it lacks), busy cabinets switched
+  (`gamesyncbusy`: switched mid-game), packs always restarted (`gamesyncpack`), and the master
+  following without `-linkselected` (`gamesync`: fails on "still holds the pick" alone).
+- `pair unbound passcode fakemaster garbage bigframe linkgame nojoin menusetup scores idlehost` pass;
+  `make smoke` 5/5; the pages captured in OpenGL (Arcade Options on a master and a member, the options
+  page, the red line on the Cabinet Link page).
+- **Found on the way: `unbound` had been testing nothing since Phase 2.** `tools/linktest_peer.py`
+  kept its own copy of the protocol version, still 2 after the engine went to 3, so the master refused
+  its proof on the version byte before checking whether it was bound to the session — the exact trap
+  Phase 3 recorded, again. With the byte back at 2, `--selfcheck unbound` **stays green**. The peer now
+  reads `LK_PROTO_VERSION` out of `d_link.c`, and the selfcheck goes red.
+- `tools/menufit-test.py` skipped any page whose drawer is not literally `M_DrawGenericMenu`, so giving
+  Arcade Options its own drawer silently dropped it from the check. It now also measures pages whose
+  drawer calls it (31 → 48 pages), and skips, with a line saying so, the one that places rows by symbol.
+
+**Needs a person**: pick a game on the Pi's Select Game page with the laptop on attract (and the other
+way round); pick one while the other cabinet is mid-game and watch it switch after; a cabinet without
+Plutonia picking Plutonia elsewhere.
+
+**Not done**: the picked game is not persisted — a master switched off forgets it, and a cabinet that
+boots later keeps its Boot Game. Two picks made on two cabinets within the same second may each
+restart the other once before settling on the one the master heard last.
 
 ### Phase 4 — past two cabinets
 

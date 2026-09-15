@@ -73,6 +73,26 @@ void M_Configure (void);
 //   want_devmode : whether the new session gets -devmode; pass the current
 //                  devmode to leave the session's mode alone
 void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean want_devmode );
+// [Arcade] The same, with two more choices:
+//   pack_path : a level pack to load after the restart (NULL for none)
+//   link_selected : a player chose this game -- Select Game Sync reads
+//                   -linkselected in the new process (d_linksel.c)
+void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const char * pack_path,
+                           boolean want_devmode, boolean link_selected );
+// [Arcade] Select Game Sync (d_linksel.c).
+// Is this a game id (LK_Game_Id's spelling) that the Select Game page can
+// offer: one of its IWADs, with or without a level pack name?
+boolean  M_Link_Game_Id_Valid( const char * game_id );
+// Switch this cabinet to that game, as the Select Game page would.  Returns
+// NULL when it is already running it or loaded the pack in place, and a short
+// reason when it cannot ("TNT IS NOT INSTALLED"); it does not return when it
+// restarts the program.  link_selected as for M_Restart_Program_Ex.
+const char * M_Link_Follow_Game( const char * game_id, boolean link_selected );
+// Why this cabinet could not switch to that game, or NULL when it could.
+const char * M_Link_Game_Why_Not( const char * game_id );
+// tools/linktest.sh (-linkselectat): choose an IWAD short name or a level
+// pack name on the Select Game page.
+void  M_Link_Test_Select( const char * name );
 // [Arcade] Operator hotkey (the gc_devmode control): restarts into or out of
 // -devmode.  Attract screen only; a refused press is left for the other
 // responders.  Call it after M_Responder and CON_Responder, so that the menu
@@ -160,6 +180,7 @@ const char *  M_Message_Text( void );
 // tools/linktest.sh (-linkkeys).
 boolean  M_Link_Page_Key( const event_t * ev );
 void     M_Link_Page_Open( void );
+void     M_Link_Arcade_Open( void );   // Arcade Options, for -linkkeys "arcade"
 
 // [Arcade] Cabinet Link invites (d_linkgame.c drives these).
 boolean  M_Join_Counts( byte * joined, boolean * all_locked, int * secs );

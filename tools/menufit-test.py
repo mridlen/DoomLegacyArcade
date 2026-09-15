@@ -217,14 +217,21 @@ def find_pages(text):
         items_name = fields[2]
         if items_name not in arrays:
             continue
-        if 'M_DrawGenericMenu' not in body:
-            continue
+        wrapped = 'M_DrawGenericMenu' not in body
+        if wrapped:
+            # [Arcade] A page whose drawer does its own thing first and then
+            # calls M_DrawGenericMenu (Arcade Options hides a row off a master)
+            # still lays its rows out generically.  Skipping it would quietly
+            # drop a page from the check the moment it gained such a drawer.
+            dm = re.search(r'\b' + re.escape(fields[3]) + r'\s*\(\s*void\s*\)\s*\{', text)
+            if not dm or 'M_DrawGenericMenu()' not in strip_comments(brace_block(text, dm.start())):
+                continue
         try:
             x = int(fields[6])
             y = int(fields[7])
         except (ValueError, IndexError):
             continue
-        pages.append({'def': m.group(1), 'items': items_name,
+        pages.append({'def': m.group(1), 'items': items_name, 'wrapped': wrapped,
                       'y': y, 'x': x, 'at': arrays[items_name]})
     return pages
 
@@ -282,8 +289,14 @@ def main():
     for page in pages:
         if wanted and page['items'] not in wanted and page['def'] not in wanted:
             continue
-        shown += 1
         rows = layout(text, page, syms)
+        if page['wrapped'] and any(r['unknown_offset'] for r in rows):
+            # Its own drawer places rows by a symbol this cannot resolve: say
+            # so rather than fail a page that was never measured before.
+            print('skip %-24s drawer %s wraps M_DrawGenericMenu; rows placed by symbol'
+                  % (page['items'], page['def']))
+            continue
+        shown += 1
         problems = check(rows)
         last = max((r['bottom'] for r in rows), default=page['y'])
         slack = (SCREEN_HEIGHT - last) // STRINGHEIGHT

@@ -231,6 +231,7 @@
 #include "mserv.h"
 #include "d_link.h"      // [Arcade] Cabinet Link page
 #include "d_linkgame.h"  // [Arcade] Cabinet Link invites
+#include "d_linksel.h"   // [Arcade] Select Game Sync
 #include "p_inter.h"
 #include "m_misc.h"
   // config
@@ -657,6 +658,13 @@ consvar_t cv_cheatsmenu = {"cheatsmenu", "0", CV_SAVE, CV_OnOff };
 // no record demo to apply it to.
 consvar_t cv_chasecamdemo = {"chasecamdemo", "1", CV_SAVE, CV_OnOff };
 
+// [Arcade] Select Game Sync: a game chosen on the Select Game page of any
+// linked cabinet is followed by every other one that is not in a game
+// (d_linksel.c).  Only the master's setting counts, and only a master shows
+// it (Arcade Options -> Cabinet Link Options).  Off by default: turning it on
+// changes what the other cabinets do, which is the operator's call.
+consvar_t cv_link_gamesync = {"link_gamesync", "0", CV_SAVE, CV_OnOff };
+
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has
 // no Quit button -- quitting drops the player out to a desktop they should
 // never see, and on an unattended machine nothing brings the game back -- so
@@ -806,6 +814,8 @@ menu_t GameSelectDef;   // [Arcade] IWAD switcher
 menu_t RecLayoutDef;    // [Arcade] recommended panel layout, informational
 menu_t AuditDef;        // [Arcade] operator audit, informational
 menu_t CabinetLinkDef;  // [Arcade] Cabinet Link status, informational
+menu_t LinkOptionsDef;  // [Arcade] Cabinet Link Options (a master)
+static void M_Draw_ArcadeOptions( void );   // [Arcade] hides Cabinet Link Options off a master
 menu_t PlayerViewsDef;  // [Arcade] panels, splits, join
 menu_t MainDef, SoundDef, EpiDef, NewDef,
   VideoModeDef, VideoOptionsDef, DrawmodeDef, MouseOptionsDef,
@@ -5152,14 +5162,26 @@ static void M_Draw_Restart_Splash( const char * msg )
 //                and locked again.
 void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean want_devmode )
 {
+    M_Restart_Program_Ex( game_idstr, keep_packs, NULL, want_devmode, false );
+}
+
+//   pack_path : [Arcade] a level pack to load after the restart, by path
+//               (Select Game Sync following a pack chosen on another cabinet)
+//   link_selected : [Arcade] a player chose this game.  -linkselected tells
+//               the new process so, and d_linksel.c passes it on; every other
+//               restart drops it, or a devmode toggle would re-announce an old
+//               choice to every linked cabinet.
+void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const char * pack_path,
+                           boolean want_devmode, boolean link_selected )
+{
     char ** newargv;
     const char * splash;
     int  i, n = 0;
     boolean in_file_list = false;
 
     // +4 for "-game" and its name, "-devmode", and the NULL terminator,
-    // +2 per pack.
-    newargv = (char**) malloc( (myargc + 4 + (2*MAX_LEVELPACK)) * sizeof(char*) );
+    // +2 per pack, +2 for pack_path, +1 for "-linkselected".
+    newargv = (char**) malloc( (myargc + 7 + (2*MAX_LEVELPACK)) * sizeof(char*) );
     if( ! newargv )  return;
 
     newargv[n++] = myargv[0];
@@ -5180,6 +5202,12 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean wan
         // session wants it.  Dropping it unconditionally is what lets the
         // operator hotkey work in both directions from one code path.
         if( strcasecmp(myargv[i], "-devmode") == 0 )
+        {
+            in_file_list = false;
+            continue;
+        }
+        // [Arcade] Likewise -linkselected, re-added only for a selection.
+        if( strcasecmp(myargv[i], "-linkselected") == 0 )
         {
             in_file_list = false;
             continue;
@@ -5215,8 +5243,15 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean wan
             newargv[n++] = levelpack_path[i];
         }
     }
+    if( pack_path )
+    {
+        newargv[n++] = "-file";
+        newargv[n++] = (char*) pack_path;
+    }
     if( want_devmode )
         newargv[n++] = "-devmode";
+    if( link_selected )
+        newargv[n++] = "-linkselected";
     newargv[n] = NULL;
 
     // [Arcade] Tell the player what the black screen is, while the video
@@ -5341,6 +5376,20 @@ boolean  M_LevelPack_Loaded( void )
 }
 
 
+// [Arcade] Add level pack lp to this session with no restart; only valid when
+// no pack is loaded yet.
+static
+void M_LevelPack_Add( int lp )
+{
+    COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
+    levelpack_isloaded[lp] = true;
+    levelpack_loaded = true;   // attract demos are no longer valid
+    M_LevelPack_SetLabel( lp );
+
+    CONS_Printf( "\2%s loaded. Start a One or Two Player game to play it.\n",
+                 levelpack_name[lp] );
+}
+
 //  choice : index into GameSelectMenu; the first GS_numgames entries are
 //           IWADs, the rest are level packs
 static
@@ -5366,7 +5415,7 @@ void M_SelectGame(int choice)
             // so this restarts with no pack at all.
             levelpack_isloaded[lp] = false;
             CONS_Printf( "\2Unloading %s, restarting.\n", levelpack_name[lp] );
-            M_Restart_Program( NULL, false, devmode );   // no return
+            M_Restart_Program_Ex( NULL, false, NULL, devmode, true );   // no return
             return;
         }
 
@@ -5378,18 +5427,13 @@ void M_SelectGame(int choice)
             for( i = 0; i < num_levelpack; i++ )
                 levelpack_isloaded[i] = (i == lp);
             CONS_Printf( "\2Switching to %s, restarting.\n", levelpack_name[lp] );
-            M_Restart_Program( NULL, true, devmode );   // no return
+            M_Restart_Program_Ex( NULL, true, NULL, devmode, true );   // no return
             return;
         }
 
         // Nothing loaded yet, so it can just be added, with no restart.
-        COM_BufAddText( va("addfile \"%s\"\n", levelpack_path[lp]) );
-        levelpack_isloaded[lp] = true;
-        levelpack_loaded = true;   // attract demos are no longer valid
-        M_LevelPack_SetLabel( lp );
-
-        CONS_Printf( "\2%s loaded. Start a One or Two Player game to play it.\n",
-                     levelpack_name[lp] );
+        M_LevelPack_Add( lp );
+        LKSEL_Selected();   // [Arcade] Select Game Sync: no restart to carry it
         return;
     }
 
@@ -5397,7 +5441,178 @@ void M_SelectGame(int choice)
 
     // Switching IWAD needs the startup sequence to run again, which is only
     // reachable by restarting the program.
-    M_Restart_Program( gameselect_arg[choice], false, devmode );   // no return
+    // [Arcade] link_selected: Select Game Sync passes the choice on.
+    M_Restart_Program_Ex( gameselect_arg[choice], false, NULL, devmode, true );   // no return
+}
+
+
+// [Arcade] Select Game Sync (d_linksel.c): follow a game chosen on another
+// linked cabinet.  Everything a game id names comes off the network, so it is
+// only ever compared with what this cabinet has -- the Select Game page's own
+// IWAD names and the files in legacyhome/levels/ -- never used to build a path.
+
+// A pack name from a game id against a pack's name here.  Both are cut short
+// the same way (levelpack_name, LK_GAME_LEN), and a cabinet may name the file
+// in another case: Dwango5.wad and dwango5.wad are the same pack.
+static boolean  M_Link_Pack_Match( const char * local, const char * wanted, boolean cut )
+{
+    char  stem[ sizeof(levelpack_name[0]) ];
+    dl_strncpy( stem, local, sizeof(stem) );
+    if( cut )   // the game id ran out of room: its pack name is a prefix
+        return strncasecmp( stem, wanted, strlen(wanted) ) == 0;
+    return strcasecmp( stem, wanted ) == 0;
+}
+
+// Split a game id into its Select Game IWAD index and pack name ("" none).
+// Returns -1 when it is not one this page could have produced.
+static int  M_Link_Parse_Game_Id( const char * game_id, char * pack, int packsize, boolean * cut )
+{
+    char  iwad[LK_GAME_LEN];
+    const char * plus = strchr( game_id, '+' );
+    int  gs, len = plus ? plus - game_id : (int) strlen( game_id );
+    int  i;
+
+    pack[0] = 0;
+    *cut = ( strlen( game_id ) >= LK_GAME_LEN - 1 );
+    if( len <= 0 || len >= (int) sizeof(iwad) )  return -1;
+    memcpy( iwad, game_id, len );
+    iwad[len] = 0;
+    for( gs = 0; gs < GS_numgames; gs++ )
+        if( strcasecmp( iwad, gameselect_arg[gs] ) == 0 )  break;
+    if( gs == GS_numgames )  return -1;
+    if( plus )
+    {
+        dl_strncpy( pack, plus + 1, packsize );
+        if( ! pack[0] )  return -1;
+        for( i = 0; pack[i]; i++ )
+            if( pack[i] < ' ' || pack[i] > '~' || pack[i] == '/' || pack[i] == '\\' )  return -1;
+    }
+    return gs;
+}
+
+boolean  M_Link_Game_Id_Valid( const char * game_id )
+{
+    char  pack[LK_GAME_LEN];
+    boolean cut;
+    return M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut ) >= 0;
+}
+
+// Find a level pack by name in legacyhome/levels/, holding maps of the style
+// wanted, and write its path the way M_Scan_LevelPacks does -- the restarted
+// program recognises a pack it was given with -file by that exact path.
+static boolean  M_LevelPack_Find( const char * name, boolean cut, int want_style, char * path_out )
+{
+    char dirpath[MAX_WADPATH];
+    DIR * dp;
+    struct dirent * dent;
+    boolean found = false;
+
+    cat_filename( dirpath, legacyhome, LEVELPACK_DIR );
+    dp = opendir( dirpath );
+    if( ! dp )  return false;
+    while( ! found && (dent = readdir( dp )) != NULL )
+    {
+        char  stem[ sizeof(levelpack_name[0]) ];
+        char * extp = strrchr( dent->d_name, '.' );
+        int  len;
+        if( (extp == NULL) || (strcasecmp( extp, ".wad" ) != 0) )  continue;
+        len = extp - dent->d_name;
+        if( len > (int)sizeof(stem) - 1 )  len = sizeof(stem) - 1;
+        memcpy( stem, dent->d_name, len );
+        stem[len] = '\0';
+        if( ! M_Link_Pack_Match( stem, name, cut ) )  continue;
+        cat_filename( path_out, dirpath, dent->d_name );
+        found = ( M_LevelPack_MapStyle( path_out ) & want_style ) != 0;
+    }
+    closedir( dp );
+    return found;
+}
+
+static char  m_link_pack_path[MAX_WADPATH];   // the pack M_Link_Game_Why_Not found
+
+const char * M_Link_Game_Why_Not( const char * game_id )
+{
+    static char  why[48];
+    char  pack[LK_GAME_LEN];
+    boolean  cut;
+    int  gs, i;
+
+    why[0] = 0;
+    gs = M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut );
+    if( gs < 0 )
+        snprintf( why, sizeof(why), "NOT ON SELECT GAME HERE" );
+    // Short, and the important words first: the Cabinet Link page gives the
+    // note one line under the cabinet, and a cut "FINAL DOOM: TNT IS" had lost
+    // the meaning.  The -game name is the one both cabinets spell the same.
+    else if( ! D_Game_Available( gameselect_arg[gs] ) )
+        snprintf( why, sizeof(why), "%s NOT INSTALLED", gameselect_arg[gs] );
+    else if( pack[0] )
+    {
+        // Ultimate Doom is the one episodic game on the page.
+        int want = strcasecmp( gameselect_arg[gs], "doomu" ) ? LPM_mapxx : LPM_exmy;
+        if( ! M_LevelPack_Find( pack, cut, want, m_link_pack_path ) )
+            snprintf( why, sizeof(why), "NO LEVEL PACK %s", pack );
+    }
+    if( ! why[0] )  return NULL;
+    // The page draws in capitals; the log reads the same.
+    for( i = 0; why[i]; i++ )  why[i] = toupper( (unsigned char) why[i] );
+    return why;
+}
+
+const char * M_Link_Follow_Game( const char * game_id, boolean link_selected )
+{
+    const char * pack_path = m_link_pack_path;
+    const char * why;
+    char  pack[LK_GAME_LEN];
+    const char * cur_pack;
+    boolean  cut, same_iwad;
+    int  gs, lp;
+
+    why = M_Link_Game_Why_Not( game_id );   // also finds the pack's path
+    if( why )  return why;
+    gs = M_Link_Parse_Game_Id( game_id, pack, sizeof(pack), &cut );
+
+    same_iwad = gamedesc.idstr && strcasecmp( gamedesc.idstr, gameselect_arg[gs] ) == 0;
+    cur_pack = M_LevelPack_LoadedName();
+    if( same_iwad )
+    {
+        if( ! pack[0] && ! cur_pack )  return NULL;
+        if( pack[0] && cur_pack && M_Link_Pack_Match( cur_pack, pack, cut ) )  return NULL;
+        if( pack[0] && ! cur_pack )
+        {
+            // Into an empty slot: added in place, as the page does it.
+            for( lp = 0; lp < num_levelpack; lp++ )
+            {
+                if( strcmp( levelpack_path[lp], pack_path ) )  continue;
+                M_LevelPack_Add( lp );
+                if( link_selected )  LKSEL_Selected();
+                return NULL;
+            }
+        }
+        // The same IWAD with another pack, or none: -game stays as it is.
+        M_Restart_Program_Ex( NULL, false, pack[0] ? pack_path : NULL, devmode, link_selected );
+    }
+    else
+        M_Restart_Program_Ex( gameselect_arg[gs], false, pack[0] ? pack_path : NULL, devmode, link_selected );
+    return "COULD NOT RESTART";   // not reached
+}
+
+void  M_Link_Test_Select( const char * name )
+{
+    int  i;
+    for( i = 0; i < GS_numgames; i++ )
+        if( strcasecmp( name, gameselect_arg[i] ) == 0 && D_Game_Available( gameselect_arg[i] ) )
+        {
+            M_SelectGame( i );
+            return;
+        }
+    for( i = 0; i < num_levelpack; i++ )
+        if( strcasecmp( name, levelpack_name[i] ) == 0 )
+        {
+            M_SelectGame( GS_numgames + i );
+            return;
+        }
+    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: no game or pack called %s here\n", name );
 }
 
 //
@@ -5551,6 +5766,12 @@ menuitem_t MenuOptionsMenu[]=
     // [Arcade] Networked cabinets: the settings and every other cabinet's
     // status.  Appended, and nothing indexes this array by position.
     {IT_SUBMENU| IT_WHITESTRING,0, "Cabinet Link >>", &CabinetLinkDef  , 0},
+    // [Arcade] Settings for how linked cabinets behave together.  A page of
+    // its own because the Cabinet Link page is full (its status block starts
+    // at y 98).  Shown on a master only, since only the master's settings
+    // count: M_Draw_ArcadeOptions hides it elsewhere.  Must stay the last row
+    // -- a hidden row still takes its place, and last it leaves no gap.
+    {IT_SUBMENU| IT_WHITESTRING,0, "Cabinet Link Options >>", &LinkOptionsDef, 0},
 };
 
 menu_t  MenuOptionsDef =
@@ -5558,7 +5779,7 @@ menu_t  MenuOptionsDef =
     "M_OPTTTL",
     "Arcade Options",   // [Arcade] was a copy-pasted "Effects"
     MenuOptionsMenu,
-    M_DrawGenericMenu,
+    M_Draw_ArcadeOptions,
     NULL,
     sizeof(MenuOptionsMenu)/sizeof(menuitem_t),
     60,40,
@@ -7539,12 +7760,106 @@ boolean  M_Link_Page_Key( const event_t * ev )
     }
 }
 
+// ---- Cabinet Link Options (a master) ----------------------------------------
+//
+// How linked cabinets behave together, as opposed to how this one connects
+// (the page above).  A generic menu, so each new setting is a row.  Only the
+// master's settings count, so the page is only offered on a master.
+
+menuitem_t LinkOptionsMenu[] =
+{
+    {IT_STRING | IT_CVAR, 0, "Select Game Sync", &cv_link_gamesync, 0},
+};
+
+// Draw text word-wrapped to width, measured with the menu font rather than
+// counted in characters: its glyphs are proportional.  Returns the next y.
+static int  M_Link_Wrap( int x, int y, int width, int option, const char * text )
+{
+    char  line[96];
+    const char * p = text;
+    while( *p )
+    {
+        int  n = 0, fit = 0;
+        while( p[n] && n < (int) sizeof(line) - 1 )
+        {
+            memcpy( line, p, n + 1 );
+            line[n+1] = 0;
+            if( V_StringWidth( line ) > width )  break;
+            n++;
+            if( p[n] == ' ' || p[n] == 0 )  fit = n;
+        }
+        if( ! fit )  fit = n ? n : 1;   // one word wider than the line: cut it
+        memcpy( line, p, fit );
+        line[fit] = 0;
+        V_DrawString( x, y, option, line );
+        y += 10;
+        p += fit;
+        while( *p == ' ' )  p++;
+    }
+    return y;
+}
+
+static void  M_Draw_LinkOptions( void )
+{
+    int  y;
+    M_DrawGenericMenu();
+    y = LinkOptionsDef.y + 30;
+    if( LK_Role() != LK_ROLE_MASTER )
+        y = M_Link_Wrap( 24, y, 272, 0, "THIS CABINET IS NOT THE MASTER: ONLY THE MASTER'S SETTINGS COUNT." ) + 6;
+    M_Link_Wrap( 24, y, 272, V_WHITEMAP,
+                 "SELECT GAME SYNC: A GAME CHOSEN ON SELECT GAME ON ANY LINKED CABINET IS "
+                 "CHOSEN ON THE OTHERS TOO. A CABINET IN A GAME SWITCHES WHEN IT IS OVER. "
+                 "ONE WITHOUT THAT GAME INSTALLED STAYS WHERE IT IS, AND THE CABINET LINK "
+                 "PAGE SAYS SO UNDER IT." );
+}
+
+menu_t  LinkOptionsDef =
+{
+    "M_OPTTTL",
+    "Cabinet Link Options",
+    LinkOptionsMenu,
+    M_Draw_LinkOptions,
+    NULL,
+    sizeof(LinkOptionsMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+// Arcade Options: Cabinet Link Options is its last row, shown on a master
+// only.  Assigns only, from current state, so every frame is the same; the
+// role can change underneath, on the Cabinet Link page, so it is re-checked
+// each frame as M_Update_EndGame_Row does.
+static void  M_Draw_ArcadeOptions( void )
+{
+    int  row = sizeof(MenuOptionsMenu)/sizeof(menuitem_t) - 1;
+    uint16_t  st = ( LK_Built() && LK_Role() == LK_ROLE_MASTER ) ? (IT_SUBMENU | IT_WHITESTRING) : IT_HIDDEN;
+
+    if( MenuOptionsMenu[row].status != st )
+    {
+        MenuOptionsMenu[row].status = st;
+        if( st == IT_HIDDEN )
+        {
+            if( MenuOptionsDef.lastOn == row )  MenuOptionsDef.lastOn = row - 1;
+            if( currentMenu == &MenuOptionsDef && itemOn == row )  itemOn = row - 1;
+        }
+    }
+    M_DrawGenericMenu();
+}
+
 // tools/linktest.sh (-linktest -linkkeys): open the page as Arcade Options would.
 void  M_Link_Page_Open( void )
 {
     M_StartControlPanel();
     lkp_row = LKP_ROLE;
     Push_Setup_Menu( &CabinetLinkDef );
+}
+
+// tools/linktest.sh (-linktest -linkkeys arcade): Arcade Options, cursor on its first row.
+void  M_Link_Arcade_Open( void )
+{
+    M_StartControlPanel();
+    MenuOptionsDef.lastOn = 0;
+    Push_Setup_Menu( &MenuOptionsDef );
 }
 
 menuitem_t CabinetLinkMenu[] =
@@ -12683,6 +12998,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_multiplayermenu,  // [Arcade]
   &cv_gameoptionsmenu,  // [Arcade]
   &cv_chasecamdemo,     // [Arcade]
+  &cv_link_gamesync,    // [Arcade] Select Game Sync
   &cv_initialstimeout,  // [Arcade]
 
     // p_mobj.c

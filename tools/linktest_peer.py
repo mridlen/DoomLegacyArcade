@@ -16,7 +16,24 @@ CERTDIR gets a throwaway key and certificate (made with the openssl CLI).
 import hashlib, hmac, os, socket, ssl, struct, subprocess, sys, time
 
 MSG_AUTH = 1
-PROTO_VERSION = 2   # must match LK_PROTO_VERSION in d_link.c
+
+
+def _proto_version():
+    # Read out of d_link.c rather than copied here.  A copy stayed at 2 when
+    # the engine went to 3, and from then on the master refused this peer on
+    # the version byte before it ever looked at the proof: "unbound" passed
+    # while testing nothing, and only --selfcheck showed it.
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "..", "svn1749", "src", "d_link.c")
+    import re
+    with open(src, encoding="utf-8", errors="replace") as f:
+        m = re.search(r"^#define\s+LK_PROTO_VERSION\s+(\d+)", f.read(), re.M)
+    if not m:
+        sys.exit("linktest_peer.py: no LK_PROTO_VERSION in " + src)
+    return int(m.group(1))
+
+
+PROTO_VERSION = _proto_version()
 
 
 def make_cert(d):

@@ -502,6 +502,17 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   `D_DoomLoop`, which is a `while(1)` that never returns. So `M_Restart_Program(idstr)` shuts down
   cleanly and **re-execs** with a different `-game`. Passing `NULL` restarts as-is, which the idle
   timeout uses to discard a loaded level pack.
+  - **Cabinet Link's Select Game Sync** follows a pick made on another cabinet
+    (`cabinet-link.md`, "Select Game Sync"). Every restart on this page passes `link_selected` to
+    `M_Restart_Program_Ex`, which adds `-linkselected` so the new process can tell the other
+    cabinets; every other restart strips it. `M_Restart_Program_Ex` can also load a pack by path after
+    the restart, which the page itself never needs. A pick that loads a pack in place calls
+    `LKSEL_Selected()` instead. **A new route onto a different game must do one or the other**, or
+    linked cabinets will not follow it.
+  - **Arcade Options' last row, Cabinet Link Options, is hidden off a master** by the page's own
+    drawer (`M_Draw_ArcadeOptions`), from the live role. Keep it last: a hidden row still takes its
+    place. `tools/menufit-test.py` measures pages whose drawer wraps `M_DrawGenericMenu` since this
+    went in — before, giving a page its own drawer silently dropped it from the check.
   - `-game` takes the short name from the `gamedesc` table in `d_main.c` (`doomu`, `doom2`,
     `plutonia`, `tnt`, …), so the engine locates the IWAD itself and no wad path is hardcoded.
     Adding another game is one entry in `gameselect_arg[]` plus a display name.

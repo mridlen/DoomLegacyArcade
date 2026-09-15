@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1491,6 +1491,187 @@ case_unbound() {
         "$d/master/legacyhome/link/cabinet.crt" > "$d/peer.txt" 2>&1
     wait
     expect_file "a correct passcode proof from another TLS session is refused" "$d/peer.txt" "RESULT unbound closed"
+}
+
+# --------------------------------------------------------------------------
+#  Select Game Sync (d_linksel.c)
+# --------------------------------------------------------------------------
+
+# gamesynccabs <dir> <port> : a master with Select Game Sync on (unless
+# SYNC=0), and members CHOOSER and FOLLOWER.
+gamesynccabs() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/chooser"; mkcab "$d/follower"
+    cfg "$d/master" "role master" "name MASTERCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/chooser" "role member" "name CHOOSER" "master 127.0.0.1" "port $p" "$PASS"
+    cfg "$d/follower" "role member" "name FOLLOWER" "master 127.0.0.1" "port $p" "$PASS"
+    echo "link_gamesync \"${SYNC:-1}\"" >> "$d/master/legacyhome/config.cfg"
+}
+
+# The last LINKSEL line's game.
+selgame() { lastline "$1" LINKSEL | sed -n 's/.* game=\([^ ]*\) .*/\1/p'; }
+expect_game() {   # <dir> <game>
+    local g
+    g=$(selgame "$1")
+    [ "$g" = "$2" ] || FAILS="$FAILS
+      $(basename "$1") ended on ${g:-no game} (expected $2)"
+}
+# How many times an engine started: every start loads legacy.wad once.
+starts() { out "$1" | grep -ac "Added file .*legacy\.wad"; }
+# The wads= of the first LINKSEL line.
+firstwads() { out "$1" | grep -a "^LINKSEL " | head -1 | sed -n 's/.* wads=\([0-9]*\) .*/\1/p'; }
+
+# A player on one member chooses TNT.  The master and the other member follow;
+# the one who chose restarts once, for its own choice, and nobody twice.
+case_gamesync() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    run "$d/master" 80 0
+    sleep 2
+    run "$d/chooser" 77 0 -linktest -linkselectat 12 tnt
+    run "$d/follower" 77 0
+    wait
+    expect "the chooser told its master" "$d/chooser" "^LINKLOG .*told MASTERCAB this cabinet selected tnt"
+    expect "the master took the choice" "$d/master" "^LINKLOG .*CHOOSER selected tnt; the other cabinets follow"
+    expect "the master switched itself" "$d/master" "^LINKLOG .*switching to tnt, selected on the link"
+    expect "the other member was told" "$d/master" "^LINKLOG .*telling FOLLOWER to switch to tnt"
+    expect "the other member switched" "$d/follower" "^LINKLOG .*switching to tnt, selected on the link"
+    expect_not "the chooser was not told to switch to its own choice" "$d/chooser" "^LINKLOG .*switching to"
+    # -linkselected: the master restarted to follow, and still holds the choice
+    # for any cabinet that has not followed yet.
+    expect "the master still holds the choice after its restart" "$d/master" "^LINKSEL sync=1 game=tnt wads=[0-9]+ target=tnt "
+    expect_game "$d/master" tnt; expect_game "$d/chooser" tnt; expect_game "$d/follower" tnt
+    local c
+    for c in master chooser follower; do
+        [ "$(starts "$d/$c")" = 2 ] || FAILS="$FAILS
+      $c started $(starts "$d/$c") times (expected 2: once, then one switch)"
+    done
+}
+
+# The same choice with Select Game Sync off on the master: nothing follows.
+case_gamesyncoff() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    SYNC=0 gamesynccabs "$d" "$p"
+    run "$d/master" 50 0
+    sleep 2
+    run "$d/chooser" 47 0 -linktest -linkselectat 12 tnt
+    run "$d/follower" 47 0
+    wait
+    expect "the master heard the choice and ignored it" "$d/master" "^LINKLOG .*CHOOSER selected tnt \(Select Game Sync is off\)"
+    expect_not "the master did not switch" "$d/master" "^LINKLOG .*switching to"
+    expect_not "the other member was not told" "$d/follower" "^LINKLOG .*switching to"
+    expect_game "$d/chooser" tnt; expect_game "$d/master" doom2; expect_game "$d/follower" doom2
+}
+
+# The master chooses TNT; one member has no TNT.WAD.  That member stays where it
+# is and says why, the master's page shows it under that cabinet, and the other
+# member follows as usual.
+case_gamesyncmissing() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    # The IWAD search also looks in ~/games/doom: give the member a HOME with
+    # nothing in it, or it finds TNT there and the case tests nothing.
+    rm -f "$d/follower/TNT.WAD" "$d/follower/tnt.wad"
+    mkdir -p "$d/follower/home"
+    run "$d/master" 70 0 -linktest -linkselectat 12 tnt
+    sleep 2
+    run "$d/chooser" 67 0
+    HOME="$d/follower/home" run "$d/follower" 67 0
+    wait
+    expect "the member without it really had Doom 2 from its own directory" "$d/follower" "Added file .*/follower/DOOM2\.WAD"
+    expect "the master announced its choice" "$d/master" "^LINKLOG .*tnt selected here; the other cabinets follow"
+    expect "the member with TNT followed" "$d/chooser" "^LINKLOG .*switching to tnt, selected on the link"
+    expect "the member without TNT said why" "$d/follower" "^LINKLOG .*cannot switch to tnt: TNT NOT INSTALLED"
+    expect "the master shows it under that cabinet" "$d/master" "^LINKSELPEER FOLLOWER GAME SYNC: TNT NOT INSTALLED$"
+    expect_not "and did not say it was switching" "$d/follower" "^LINKLOG .*switching to"
+    expect_game "$d/chooser" tnt; expect_game "$d/follower" doom2
+    [ "$(starts "$d/follower")" = 1 ] || FAILS="$FAILS
+      the member without TNT restarted"
+    # Told once, not over and over.
+    local told
+    told=$(out "$d/master" | grep -ac "^LINKLOG .*telling FOLLOWER to switch to tnt")
+    [ "$told" -le 2 ] || FAILS="$FAILS
+      the master told FOLLOWER $told times"
+}
+
+# The master chooses TNT while a member is in a game.  The member is not
+# interrupted; it switches once its game is over and it is back on attract.
+case_gamesyncbusy() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    run "$d/master" 75 0 -linktest -linkselectat 12 tnt
+    sleep 2
+    run "$d/follower" 72 0 -warp 1 -skill 3 -linktest -linkcmdat 40 "exitgame"
+    wait
+    expect "the member was in a level" "$d/follower" "^LINKGAME gamestate=1 "
+    expect "the master waited for it" "$d/master" "^LINKLOG .*FOLLOWER is playing; it switches to tnt when it is free"
+    expect "then told it" "$d/master" "^LINKLOG .*telling FOLLOWER to switch to tnt"
+    expect "and it switched" "$d/follower" "^LINKLOG .*switching to tnt, selected on the link"
+    expect_game "$d/follower" tnt
+    # Not during the level: it switches only after its game was ended.  (The
+    # restart keeps -warp, so the switched cabinet is in a level again after.)
+    local ended sw inlevel
+    ended=$(out "$d/follower" | grep -an "^LINKTEST console: exitgame" | head -1 | cut -d: -f1)
+    sw=$(out "$d/follower" | grep -an "^LINKLOG .*switching to tnt" | head -1 | cut -d: -f1)
+    [ -n "$ended" ] && [ -n "$sw" ] && [ "$ended" -lt "$sw" ] || FAILS="$FAILS
+      the member switched during its game (game ended line ${ended:-?}, switch line ${sw:-?})"
+    inlevel=$(out "$d/follower" | head -n "${ended:-0}" | grep -ac "^LINKGAME gamestate=1 ")
+    [ "$inlevel" -ge 8 ] || FAILS="$FAILS
+      the member was only in its level for $inlevel status lines -- too short to prove it waited"
+}
+
+# mkpack <out.wad> : a level pack holding Doom 2's own MAP01, so the attract
+# demos still play on it.
+mkpack() {
+    python3 - "$WADDIR/DOOM2.WAD" "$1" <<'PYEOF'
+import struct, sys
+src, out = sys.argv[1], sys.argv[2]
+b = open(src, 'rb').read()
+n, ofs = struct.unpack_from('<ii', b, 4)
+ents = [struct.unpack_from('<ii8s', b, ofs + 16*i) for i in range(n)]
+i = [e[2].rstrip(b'\0') for e in ents].index(b'MAP01')
+lumps = ents[i:i+11]
+data = b''; d = b''
+for pos, size, name in lumps:
+    d += struct.pack('<ii8s', 12 + len(data), size, name)
+    data += b[pos:pos+size]
+open(out, 'wb').write(struct.pack('<4sii', b'PWAD', len(lumps), 12 + len(data)) + data + d)
+PYEOF
+}
+
+# The master loads a level pack (no restart).  A member with the same pack under
+# another case follows the same way; one without it stays and says why.
+case_gamesyncpack() {
+    local d=$1 p=$2
+    gamesynccabs "$d" "$p"
+    mkdir -p "$d/master/legacyhome/levels" "$d/chooser/legacyhome/levels" "$d/follower/legacyhome/levels"
+    mkpack "$d/master/legacyhome/levels/syncpack.wad"
+    cp "$d/master/legacyhome/levels/syncpack.wad" "$d/chooser/legacyhome/levels/SyncPack.wad"
+    run "$d/master" 50 0 -linktest -linkselectat 12 syncpack
+    sleep 2
+    run "$d/chooser" 47 0
+    run "$d/follower" 47 0
+    wait
+    expect "the master loaded the pack: one more wad" "$d/master" "^LINKSEL sync=1 game=doom2\+syncpack wads=$(( $(firstwads "$d/master") + 1 )) "
+    expect "the master announced it" "$d/master" "^LINKLOG .*doom2\+syncpack selected here; the other cabinets follow"
+    expect "the member with the pack followed" "$d/chooser" "^LINKLOG .*switching to doom2\+syncpack, selected on the link"
+    expect "and loaded its own copy: one more wad" "$d/chooser" "^LINKSEL sync=0 game=doom2\+SyncPack wads=$(( $(firstwads "$d/chooser") + 1 )) "
+    expect "the member without it said why" "$d/follower" "^LINKLOG .*cannot switch to doom2\+syncpack: NO LEVEL PACK SYNCPACK"
+    expect "the master shows it" "$d/master" "^LINKSELPEER FOLLOWER GAME SYNC: NO LEVEL PACK SYNCPACK$"
+    expect_game "$d/master" doom2+syncpack; expect_game "$d/chooser" doom2+SyncPack; expect_game "$d/follower" doom2
+    local c
+    for c in master chooser follower; do
+        [ "$(starts "$d/$c")" = 1 ] || FAILS="$FAILS
+      $c restarted (a pack into an empty slot needs no restart)"
+    done
 }
 
 # --------------------------------------------------------------------------
