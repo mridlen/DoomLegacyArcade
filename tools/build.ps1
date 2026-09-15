@@ -214,6 +214,8 @@ Step "Checking what is installed"
 # is the only test that stays true when package names change.
 
 $missingPkgs = @()
+$optionalPkgs = @()   # [Arcade] the game builds without these; see the OpenSSL probe
+$haveLink = $false
 $wrongGcc = $false
 
 # -- phase 1: the toolchain.  Nothing else can be probed without it. --
@@ -298,6 +300,7 @@ if (-not $haveGcc) {
     Say "          installed -- they are listed below for that reason alone,"
     Say "          not because they are known to be absent)"
     $missingPkgs += @("$pkgPrefix-SDL2", "$pkgPrefix-SDL2_mixer", "$pkgPrefix-libzip", "$pkgPrefix-zlib")
+    $optionalPkgs += "$pkgPrefix-openssl"
 } else {
     # -- phase 2: the libraries, by compile-and-link. --
     #
@@ -344,10 +347,40 @@ if (-not $haveGcc) {
         if (Test-Msys $cmd) { Say ("  ok   : " + $p.Name) }
         else { Say ("  MISS : " + $p.Name); $missingPkgs += $p.Pkg }
     }
+
+    # [Arcade] OpenSSL, for Cabinet Link (docs/arcade/cabinet-link.md).
+    # Optional, exactly as in build.sh: without it the game builds and plays as
+    # before with the link compiled out, so a machine without OpenSSL is never
+    # stopped from building.  -InstallDeps installs it all the same, because
+    # the CI builds the release that way and a release quietly missing the link
+    # is worse than a slightly longer install.  Quote-free, like the probes above.
+    $sslCmd = "printf '#include <openssl/ssl.h>\nint main(void){SSL_CTX_free(SSL_CTX_new(TLS_method()));return 0;}\n' > /tmp/dlprobe.c && gcc /tmp/dlprobe.c -o /tmp/dlprobe.exe -lssl -lcrypto -lws2_32 -lcrypt32"
+    if (Test-Msys $sslCmd) {
+        Say "  ok   : OpenSSL (for Cabinet Link; optional)"
+        $haveLink = $true
+    } else {
+        Say "  MISS : OpenSSL (for Cabinet Link; optional)"
+        Say "         Cabinet Link will be compiled out. To get it:  pacman -S --needed $pkgPrefix-openssl"
+        $optionalPkgs += "$pkgPrefix-openssl"
+    }
+}
+
+# Only optional packages missing: build now, or install them first if asked to.
+if ($missingPkgs.Count -eq 0 -and $optionalPkgs.Count -gt 0 -and $InstallDeps) {
+    $list = ($optionalPkgs | Select-Object -Unique) -join ' '
+    Step "Installing optional packages"
+    Invoke-Msys -Command "pacman -Sy --noconfirm" | Out-Null
+    $rc = Invoke-Msys -Command "pacman -S --needed --noconfirm $list"
+    if ($rc -ne 0) { Die "pacman failed (exit $rc).
+       Try it by hand in an MSYS2 shell:  pacman -Syu  then  pacman -S --needed $list" }
+    Say ""
+    Say "Installed. Run the script again to build."
+    exit 0
 }
 
 if ($missingPkgs.Count -gt 0) {
-    $list = ($missingPkgs | Select-Object -Unique) -join ' '
+    # Optional packages ride along: a machine being set up gets everything.
+    $list = (($missingPkgs + $optionalPkgs) | Select-Object -Unique) -join ' '
     Say ""
     Say "Missing packages: $list"
     Say ""
@@ -467,6 +500,31 @@ if ((Test-Path $opts) -and -not $Reconfigure -and -not $foreignOpts) {
     if ($archFlag -and -not ($out -match '^ARCH=')) { $out += "ARCH=$archFlag" }
     Set-Content -Path $opts -Value $out -Encoding ASCII
     Say "  SDL2=1, ARCH=$(if($archFlag){$archFlag}else{'none'}), ENV_CFLAGS=-std=gnu17 -g"
+}
+
+# [Arcade] Cabinet Link follows the OpenSSL probe, including in a make_options
+# that is being reused -- the same rule as build.sh.  make_options is never
+# regenerated on its own, so without this a Windows machine that built before
+# the link existed would never get it.  An explicit HAVE_LINK= line (0 or 1) is
+# the operator's and is left alone.  The Makefile makes d_link.o depend on
+# make_options, so the change rebuilds that one object.
+$linkLine = (@(Get-Content $opts) -match '^HAVE_LINK=' | Select-Object -First 1)
+if ($linkLine) {
+    if (($linkLine -match '^HAVE_LINK=1') -and -not $haveLink) {
+        Warn "make_options has HAVE_LINK=1 but OpenSSL does not link -- the build will fail
+         at the link step. Install $pkgPrefix-openssl, or set HAVE_LINK=0."
+    } else {
+        Say "  $linkLine (set in make_options; left as it is)"
+    }
+} elseif ($haveLink) {
+    Add-Content -Path $opts -Encoding ASCII -Value @(
+        '',
+        '# Added by tools/build.ps1: OpenSSL links, so Cabinet Link is built in.',
+        '# Set HAVE_LINK=0 to leave it out.',
+        'HAVE_LINK=1')
+    Say "  HAVE_LINK=1 (OpenSSL found; Cabinet Link built in)"
+} else {
+    Say "  Cabinet Link left out (no OpenSSL)"
 }
 
 # ---------------------------------------------------------------------------
@@ -595,6 +653,14 @@ if (Test-Path $binary) {
     Say "  into a run directory alongside legacy.wad and an IWAD."
     Say ""
     Say "  An operator session that can change settings is:  doomlegacyarcade.exe -devmode"
+    if (Select-String -Path $opts -Pattern '^HAVE_LINK=1' -Quiet) {
+        Say ""
+        Say "  Cabinet Link is built in. Windows Firewall asks the first time a"
+        Say "  master cabinet listens, and on a fullscreen cabinet that prompt is"
+        Say "  hidden behind the game -- the link then just never connects. Allow"
+        Say "  it once from an administrator prompt instead:"
+        Say "    netsh advfirewall firewall add rule name=`"Doom Legacy Arcade`" dir=in action=allow program=`"<run dir>\doomlegacyarcade.exe`""
+    }
 } else {
     Die "the build reported success but $binary is missing."
 }

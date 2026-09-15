@@ -134,7 +134,9 @@ The two `Check the binary` steps therefore verify what *can* be verified without
 executable exists, it is the right kind of file, the arch baseline landed, and on Windows that the
 runtime DLLs were actually staged. That last one matters because `build.ps1` derives the DLL closure
 by walking import tables; if it silently found nothing, the zip would look complete and fail before
-`main()` with a bare *"SDL2.dll was not found"* dialog.
+`main()` with a bare *"SDL2.dll was not found"* dialog. On Windows the step also requires `HAVE_LINK=1`
+in `make_options` and the two OpenSSL DLLs beside the exe: Cabinet Link is optional to `build.ps1`,
+so a release without it would otherwise build green (`cabinet-link.md`, *Windows port*).
 
 ## What is in a package
 
@@ -143,7 +145,7 @@ runnable directory. The package is that, plus the wads beside the binary:
 
 ```
 doomlegacy-arcade-<version>-linux-x86_64/
-    doomlegacyarcade               (or doomlegacyarcade.exe + 12 DLLs on Windows)
+    doomlegacyarcade               (or doomlegacyarcade.exe + 16 DLLs on Windows)
     legacyhome/config.cfg
     legacy.wad  dogs.wad
     LICENSE  README.md  README_install.txt

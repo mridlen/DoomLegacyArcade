@@ -190,6 +190,15 @@ jobs:
           if (-not (Select-String -Path svn1749\make_options -Pattern '-march=x86-64' -Quiet)) {
             throw 'make_options was not written with the baseline ARCH'
           }
+          # [Arcade] Cabinet Link is optional to build.ps1, so a release without
+          # it would otherwise build green.  Check the switch landed and the
+          # OpenSSL DLLs were found by the import-table walk.
+          if (-not (Select-String -Path svn1749\make_options -Pattern '^HAVE_LINK=1' -Quiet)) {
+            throw 'Cabinet Link was compiled out (no HAVE_LINK=1 in make_options)'
+          }
+          if (-not (Test-Path svn1749\bin\libssl-*.dll) -or -not (Test-Path svn1749\bin\libcrypto-*.dll)) {
+            throw 'the OpenSSL DLLs were not staged beside the exe'
+          }
 
       - name: Package
         shell: pwsh

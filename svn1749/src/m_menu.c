@@ -5154,6 +5154,117 @@ static void M_Draw_Restart_Splash( const char * msg )
 }
 
 
+#ifdef __WIN32__
+#include <wchar.h>   // wcspbrk
+
+// [Arcade] Append one argument to a Windows command line, quoted so that the
+// C runtime of the new process splits it back into exactly the same string.
+// Windows has no argv: a process gets one command line and parses it itself,
+// by the rules CommandLineToArgvW documents -- backslashes are literal unless
+// they run up to a double quote, where they escape in pairs.  Returns false
+// when the line is full.
+static boolean M_Restart_Quote_Arg( wchar_t * line, int * pos, int size, const wchar_t * arg )
+{
+    int  p = *pos;
+    const wchar_t * c;
+
+#define M_RESTART_PUT( ch )  do { if( p >= size - 1 ) return false; line[p++] = (ch); } while( 0 )
+    if( p > 0 )  M_RESTART_PUT( L' ' );
+    if( arg[0] && ! wcspbrk( arg, L" \t\n\v\"" ) )
+    {
+        for( c = arg; *c; c++ )  M_RESTART_PUT( *c );
+    }
+    else
+    {
+        M_RESTART_PUT( L'"' );
+        for( c = arg; ; c++ )
+        {
+            int  slashes = 0, k;
+            while( *c == L'\\' )  { slashes++; c++; }
+            if( *c == 0 )
+            {
+                // Before the closing quote every backslash must be doubled.
+                for( k = 0; k < slashes * 2; k++ )  M_RESTART_PUT( L'\\' );
+                break;
+            }
+            if( *c == L'"' )
+            {
+                for( k = 0; k < slashes * 2 + 1; k++ )  M_RESTART_PUT( L'\\' );
+                M_RESTART_PUT( L'"' );
+            }
+            else
+            {
+                for( k = 0; k < slashes; k++ )  M_RESTART_PUT( L'\\' );
+                M_RESTART_PUT( *c );
+            }
+        }
+        M_RESTART_PUT( L'"' );
+    }
+#undef M_RESTART_PUT
+    line[p] = 0;
+    *pos = p;
+    return true;
+}
+
+// [Arcade] The Windows half of the restart: start a new copy of this program
+// and exit, which is as close as Windows comes to exec.
+//
+// execvp() is not usable here.  The C runtime's exec starts a new process and
+// ends this one -- the same thing as below -- but it joins the arguments with
+// plain spaces, so any argument containing a space arrives split in two.  A
+// level pack under C:\Users\...\My Games\ comes back as two nonsense -file
+// names, and the restart silently loses the pack.  It also lets the new
+// process inherit this one's handles, sockets included.
+//
+// SDL's WinMain hands the engine its arguments as UTF-8, so they are converted
+// to UTF-16 for CreateProcessW rather than passed through the ANSI API, which
+// would mangle any name outside the local code page.  The executable is named
+// by GetModuleFileNameW, not argv[0], which Windows lets be anything at all.
+//
+// Returns only if the new process could not be started.
+static void M_Restart_Windows( char ** argv )
+{
+    enum { CMDLINE_MAX = 32768 };   // CreateProcess's limit, terminator included
+    wchar_t  exe[MAX_PATH];
+    wchar_t  warg[4096];
+    wchar_t * line;
+    int  pos = 0, i;
+    STARTUPINFOW  si;
+    PROCESS_INFORMATION  pi;
+
+    if( GetModuleFileNameW( NULL, exe, MAX_PATH ) == 0 )  return;
+    line = (wchar_t*) malloc( CMDLINE_MAX * sizeof(wchar_t) );
+    if( ! line )  return;
+    line[0] = 0;
+
+    // argv[0] is replaced by the real path, so the new process's own argv[0]
+    // is right for the restart after this one.
+    if( ! M_Restart_Quote_Arg( line, &pos, CMDLINE_MAX, exe ) )  goto fail;
+    for( i = 1; argv[i]; i++ )
+    {
+        if( MultiByteToWideChar( CP_UTF8, 0, argv[i], -1, warg, 4096 ) == 0 )  goto fail;
+        if( ! M_Restart_Quote_Arg( line, &pos, CMDLINE_MAX, warg ) )  goto fail;
+    }
+
+    memset( &si, 0, sizeof(si) );
+    si.cb = sizeof(si);
+    // bInheritHandles FALSE: the new process must not hold this one's files
+    // or sockets open after it has gone.
+    if( ! CreateProcessW( exe, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) )
+        goto fail;
+    CloseHandle( pi.hThread );
+    CloseHandle( pi.hProcess );
+    free( line );
+    fflush( stdout );
+    fflush( stderr );
+    exit( 0 );   // as I_Quit does after D_Quit_Save
+
+fail:
+    free( line );
+}
+#endif
+
+
 // [Arcade] Restart the program, optionally switching game.
 // Shuts down cleanly and re-execs; does not return.
 //   game_idstr : the -game short name, or NULL to keep the current game
@@ -5297,14 +5408,19 @@ void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const ch
     M_Draw_Restart_Splash( splash );
 
     // Flush config (devmode only), high scores, demos, and shut down the
-    // video/sound devices, but do not exit -- exec replaces us instead.
+    // video/sound devices, but do not exit -- exec replaces us instead
+    // (on Windows, M_Restart_Windows starts the new copy and then exits).
     // QUIT_normal is required: the other severities force a 3 second sleep
     // in D_Quit_Save.  Suppress the ENDOOM screen it would otherwise print,
     // since we are relaunching rather than returning to a terminal.
     cv_textout.EV = 0;
     D_Quit_Save( QUIT_normal );
 
+#ifdef __WIN32__
+    M_Restart_Windows( newargv );
+#else
     execvp( newargv[0], newargv );
+#endif
 
     // Only reached if exec failed; the devices are already down, so there
     // is nothing sensible left to return to.

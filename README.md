@@ -652,9 +652,9 @@ reused and the flag is silently ignored.
 Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
 it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
 empty — which is how it arrives — it lists the packages to install and can install them for you.
-Confirmed on Windows 11: the script builds `doomlegacyarcade.exe` end to end and stages the twelve
-runtime DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a
-longer list than anyone guesses. **The resulting binary has not been played**, only started, so
+Confirmed on Windows 11: the script builds `doomlegacyarcade.exe` end to end and stages the runtime
+DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a longer list
+than anyone guesses (sixteen, with Cabinet Link's OpenSSL). **The resulting binary has not been played**, only started, so
 treat the first real session as the shakedown.
 
 There is no unit test suite. The two checks that exist are `make smoke`, which starts the built
@@ -1330,8 +1330,19 @@ slipped below the bottom of a board (never shown anywhere) are dropped.
 
 It needs OpenSSL when the game is built. `tools/build.sh` finds it and turns the link on by itself;
 if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSSL development package
-(`libssl-dev` on Debian and Raspberry Pi OS, `openssl-devel` on Fedora) and build again. Not yet on
-Windows.
+(`libssl-dev` on Debian and Raspberry Pi OS, `openssl-devel` on Fedora) and build again.
+
+On Windows, `build.bat` checks for OpenSSL the same way, and `build.bat -InstallDeps` installs it.
+**The Windows link is built but has not been tried on a real Windows cabinet yet.** Two things to
+know there:
+
+- Windows Firewall asks the first time a master cabinet listens, and on a fullscreen cabinet that
+  question is hidden behind the game, so the link just never connects. Allow it once from an
+  administrator command prompt:
+  `netsh advfirewall firewall add rule name="Doom Legacy Arcade" dir=in action=allow program="C:\path\to\doomlegacyarcade.exe"`
+- Switching games restarts the program as a new process. Start the cabinet from a shortcut or the
+  Startup folder, not from a script that relaunches it whenever it exits, or you will get two
+  copies.
 
 One cabinet is the **master**; the others are **members** and connect to it. Set them up in an
 operator session (*Devmode Restart*, or `./doomlegacyarcade -devmode`) from **Options → Arcade
