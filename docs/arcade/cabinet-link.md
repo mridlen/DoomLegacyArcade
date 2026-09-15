@@ -1871,6 +1871,46 @@ still work, because they happen in the seconds after each reconnect.
 - Note that OpenSSL 3 reports a peer that vanished without a TLS close as `SSL_ERROR_SSL`
   ("ssl err 1"), not `SSL_ERROR_SYSCALL`, so a killed cabinet reads as "receive failed ... ssl
   err 1".
+- In the next session, run with `-logfile` on both, the link never dropped. Still open; the
+  diagnostics stay in for when it does.
+
+**8. Twelve players: one cabinet's four had no name, colour, weapon switch or autoaim** (2026-09-15;
+fixed). In a Campaign hosted by the Windows cabinet, a player's weapons would not auto-switch and a
+player could not hit barrels. The Windows log's `LINKNAMES` showed the laptop's four players (the
+last cabinet in) as `Player 9`..`Player 12` in colour 0 on every cabinet. Their `XD_NAMEANDCOLOR`
+and `XD_WEAPONPREF` never ran, leaving `GF_flags` and `favoritweapon` zeroed: no original weapon
+switch, no autoaim, no weapon order. Mark's duplicated player names were a red herring; nothing in
+the engine checks for duplicates.
+- **Cause.** A joining node sends its players' config from `Got_NetXCmd_AddPlayer`, the moment it
+  runs their add. A client can be running tics the server has made but not yet run itself
+  (instrumented: sent at `gametic=2070`, arrived at the server at `gametic=2070 maketic=2075`).
+  `net_textcmd_handler` refused textcmds for players not in `playeringame`, so all four were thrown
+  away. `D_Send_PlayerConfig` runs again whenever anyone joins, which rescued every cabinet but the
+  last one in. The host's own players hit the same refusal at game start and were rescued the same
+  way. It is timing: a joiner locked in passed; one still choosing when the countdown ran out
+  failed 2 runs in 3.
+- **Fix.** On the server, intake also accepts a player already committed to the sending node
+  (`player_to_nnode[pn] == nnode`, set by `SV_commit_player` before the add runs). The old
+  commented-out "ideal test" was exactly this, avoided because bots do not set it up, so it is an
+  addition to the old test, not a replacement. `ExtraDataTicker` still requires `playeringame`
+  when the command runs, which is in a tic after the add.
+- **Second bug, same trace.** `SV_ResetServer` cleared `playeringame` and `player_to_nnode` but not
+  `localplayer[]`. A cabinet joining its second linked game announced a config for its player
+  number from the first game, which by then belonged to another cabinet: the laptop sent
+  `pn=4` as its players joined game two, and player 4 was the Pi's. It could rename, recolour or
+  re-flag somebody else's player. `SV_ResetServer` now calls `CL_Init_localplayer`; every caller
+  runs it before players are added.
+- **`LINKNAMES`** now prints `name/colour/flags/weapon order` per player (`oa/045628137`; missing
+  shows `--/_________`). The case also showed the cabinets *disagreeing*: the Pi had those
+  players' autoaim on while the host and laptop had it off, which is a desync, not only a missing
+  name.
+- **Cases:**
+  - `names12`: 12 players, the master hosts.
+  - `names12memberhost`: a member hosts, as the Windows cabinet did.
+  - `rejoin12`: the session as played, with hooks `-linkhostagain` and `-linkjoinpanels2`. The
+    host hosts twice; the laptop joins with one player then four, pressed in but not locked; the
+    Pi joins only the second game. It failed with the exact picture from the cabinet, and
+    passes 5 runs in 5 with the fix.
 
 ### Phase 4 — past two cabinets
 

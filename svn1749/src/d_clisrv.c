@@ -1275,7 +1275,20 @@ static void net_textcmd_handler( byte nnode )
             // players and bots
             // Could test for (demoplayback && (pn == 0)), but that does not gain protection.
 #if 1
-            if( ! playeringame[pn] )
+            // [Arcade] Or a player this server has already committed to that
+            // node (SV_commit_player) and is adding.  The joining node sends
+            // its players' name, colour and weapon config the moment it runs
+            // their XD_ADDPLAYER -- and a client can be running tics the
+            // server has made but not yet run itself, so here the player is
+            // not in the server's game yet, and the config was thrown away.
+            // Nothing re-sends it unless someone joins afterwards: the last
+            // cabinet into a twelve player game had all four of its players
+            // as "Player 9".."Player 12", colour 0, no weapon autoswitch and
+            // no autoaim, for the whole game (linktest rejoin12).
+            // ExtraDataTicker still requires playeringame when the command
+            // runs, which it does in a tic after the add.
+            if( ! playeringame[pn]
+                && ! ( server && player_to_nnode[pn] == nnode && player_state[pn] != PS_unused ) )
                 goto next_textcmd; // wrong player, or bad player
 #else
 // [WDJ] Ideal test, but bots don't set everything up yet.
@@ -4254,6 +4267,13 @@ void SV_ResetServer( void )
         player_state[i] = PS_unused;
         player_to_nnode[i] = 255;
     }
+    // [Arcade] And this node's own player slots, which belong to the game just
+    // reset.  They were kept, so a cabinet joining its second linked game
+    // still had localplayer[0] = its player from the first -- and its first
+    // D_Send_PlayerConfig of the new game announced a name, colour and weapon
+    // config for that player number, which by then belonged to another
+    // cabinet (linktest rejoin12: "send ... pn=4" on joining game two).
+    CL_Init_localplayer();
 
     cl_nnode=0;
     cl_packetmissed=false;

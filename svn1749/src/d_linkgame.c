@@ -88,7 +88,10 @@ static int         lkg_host_idle_secs, lkg_host_warn_secs;
 static int         lkg_test = -1;
 static byte        lkg_test_host_cat;
 static byte        lkg_test_join;           // 1 -linkautojoin, 2 -linkautopress
-static boolean     lkg_test_host_done;
+static int         lkg_test_hosted;         // games hosted by -linkautohost
+static boolean     lkg_test_host_again;     // -linkhostagain: host a second game once the first is over
+static int         lkg_test_join_panels2;   // -linkjoinpanels2 N: panels from the second invite on
+static int         lkg_test_invites;
 static int         lkg_test_poll_sleep;
 static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
 static uint32_t    lkg_test_press_at;
@@ -495,6 +498,10 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
     if( lkg_test_join )
     {
         int  panel;
+        // -linkjoinpanels2: a different number of players from the second
+        // invite on -- one player, then four, as a cabinet is played.
+        if( lkg_test_invites++ >= 1 && lkg_test_join_panels2 > 0 )
+            lkg_test_join_panels = lkg_test_join_panels2;
         for( panel = lkg_test_join_panels - 1; panel >= 0; panel-- )
             M_Join_Test_Lock( panel, lkg_test_join == 1 );
     }
@@ -706,6 +713,9 @@ void  LKG_Ticker( void )
             lkg_test_msgpress = M_CheckParm( "-linkmsgpress" ) != 0;
             if( M_CheckParm( "-linkjoinpanels" ) && M_IsNextParm() )
                 lkg_test_join_panels = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linkjoinpanels2" ) && M_IsNextParm() )
+                lkg_test_join_panels2 = atoi( M_GetNextParm() );
+            lkg_test_host_again = M_CheckParm( "-linkhostagain" ) != 0;
             lkg_test_host_in_demo = M_CheckParm( "-linkhostindemo" ) != 0;
             lkg_test_chaos = M_CheckParm( "-linkchaos" ) != 0;
             if( M_CheckParm( "-linkmoveevery" ) && M_IsNextParm() )
@@ -877,11 +887,12 @@ void  LKG_Ticker( void )
     switch( lkg_mode )
     {
      case LKGM_NONE:
-        if( lkg_test_host_cat && ! lkg_test_host_done && lkg_games_done >= lkg_test_host_after
+        if( lkg_test_host_cat && lkg_test_hosted < ( lkg_test_host_again ? 2 : 1 )
+            && lkg_games_done >= lkg_test_host_after + lkg_test_hosted
             && ( ! lkg_test_host_in_demo || demoplayback )
             && D_Attract_Running() && LKG_Would_Invite( lkg_test_host_cat ) )
         {
-            lkg_test_host_done = true;
+            lkg_test_hosted++;
             M_Link_Test_Host( lkg_test_host_cat );
         }
         break;

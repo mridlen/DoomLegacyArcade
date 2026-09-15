@@ -2869,11 +2869,29 @@ static void  lk_net_status( void )
     // one game must print the same line.
     if( gamestate == GS_LEVEL )
     {
-        char  buf[MAXPLAYERS * (MAXPLAYERNAME + 8) + 1];
-        int   i, len = 0;
+        char  buf[MAXPLAYERS * (MAXPLAYERNAME + 8 + 4 + NUMWEAPONS) + 1];
+        int   i, k, len = 0;
         for( i = 0; i < MAXPLAYERS; i++ )
             if( playeringame[i] )
-                len += snprintf( buf + len, sizeof(buf) - len, " %d=%s/%d", i, player_names[i], players[i].skincolor );
+            {
+                // [Arcade] name/colour/flags/weapon order.  The flags and order
+                // come from each player's own XD_WEAPONPREF; a player whose one
+                // never arrived keeps zeros -- no autoswitch, no autoaim -- and
+                // shows "--/_________".  A 12 player game had one player
+                // that would not switch weapons and one that could not hit a
+                // barrel.
+                char  pref[NUMWEAPONS + 1];
+                for( k = 0; k < NUMWEAPONS; k++ )
+                    pref[k] = ( players[i].favoritweapon[k] >= '0' && players[i].favoritweapon[k] <= '9' )
+                              ? players[i].favoritweapon[k] : '_';
+                pref[NUMWEAPONS] = 0;
+                if( len < (int) sizeof(buf) )
+                    len += snprintf( buf + len, sizeof(buf) - len, " %d=%s/%d/%c%c/%s", i, player_names[i],
+                                     players[i].skincolor,
+                                     ( players[i].GF_flags & GF_original_weapon ) ? 'o' : '-',
+                                     ( players[i].GF_flags & GF_autoaim ) ? 'a' : '-', pref );
+            }
+        if( len >= (int) sizeof(buf) )  len = sizeof(buf) - 1;
         buf[len] = '\0';
         GenPrintf( EMSG_errlog, "LINKNAMES%s\n", buf );
     }
