@@ -2102,8 +2102,10 @@ static void G_Idle_Timeout_Check( boolean in_menu )
         // built-in demos would play back against the wrong levels, and the
         // splitscreen state would persist.  Restart for a clean attract
         // screen instead of returning to title.
+        // [Arcade] link_selected: Select Game Sync drops the pack on the other
+        // linked cabinets too, as End Game does.
         if( M_LevelPack_Loaded() )
-            M_Restart_Program( NULL, false, devmode );   // no return
+            M_Restart_Program_Ex( NULL, false, NULL, devmode, true );   // no return
 
         Command_ExitGame_f();
     }

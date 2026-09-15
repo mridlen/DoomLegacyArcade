@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1739,6 +1739,28 @@ case_gamesynccopybad() {
     [ -z "$(ls "$d/follower/wads/"* 2>/dev/null)" ] || FAILS="$FAILS
       something was left in wads/: $(ls "$d/follower/wads/")"
     expect_game "$d/follower" doom2
+}
+
+# A pack both cabinets followed is dropped on both when a game on one of them
+# ends back to attract.  That cabinet restarts to unload it (End Game, or the
+# idle timeout as here); the other used to stay on the pack, and then the two
+# could no longer invite each other (Mark).
+case_gamesyncunload() {
+    local d=$1 p=$2
+    gamesynccabs "$d" "$p"
+    mkdir -p "$d/master/legacyhome/levels" "$d/follower/legacyhome/levels"
+    mkpack "$d/master/legacyhome/levels/syncpack.wad"
+    cp "$d/master/legacyhome/levels/syncpack.wad" "$d/follower/legacyhome/levels/"
+    sed -i -e 's/^idletimeout .*/idletimeout "15"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/master/legacyhome/config.cfg"
+    run "$d/master" 85 0 -linktest -linkselectat 10 syncpack -linkcmdat 18 "map map01"
+    sleep 2
+    run "$d/follower" 82 0
+    wait
+    expect "the follower loaded the pack" "$d/follower" "^LINKSEL sync=0 game=doom2\+syncpack "
+    expect "the master played a level on it" "$d/master" "^LINKGAME gamestate=1 "
+    expect "the master dropped the pack and passed that on" "$d/master" "^LINKLOG .*doom2 selected here, before restarting"
+    expect "the follower dropped it too" "$d/follower" "^LINKLOG .*switching to doom2, selected on the link"
+    expect_game "$d/master" doom2; expect_game "$d/follower" doom2
 }
 
 # --------------------------------------------------------------------------

@@ -1395,6 +1395,7 @@ session follows once it is back to one of those. A cabinet that cannot follow st
   game" instead fought the level pack rules: a cabinet's idle timeout unloads its pack by restarting
   (`menus.md`), and a standing target would load it straight back, on a cabinet whose attract demos a
   pack makes wrong. A busy cabinet has not dealt with the pick yet, so it still follows when free.
+  - **Superseded in part the same day**: that unload is now itself passed on as a pick (below).
 - **The pick lives in the master's memory, and survives only the restarts it causes.** A pick that
   restarts the program adds `-linkselected`; the new process announces it (a member once the link is
   up, a master to itself). `M_Restart_Program_Ex` strips `-linkselected` from every other restart — a
@@ -1486,6 +1487,19 @@ member picking TNT) showed where the laptop's part went:
   `M_Atomic_Write_*`; a replaced or edited wad changes one of those and is read again. This speeds up
   every start, boot included, not only a switch. On a Pi 3 hashing an 18 MB IWAD is slower still.
 - `gamesync` checks the pick went out before the restart. The Pi's own figures were not measured.
+
+#### Returning to attract drops the pack on every cabinet (2026-09-14)
+
+Mark: "when I load a wad say dwango5 and then start a game and then 'end game' from the menu, it
+unloads the wad and restarts on that cabinet but not the other one". By the design above that was
+intended — only a Select Game pick was passed on — and it was wrong: the two cabinets ended on
+different game ids, so neither could invite the other any more. The two restarts that unload a pack on
+the way back to attract, `M_EndGameResponse` and the idle timeout in `G_Ticker`, now pass
+`link_selected`, so the bare IWAD goes out as a pick. A cabinet still in a game follows when free; a
+second cabinet unloading its own pack sends the same pick, which the master ignores as a repeat.
+- Case `gamesyncunload`: both cabinets on a pack, the master starts a level and idles out
+  (`idletimeout 15`); both end on `doom2`. **Fails on the build before** with the field symptom — the
+  follower never drops the pack. End Game is the same call and is not driven headlessly.
 
 #### Copy Missing Wads (2026-09-14)
 

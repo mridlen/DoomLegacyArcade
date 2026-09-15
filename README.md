@@ -1263,8 +1263,11 @@ Select Game Sync** set to **On** (it is **Off** until you turn it on):
   master's Cabinet Link page shows why in red under that cabinet — **GAME SYNC: TNT NOT INSTALLED**,
   or **GAME SYNC: NO LEVEL PACK DWANGO5** for a pack that is not in its `legacyhome/levels/`. A pack
   counts as the same if its file has the same name, whatever the capitals.
-- Each cabinet follows a pick once. If its idle timeout later unloads the level pack it followed, it
-  is not pulled back onto it; the next pick on any cabinet is followed again.
+- **A level pack is dropped everywhere too.** When a game on a cabinet with a pack loaded ends back to
+  the attract screen — **End Game**, or the idle timeout — that cabinet unloads the pack and restarts,
+  as it always has, and now the other cabinets drop it as well (a cabinet still in a game drops it
+  once its game is over). Before, the other cabinet stayed on the pack and the two could no longer
+  invite each other.
 - Only the master has the setting, and only the master shows **Cabinet Link Options** — its setting
   decides for every cabinet. Like every operator setting, it is saved from a `-devmode` session.
 - Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator

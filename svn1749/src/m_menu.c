@@ -10484,8 +10484,10 @@ void M_EndGameResponse(int ch)
     // [Arcade] A level pack overrides the IWAD maps, so the attract screen's
     // built-in demos would play back against the wrong levels.  Restart for
     // a clean attract screen, as the idle timeout does.
+    // link_selected: the pack is dropped on every linked cabinet too, or this
+    // one leaves the others on it and they can no longer invite each other.
     if( M_LevelPack_Loaded() )
-        M_Restart_Program( NULL, false, devmode );   // no return
+        M_Restart_Program_Ex( NULL, false, NULL, devmode, true );   // no return
 
     COM_BufAddText("exitgame\n");
 }
