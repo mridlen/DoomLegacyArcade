@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1620,6 +1620,116 @@ case_names8() {
       the two cabinets list different players:
         host:   $h
         joiner: $j"
+}
+
+# Three cabinets, four a side, in one Campaign: twelve players.  Mark's first
+# twelve player game had one player whose weapons never switched on pickup and
+# one who could not hit a barrel -- both what a player looks like whose own
+# XD_WEAPONPREF never arrived (no original weapon switch, no autoaim, a zero
+# weapon order).  Every cabinet must list the same twelve players, each with
+# real flags and a real weapon order.
+case_names12() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/cabb"; LOCALPLAYERS=4 mkcab "$d/cabc"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/cabb" "role member" "name CABB" "master 127.0.0.1" "port $p" "$PASS"
+    cfg "$d/cabc" "role member" "name CABC" "master 127.0.0.1" "port $p" "$PASS"
+    local c
+    for c in master cabb cabc; do LOCALPLAYERS=4 gamecfg "$d/$c" 20; done
+    # Colours 0..10 (NUMSKINCOLORS 11): an out of range one is clamped.
+    setnames "$d/master" HA 1 2 3 4; setnames "$d/cabb" JB 5 6 7 8; setnames "$d/cabc" KC 9 10 0 1
+    if [ -n "${NAMES12_MEMBERHOST:-}" ]; then
+        # Mark's arrangement: a member (the Windows cabinet) hosts, and the
+        # master (the laptop) joins it, with the third cabinet.
+        run "$d/master" 90 0 -linktest ${NAMES12_MASTERJOIN:--linkautojoin} -linkjoinpanels 4 -udpport $((p+103)) -clientport $((p+100))
+        sleep 1
+        run "$d/cabc" 89 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+102))
+        sleep 3
+        run "$d/cabb" 86 0 -linktest -linkautohost campaign -linkjoinpanels 4 -udpport $((p+101)) -clientport $((p+104))
+    else
+        # Both members first, so both are online and idle when the host invites.
+        run "$d/cabb" 90 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+101))
+        run "$d/cabc" 90 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+102))
+        sleep 4
+        run "$d/master" 86 0 -linktest -linkautohost campaign -linkjoinpanels 4 -udpport $((p+100))
+    fi
+    wait
+    local hostcab=master
+    [ -n "${NAMES12_MEMBERHOST:-}" ] && hostcab=cabb
+    expect "the host has twelve players" "$d/$hostcab" "^LINKGAME gamestate=1 netgame=1 server=1 players=12 "
+    for c in master cabb cabc; do
+        [ "$c" = "$hostcab" ] && continue
+        expect "$c has twelve players" "$d/$c" "^LINKGAME gamestate=1 netgame=1 server=0 players=12 "
+    done
+    local h b k n
+    # The last line each printed with all twelve in: the members' very last
+    # line can come after the host has quit, with one player left.
+    h=$(out "$d/master" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    b=$(out "$d/cabb" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    k=$(out "$d/cabc" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    for n in HA1/1 HA2/2 HA3/3 HA4/4 JB1/5 JB2/6 JB3/7 JB4/8 KC1/9 KC2/10 KC3/0 KC4/1; do
+        case "$h" in *"=$n/"*) ;; *) FAILS="$FAILS
+      the master does not have $n: $h" ;; esac
+    done
+    # A player whose config never arrived: no flags, and a zero weapon order.
+    case "$h$b$k" in *"/__"*|*"/--/"*) FAILS="$FAILS
+      a player's weapon config never arrived:
+        host:  $h
+        cab B: $b
+        cab C: $k" ;; esac
+    [ -n "$h" ] && [ "$h" = "$b" ] && [ "$h" = "$k" ] || FAILS="$FAILS
+      the three cabinets list different players:
+        host:  $h
+        cab B: $b
+        cab C: $k"
+}
+
+case_names12memberhost() {
+    NAMES12_MEMBERHOST=1 case_names12 "$@"
+}
+
+# Mark's session exactly: the Windows cabinet (B, a member) hosts a Campaign
+# the laptop (the master) joins with one player; the game ends; B hosts again
+# and the laptop joins with four, and the Pi (C, online only after the first
+# game started) with four.  In that second game every one of the laptop's four
+# came out as "Player 9".."Player 12" in colour 0, on every cabinet -- their
+# name, colour and weapon config never arrived.
+case_rejoin12() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/cabb"; LOCALPLAYERS=4 mkcab "$d/cabc"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/cabb" "role member" "name CABB" "master 127.0.0.1" "port $p" "$PASS"
+    cfg "$d/cabc" "role member" "name CABC" "master 127.0.0.1" "port $p" "$PASS"
+    local c
+    for c in master cabb cabc; do LOCALPLAYERS=4 gamecfg "$d/$c" 20; done
+    setnames "$d/master" HA 1 2 3 4; setnames "$d/cabb" JB 5 6 7 8; setnames "$d/cabc" KC 9 10 0 1
+    run "$d/master" 110 0 -linktest -linkautojoin -linkjoinpanels 1 -linkjoinpanels2 4 -udpport $((p+103)) -clientport $((p+100))
+    sleep 2
+    run "$d/cabb" 106 0 -linktest -linkautohost campaign -linkhostagain -linkendgame 20 -linkjoinpanels 4 \
+        -udpport $((p+101)) -clientport $((p+104))
+    sleep 14
+    run "$d/cabc" 92 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+102))
+    wait
+    expect "the first game: the host and the laptop's one" "$d/cabb" "^LINKGAME gamestate=1 netgame=1 server=1 players=5 "
+    expect "the second game: twelve" "$d/cabb" "^LINKGAME gamestate=1 netgame=1 server=1 players=12 "
+    local h b k n
+    h=$(out "$d/master" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    b=$(out "$d/cabb" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    k=$(out "$d/cabc" | grep -a "^LINKNAMES .* 11=" | tail -1)
+    for n in HA1/1 HA2/2 HA3/3 HA4/4 JB1/5 JB2/6 JB3/7 JB4/8 KC1/9 KC2/10 KC3/0 KC4/1; do
+        case "$b" in *"=$n/"*) ;; *) FAILS="$FAILS
+      the host does not have $n: $b" ;; esac
+    done
+    case "$h$b$k" in *"/__"*|*"/--/"*|*"=Player "*) FAILS="$FAILS
+      a player's config never arrived:
+        laptop: $h
+        host:   $b
+        Pi:     $k" ;; esac
+    [ -n "$h" ] && [ "$h" = "$b" ] && [ "$h" = "$k" ] || FAILS="$FAILS
+      the three cabinets list different players:
+        laptop: $h
+        host:   $b
+        Pi:     $k"
 }
 
 # move8 on a bad link: 30% of the game's packets thrown away on both cabinets
