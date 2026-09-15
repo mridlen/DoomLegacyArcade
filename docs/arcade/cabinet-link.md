@@ -1501,6 +1501,47 @@ second cabinet unloading its own pack sends the same pick, which the master igno
   (`idletimeout 15`); both end on `doom2`. **Fails on the build before** with the field symptom — the
   follower never drops the pack. End Game is the same call and is not driven headlessly.
 
+#### A cabinet on attract takes the master's choice (2026-09-15)
+
+Mark: "it seems there is still a possibility of having two cabinets each running a different
+game/wad, e.g. if a cabinet plays a single level and then the other cabinet changes the game ... if it
+goes into attract mode, it should change to the master's choice".
+
+**The standing rule, as a backstop to the events.** `lksel_send_defaults` (master, every tick): any
+online member whose presence is **`IDLE`** — attract, no menu open — and whose game is not the
+**master's choice** is sent `GAME_SWITCH` with **serial 0**. The choice (`lksel_group_game`) is the
+latest pick while one stands, else the master's own game, so a pick made on a member while the master
+was busy is not undone before the master follows it. A member takes a serial-0 switch only when `IDLE`
+(someone in the menus has not left the cabinet), and handles it as any switch — including a missing
+wad (`CANNOT`, and a copy when Copy Missing Wads is on). No new message type, so no protocol change.
+- 5 s grace after a member connects (its own pick may still be on the way, the -linkselected fallback);
+  resent after 20 s if not taken; **5 minutes** after it said it cannot run that game.
+- A member with a pick still being delivered (`send_switches` has not finished with it) is left to that.
+- **With Select Game Sync on, the master's game is every member's boot game** — a member booting into
+  its own Boot Game switches after the grace. That is what "left alone, default to the master" means.
+
+**What it exposed: a dropped pack overrode a newer pick.** Mark's own example turned out to have a real
+cause, not just a missing backstop. Yesterday's fix sent the bare IWAD as a *pick* when a cabinet
+unloaded its pack on the way back to attract. So a member playing on a pack while TNT was picked on the
+master would end its game, announce `doom2`, and pull the master and everyone else back off TNT.
+- A pack drop is now **`LKSEL_Unloading`**, called by `M_Restart_Unload_Pack` (End Game and the idle
+  timeout): a member sends `GAME_SELECTED` **one byte longer** (flag 1: only dropping its pack), and the
+  master applies it only when the choice *is* that IWAD with a pack (`lksel_drops_pack`). Otherwise it
+  logs "the link stays on tnt" and the member takes TNT on attract. An older master ignores the longer
+  message. A master dropping its own pack does the same test, and when the choice has moved on it
+  **restarts straight into the choice** instead of into the bare IWAD.
+
+**Verified** — `tools/linktest.sh`:
+- `gamesyncattract` — a member boots into TNT, the master runs Doom 2, nobody picks: the member switches
+  to Doom 2 ("the master's game"). **Red** with the defaults switched off.
+- `gamesyncunloadkeep` — Mark's case: the member plays on a pack (`-warp`), TNT is picked on the master,
+  the member idles out and drops its pack: the master logs that the link stays on TNT, both end on TNT.
+  **Red** with a pack drop treated as a pick again — the master was switched back to Doom 2.
+  - The first version started the member's level from `-linkcmdat` six seconds in, and the new rule
+    switched the member to the master's game in those six seconds on attract — the feature working,
+    the test not testing what it said. `-warp` puts it in the level from boot.
+- All eleven Select Game Sync cases and `linkgame` pass; `make smoke` 5/5.
+
 #### Copy Missing Wads (2026-09-14)
 
 Mark: "Can there be an option to copy wads from the master to the members? Not sure the best landing

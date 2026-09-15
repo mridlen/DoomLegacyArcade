@@ -5701,6 +5701,19 @@ boolean  M_Link_Wad_Dest( const char * game_id, int what, const char * offered, 
     return access( dest, F_OK ) != 0;   // never over a file that is there
 }
 
+// Linked cabinets drop the pack too when it is the master's choice, or this one
+// would leave the others on it and they could no longer invite each other
+// (LKSEL_Unloading).  It is not a pick: a game picked elsewhere while this one
+// played stands, and a master goes straight to it.
+void  M_Restart_Unload_Pack( void )
+{
+    const char * instead = LKSEL_Unloading( ( gamedesc.idstr && gamedesc.idstr[0] ) ? gamedesc.idstr : "game" );
+    if( instead && ! M_Link_Game_Why_Not( instead ) )
+        M_Link_Follow_Game( instead, true );   // does not return when it restarts
+    // A master passes -linkselected so it still holds the choice after the restart.
+    M_Restart_Program_Ex( NULL, false, NULL, devmode, LK_Role() == LK_ROLE_MASTER && ! instead );   // no return
+}
+
 void  M_Link_Test_Select( const char * name )
 {
     int  i;
@@ -10484,10 +10497,8 @@ void M_EndGameResponse(int ch)
     // [Arcade] A level pack overrides the IWAD maps, so the attract screen's
     // built-in demos would play back against the wrong levels.  Restart for
     // a clean attract screen, as the idle timeout does.
-    // link_selected: the pack is dropped on every linked cabinet too, or this
-    // one leaves the others on it and they can no longer invite each other.
     if( M_LevelPack_Loaded() )
-        M_Restart_Program_Ex( NULL, false, NULL, devmode, true );   // no return
+        M_Restart_Unload_Pack();   // no return
 
     COM_BufAddText("exitgame\n");
 }

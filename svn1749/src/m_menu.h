@@ -79,6 +79,9 @@ void M_Restart_Program( const char * game_idstr, boolean keep_packs, boolean wan
 //                   -linkselected in the new process (d_linksel.c)
 void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const char * pack_path,
                            boolean want_devmode, boolean link_selected );
+// [Arcade] Back to attract with a level pack loaded: restart without it (End
+// Game, the idle timeout).  Cabinet Link is told first.  Does not return.
+void M_Restart_Unload_Pack( void );
 // [Arcade] Select Game Sync (d_linksel.c).
 // Is this a game id (LK_Game_Id's spelling) that the Select Game page can
 // offer: one of its IWADs, with or without a level pack name?

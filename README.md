@@ -1263,11 +1263,17 @@ Select Game Sync** set to **On** (it is **Off** until you turn it on):
   master's Cabinet Link page shows why in red under that cabinet — **GAME SYNC: TNT NOT INSTALLED**,
   or **GAME SYNC: NO LEVEL PACK DWANGO5** for a pack that is not in its `legacyhome/levels/`. A pack
   counts as the same if its file has the same name, whatever the capitals.
+- **A cabinet on its attract screen always runs the master's choice.** Whatever it was doing — a
+  Single Level while the game was changed on the other cabinet, or just booting into its own Boot
+  Game — once it is back on its attract screen with nobody in its menus, it switches to the game the
+  master is running (or the latest pick, if the master has not caught up with it yet). So with Select
+  Game Sync on, the master's game is also every member's boot game. A cabinet without that game, and
+  with Copy Missing Wads off, is asked again every five minutes.
 - **A level pack is dropped everywhere too.** When a game on a cabinet with a pack loaded ends back to
   the attract screen — **End Game**, or the idle timeout — that cabinet unloads the pack and restarts,
-  as it always has, and now the other cabinets drop it as well (a cabinet still in a game drops it
-  once its game is over). Before, the other cabinet stayed on the pack and the two could no longer
-  invite each other.
+  as it always has, and the other cabinets drop it as well when the pack was the shared choice. If a
+  different game was picked while that cabinet was playing, that pick stands: the cabinet switches to
+  it instead.
 - Only the master has the setting, and only the master shows **Cabinet Link Options** — its setting
   decides for every cabinet. Like every operator setting, it is saved from a `-devmode` session.
 - Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator

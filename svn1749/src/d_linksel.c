@@ -58,7 +58,20 @@ typedef struct
     uint32_t  waited_serial;  // said once that it is busy
     tic_t     sent_at;
     char      note[LKSEL_NOTE_LEN];   // why it did not follow, for the page
+    // The master's game for a cabinet on its attract screen (lksel_send_defaults)
+    boolean   seen;                   // online this tick
+    tic_t     online_since;
+    char      default_game[LK_GAME_LEN];
+    tic_t     default_at;
+    boolean   default_cannot;         // it said it cannot run default_game
 } lksel_peer_t;
+
+// A cabinet that has just connected may be about to announce a pick of its own.
+#define LKSEL_DEFAULT_GRACE   (5*TICRATE)
+// Told, and still on its old game this much later: it did not take it.
+#define LKSEL_DEFAULT_RESEND  (20*TICRATE)
+// Said it cannot run it (not installed, say): ask again this rarely.
+#define LKSEL_DEFAULT_CANNOT  (5*60*TICRATE)
 
 static boolean   lksel_inited;
 static boolean   lksel_announce;              // a player chose this game here
@@ -212,6 +225,21 @@ static void  lksel_new_target( const char * game )
 
 static void  lksel_send_switches( void );
 
+// The master's choice: the latest pick while one stands, otherwise the game the
+// master is running.  A pick made on a member while the master was busy is the
+// choice even before the master has followed it.
+static const char *  lksel_group_game( void )
+{
+    return lksel_target[0] ? lksel_target : LK_Game_Id();
+}
+
+// Is `bare` (an IWAD with no pack) the group game with its level pack dropped?
+static boolean  lksel_drops_pack( const char * group, const char * bare )
+{
+    size_t n = strlen( bare );
+    return n && ! strncasecmp( group, bare, n ) && group[n] == '+';
+}
+
 // ---------------------------------------------------------------------------
 
 void  LKSEL_Selected( void )
@@ -256,6 +284,51 @@ void  LKSEL_Before_Restart( const char * game )
     }
 }
 
+// A game with a level pack loaded is ending back to attract, and this cabinet is
+// about to restart without the pack (M_Restart_Unload_Pack).  That drops the
+// pack from the master's choice when the choice is that pack -- every cabinet
+// drops it -- but it is not a pick: when the choice has since become another
+// game (picked while this cabinet was playing), the choice stands.  A member
+// then takes it on its attract screen; a master goes straight to it, which is
+// the game this returns (NULL: restart without the pack as usual).
+const char *  LKSEL_Unloading( const char * bare )
+{
+    static char  instead[LK_GAME_LEN];
+    lk_peer_info_t  master;
+    byte  msg[LK_GAME_LEN + 1];
+    const char * group;
+
+    if( ! M_Link_Game_Id_Valid( bare ) )  return NULL;
+    switch( LK_Role() )
+    {
+     case LK_ROLE_MEMBER:
+        if( LK_Sync_Peers( &master, 1 ) < 1 )  return NULL;
+        memset( msg, 0, sizeof(msg) );
+        dl_strncpy( (char*) msg, bare, LK_GAME_LEN );
+        msg[LK_GAME_LEN] = 1;   // only dropping its pack
+        if( LK_Send( master.fp, LK_GM_GAME_SELECTED, msg, sizeof(msg) ) )
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: told %s this cabinet dropped its level pack\n", master.name );
+        return NULL;
+     case LK_ROLE_MASTER:
+        if( ! cv_link_gamesync.EV )  return NULL;
+        group = lksel_group_game();
+        if( lksel_drops_pack( group, bare ) )
+        {
+            lksel_new_target( bare );
+            lksel_self_done = lksel_serial;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected here, dropping the level pack; the other cabinets drop it too\n", bare );
+            lksel_send_switches();
+            return NULL;
+        }
+        if( ! strcasecmp( group, bare ) )  return NULL;
+        dl_strncpy( instead, group, LK_GAME_LEN );
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s was picked meanwhile; going there instead\n", instead );
+        return instead;
+     default:
+        return NULL;
+    }
+}
+
 const char *  LKSEL_Peer_Status( const byte * fp )
 {
     int i;
@@ -294,8 +367,12 @@ void  LKSEL_Status_Print( void )
 static void  lksel_on_selected( const lk_event_t * ev )
 {
     char  game[LK_GAME_LEN];
+    boolean unload;
 
-    if( LK_Role() != LK_ROLE_MASTER || ev->len != LK_GAME_LEN )  return;
+    if( LK_Role() != LK_ROLE_MASTER )  return;
+    // A byte more: the member only dropped its level pack (LKSEL_Unloading).
+    unload = ( ev->len == LK_GAME_LEN + 1 && ev->data[LK_GAME_LEN] == 1 );
+    if( ev->len != LK_GAME_LEN && ! unload )  return;
     lksel_field( game, ev->data, LK_GAME_LEN );
     if( ! M_Link_Game_Id_Valid( game ) )  return;
 
@@ -304,6 +381,20 @@ static void  lksel_on_selected( const lk_event_t * ev )
         GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected %s (Select Game Sync is off)\n",
                    lksel_peer_name( ev->source ), game );
         return;
+    }
+    if( unload )
+    {
+        const char * group = lksel_group_game();
+        if( ! lksel_drops_pack( group, game ) )
+        {
+            // Another game was picked while it played: that stands, and the
+            // member takes it on its attract screen.
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s dropped its level pack; the link stays on %s\n",
+                       lksel_peer_name( ev->source ), group );
+            return;
+        }
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s dropped the level pack; the other cabinets drop it too\n",
+                   lksel_peer_name( ev->source ) );
     }
     // The same pick again: a member tells its master just before it restarts
     // and once more after (-linkselected), in case the first did not arrive.
@@ -344,11 +435,15 @@ static void  lksel_on_switch( const lk_event_t * ev )
     if( ! strcasecmp( game, LK_Game_Id() ) )  return;
     // Busy: the master asks again once this cabinet is free.
     if( ! lksel_can_switch_now( LK_State() ) )  return;
+    // Serial 0: not a pick, the master's game for a cabinet left on its attract
+    // screen.  Someone in the menus has not left it.
+    if( serial == 0 && LK_State() != LK_STATE_IDLE )  return;
 
     why = M_Link_Game_Why_Not( game );
     if( ! why )
     {
-        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: switching to %s, selected on the link\n", game );
+        GenPrintf( EMSG_errlog, serial ? "LINKLOG Cabinet Link: switching to %s, selected on the link\n"
+                                       : "LINKLOG Cabinet Link: switching to %s, the master's game\n", game );
         why = M_Link_Follow_Game( game, false );   // does not return when it restarts
     }
     if( ! why )
@@ -394,6 +489,12 @@ static void  lksel_on_cannot( const lk_event_t * ev )
     lksel_upper( s->note );
     if( serial == lksel_serial && ! strcasecmp( game, lksel_target ) )
         s->done_serial = lksel_serial;
+    if( ! strcasecmp( game, s->default_game ) || ! strcasecmp( game, lksel_group_game() ) )
+    {
+        dl_strncpy( s->default_game, game, LK_GAME_LEN );
+        s->default_at = I_GetTime();
+        s->default_cannot = true;
+    }
     GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s cannot switch to %s: %s\n",
                lksel_peer_name( ev->source ), game, reason );
 }
@@ -848,6 +949,55 @@ static void  lksel_send_switches( void )
 
 }
 
+// Master: every cabinet left on its attract screen runs the master's choice.
+// A cabinet that played a single level (or anything) while the game was changed
+// elsewhere, one that booted into its own Boot Game, one whose pick never
+// arrived -- once it is back on attract with nobody at its menus, it takes the
+// choice.  A pick still being followed is send_switches' business, not this.
+static void  lksel_send_defaults( void )
+{
+    lk_peer_info_t  peers[LK_MAX_PEERS];
+    static const byte zero[LK_FP_BYTES];
+    byte  msg[LKSEL_SWITCH_LEN];
+    const char * group = lksel_group_game();
+    tic_t now = I_GetTime();
+    int   i, n = LK_Peers( peers, LK_MAX_PEERS );
+
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+        lksel_peers[i].seen = false;
+    for( i = 0; i < n; i++ )
+    {
+        lk_peer_info_t * p = &peers[i];
+        lksel_peer_t * s;
+        if( p->status != LK_PEER_ONLINE || ! memcmp( p->fp, zero, LK_FP_BYTES ) || ! p->game[0] )  continue;
+        s = lksel_slot( p->fp, peers, n );
+        if( ! s )  continue;
+        s->seen = true;
+        if( ! s->online_since )  s->online_since = now | 1;
+        if( p->state != LK_STATE_IDLE || ! strcasecmp( p->game, group ) )  continue;
+        if( now - s->online_since < LKSEL_DEFAULT_GRACE )  continue;
+        if( lksel_target[0] && s->done_serial != lksel_serial )  continue;   // a pick is on its way to it
+        if( ! strcasecmp( s->default_game, group )
+            && now - s->default_at < ( s->default_cannot ? LKSEL_DEFAULT_CANNOT : LKSEL_DEFAULT_RESEND ) )
+            continue;
+
+        put32( msg, 0 );
+        memset( msg + 4, 0, LK_GAME_LEN );
+        dl_strncpy( (char*) msg + 4, group, LK_GAME_LEN );
+        if( LK_Send( p->fp, LK_GM_GAME_SWITCH, msg, sizeof(msg) ) )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s is on its attract screen with %s; switching it to %s\n",
+                       p->name[0] ? p->name : p->address, p->game, group );
+            dl_strncpy( s->default_game, group, LK_GAME_LEN );
+            s->default_at = now;
+            s->default_cannot = false;
+        }
+    }
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+        if( ! lksel_peers[i].seen )
+            lksel_peers[i].online_since = 0;
+}
+
 static void  lksel_master_tick( void )
 {
 
@@ -869,9 +1019,14 @@ static void  lksel_master_tick( void )
         }
         lksel_self_done = lksel_serial;
     }
-    if( ! lksel_target[0] )  return;
+    if( ! lksel_target[0] )
+    {
+        lksel_send_defaults();   // no pick standing: the master's own game
+        return;
+    }
 
     lksel_send_switches();
+    lksel_send_defaults();
 
     // This cabinet follows a selection made on a member, when it is free to.
     if( lksel_self_done != lksel_serial && strcasecmp( LK_Game_Id(), lksel_target )

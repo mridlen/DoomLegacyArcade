@@ -32,6 +32,10 @@ void          LKSEL_Selected( void );
 // A pick is about to restart the program into this game id: tell the other
 // cabinets now (M_Restart_Program_Ex, just before its splash).
 void          LKSEL_Before_Restart( const char * game );
+// A game ending back to attract is about to restart this cabinet without its
+// level pack; bare is the IWAD's game id.  Returns a game to restart into
+// instead (a master whose choice moved on), or NULL.
+const char *  LKSEL_Unloading( const char * bare );
 
 // For the operator page: why the cabinet with this full id did not follow the
 // latest selection ("" when there is nothing to say), and the same for this

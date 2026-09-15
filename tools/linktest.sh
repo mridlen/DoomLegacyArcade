@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload) echo "-" ;;
+        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -1758,9 +1758,50 @@ case_gamesyncunload() {
     wait
     expect "the follower loaded the pack" "$d/follower" "^LINKSEL sync=0 game=doom2\+syncpack "
     expect "the master played a level on it" "$d/master" "^LINKGAME gamestate=1 "
-    expect "the master dropped the pack and passed that on" "$d/master" "^LINKLOG .*doom2 selected here, before restarting"
+    expect "the master dropped the pack and passed that on" "$d/master" "^LINKLOG .*doom2 selected here, dropping the level pack"
     expect "the follower dropped it too" "$d/follower" "^LINKLOG .*switching to doom2, selected on the link"
     expect_game "$d/master" doom2; expect_game "$d/follower" doom2
+}
+
+# A cabinet on its attract screen runs the master's game.  Here the member
+# simply boots into another one (TNT) and nobody picks anything.
+case_gamesyncattract() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    run "$d/master" 55 0
+    sleep 2
+    GAME=tnt run "$d/follower" 52 0
+    wait
+    expect "the member started on TNT" "$d/follower" "^LINKSEL sync=0 game=tnt "
+    expect "the master saw it on attract with another game" "$d/master" "^LINKLOG .*FOLLOWER is on its attract screen with tnt; switching it to doom2"
+    expect "the member switched to the master's game" "$d/follower" "^LINKLOG .*switching to doom2, the master's game"
+    expect_game "$d/follower" doom2; expect_game "$d/master" doom2
+}
+
+# Mark's case: a member plays (with a level pack, here) while TNT is picked on
+# the master.  When its game ends and it drops the pack, that must not undo the
+# pick -- the member takes TNT on its attract screen, and the master stays on it.
+case_gamesyncunloadkeep() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    gamesynccabs "$d" "$p"
+    mkdir -p "$d/follower/legacyhome/levels"
+    mkpack "$d/follower/legacyhome/levels/syncpack.wad"
+    sed -i -e 's/^idletimeout .*/idletimeout "15"/' -e 's/^idlewarntime .*/idlewarntime "5"/' "$d/follower/legacyhome/config.cfg"
+    run "$d/master" 95 0 -linktest -linkselectat 14 tnt
+    sleep 2
+    # -warp: in its level from boot, before the master sees it on attract (the
+    # restart keeps it, so it plays a second level without the pack too).
+    run "$d/follower" 92 0 -file "$d/follower/legacyhome/levels/syncpack.wad" -warp 1 -skill 3
+    wait
+    expect "the member played on its pack" "$d/follower" "^LINKGAME gamestate=1 "
+    expect "the member dropped its pack" "$d/follower" "^LINKLOG .*told MASTERCAB this cabinet dropped its level pack"
+    expect "the master kept the pick" "$d/master" "^LINKLOG .*FOLLOWER dropped its level pack; the link stays on tnt"
+    expect_not "the master was not switched back" "$d/master" "^LINKLOG .*switching to doom2"
+    expect_game "$d/master" tnt; expect_game "$d/follower" tnt
 }
 
 # --------------------------------------------------------------------------
