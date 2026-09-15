@@ -93,6 +93,8 @@
 #include "z_zone.h"
 #include "d_main.h"
 #include "d_clisrv.h"   // D_NumViews, for the shared-screen message rule
+#include "m_argv.h"     // [Arcade] -logfile
+#include <time.h>       // [Arcade] -logfile timestamps
 
 //#include <unistd.h>
 
@@ -1134,6 +1136,53 @@ static byte gameplay_con_message_table[ 16 ] =
 
 // [WDJ] print from va_list
 // Caller must have va_start, va_end, or else run-time segfault will occur.
+// [Arcade] -logfile <file>: everything that goes to the terminal, appended to
+// a file with the wall-clock time on each line.  The Windows exe is built
+// with no console, so a Windows cabinet had no way to show its own side of a
+// Cabinet Link problem; the timestamps line it up against another cabinet's.
+// Opened on first use (myargv is set before anything prints), appended to so
+// a program restart -- which keeps the argument -- carries on in the same file,
+// and flushed per write so a crash or a power cut loses nothing already said.
+static void  CON_Logfile_Write( const char * txt )
+{
+    static int     state = 0;   // 0 unchecked, 1 open, 2 not wanted
+    static FILE *  logf = NULL;
+    static int     at_line_start = 1;
+    const char *   c;
+
+    if( state == 0 )
+    {
+        state = 2;
+        if( M_CheckParm( "-logfile" ) && M_IsNextParm() )
+        {
+            const char * name = M_GetNextParm();
+            logf = fopen( name, "a" );
+            if( logf )
+            {
+                time_t  t = time( NULL );
+                state = 1;
+                fprintf( logf, "\n==== %s started %s", VERSION_BANNER, ctime( &t ) );
+            }
+        }
+    }
+    if( state != 1 )  return;
+
+    for( c = txt; *c; c++ )
+    {
+        if( at_line_start )
+        {
+            time_t  t = time( NULL );
+            struct tm * tm = localtime( &t );
+            if( tm )
+                fprintf( logf, "%02d:%02d:%02d ", tm->tm_hour, tm->tm_min, tm->tm_sec );
+            at_line_start = 0;
+        }
+        fputc( *c, logf );
+        if( *c == '\n' )  at_line_start = 1;
+    }
+    fflush( logf );
+}
+
 void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
 {
     byte eout = EOUT_flags;  // default for CONS_Printf
@@ -1223,6 +1272,7 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
         // Errors to terminal, and before graphics
         I_OutputMsg ("%s",txt);
         fflush(NULL);
+        CON_Logfile_Write( txt );   // [Arcade] -logfile
     }
 
 #if 0

@@ -147,6 +147,7 @@ const char* LK_Forget_Pins( void )  { return lk_not_built; }
 # include <netdb.h>
 # include <poll.h>
 # include <fcntl.h>
+# include <sys/ioctl.h>   // [Arcade] FIONREAD, for lkt_log_trouble
 # include <signal.h>
 #endif
 #include <unistd.h>
@@ -718,6 +719,11 @@ typedef struct
     char        game[LK_GAME_LEN];
     byte        role, state, panels;
     boolean     got_hello;
+    // [Arcade] For saying what a connection was doing when it went quiet or
+    // broke (lkt_log_trouble): a Windows member kept being dropped as
+    // "stopped responding" with nothing to show which end had stopped what.
+    uint32_t    rx_bytes, tx_bytes, rx_frames, tx_frames, send_stalls;
+    byte        last_rx_type, last_tx_type;
 } lk_conn_t;
 
 typedef struct
@@ -853,6 +859,56 @@ static void  lkt_queue( lk_conn_t * c, byte type, const byte * payload, uint32_t
     c->outbuf[c->outlen+4] = type;
     if( len )  memcpy( c->outbuf + c->outlen + 5, payload, len );
     c->outlen += 5 + len;
+    c->tx_frames++;
+    c->last_tx_type = type;
+}
+
+// [Arcade] What a connection was doing when it went quiet or broke, logged
+// just before it is closed.  A Windows member kept being dropped by its master
+// as "stopped responding", and neither end said anything that could tell
+// "the other end stopped sending" from "packets are being lost" from "this end
+// stopped reading".  The bytes still unread in this end's own socket buffer
+// answer the last; on Linux the kernel's retransmit counters answer the second.
+static const char *  lk_msg_name( byte type )
+{
+    static const char * names[LK_NUM_MSG] =
+        { "-", "AUTH", "HELLO", "PRESENCE", "PING", "PEERLIST", "ROUTE", "SYNC" };
+    return type < LK_NUM_MSG ? names[type] : "?";
+}
+
+static void  lkt_log_trouble( lk_conn_t * c, const char * what, int ssl_err, int sock_err )
+{
+    uint32_t  now = lk_now();
+    unsigned long  unread = 0;
+#ifdef __WIN32__
+    u_long  avail = 0;
+    if( ioctlsocket( c->fd, FIONREAD, &avail ) == 0 )  unread = avail;
+#else
+    int  avail = 0;
+    if( ioctl( c->fd, FIONREAD, &avail ) == 0 && avail > 0 )  unread = avail;
+#endif
+    lk_log( "Cabinet Link: %s: %s -- heard %u ms ago, sent %u ms ago; ssl err %d, socket err %d",
+            c->name[0] ? c->name : c->addr, what,
+            lk_since( now, c->last_rx ), lk_since( now, c->last_tx ), ssl_err, sock_err );
+    lk_log( "Cabinet Link: %s: in %u bytes/%u msgs (last %s), out %u bytes/%u msgs (last %s),",
+            c->name[0] ? c->name : c->addr, c->rx_bytes, c->rx_frames, lk_msg_name( c->last_rx_type ),
+            c->tx_bytes, c->tx_frames, lk_msg_name( c->last_tx_type ) );
+    lk_log( "Cabinet Link: %s: %d bytes waiting to send, %u send stalls, %lu bytes unread in socket, %d in TLS",
+            c->name[0] ? c->name : c->addr, c->outlen, c->send_stalls, unread,
+            c->ssl ? SSL_pending( c->ssl ) : 0 );
+#ifdef __linux__
+    {
+        struct tcp_info  ti;
+        socklen_t  tl = sizeof(ti);
+        memset( &ti, 0, sizeof(ti) );
+        if( getsockopt( c->fd, IPPROTO_TCP, TCP_INFO, &ti, &tl ) == 0 )
+            lk_log( "Cabinet Link: %s: tcp unacked %u, retransmitting %u, total retrans %u, rtt %u ms,"
+                    " data in %u ms ago, out %u ms ago",
+                    c->name[0] ? c->name : c->addr, ti.tcpi_unacked, ti.tcpi_retransmits,
+                    ti.tcpi_total_retrans, ti.tcpi_rtt / 1000, ti.tcpi_last_data_recv,
+                    ti.tcpi_last_data_sent );
+    }
+#endif
 }
 
 static void  lkt_flush( lk_conn_t * c )
@@ -863,12 +919,18 @@ static void  lkt_flush( lk_conn_t * c )
         if( n <= 0 )
         {
             int err = SSL_get_error( c->ssl, n );
-            if( err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_WANT_READ )  return;
+            if( err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_WANT_READ )
+            {
+                c->send_stalls++;
+                return;
+            }
+            lkt_log_trouble( c, "send failed", err, lk_sock_errno() );
             lkt_close( c, "connection lost", false );
             return;
         }
         memmove( c->outbuf, c->outbuf + n, c->outlen - n );
         c->outlen -= n;
+        c->tx_bytes += n;
         c->last_tx = lk_now();
     }
 }
@@ -1299,10 +1361,14 @@ static void  lkt_read( lk_conn_t * c, lk_state_e my_state, byte my_panels )
         {
             int err = SSL_get_error( c->ssl, n );
             if( err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE )  break;
+            if( c->phase == LKC_ONLINE )
+                lkt_log_trouble( c, err == SSL_ERROR_ZERO_RETURN ? "closed by the other end" : "receive failed",
+                                 err, lk_sock_errno() );
             lkt_close( c, err == SSL_ERROR_ZERO_RETURN ? "disconnected" : "connection lost", false );
             return;
         }
         c->inlen += n;
+        c->rx_bytes += n;
         c->last_rx = lk_now();
 
         // Every complete frame in the buffer.
@@ -1318,6 +1384,8 @@ static void  lkt_read( lk_conn_t * c, lk_state_e my_state, byte my_panels )
                 return;
             }
             if( c->inlen < 5 + (int)len )  break;
+            c->rx_frames++;
+            c->last_rx_type = type;
             lkt_handle_frame( c, type, c->inbuf + 5, len, my_state, my_panels );
             if( c->phase == LKC_EMPTY )  return;
             memmove( c->inbuf, c->inbuf + 5 + len, c->inlen - 5 - len );
@@ -1665,7 +1733,10 @@ static int  lkt_main( void * unused )
             if( c->phase != LKC_ONLINE && lk_since( now, c->started ) > LK_HANDSHAKE_MS )
                 lkt_close( c, "timed out before authenticating", ! c->outbound );
             else if( c->phase == LKC_ONLINE && lk_since( now, c->last_rx ) > LK_DEAD_MS )
+            {
+                lkt_log_trouble( c, "silent", 0, 0 );
                 lkt_close( c, "stopped responding", false );
+            }
             else if( c->phase == LKC_ONLINE )
             {
                 if( my_state != lkt_sent_state || my_panels != lkt_sent_panels || game_changed )
