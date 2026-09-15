@@ -1875,7 +1875,9 @@ still work, because they happen in the seconds after each reconnect.
   diagnostics stay in for when it does.
 
 **8. Twelve players: one cabinet's four had no name, colour, weapon switch or autoaim** (2026-09-15;
-fixed). In a Campaign hosted by the Windows cabinet, a player's weapons would not auto-switch and a
+fixed, PR #22; **confirmed on the cabinets**: Mark played a twelve player Campaign and a twelve
+player Deathmatch across the laptop, the Windows cabinet and the Pi, and both behaved correctly). In
+a Campaign hosted by the Windows cabinet, a player's weapons would not auto-switch and a
 player could not hit barrels. The Windows log's `LINKNAMES` showed the laptop's four players (the
 last cabinet in) as `Player 9`..`Player 12` in colour 0 on every cabinet. Their `XD_NAMEANDCOLOR`
 and `XD_WEAPONPREF` never ran, leaving `GF_flags` and `favoritweapon` zeroed: no original weapon
