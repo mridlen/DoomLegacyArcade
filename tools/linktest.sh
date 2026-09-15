@@ -1534,6 +1534,8 @@ case_gamesync() {
     run "$d/follower" 77 0
     wait
     expect "the chooser told its master" "$d/chooser" "^LINKLOG .*told MASTERCAB this cabinet selected tnt"
+    # ...before its restart, so the others do not wait for it to reconnect.
+    expect "and did so before restarting" "$d/chooser" "^LINKLOG .*told MASTERCAB this cabinet selected tnt, before restarting"
     expect "the master took the choice" "$d/master" "^LINKLOG .*CHOOSER selected tnt; the other cabinets follow"
     expect "the master switched itself" "$d/master" "^LINKLOG .*switching to tnt, selected on the link"
     expect "the other member was told" "$d/master" "^LINKLOG .*telling FOLLOWER to switch to tnt"

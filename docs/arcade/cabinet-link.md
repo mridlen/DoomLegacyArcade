@@ -1458,6 +1458,35 @@ the number of wads really loaded, since `addfile` reports only to the console):
 way round); pick one while the other cabinet is mid-game and watch it switch after; a cabinet without
 Plutonia picking Plutonia elsewhere.
 
+#### Faster switching (2026-09-14)
+
+Mark, after playing it: "the amount of time it takes to restart the other system is a little
+disappointing ... the multiplayer join screen pops up almost immediately, but this takes like 5-10
+seconds". A timeline of three engines on copies of the laptop's live home (`ts`-stamped output, the
+member picking TNT) showed where the laptop's part went:
+
+| step | before | after |
+| --- | --- | --- |
+| pick → the other cabinet starts its switch | **3.8 s** | 0.0 s |
+| restart → link running again (startup) | **2.0 s** | 0.27 s |
+| of which: md5 of the two soundtrack wads (418 MB) | ~1.8 s | cached |
+| TLS + passcode proof after reconnecting | 0.9 s | 0.9 s (nobody waits on it now) |
+| the `SWITCHING GAME...` hold and shutdown | 1.0 s | 1.0 s (kept: it says what the black screen is) |
+
+- **The other cabinets were waiting for the picking cabinet's whole restart.** A pick that restarts
+  only reached the master from the *new* process, once it had started, connected and proved the
+  passcode. `M_Restart_Program_Ex` now calls **`LKSEL_Before_Restart`** with the game id the new
+  process will have (a member sends `GAME_SELECTED`, a master sends its `GAME_SWITCH`es), just before
+  the splash, whose 700 ms hold gives the link thread time to send it; the link thread also drains its
+  outbox and flushes every connection when told to stop. `-linkselected` is still passed, as a
+  fallback, and a repeat of the pick the master already holds changes nothing.
+- **Every start hashed every wad in full** (`W_Load_WadFile`; the netcode and the link compare the
+  md5s). `md5sum` alone takes 1.27 s over those four files on the laptop. The md5 is now remembered in
+  **`legacyhome/wadmd5.txt`**, keyed by path, size, modification time and inode, and written with
+  `M_Atomic_Write_*`; a replaced or edited wad changes one of those and is read again. This speeds up
+  every start, boot included, not only a switch. On a Pi 3 hashing an 18 MB IWAD is slower still.
+- `gamesync` checks the pick went out before the restart. The Pi's own figures were not measured.
+
 **Not done**: the picked game is not persisted — a master switched off forgets it, and a cabinet that
 boots later keeps its Boot Game. Two picks made on two cabinets within the same second may each
 restart the other once before settling on the one the master heard last.

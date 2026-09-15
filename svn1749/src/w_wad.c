@@ -106,6 +106,8 @@
 
 #include <fcntl.h>
   // open
+#include <sys/stat.h>
+  // stat, for the md5 cache
 #include <unistd.h>
   // close, read, lseek
 
@@ -127,6 +129,7 @@ static void* W_CacheLumpNum_nolock ( lumpnum_t lumpnum, int ztag );
 #include "md5.h"
 #include "m_swap.h"
 #include "m_misc.h"
+#include "d_main.h"    // [Arcade] legacyhome, for the md5 cache
 #include "infoext.h"
   // prefix_detect_t
 
@@ -282,6 +285,125 @@ static void    W_Load_umapinfo_wad_lumps( int wadnum );
 //
 // BP: Can now load dehacked files (ext .deh)
 // Called by W_Init_MultipleFiles, P_AddWadFile.
+// [Arcade] Every wad's md5 is taken as it loads (the netcode compares them, and
+// Cabinet Link fingerprints them), which reads the whole file.  On the laptop
+// that was 1.8 s of every start -- two soundtrack wads, 418 MB -- and a game
+// switch is a restart.  So the md5 is remembered in legacyhome/wadmd5.txt,
+// keyed by path, size, modification time and inode: a file replaced or
+// edited changes one of them and is read again.  A line per wad:
+//   <md5 hex> <size> <mtime> <inode> <path>
+#define W_MD5CACHE_MAX   64
+#define W_MD5CACHE_FILE  "wadmd5.txt"
+
+typedef struct
+{
+    byte      md5[16];
+    uint64_t  size, mtime, ino;
+    char      path[MAX_WADPATH];
+} w_md5cache_t;
+
+static w_md5cache_t  w_md5cache[W_MD5CACHE_MAX];
+static int           w_md5cache_n = -1;   // -1: not read yet
+
+static void  W_Md5_Cache_Load( void )
+{
+    char  fn[MAX_WADPATH], line[MAX_WADPATH + 128], hex[33];
+    FILE * f;
+    w_md5cache_n = 0;
+    if( ! legacyhome )  return;
+    cat_filename( fn, legacyhome, W_MD5CACHE_FILE );
+    f = fopen( fn, "r" );
+    if( ! f )  return;
+    while( w_md5cache_n < W_MD5CACHE_MAX && fgets( line, sizeof(line), f ) )
+    {
+        w_md5cache_t * e = &w_md5cache[w_md5cache_n];
+        unsigned long long sz, mt, in;
+        int  pos = 0, k;
+        if( sscanf( line, "%32s %llu %llu %llu %n", hex, &sz, &mt, &in, &pos ) < 4 || ! pos
+            || strlen( hex ) != 32 )
+            continue;
+        for( k = 0; k < 16; k++ )
+        {
+            unsigned int b;
+            if( sscanf( hex + 2*k, "%2x", &b ) != 1 )  break;
+            e->md5[k] = (byte) b;
+        }
+        if( k < 16 )  continue;
+        dl_strncpy( e->path, line + pos, sizeof(e->path) );
+        e->path[ strcspn( e->path, "\r\n" ) ] = 0;
+        e->size = sz;  e->mtime = mt;  e->ino = in;
+        w_md5cache_n++;
+    }
+    fclose( f );
+}
+
+static void  W_Md5_Cache_Save( void )
+{
+    char  fn[MAX_WADPATH];
+    FILE * f;
+    int  i, k;
+    if( ! legacyhome )  return;
+    cat_filename( fn, legacyhome, W_MD5CACHE_FILE );
+    f = M_Atomic_Write_Open( fn );
+    if( ! f )  return;
+    for( i = 0; i < w_md5cache_n; i++ )
+    {
+        w_md5cache_t * e = &w_md5cache[i];
+        for( k = 0; k < 16; k++ )  fprintf( f, "%02x", e->md5[k] );
+        fprintf( f, " %llu %llu %llu %s\n", (unsigned long long) e->size,
+                 (unsigned long long) e->mtime, (unsigned long long) e->ino, e->path );
+    }
+    M_Atomic_Write_Close( f, fn );
+}
+
+static void  W_Md5_File( const char * path, byte * md5 )
+{
+    struct stat  st;
+    FILE * fhandle;
+    w_md5cache_t * e;
+    int  i;
+
+    if( w_md5cache_n < 0 )  W_Md5_Cache_Load();
+    if( stat( path, &st ) == 0 )
+    {
+        for( i = 0; i < w_md5cache_n; i++ )
+        {
+            e = &w_md5cache[i];
+            if( e->size == (uint64_t) st.st_size && e->mtime == (uint64_t) st.st_mtime
+                && e->ino == (uint64_t) st.st_ino && ! strcmp( e->path, path ) )
+            {
+                memcpy( md5, e->md5, 16 );
+                return;
+            }
+        }
+    }
+
+    fhandle = fopen( path, "rb" );
+    md5_stream( fhandle, md5 );
+    fclose( fhandle );
+
+    if( stat( path, &st ) != 0 || strlen( path ) >= MAX_WADPATH || strchr( path, '\n' ) )
+        return;
+    // Replace this path's old line, or take a new one (the oldest when full).
+    for( i = 0; i < w_md5cache_n; i++ )
+        if( ! strcmp( w_md5cache[i].path, path ) )  break;
+    if( i == w_md5cache_n )
+    {
+        if( w_md5cache_n < W_MD5CACHE_MAX )
+            w_md5cache_n++;
+        else
+        {
+            memmove( w_md5cache, w_md5cache + 1, sizeof(w_md5cache[0]) * (W_MD5CACHE_MAX - 1) );
+            i = W_MD5CACHE_MAX - 1;
+        }
+    }
+    e = &w_md5cache[i];
+    memcpy( e->md5, md5, 16 );
+    e->size = st.st_size;  e->mtime = st.st_mtime;  e->ino = st.st_ino;
+    dl_strncpy( e->path, path, sizeof(e->path) );
+    W_Md5_Cache_Save();
+}
+
 int W_Load_WadFile ( const char * filename )
 {
     // findfile requires a buffer of (at least) MAX_WADPATH
@@ -532,9 +654,7 @@ int W_Load_WadFile ( const char * filename )
         else
 #endif
         {
-            FILE * fhandle = fopen(filenamebuf, "rb");
-            md5_stream (fhandle, wadfile->md5sum);
-            fclose(fhandle);
+            W_Md5_File( filenamebuf, wadfile->md5sum );   // [Arcade] remembered
         }
 
 #ifdef DEBUG_MD5_TIME

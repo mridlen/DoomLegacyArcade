@@ -157,11 +157,50 @@ static void  lksel_new_target( const char * game )
     lksel_self_note[0] = 0;
 }
 
+static void  lksel_send_switches( void );
+
 // ---------------------------------------------------------------------------
 
 void  LKSEL_Selected( void )
 {
     lksel_announce = true;
+}
+
+// A pick is about to restart this cabinet: tell the others now, so they start
+// switching while this one restarts instead of after it has reconnected.
+// Measured on the laptop, the other cabinet began its own switch 3.8 s after
+// the pick when it waited (1.8 s of it this cabinet hashing its music wads
+// again, 0.9 s the link's handshake); on a Pi 3 the wait is longer still.
+// -linkselected still goes on the restart, in case this does not arrive.
+void  LKSEL_Before_Restart( const char * game )
+{
+    lk_peer_info_t  master;
+    byte  msg[LK_GAME_LEN];
+
+    if( ! M_Link_Game_Id_Valid( game ) )  return;
+    switch( LK_Role() )
+    {
+     case LK_ROLE_MEMBER:
+        if( LK_Sync_Peers( &master, 1 ) < 1 )  return;
+        memset( msg, 0, sizeof(msg) );
+        dl_strncpy( (char*) msg, game, LK_GAME_LEN );
+        if( LK_Send( master.fp, LK_GM_GAME_SELECTED, msg, sizeof(msg) ) )
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: told %s this cabinet selected %s, before restarting\n",
+                       master.name, game );
+        break;
+     case LK_ROLE_MASTER:
+        if( ! cv_link_gamesync.EV )  return;
+        if( strcasecmp( game, lksel_target ) )
+        {
+            lksel_new_target( game );
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected here, before restarting; the other cabinets follow\n", game );
+        }
+        lksel_self_done = lksel_serial;
+        lksel_send_switches();
+        break;
+     default:
+        break;
+    }
 }
 
 const char *  LKSEL_Peer_Status( const byte * fp )
@@ -199,7 +238,6 @@ void  LKSEL_Status_Print( void )
 static void  lksel_on_selected( const lk_event_t * ev )
 {
     char  game[LK_GAME_LEN];
-    int   i;
 
     if( LK_Role() != LK_ROLE_MASTER || ev->len != LK_GAME_LEN )  return;
     lksel_field( game, ev->data, LK_GAME_LEN );
@@ -211,13 +249,21 @@ static void  lksel_on_selected( const lk_event_t * ev )
                    lksel_peer_name( ev->source ), game );
         return;
     }
-    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected %s; the other cabinets follow\n",
-               lksel_peer_name( ev->source ), game );
-    lksel_new_target( game );
-    // The cabinet that chose it is already there.
-    for( i = 0; i < LK_MAX_PEERS; i++ )
-        if( lksel_peers[i].used && ! memcmp( lksel_peers[i].fp, ev->source, LK_FP_BYTES ) )
-            lksel_peers[i].done_serial = lksel_serial;
+    // The same pick again: a member tells its master just before it restarts
+    // and once more after (-linkselected), in case the first did not arrive.
+    if( strcasecmp( game, lksel_target ) )
+    {
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected %s; the other cabinets follow\n",
+                   lksel_peer_name( ev->source ), game );
+        lksel_new_target( game );
+    }
+    // The cabinet that chose it is there, or on its way: it may still be
+    // showing its old game while it restarts.
+    {
+        lk_peer_info_t  peers[LK_MAX_PEERS];
+        lksel_peer_t * s = lksel_slot( ev->source, peers, LK_Peers( peers, LK_MAX_PEERS ) );
+        if( s )  s->done_serial = lksel_serial;
+    }
 }
 
 static void  lksel_on_switch( const lk_event_t * ev )
@@ -304,7 +350,9 @@ void  LKSEL_On_Event( const lk_event_t * ev )
 
 // ---------------------------------------------------------------------------
 
-static void  lksel_master_tick( void )
+// Master: tell every cabinet that has not dealt with the latest pick, and is
+// free to switch, to switch now.
+static void  lksel_send_switches( void )
 {
     lk_peer_info_t  peers[LK_MAX_PEERS];
     static const byte zero[LK_FP_BYTES];
@@ -312,29 +360,13 @@ static void  lksel_master_tick( void )
     tic_t now = I_GetTime();
     int   i, n;
 
-    if( ! cv_link_gamesync.EV )
-    {
-        // Switched off: forget the selection, so switching it back on does not
-        // replay an old one.
-        lksel_announce = false;
-        if( lksel_target[0] )  lksel_new_target( "" );
-        return;
-    }
-    if( lksel_announce )
-    {
-        lksel_announce = false;
-        lksel_new_target( LK_Game_Id() );
-        lksel_self_done = lksel_serial;
-        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected here; the other cabinets follow\n", lksel_target );
-    }
-    if( ! lksel_target[0] )  return;
-
     n = LK_Peers( peers, LK_MAX_PEERS );
     for( i = 0; i < n; i++ )
     {
         lk_peer_info_t * p = &peers[i];
         lksel_peer_t * s;
         if( p->status != LK_PEER_ONLINE || ! memcmp( p->fp, zero, LK_FP_BYTES ) )  continue;
+        if( ! p->game[0] )  continue;   // connected, but has not said what it runs yet
         s = lksel_slot( p->fp, peers, n );
         if( ! s || s->done_serial == lksel_serial )  continue;
         if( ! strcasecmp( p->game, lksel_target ) )
@@ -365,6 +397,33 @@ static void  lksel_master_tick( void )
             s->sent_at = now;
         }
     }
+
+}
+
+static void  lksel_master_tick( void )
+{
+
+    if( ! cv_link_gamesync.EV )
+    {
+        // Switched off: forget the selection, so switching it back on does not
+        // replay an old one.
+        lksel_announce = false;
+        if( lksel_target[0] )  lksel_new_target( "" );
+        return;
+    }
+    if( lksel_announce )
+    {
+        lksel_announce = false;
+        if( strcasecmp( LK_Game_Id(), lksel_target ) )
+        {
+            lksel_new_target( LK_Game_Id() );
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s selected here; the other cabinets follow\n", lksel_target );
+        }
+        lksel_self_done = lksel_serial;
+    }
+    if( ! lksel_target[0] )  return;
+
+    lksel_send_switches();
 
     // This cabinet follows a selection made on a member, when it is free to.
     if( lksel_self_done != lksel_serial && strcasecmp( LK_Game_Id(), lksel_target )

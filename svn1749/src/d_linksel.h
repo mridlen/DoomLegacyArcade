@@ -29,6 +29,9 @@ void          LKSEL_On_Event( const lk_event_t * ev );
 // into an empty slot).  A selection that restarts carries -linkselected
 // instead, which the new process reads.
 void          LKSEL_Selected( void );
+// A pick is about to restart the program into this game id: tell the other
+// cabinets now (M_Restart_Program_Ex, just before its splash).
+void          LKSEL_Before_Restart( const char * game );
 
 // For the operator page: why the cabinet with this full id did not follow the
 // latest selection ("" when there is nothing to say), and the same for this

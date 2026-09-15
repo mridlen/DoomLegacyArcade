@@ -1678,6 +1678,14 @@ static int  lkt_main( void * unused )
         }
     }
 
+    // [Arcade] Send what the game thread queued last before closing.  A game
+    // picked on Select Game tells the other cabinets just before this cabinet
+    // restarts (LKSEL_Before_Restart), so they start switching now rather than
+    // after this one has restarted and reconnected -- seconds on a Pi.
+    lkt_drain_outbox();
+    for( int i = 0; i < LK_MAX_PEERS; i++ )
+        if( lkt_conn[i].phase == LKC_ONLINE )
+            lkt_flush( &lkt_conn[i] );
     for( int i = 0; i < LK_MAX_PEERS; i++ )
         lkt_close( &lkt_conn[i], NULL, false );
     if( lkt_listen >= 0 )  { close( lkt_listen ); lkt_listen = -1; }

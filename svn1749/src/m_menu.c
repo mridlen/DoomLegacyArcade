@@ -5254,6 +5254,34 @@ void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const ch
         newargv[n++] = "-linkselected";
     newargv[n] = NULL;
 
+    // [Arcade] Select Game Sync: the other cabinets hear about a pick now,
+    // not once this one has restarted and reconnected.  The game id is the
+    // one LK_Game_Id will give in the new process.
+    if( link_selected )
+    {
+        char  id[LK_GAME_LEN], stem[ sizeof(levelpack_name[0]) ];
+        const char * iwad = game_idstr ? game_idstr : ( gamedesc.idstr ? gamedesc.idstr : "game" );
+        const char * pack = keep_packs ? M_LevelPack_LoadedName() : NULL;
+        if( pack_path )
+        {
+            const char * base = pack_path, * c;
+            int len;
+            for( c = pack_path; *c; c++ )
+                if( *c == '/' || *c == '\\' )  base = c + 1;
+            c = strrchr( base, '.' );
+            len = c ? c - base : (int) strlen( base );
+            if( len > (int) sizeof(stem) - 1 )  len = sizeof(stem) - 1;
+            memcpy( stem, base, len );
+            stem[len] = 0;
+            pack = stem;
+        }
+        if( pack )
+            snprintf( id, sizeof(id), "%s+%s", iwad, pack );
+        else
+            snprintf( id, sizeof(id), "%s", iwad );
+        LKSEL_Before_Restart( id );
+    }
+
     // [Arcade] Tell the player what the black screen is, while the video
     // device is still up.  A game switch, a pack unload and a devmode toggle
     // all land here and are not the same thing to the person watching.

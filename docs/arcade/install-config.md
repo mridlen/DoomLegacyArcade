@@ -147,6 +147,13 @@ single level splits.
 
 ---
 
+### `wadmd5.txt`: remembered wad checksums
+
+`W_Load_WadFile` takes every wad's md5 as it loads; `legacyhome/wadmd5.txt` remembers them by path,
+size, modification time and inode, so an unchanged wad is not read end to end on every start (1.8 s
+on the laptop, whose soundtrack wads are 418 MB). Deleting the file is always safe: it is rebuilt.
+See `cabinet-link.md`, "Faster switching".
+
 ### Files that must survive the power being cut (`M_Atomic_Write_*`)
 
 **The cabinet is switched off at the wall, not quit cleanly, so any file rewritten in place has a

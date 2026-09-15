@@ -1254,7 +1254,8 @@ Select Game Sync** set to **On** (it is **Off** until you turn it on):
 - A game picked on **Options → Select Game** on *any* linked cabinet — Ultimate Doom, Doom II,
   Plutonia, TNT, or a level pack — is picked on every other cabinet too. Each one shows `SWITCHING
   GAME...` and restarts, exactly as if someone had picked it there (a level pack loads without a
-  restart, as it does by hand).
+  restart, as it does by hand). The other cabinets start switching the moment the game is picked,
+  without waiting for the first cabinet to restart.
 - A cabinet in the middle of a game, signing the high score board, on a join screen or in an
   operator session is **not** interrupted: it switches once it is back on its attract screen. Someone
   browsing its menus *is* interrupted, as an invite would.
