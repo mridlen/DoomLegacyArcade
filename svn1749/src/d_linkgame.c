@@ -215,6 +215,25 @@ boolean  LKG_Hosting_Remote( void )
     return false;
 }
 
+// [Arcade] The join screen's countdown ran out: say which other cabinets still
+// had someone in who had not locked in.  Lock-in starts the game early only
+// when every panel that pressed in, on every cabinet, has locked in, and
+// nothing on screen says which one it is waiting for.
+void  LKG_Log_Waiting( void )
+{
+    int i;
+    lk_peer_info_t  info;
+    if( lkg_mode != LKGM_HOST )  return;
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+    {
+        const lkg_remote_t * r = &lkg_remotes[i];
+        if( ! r->used || ! r->joined || r->locked )  continue;
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: join screen: the countdown ran out waiting on %s"
+                   " (%d in, not all locked in)\n",
+                   LK_Peer_Find( r->fp, &info ) ? info.name : "another cabinet", r->joined );
+    }
+}
+
 boolean  LKG_Remotes_All_Locked( void )
 {
     int i;
@@ -575,6 +594,15 @@ static void  lkg_on_event( const lk_event_t * ev )
             if( slot >= 0 )
             {
                 lkg_remote_t * r = &lkg_remotes[slot];
+                // [Arcade] Log each change, so a countdown that ran out can be
+                // read back: who was in, and who never locked in.
+                if( ! r->used || r->joined != p[8] || r->locked != p[9] )
+                {
+                    lk_peer_info_t  info;
+                    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: join screen: %s has %d in, %s\n",
+                               LK_Peer_Find( ev->source, &info ) ? info.name : "another cabinet",
+                               p[8], p[9] ? "all locked in" : p[8] ? "not all locked in" : "nobody locked in" );
+                }
                 r->used = true;
                 memcpy( r->fp, ev->source, LK_FP_BYTES );
                 r->joined = p[8];

@@ -3613,7 +3613,22 @@ void  M_Join_Ticker( void )
     if( join_remote )  return;   // [Arcade] the host's countdown, not ours
 
     if( (int)gametic >= join_endtic )
+    {
+        // [Arcade] Say why it waited, when someone was in: a panel pressed in
+        // but never locked in -- a second pad, or another panel's fire key --
+        // holds the early start without anything on screen saying so.
+        byte panel, locked = 0;
+        for( panel=0; panel < M_Join_NumPanels(); panel++ )
+        {
+            if( join_pressed[panel] == JOIN_LOCKED )  locked++;
+            if( join_pressed[panel] == JOIN_SETUP )
+                GenPrintf( EMSG_errlog, "LINKLOG Join screen: the countdown ran out waiting on panel %d"
+                           " here (in, not locked in)\n", panel + 1 );
+        }
+        if( locked )
+            LKG_Log_Waiting();
         M_Join_Start();
+    }
 }
 
 

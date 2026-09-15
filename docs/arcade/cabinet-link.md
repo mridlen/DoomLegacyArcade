@@ -1810,6 +1810,34 @@ agrees. `tools/hsmerge-test.py` accepts either form.
   cabinet was first listed, which can be before its name has arrived. It then stayed blank for
   good (`LINKSCORE peer=`). `LKS_Ticker` now refreshes the name from the link's list every tick.
 
+**5. The Windows cabinet was online but not invited, and did not follow game changes.** It was
+in a `-devmode` session. `lk_compute_state` reports DEVMODE, and by design an operator session is
+neither invited (`LKG_Would_Invite`, `lkg_on_invite`) nor switched (`lksel_can_switch_now`).
+Restarting it out of devmode fixed both. Its `link_gamesync "Off"` was not the cause: on a member
+the setting is never read; only the master's counts.
+
+**6. "Both locked in, but the countdown still ran to 0"** (reported 2026-09-15; not reproduced).
+Lock-in starts a linked game early only when every panel that pressed in, on every cabinet, has
+locked in (`M_Join_Check_All_Locked`, with `LKG_Remotes_All_Locked` for the others). Each remote
+re-sends its joined and locked counts every second, and the host re-checks on each.
+- Every arrangement tried starts at once:
+  - `linkgame`: the joiner locked in first.
+  - New `lockinlate`: the host locked in first, the joiner 5 s later over the link
+    (`-linklockafter S`).
+  - New `lockinthird`: the same with an idle third cabinet also invited.
+  - The Windows build under Wine, as the late joiner and as the host.
+  
+  In each, the host starts about 3 status lines (about 6 s) after inviting, against a 30 s
+  countdown.
+- What does hold it, by design and invisibly: a panel that pressed in and never locked in, on
+  either cabinet. A second pad, or a key bound to another panel's fire, is enough.
+- **Built: the host now logs it.** Each change in a remote's counts is logged
+  (`LINKLOG Cabinet Link: join screen: DESKTOP has 1 in, not all locked in`). When the countdown
+  runs out with someone locked in, the host logs each of its own panels still choosing
+  (`LINKLOG Join screen: the countdown ran out waiting on panel 2 here`) and each cabinet not
+  locked in (`LKG_Log_Waiting`). `memberpress` checks the remote lines. The next time this
+  happens, the host's log says what it was waiting for.
+
 ### Phase 4 — past two cabinets
 
 The scaling work below, done with N headless instances. Only as far as it proves worthwhile.

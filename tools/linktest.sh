@@ -1374,6 +1374,9 @@ case_memberpress() {
     expect "the master tried to join it" "$d/master" "^LINKLOG .*joining LAPCAB at 127\.0\.0\.1 port $((p+100))"
     expect "the member hosts a two player game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
     expect "the master is in it" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    # The host says why it waited out the countdown, and on whom.
+    expect "the host logged the joiner in but not locked in" "$d/member" "^LINKLOG .*join screen: PICAB has 1 in, not all locked in"
+    expect "the host logged whom the countdown waited on" "$d/member" "^LINKLOG .*join screen: the countdown ran out waiting on PICAB \(1 in, not all locked in\)"
 }
 
 # The arrangement Mark's cabinets use and linkgame does not: a *member* starts
