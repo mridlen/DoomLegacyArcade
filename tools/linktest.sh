@@ -1694,6 +1694,14 @@ case_names12memberhost() {
 # game started) with four.  In that second game every one of the laptop's four
 # came out as "Player 9".."Player 12" in colour 0, on every cabinet -- their
 # name, colour and weapon config never arrived.
+#
+# The laptop's panels press in but never lock in (-linkautopress), so it joins
+# at the end of the countdown, as Mark's did.  That timing is what loses it: the
+# laptop sends its config for players the server has committed but not yet run
+# the add for, and the server's intake threw them away (d_clisrv.c,
+# net_textcmd_handler).  Locked in (REJOIN12_LAPTOP=-linkautojoin) it passed
+# even with the bug.  Before the fix this failed 2 runs in 3; after, 5 in 5
+# passed.
 case_rejoin12() {
     local d=$1 p=$2
     LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/cabb"; LOCALPLAYERS=4 mkcab "$d/cabc"
@@ -1703,7 +1711,7 @@ case_rejoin12() {
     local c
     for c in master cabb cabc; do LOCALPLAYERS=4 gamecfg "$d/$c" 20; done
     setnames "$d/master" HA 1 2 3 4; setnames "$d/cabb" JB 5 6 7 8; setnames "$d/cabc" KC 9 10 0 1
-    run "$d/master" 110 0 -linktest -linkautojoin -linkjoinpanels 1 -linkjoinpanels2 4 -udpport $((p+103)) -clientport $((p+100))
+    run "$d/master" 110 0 -linktest ${REJOIN12_LAPTOP:--linkautopress} -linkjoinpanels 1 -linkjoinpanels2 4 -udpport $((p+103)) -clientport $((p+100))
     sleep 2
     run "$d/cabb" 106 0 -linktest -linkautohost campaign -linkhostagain -linkendgame 20 -linkjoinpanels 4 \
         -udpport $((p+101)) -clientport $((p+104))
