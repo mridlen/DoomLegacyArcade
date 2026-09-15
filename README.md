@@ -1214,6 +1214,9 @@ Deathmatch or a Campaign on one cabinet invites the others**:
   keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
 - The cabinet that joined plays as smoothly as the one that started the game, turning included. (It
   used to judder whenever the frame rate was above 35.)
+- The cabinet that started the game no longer stops for a moment just after play begins. (When the
+  other cabinet's screen melt took longer than its own — a Raspberry Pi joining a laptop, say — the
+  host's game froze for about half a second waiting for it to finish.)
 - **Eight player games work** — four at each cabinet. (Earlier builds could leave the joining cabinet
   with none of its own players, showing other players' views and turning but not moving; could kick
   it out of the game within seconds on a less than perfect Wi-Fi link; and could crash the host in

@@ -1005,8 +1005,9 @@ double  FP_Now( void )
 // keeps up with real time.  Every 5 seconds, one line: how many frames ran 0, 1,
 // 2 or more tics, and the error between how far the picture moved (the tic plus
 // the interpolation fraction) and how far the clock moved, RMS and the number of
-// frames off by more than half a tic.  A host reads about 0.03.  Off, it costs a
-// byte test per frame.
+// frames off by more than half a tic.  A host reads about 0.03.  stall_ms is the
+// longest wait for a new tic, which the RMS averages away (a host held up by a
+// joiner still in its wipe).  Off, it costs a byte test per frame.
 static byte  tictiming = 0;
 
 // [Arcade] When the last game tic ran, on a cabinet that joined a network game.
@@ -1051,15 +1052,26 @@ static void  D_Tic_Timing( int tics_run )
 {
     static double  t_last = 0, shown_last = 0, t_report = 0, sum_err2 = 0;
     static double  turn_last = 0, sum_turn2 = 0;
+    // The longest wait for a new tic: a hold-up the RMS averages away.
+    static double  t_tic = 0, stall = 0;
+    static tic_t   tic_seen = 0;
     static int     frames = 0, big = 0, turn_big = 0, ran[4];
     double  t, shown, turn;
 
     if( ! netgame || gamestate != GS_LEVEL )
     {
         t_last = 0;
+        t_tic = 0;
         return;
     }
     t = FP_Now();
+    if( t_tic == 0 || gametic != tic_seen )
+    {
+        if( t_tic > 0 && t - t_tic > stall )
+            stall = t - t_tic;
+        t_tic = t;
+        tic_seen = gametic;
+    }
     shown = (double) gametic - 1.0 + (double) D_Interp_Frac() / FRACUNIT;
     // The view's turning: localangle advances once per local ticcmd.
     turn = (double) local_maketics - 1.0 + (double) D_Local_View_Frac() / FRACUNIT;
@@ -1083,10 +1095,12 @@ static void  D_Tic_Timing( int tics_run )
     if( t - t_report >= 5.0 && frames )
     {
         GenPrintf( EMSG_errlog, "TICTIMING %s frames=%d ran0=%d ran1=%d ran2=%d ran3+=%d rms_err=%.3f big=%d"
-                   " turn_rms=%.3f turn_big=%d\n",
+                   " turn_rms=%.3f turn_big=%d stall_ms=%d\n",
                    server ? "host" : "client", frames, ran[0], ran[1], ran[2], ran[3],
-                   sqrt( sum_err2 / frames ), big, sqrt( sum_turn2 / frames ), turn_big );
+                   sqrt( sum_err2 / frames ), big, sqrt( sum_turn2 / frames ), turn_big,
+                   (int)( stall * 1000 ) );
         t_report = t;
+        stall = 0;
         sum_err2 = sum_turn2 = 0;
         frames = big = turn_big = 0;
         ran[0] = ran[1] = ran[2] = ran[3] = 0;
@@ -1809,6 +1823,23 @@ void D_Display(void)
         wipestart = nowtime;
         wipe_done = wipe_ScreenWipe(cv_screenslink.value - 1, tics);
         I_OsPolling();
+        // [Arcade] A cabinet that joined a network game keeps running the
+        // host's tics through its wipe.  The host cannot run more than
+        // BACKUPTICS past the last tic a client has taken, and a client
+        // takes no tics while this loop blocks, so a slower joiner's wipe
+        // stopped the host's game dead: laptop hosting, Pi 3 joining, the
+        // laptop played 31 tics after its own wipe and then froze for 0.57 s
+        // until the Pi's melt ended.  The frame being melted in is the one
+        // already drawn; the picture catches up when the wipe ends, as it
+        // did before with the 32 tics run in one pass.  A host and a local
+        // game are the clock, and are left as they were.
+        if( netgame && ! server )
+        {
+            tic_t  tic_before = gametic;
+            TryRunTics( tics );
+            if( gametic != tic_before )
+                client_tic_time = FP_Now();   // see D_Interp_Frac
+        }
         I_UpdateNoBlit();
         M_Drawer();     // menu is drawn even on top of wipes
         I_FinishUpdate();       // page flip or blit buffer

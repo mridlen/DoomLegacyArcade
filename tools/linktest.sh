@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -425,6 +425,35 @@ case_campaign() {
     expect "the host is in a two player game" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
     expect "the joiner is in it" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
     same_trail "$d/master" "$d/member"
+}
+
+# The joining cabinet's screen wipe is slower than the host's.  A client took
+# no tics while its wipe blocked, and the host cannot run more than BACKUPTICS
+# past a client's last tic, so the host's game froze part way into the level
+# until the joiner's wipe ended.  Mark: "right when the gameplay starts, it
+# stutters a little bit when the Pi joins" (laptop Crossfade, Pi 3 Melt: the
+# laptop froze 0.57 s).  Here the host has no wipe and the joiner melts, which
+# under the dummy driver runs to its 2 s limit: about a second's freeze on the
+# build before.  stall_ms is -tictiming's longest wait for a new tic.
+case_wipejoin() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    sed -i -e '/^screenlink /d' "$d/master/legacyhome/config.cfg" "$d/member/legacyhome/config.cfg"
+    echo 'screenlink "None"' >> "$d/master/legacyhome/config.cfg"
+    echo 'screenlink "Melt"' >> "$d/member/legacyhome/config.cfg"
+    run "$d/master" 45 0 -linktest -linkautohost deathmatch -tictiming -udpport $((p+100))
+    sleep 2
+    run "$d/member" 42 0 -linktest -linkautojoin -tictiming -clientport $((p+101))
+    wait
+    expect "the host is in the level as server, two players" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in the level as client, two players" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    local stall
+    stall=$(out "$d/master" | grep -a "^TICTIMING host " | head -1 | sed -n 's/.* stall_ms=\([0-9]*\).*/\1/p')
+    [ -n "$stall" ] && [ "$stall" -lt 400 ] || FAILS="$FAILS
+      the host's game stopped for ${stall:-?} ms at the start of the level (expected under 400)"
 }
 
 case_nojoin() {

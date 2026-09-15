@@ -125,6 +125,24 @@ rest of the session**:
   `wipe_StartScreen()` returning non-zero (a failed capture) disarms the wipe instead of melting
   from buffers that are not there.
 
+## The wipe blocks the game loop, and in a network game that reaches the other cabinet
+
+The wipe is a loop inside `D_Display` that runs until the wipe finishes or its 2 second limit, and
+nothing else in the loop runs meanwhile: no tics, no network. On one machine that is only a pause.
+**A cabinet that joined a network game is different**: the host cannot make more than `BACKUPTICS`
+(32) tics past the last one a client has taken, and a client in its wipe takes none. So when the
+joiner's level load plus wipe outlasts the host's by more than 0.9 s, the host's game stops part way
+into the level. The laptop (Crossfade) hosting the Pi 3 (Melt) froze for 0.57 s about a second into
+every linked game. Mark: "right when the gameplay starts, it stutters a little bit when the Pi joins".
+
+The wipe loop now calls `TryRunTics` on a joining cabinet (`netgame && !server`), so the joiner
+keeps taking and running the host's tics while it melts. What is melted in is still the first frame
+of the level; the picture catches up when the wipe ends, as it already did (the joiner used to run
+all 32 waiting tics in one pass). **A host and a local game are unchanged**: they are the clock, and
+running tics during their wipe would change what a local player sees. The loop sits after the frame
+is drawn, with the render threads joined and the play BSP restored, so it does not break the
+`R_NetUpdate_In_Frame` rule. → `cabinet-link.md`, case `wipejoin`
+
 ## Verifying it
 
 - **The hardware path CAN be checked headlessly, on the real GPU.** An earlier version of this

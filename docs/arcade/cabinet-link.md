@@ -1347,6 +1347,33 @@ had closed, but nothing was running underneath it.
   Without the fix: `gamestate=0 ... menu=0 ... none`, red. With it: the title page, then the next demo.
   `nojoin noshow convert memberpress demojoin linkgame` pass, `make smoke` 5/5.
 
+**The host "stutters a little bit when the Pi joins", right as play starts** (Mark, 2026-09-15). Not
+the joiner's picture this time — the laptop's own game stopped for about half a second, roughly a
+second into every linked game.
+- **Cause: the joiner's screen wipe.** The wipe is a blocking loop in `D_Display` (up to 2 s) that runs
+  no tics and services no network. The host can make at most `BACKUPTICS` (32) tics past the lowest
+  `nettics[]`, and a client's acknowledgement (`resendfrom` = `cl_need_tic`) cannot run ahead of its
+  own `gametic` by more than that either. The laptop loads MAP01 in 0.15 s and crossfades in 0.46 s; the
+  Pi 3 loads in 0.25 s and melts for 1.7 s. So the laptop played 31 tics after its crossfade (tic 104
+  = the Pi's 73 + 31), then stood still until the Pi's melt ended, and the Pi ran the 32 waiting tics
+  in one pass. Identical cabinets wipe for the same time and never see it; nothing on the network was
+  slow.
+- **Found** with temporary per-pass logging (wall time, tics run, `maketic`, and each node's `nettics`)
+  on the real pair: laptop hosting on offscreen OpenGL with a copy of its live home, the Pi joining
+  under the dummy driver with a copy of its own (its live game was running; software 8bit will not start
+  under `offscreen` there).
+- **Fix**: the wipe loop calls `TryRunTics` on a joining cabinet (`netgame && !server`) — see
+  `screen-wipe.md`. Hosts and local games are unchanged.
+- **Measured** on the real pair, freeze on the laptop after its own crossfade: build before 572, 543,
+  543 ms at one player a side and 286 ms at four; fixed build none in four runs (one and four a side),
+  the laptop's only gap its own 460 ms crossfade. The Pi's first-5 s `-tictiming` error went from 1.02
+  to 0.22 tic RMS, since it no longer runs a 32 tic burst.
+- `-tictiming` gained **`stall_ms`**, the longest wait for a new tic in the window — the RMS averaged
+  this freeze away (0.15 against 0.14).
+- **Test**: `wipejoin` — the host with `screenlink "None"`, the joiner with `"Melt"` (which runs to its
+  2 s limit under the dummy driver); the host's first `stall_ms` must be under 400. Build without the
+  fix: 1118 ms, red.
+
 **Needs a person** — not reached headlessly:
 - An invite arriving while someone is in the other cabinet's **menus**, and while they are part way
   through the **guided control setup** (it should be abandoned exactly as Escape abandons it).
