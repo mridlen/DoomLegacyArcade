@@ -92,6 +92,8 @@ static boolean     lkg_test_host_done;
 static int         lkg_test_poll_sleep;
 static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
 static uint32_t    lkg_test_press_at;
+static int         lkg_test_lock_secs;      // -linklockafter S: panel 1 locks in S s into an invite
+static uint32_t    lkg_test_lock_at;
 static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
 static int         lkg_test_move_ms;
 static boolean     lkg_test_chaos;          // -linkchaos: every panel, a new random mix of buttons every 50 ms
@@ -479,6 +481,8 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
     }
     if( lkg_test_press_secs > 0 )
         lkg_test_press_at = lkg_now() + lkg_test_press_secs * 1000;   // -linkautopress: fire, never lock
+    if( lkg_test_lock_secs > 0 )
+        lkg_test_lock_at = lkg_now() + lkg_test_lock_secs * 1000;
 }
 
 static void  lkg_on_invite( const lk_event_t * ev )
@@ -669,6 +673,8 @@ void  LKG_Ticker( void )
                 lkg_test_poll_sleep = atoi( M_GetNextParm() );
             if( M_CheckParm( "-linkpressafter" ) && M_IsNextParm() )
                 lkg_test_press_secs = atoi( M_GetNextParm() );
+            if( M_CheckParm( "-linklockafter" ) && M_IsNextParm() )
+                lkg_test_lock_secs = atoi( M_GetNextParm() );
             lkg_test_msgpress = M_CheckParm( "-linkmsgpress" ) != 0;
             if( M_CheckParm( "-linkjoinpanels" ) && M_IsNextParm() )
                 lkg_test_join_panels = atoi( M_GetNextParm() );
@@ -888,6 +894,13 @@ void  LKG_Ticker( void )
         // code posts it -- through the responders, so a join screen that is
         // no longer up does not get it.  The test hooks above reach into the
         // join screen directly and could never see it closed underneath them.
+        // -linktest -linklockafter: panel 1 locks in late, after the host has.
+        if( lkg_test_lock_at && now >= lkg_test_lock_at )
+        {
+            lkg_test_lock_at = 0;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: locking in\n" );
+            M_Join_Test_Lock( 0, true );
+        }
         if( lkg_test_press_at && now >= lkg_test_press_at )
         {
             event_t  ev;
