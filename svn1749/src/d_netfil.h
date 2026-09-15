@@ -66,7 +66,7 @@ void D_NetFileInit(void);
 
 byte * Put_Server_FileNeed(void);
 // [Arcade] md5sums (16 bytes each) of the wads a linked game requires, in load order.
-int  D_Net_Wad_Md5s( byte * out, int max );
+int  D_Net_Wad_Md5s( byte * out, const char ** names, int max );
 void CL_Got_Fileneed(int num_fileneed_parm, byte *fileneed_str);
 void CL_Prepare_download_savegame(const char *tmpsave);
 void CL_Cancel_download_savegame( void );

@@ -90,6 +90,7 @@ typedef struct
     boolean      have_remote;
     boolean      in_scope;        // same build, wads and rules: records count
     char         status[48];
+    char         wads_logged[48];  // the wad status last printed with both lists, so once
     hsm_set_t    remote;
     // Demos of its that failed to arrive or to check out.
     byte         rejected[LKS_MAX_REJECT][32];
@@ -213,21 +214,107 @@ static boolean  lks_game_in_scope( const char * game )
 static void  lks_wad_fingerprint( char * hex )
 {
     byte md5s[16 * MAX_WADFILES], sha[32];
-    int n = D_Net_Wad_Md5s( md5s, MAX_WADFILES );
+    int n = D_Net_Wad_Md5s( md5s, NULL, MAX_WADFILES );
     LK_Sha256( md5s, 16 * n, sha );
     hex_encode( sha, 32, hex );
+}
+
+// [Arcade] The same wads by file name and md5, so a mismatch can say which
+// one.  "SCORES: DIFFERENT WADS" alone sent Mark to check DOOM.WAD by hand on a
+// Windows cabinet, find it identical, and still see the message.  Each
+// manifest carries these as "wad <md5> <name>" lines; a cabinet from before
+// them skips unknown lines, and one that sends none just gets the old message.
+#define LKS_WAD_NAME  40
+typedef struct { char name[LKS_WAD_NAME]; byte md5[16]; } lks_wad_t;
+
+static int  lks_my_wads( lks_wad_t * w )
+{
+    byte md5s[16 * MAX_WADFILES];
+    const char * names[MAX_WADFILES];
+    int i, n = D_Net_Wad_Md5s( md5s, names, MAX_WADFILES );
+    for( i = 0; i < n; i++ )
+    {
+        const char * base = names[i], * c;
+        for( c = names[i]; *c; c++ )
+            if( *c == '/' || *c == '\\' )  base = c + 1;
+        dl_strncpy( w[i].name, base, LKS_WAD_NAME );
+        for( c = w[i].name; *c; c++ )
+            if( ! isprint( (unsigned char) *c ) )  w[i].name[c - w[i].name] = '?';
+        memcpy( w[i].md5, md5s + 16 * i, 16 );
+    }
+    return n;
+}
+
+static int  lks_wad_by_md5( const lks_wad_t * w, int n, const byte * md5 )
+{
+    int i;
+    for( i = 0; i < n; i++ )  if( ! memcmp( w[i].md5, md5, 16 ) )  return i;
+    return -1;
+}
+
+static int  lks_wad_by_name( const lks_wad_t * w, int n, const char * name )
+{
+    int i;
+    for( i = 0; i < n; i++ )  if( ! strcasecmp( w[i].name, name ) )  return i;
+    return -1;
+}
+
+// Put the first difference between this cabinet's wads and its into out (a
+// status line).  Matched by content first, as the netgame's own IWAD check
+// is: DOOM.WAD here and doomu.wad there with the same bytes are the same wad.
+static void  lks_explain_wads( const lks_wad_t * mine, int mn, const lks_wad_t * th, int tn,
+                               char * out, int size )
+{
+    int i, k;
+    for( i = 0; i < mn; i++ )
+    {
+        if( lks_wad_by_md5( th, tn, mine[i].md5 ) >= 0 )  continue;
+        if( lks_wad_by_name( th, tn, mine[i].name ) >= 0 )
+            snprintf( out, size, "SCORES: DIFFERENT %.29s", mine[i].name );
+        else
+            snprintf( out, size, "SCORES: %.29s ONLY HERE", mine[i].name );
+        return;
+    }
+    for( k = 0; k < tn; k++ )
+    {
+        if( lks_wad_by_md5( mine, mn, th[k].md5 ) >= 0 )  continue;
+        snprintf( out, size, "SCORES: ONLY THERE: %.27s", th[k].name );
+        return;
+    }
+    // The same wads, which the fingerprint (in load order) still told apart.
+    snprintf( out, size, "SCORES: WADS IN ANOTHER ORDER" );
+}
+
+static void  lks_log_wads( const char * who, const lks_wad_t * w, int n )
+{
+    int i;
+    char hex[33];
+    for( i = 0; i < n; i++ )
+    {
+        hex_encode( w[i].md5, 16, hex );
+        GenPrintf( EMSG_errlog, "LINKLOG Scores: %s: %s %s\n", who, hex, w[i].name );
+    }
 }
 
 // The settings a record demo carries in its header that the ranked ruleset
 // does not pin (hs_ranked_rules[]).  A record played under different ones is a
 // different board, so they must match before records are shared.
 // tools/hsmerge-test.py checks every header setting is either pinned or here.
+//
+// [Arcade] The configured values (.value), not the effective ones (.EV).  An
+// attract demo sets all three EVs from its own header while it plays, and
+// playdemo_restore_settings puts them back only when it ends; the manifest is
+// cached for minutes, and the other cabinet's is judged whenever it arrives.
+// So two identical cabinets, one of them part way through a stock demo, told
+// each other "SCORES: DIFFERENT SETTINGS" and shared nothing.  Outside a demo
+// .EV is .value, so the hash is unchanged from before (tools/linktest.sh
+// scoreattract).
 static void  lks_rules_hash( char * hex )
 {
     byte v[8], sha[32];
-    v[0] = cv_rocket_trails.EV;
-    v[1] = cv_viewheight.EV;
-    v[2] = cv_invul_skymap.EV;
+    v[0] = (byte) cv_rocket_trails.value;
+    v[1] = (byte) cv_viewheight.value;
+    v[2] = (byte) cv_invul_skymap.value;
     LK_Sha256( v, 3, sha );
     hex_encode( sha, 8, hex );
 }
@@ -352,7 +439,7 @@ static void  lks_build_manifest( void )
         return;
     lks_load_local();
 
-    cap = 512 + (lks_local.nsplits + lks_local.nruns) * 200;
+    cap = 512 + MAX_WADFILES * (8 + 32 + LKS_WAD_NAME) + (lks_local.nsplits + lks_local.nruns) * 200;
     free( lks_man );
     lks_man = malloc( cap );
     if( ! lks_man )  { lks_man_valid = false; return; }
@@ -361,6 +448,16 @@ static void  lks_build_manifest( void )
     lks_rules_hash( rules );
     n += snprintf( lks_man + n, cap - n, "DLA-SCORES %d\nbuild %s\ngame %s %s\nrules %s\nepoch %u\n",
                    LKS_PROTO, LK_Build(), LK_Game_Id(), fp, rules, (unsigned) lks_local.epoch );
+    {
+        lks_wad_t  w[MAX_WADFILES];
+        char  hex[33];
+        int  k, nw = lks_my_wads( w );
+        for( k = 0; k < nw; k++ )
+        {
+            hex_encode( w[k].md5, 16, hex );
+            n += snprintf( lks_man + n, cap - n, "wad %s %s\n", hex, w[k].name );
+        }
+    }
 
     lks_offer.epoch = lks_local.epoch;
     lks_offer.nsplits = lks_offer.nruns = 0;
@@ -434,6 +531,8 @@ static boolean  lks_parse( lks_peer_t * p, char * text, uint32_t len )
     unsigned tics, st, epoch = 0;
     boolean build_ok = false, game_ok = false, rules_ok = false, got_end = false;
     char my_fp[65], my_rules[17];
+    lks_wad_t  their_wads[MAX_WADFILES];
+    int  their_nwads = 0;
 
     if( ! p->remote.splits && ! alloc_set( &p->remote ) )  return false;
     p->remote.nsplits = p->remote.nruns = 0;
@@ -456,6 +555,26 @@ static boolean  lks_parse( lks_peer_t * p, char * text, uint32_t len )
                 snprintf( p->status, sizeof(p->status), "SCORES: PLAYING %.24s", w1 );
             else if( ! game_ok )
                 dl_strncpy( p->status, "SCORES: DIFFERENT WADS", sizeof(p->status) );
+            continue;
+        }
+        if( ! strncmp( line, "wad ", 4 ) )
+        {
+            // "wad <32 hex> <name to the end of the line>": a name may hold spaces.
+            char hex[33];
+            if( their_nwads < MAX_WADFILES && strlen( line ) > 4 + 32 + 1 && line[4 + 32] == ' ' )
+            {
+                lks_wad_t * w = &their_wads[their_nwads];
+                const char * c;
+                memcpy( hex, line + 4, 32 );
+                hex[32] = 0;
+                if( hex_decode( hex, w->md5, 16 ) )
+                {
+                    dl_strncpy( w->name, line + 4 + 33, LKS_WAD_NAME );
+                    for( c = w->name; *c; c++ )
+                        if( ! isprint( (unsigned char) *c ) )  w->name[c - w->name] = '?';
+                    their_nwads++;
+                }
+            }
             continue;
         }
         if( sscanf( line, "rules %63s", w1 ) == 1 )  { rules_ok = ! strcmp( w1, my_rules ); continue; }
@@ -529,6 +648,22 @@ static boolean  lks_parse( lks_peer_t * p, char * text, uint32_t len )
         dl_strncpy( p->status, "SCORES: DIFFERENT BUILD", sizeof(p->status) );
     else if( game_ok && ! rules_ok )
         dl_strncpy( p->status, "SCORES: DIFFERENT SETTINGS", sizeof(p->status) );
+    else if( ! strcmp( p->status, "SCORES: DIFFERENT WADS" ) && their_nwads > 0 )
+    {
+        // Say which, and print both lists once so the md5s can be compared.
+        lks_wad_t  mine[MAX_WADFILES];
+        int  mn = lks_my_wads( mine );
+        lks_explain_wads( mine, mn, their_wads, their_nwads, p->status, sizeof(p->status) );
+        if( strcmp( p->status, p->wads_logged ) )
+        {
+            GenPrintf( EMSG_errlog, "LINKLOG Scores: %s: %s\n", p->name, p->status );
+            lks_log_wads( "this cabinet", mine, mn );
+            lks_log_wads( p->name, their_wads, their_nwads );
+            dl_strncpy( p->wads_logged, p->status, sizeof(p->wads_logged) );
+        }
+    }
+    if( game_ok )
+        p->wads_logged[0] = 0;   // a later mismatch is news again
     p->have_remote = true;
     return true;
 }
@@ -1012,7 +1147,14 @@ void  LKS_Ticker( void )
         boolean still = false;
         if( ! p->used )  continue;
         for( j = 0; j < n; j++ )
-            if( ! memcmp( list[j].fp, p->fp, LK_FP_BYTES ) )  still = true;
+            if( ! memcmp( list[j].fp, p->fp, LK_FP_BYTES ) )
+            {
+                still = true;
+                // [Arcade] A cabinet can be listed before its name has arrived,
+                // and the slot below copies the name once: it stayed blank for
+                // good ("LINKSCORE peer=", "Scores: : DIFFERENT ...").
+                if( list[j].name[0] )  dl_strncpy( p->name, list[j].name, LK_NAME_LEN );
+            }
         if( ! still )
         {
             hsm_set_t keep = p->remote;   // keep its arrays for the next peer in this slot
