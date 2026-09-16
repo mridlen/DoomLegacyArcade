@@ -316,7 +316,8 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   quoting, round-tripped through the documented splitting rules) and
   `tools/menufit-test.py` (where every generic menu page's rows land: a row past the 200-line
   screen is silently not drawn, and an `IT_YOFFSET` link can end up sharing a y with a row inserted
-  above it) lift
+  above it) and `tools/interfit-test.py` (whether the intermission tables fit all 32 players, at
+  every field width the drawers can measure and with the widest names `hu_font` can make) lift
   the functions and tables they test **verbatim out of the source by brace matching**, stub what
   those touch, and drive them exhaustively. A copied test drifts away from the code and then passes forever;
   an extracted one tests the text that ships. Both take under a second. `--selfcheck` on the first
@@ -391,7 +392,7 @@ are kept below, in this file.
 | doc | covers | read before touching |
 | --- | --- | --- |
 | `docs/arcade/high-scores.md` | Scoring, record demos, the run board, the ranked ruleset, initials entry, intermission tables; what shared scores changed in the files and the ranking | `hs_stuff.c`, `hs_merge.c`, `HS_*` call sites, `wi_stuff.c` |
-| `docs/arcade/multiplayer-views.md` | Four local players, the view grid (2x2, stacked or side-by-side), the join screen, per-panel identity, HUD placement | `D_View_Grid`, `D_NumViews`, `localplayer*[]`, viewport geometry, `st_stuff.c`, `hu_stuff.c` |
+| `docs/arcade/multiplayer-views.md` | Four local players, the view grid (2x2, stacked or side-by-side), the join screen, per-panel identity, HUD placement, and the intermission tables past 8/12 players | `D_View_Grid`, `D_NumViews`, `localplayer*[]`, viewport geometry, `st_stuff.c`, `hu_stuff.c`, the `WI_*` tables in `wi_stuff.c` |
 | `docs/arcade/input.md` | Panels, Xbox gamepads, analog axes, control schemes, guided setup, menu key translation | `g_input.c`, `sdl/i_system.c` joystick code, `gamecontrol_pl[]`, `M_Cabinet_Menu_Key` |
 | `docs/arcade/menus.md` | Menu lockdown, naming, game selector, boot game, cheats menu, Net Options geometry | any row added, removed or reordered in `m_menu.c` |
 | `docs/arcade/single-level.md` | Single Level mode and its separate scoring | `SingleLevelMenu`, `M_SingleLevel_*`, `single_level_mode` |
@@ -427,6 +428,7 @@ everything else is arcade blocks inside an upstream file.
 | subject | start here |
 | --- | --- |
 | Operator audit counters | `au_stuff.c` entire. Hooks: `AU_Init` (`d_main.c`), `AU_Ticker` (`G_Ticker`), `AU_Game_Started` (`G_InitNew`), `AU_Level_Started`/`AU_Level_Completed` (`g_game.c`), `AU_Player_Death` (`p_inter.c`), `AU_Unranked`/`AU_Board_Placement` (`hs_stuff.c`), `AU_Save` (`d_netcmd.c`, `d_main.c`) |
+| Intermission tables for many players | `wi_stuff.c`: `WI_Netgame_Fit` / `WI_Draw_Netgame_Compact` (campaign), `WI_Rank_Fit` / `WI_Rank_Col_Fit` / `WI_Draw_Ranking_Cols` (deathmatch and teams), `WI_Fit_Name`, `WI_Compact_Rows`. Checked by `tools/interfit-test.py` (`--selfcheck`) |
 | Scoring, boards, record demos | `hs_stuff.c` entire. Life cycle: `HS_NewGame` → `HS_LevelExit` → `HS_Run_Finished`, voided by `HS_Player_Died` / `HS_Player_Cheated`, ruleset in `HS_Apply_Ranked_Ruleset` / `HS_Ruleset_Is_Ranked`. Called from `g_game.c` (`G_DoCompleted`, `G_DoWorldDone`), `p_inter.c` (`P_KillMobj`), `m_cheat.c`, `wi_stuff.c`. Board ranking and the shared scores' merge are `hs_merge.c` (no engine includes; `tools/hsmerge-test.py`); the sync's way in is `HS_Sync_*` at the end of `hs_stuff.c` |
 | Attract cycle | `d_main.c`: `D_AdvanceDemo` / `D_DoAdvanceDemo` / `D_PageTicker` / `D_PageDrawer`, the `hs_attract_page` / `hs_page_after_demo` / `hs_subpage_tic` page state, `D_Menu_Over_Attract`, `D_Demo_Advance_Retry` |
 | Arcade death, idle timeout | `g_game.c`: `G_Arcade_Death_Check`, `G_Player_Death_Settled`, `G_Idle_Timeout_Check`, and the `death_ended_run` / `finale_after_intermission` flags they set for `G_DoWorldDone` |

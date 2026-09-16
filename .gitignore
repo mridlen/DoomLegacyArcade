@@ -37,3 +37,7 @@ objs/
 # [Arcade] Cabinet Link keeps the passcode and this cabinet's private key here
 # (legacyhome/link/).  Never commit one, wherever a legacyhome lives.
 link/
+
+# [Arcade] tools/shotsheet.py is imported as a module by one-off capture
+# scripts, which leaves a __pycache__ beside it.
+__pycache__/

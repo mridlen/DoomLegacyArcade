@@ -4,6 +4,10 @@
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
+The intermission tables covered here are the **single player** ones. The multiplayer tables on the
+same screen — the co-op stats and the deathmatch rankings, and what happens to them when there are
+more players than they were built for — are in `multiplayer-views.md`.
+
 ---
 
 - **High scores and record demos** (`hs_stuff.c`/`.h`, new). Tracks best cumulative time-to-exit per
