@@ -2017,6 +2017,27 @@ from different commits (`LK_Build` is the `DLA_VERSION` suffix of the banner), a
 difference between them drifts the simulation. Two cabinets on the *same* build ran
 `CAT8=teamdm linktest.sh chaos8` (eight players on random buttons, 10% loss) with no fault.
 
+**Resolved (2026-09-16) by putting all three cabinets on one build.** Once the laptop, the Pi and
+the Windows desktop were all on `09a3bf1` and rebuilt, Team Deathmatch played without the pauses.
+No `-logfile` run caught a failure, so this is known from the fix, not from a trace: the
+mismatched builds were the cause. The mismatch came from how the code reached the machines, not
+from anything in the game:
+
+- PR #26 was merged on GitHub while a further commit was still being pushed to its branch. The
+  laptop was on that branch's last commit, the Pi and the desktop on the GitHub merge, so the
+  builds really differed.
+- The desktop had earlier run `git merge origin/<branch>` itself, which left a local merge commit
+  with no changes in it. Its `main` then had a commit GitHub lacked, and `git pull --ff-only`
+  refused until `git reset --hard origin/main`.
+- **Identical code on different commits is still "DIFFERENT BUILD"**: the build id is
+  `git describe --tags --always --dirty`, so the hash is part of it. A laptop on a branch's last
+  commit and a Pi on the GitHub merge of that branch differ even when their files match.
+
+The rule since then: changes arrive only as a GitHub PR merge, and every cabinet updates with
+`git checkout main && git pull --ff-only` and then rebuilds; `git rev-parse --short HEAD` must print
+the same hash on all of them. The `NETTRACE` lines stay in, for the next time a linked game pauses
+by itself.
+
 **`NETTRACE` lines** (`EMSG_errlog`, so the terminal and `-logfile`, never the console):
 
 | line | where | says |
