@@ -175,6 +175,9 @@ R_TLS byte	   fog_init = 0;   // set 1 at fog linedef to clear previous fog blur
 // pain=>REDCOLORMAP, invulnerability=>INVERSECOLORMAP, goggles=>colormap[1]
 // Set from current viewer
 R_TLS lighttable_t*           fixedcolormap;
+// [Arcade] True when the fixed colormap is the invulnerability (inverse)
+// one.  The hardware renderer cannot use a colormap, so it reads this.
+R_TLS boolean                 view_inverse_colormap;
 
 R_TLS mobj_t *   viewmobj;
 
@@ -1669,6 +1672,7 @@ void R_SetupFrame( byte pind, player_t* player )
     sscount = 0;
 
     fixedcolormap = NULL;  // default
+    view_inverse_colormap = false;  // [Arcade] default
     view_colormap = NULL;  // default
     view_extracolormap = NULL;
     view_fogmodel = NULL;
@@ -1749,6 +1753,9 @@ void R_SetupFrame( byte pind, player_t* player )
         // the fixedcolormap overrides sector colormaps
         fixedcolormap =
             & reg_colormaps[ LIGHTTABLE( fixedcolormap_num ) ];
+
+        // [Arcade] Tell the hardware renderer to invert the view.
+        view_inverse_colormap = ( fixedcolormap_num == INVERSECOLORMAP );
 
         walllights = scalelightfixed;
 

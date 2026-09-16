@@ -206,7 +206,7 @@ typedef enum
     PF_Fog		= PF_Translucent,   // Fog sheet, alpha = translucency
    
     PF_InvisibleB       = 0x00000006,   // Invisible poly affects Z-buffer
-    PF_blend7           = 0x00000007,   // TBD
+    PF_Invert           = 0x00000007,   // [Arcade] dest = white - dest, the invulnerability view
     PF_invalid          = 0x0000000F,
      
     // additional effects

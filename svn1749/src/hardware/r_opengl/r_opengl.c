@@ -978,8 +978,11 @@ gl_blend_param_t blend_param[8] =
   { GL_ZERO, GL_ONE_MINUS_SRC_COLOR },      //
 // PF_InvisibleB
   { GL_ZERO, GL_ONE },                      // Transparent
-// Unused
-  { GL_ZERO, GL_ONE },
+// PF_Invert
+  // [Arcade] dest = src * (1-dest).  With a white source that is the
+  // photographic negative of what is already on screen, which is how the
+  // invulnerability view is done without a colormap.
+  { GL_ONE_MINUS_DST_COLOR, GL_ZERO },
 };
 #endif
 
