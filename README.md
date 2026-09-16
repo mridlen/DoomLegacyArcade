@@ -358,6 +358,9 @@ to anyone else running this port. Each is written up in full in the commit that 
   are half width and full height. So it was drawn at half size but still anchored to the middle of
   the screen, leaving it hanging a quarter of the view above the floor at every resolution. It is
   anchored to the bottom of the view now.
+- **The rankings you see when you die drew every line on top of the first**, so the scores
+  turned into one unreadable smear. This affected Deathmatch too, not just Team Deathmatch; each
+  player or team has its own line again.
 - **Deathmatch rankings covered the whole screen when anybody died**, replacing both views in an
   ordinary two-player game rather than just the dead player's. They are drawn per view now.
 - **Time Limit in Net Options did nothing.** The row edited the engine's own limit, which is

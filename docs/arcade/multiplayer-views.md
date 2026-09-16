@@ -825,10 +825,17 @@ reproduce. The classic path is left alone all the same; it is not what this chan
   drives them over every player count from 1 to 32, both table origins, every field width the
   drawers can measure, and the worst names `hu_font` can produce. Glyph widths come from a real
   IWAD when one can be found, checked against its own built-in table.
-  **`--selfcheck` reinstates 19 bugs and every one goes red** — and it earned its keep twice here:
+  **`--selfcheck` reinstates 19 bugs (now 20) and every one goes red** — and it earned its keep twice here:
   one mutation stopped applying when the code it patched moved, and the centring check turned out
   to be unable to tell "centred" from "pinned to the left", so a lone `pad >= 0` passed on a
   deliberately broken build.
+  - **It missed one, because the in-level rankings were not in it.** `WI_Draw_Ranking`, the
+    one-column wrapper `HU_Draw_Rankings_In_Cell` uses, was left passing `max_rows` **1** where the
+    classic "never wrap" is **0**. `WI_Rank_Rows` reads 1 as one row per sub-column, so every line
+    became its own column, and with `col_dx` 0 they were all drawn on the first line — the dead
+    player's rankings in every Deathmatch, found as "team scores overlapping" in the first Team
+    Deathmatch. The test now lifts the wrapper as well, against a stub `WI_Draw_Ranking_Cols` that
+    records the layout, and fails if any two of 1..32 rows share a position (20 selfcheck bugs).
 - **Screenshots.** Nobody is going to gather 32 players to look at this, so a temporary
   `-fakeplayers N` hook in `WI_Start` filled `playeringame[]`, `player_names[]` and `wb_plyr[]` and
   the run was photographed at 8, 9, 17, 18 and 32 players in both modes, with and without the frags
