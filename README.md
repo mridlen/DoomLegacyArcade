@@ -840,6 +840,12 @@ Under **Options** a player can change the crosshair, their colour, their control
 game or level pack. Everything else is hidden, and nothing a player changes survives to the next
 launch.
 
+**If a linked game shows PAUSE when nobody pressed it**, a cabinet has fallen out of step with the
+host and the host is stopping everyone for a moment while it fixes that cabinet. First make sure every cabinet
+runs the **same build**: the Cabinet Link page says **SCORES: DIFFERENT BUILD** when they don't.
+To trace it, start each cabinet with `-logfile <file>`, play until it happens, and run
+`tools/nettrace-diff.py` on the three log files.
+
 ### Joining a game
 
 On a cabinet with more than one control panel, a **join screen** appears once the game has been

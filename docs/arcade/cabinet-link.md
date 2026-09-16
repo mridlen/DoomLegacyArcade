@@ -2000,3 +2000,44 @@ players on teams, since each cabinet's players bring their own colour. `teamplay
 themselves are `CV_NETVAR`s and arrive from the host with the rest. `-linkautohost teamdm` hosts
 one; `tools/linktest.sh teamdm` plays four a side and checks every player's colour and both rules on
 both cabinets.
+
+## Tracing an unexplained PAUSE
+
+A linked game that shows **PAUSE** with nobody having pressed it is almost always the server's
+*network wait* (`SV_network_wait_timer`, `d_clisrv.c`), not a real pause: it draws the same
+`M_PAUSE` graphic and is pushed to every cabinet with `SV_Send_State`. The server raises it when a
+cabinet has drifted out of step and asks for a **player repair** (`RQ_REQ_PLAYER`, 18 tics) or is
+sent a **savegame** (90 tics). A cheap repair the server offers on its own (`SV_Send_player_repair`
+from `SV_consistency_fault`) does *not* pause. Drift is found by comparing each client's per-tic
+`Consistency()` (player x positions plus the `P_Random` index) with the server's.
+
+First seen in Team Deathmatch across three cabinets, alongside **SCORES: DIFFERENT BUILD** on the
+Cabinet Link page. That message is shared scores only, but it means the cabinets' binaries come
+from different commits (`LK_Build` is the `DLA_VERSION` suffix of the banner), and any gameplay
+difference between them drifts the simulation. Two cabinets on the *same* build ran
+`CAT8=teamdm linktest.sh chaos8` (eight players on random buttons, 10% loss) with no fault.
+
+**`NETTRACE` lines** (`EMSG_errlog`, so the terminal and `-logfile`, never the console):
+
+| line | where | says |
+| --- | --- | --- |
+| `snap tic tic=N` | every 175 gametics, every cabinet (`NT_Snapshot`) | server, paused, teamplay, teamdamage, P_Random index, consistency, hits the team rule blocked (`nettrace_blocked_hits`, `P_DamageMobj`), and per player `colour/health/x,y/frags` |
+| `consfault` | server, `SV_consistency_fault`, now whatever `verbose` says | the drifting node, its players by name, server and client values, fault count |
+| `snap at-fault` / `conshist server` | with it | the server's state, and its last 32 consistency values as `tic:value` |
+| `repair received` / `snap before-repair` / `conshist client` | client, `repair_handler_client` | the same from the drifting cabinet, before the repair overwrites it |
+| `waitpause ... why=` / `waitpause end` | server | the network-wait pause and its cause (savegame, player repair, bot seed) |
+| `statepause` | client | a pause state the server sent |
+| `pause` / `pausecmd` | `Got_NetXCmd_Pause` / `Command_Pause` | a real pause, and who asked |
+| `color` | `Got_NetXCmd_NameColor` | a player's colour changing, i.e. their team |
+
+**`tools/nettrace-diff.py host.txt pi.txt win.txt`** lines the logs up: each cabinet's build and
+events, a warning if the builds differ, the **exact first tic** the consistency histories differ
+(from the `conshist` lines two cabinets left around a fault), and the first 5 s snapshot that
+differs, field by field. The snapshots alone can miss a drift: a repair fixes the game before the
+next one, which is why the histories are dumped at the fault.
+
+Verified by forcing it: a temporary extra `P_Random()` on the client at gametic 700, in a
+`CAT8=teamdm chaos8` run, produced `consfault` at 702 and 703 with the player names, both
+cabinets' histories, and `nettrace-diff.py` reported "consistency first differs at tic 701" — while
+the snapshots, taken after the repair, all agreed. Also found on the way: `RQ_CLOSE_ACK` runs
+`SV_network_wait_handler` with no pause on, so the `waitpause end` line prints only when one was.
