@@ -486,6 +486,27 @@ height" below `r_width < 760`, and the projection has its own aspect handling.
   projection aspect by the same factor. So one widening factor, `4h / 3w`, applied to the vertex
   x about the centre, covers all of them.
 
+### The score table ran together: a third place that reads the start scale
+
+The first version of this shipped with the attract score table's rows **run together** on a
+portrait screen in OpenGL. The page is `V_SCALEEXACT`, so its glyphs are drawn at the full screen
+height. But GL `V_DrawString` places each line by `drawfont.fdupx0`/`fdupy0`, and `V_SetupFont` set
+those from `vid.fdupx`/`vid.fdupy` whatever the flags said. While `fdupy` was the exact height that
+did not matter. Once it was capped, rows were placed 7.2 pixels a unit apart and drawn 10.8 tall.
+Software was fine: it places text through `drawinfo.y0_scale`, which already followed the flag.
+
+`V_SetupFont` now takes the fill scales for `V_SCALEEXACT`, the same rule as `drawinfo.fdupx0`.
+That covers every whole-screen page with text: the score boards, the intermission and the finale.
+The horizontal half is the same bug on a screen wider than 16:9, where the table's columns would
+have bunched towards the left. On the cabinet's 1366x768 the two horizontal scales differ by 0.05%,
+so text on those pages moves by at most about two thirds of a pixel at the right edge. It now
+lines up with the page's own fills and patches, which already used the fill scale.
+
+**The lesson is the one this section keeps teaching**: `vid.fdupy` was quietly doing two jobs, and a
+grep for `vid.fdupy` found the reader that copied it into `drawfont` only as a plain assignment,
+which read as harmless. `tools/hudtext-test.py` now extracts both start-scale assignments and
+requires them to agree for the same flags (`check_start_scales`, with a selfcheck).
+
 ### The whole-number pair needed a search
 
 With the cap in, `check_scale_pair` went red at 1920x2160: the pairing picked **6 by 7** (0.857)

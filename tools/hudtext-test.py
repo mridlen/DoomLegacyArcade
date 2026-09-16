@@ -91,6 +91,17 @@ b_scales = extract_block(vv_s,
                          'vid.dupx_fill = vid.width / BASEVIDWIDTH;',
                          'vid.dupx = dx;\n    }')
 
+# [Arcade] The two places a V_SCALESTART position gets its OpenGL scale: the
+# patches' (V_SetupDraw) and the text's (V_SetupFont).  They must agree for
+# the same flags, or a whole screen page places its text lines at one scale
+# while drawing the glyphs at another.
+b_start_patch = extract_block(vv_s,
+                              'drawinfo.fdupx0 = ( screenflags & V_SCALEEXACT )',
+                              'drawinfo.fdupy0 = ( screenflags & V_SCALEEXACT )? vid.fdupy_fill : vid.fdupy;')
+b_start_font = extract_block(vv_s,
+                             'drawfont.fdupx0 = ( option & V_SCALEEXACT )',
+                             'drawfont.fdupy0 = ( option & V_SCALEEXACT )? vid.fdupy_fill : vid.fdupy;')
+
 HARNESS = r'''
 #include <stdio.h>
 #include <string.h>
@@ -165,6 +176,18 @@ static void set_mode( int w, int h )
     vid.width = w;
     vid.height = h;
 @SCALES@
+}
+
+// --- the two start scales, verbatim ---------------------------------------
+#define V_SCALEEXACT  0x100
+static struct { float fdupx0, fdupy0; } drawinfo, drawfont;
+static void start_patch( unsigned int screenflags )
+{
+@STARTPATCH@
+}
+static void start_font( unsigned int option )
+{
+@STARTFONT@
 }
 
 // --- the code under test, verbatim ----------------------------------------
@@ -527,6 +550,34 @@ static void check_hud_row( int w, int h, const char * ren )
         fail("row fits the screen", w, h, ren, "the 318 column is off the right edge");
 }
 
+// [Arcade] OpenGL V_DrawString draws each glyph at drawinfo's scale and
+// places the line by drawfont's start scale.  On a whole screen page
+// (V_SCALEEXACT) the start scale was the capped one, so at 1920x2160 the
+// attract score table's rows were 7.2 pixels a unit apart with glyphs 10.8
+// tall, and ran together.  Same flags, same answer, on every screen.
+static void check_start_scales( int w, int h, const char * ren )
+{
+    unsigned int f[2] = { 0, V_SCALEEXACT };
+    int i;
+    char buf[160];
+
+    for( i = 0; i < 2; i++ )
+    {
+        start_patch( f[i] );
+        start_font( f[i] );
+        if( drawinfo.fdupx0 != drawfont.fdupx0
+            || drawinfo.fdupy0 != drawfont.fdupy0 )
+        {
+            snprintf(buf, sizeof buf,
+                "%s: text placed at %.3f x %.3f, patches at %.3f x %.3f",
+                i ? "V_SCALEEXACT page" : "plain page",
+                drawfont.fdupx0, drawfont.fdupy0,
+                drawinfo.fdupx0, drawinfo.fdupy0);
+            fail("text and patch start scales", w, h, ren, buf);
+        }
+    }
+}
+
 struct mode { int w, h; };
 static struct mode modes[] = {
     { 320, 200 }, { 400, 300 }, { 512, 384 }, { 640, 400 }, { 640, 480 },
@@ -578,6 +629,8 @@ int main( int argc, char ** argv )
             check_hud_row( w, h, ren );
             check_press_fire_y( w, h, ren );
             check_center_y( w, h, ren );
+            if( r == 1 )   // only OpenGL reads the float start scales
+                check_start_scales( w, h, ren );
         }
     }
 
@@ -593,7 +646,8 @@ int main( int argc, char ** argv )
 def build_and_run(subs=None, quiet=False, verbose=False):
     """Compile the harness and run it.  subs replaces text in the extracted
     source, which is how --selfcheck reinstates a bug."""
-    pieces = dict(SCALES=b_scales, OVERLAYNUM=f_overlaynum, SCALEX=f_scalex,
+    pieces = dict(SCALES=b_scales, STARTPATCH=b_start_patch,
+                  STARTFONT=b_start_font, OVERLAYNUM=f_overlaynum, SCALEX=f_scalex,
                   SCALEY=f_scaley, CENTERX=f_centerx, SCREENY=f_screeny,
                   CENTERY=f_centery)
     if subs:
@@ -649,6 +703,9 @@ SELFCHECKS = [
      {'SCALES': ('dx = best_dx;\n                vid.dupy = best_dy;',
                  '{ int dy = (int)( (dx / ratio) + 0.5f );'
                  ' if( dy < 1 ) dy = 1; if( dy < vid.dupy ) vid.dupy = dy; }')}),
+    ("GL text on a whole screen page placed by the capped scale (score table)",
+     {'STARTFONT': ('drawfont.fdupy0 = ( option & V_SCALEEXACT )? vid.fdupy_fill : vid.fdupy;',
+                    'drawfont.fdupy0 = vid.fdupy;')}),
     ("portrait rows placed by the capped art scale, not the screen",
      {'SCREENY': ('return (int)(( base_y * vid.fdupy_fill ) / HU_Art_ScaleY());',
                   'return (int)(( base_y * vid.fdupy ) / HU_Art_ScaleY());')}),

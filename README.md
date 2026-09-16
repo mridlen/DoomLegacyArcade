@@ -514,6 +514,10 @@ to anyone else running this port. Each is written up in full in the commit that 
   fix had no counterpart for tall screens, so the art's height followed the screen. It is now held
   to Doom's 4:3 proportions in both renderers. Nothing changes on a screen 4:3 or wider. On 5:4
   (1280x1024) the gun and the OpenGL HUD are about 6% wider, which is their correct shape.
+- **The attract screen's best-times table ran together on portrait screens** (OpenGL), right after
+  the fix above. The rows were being spaced by the new, smaller HUD scale while the letters were
+  drawn at full-screen size. Text on full-screen pages — score boards, intermission, finale — is now
+  placed by the full-screen scale again.
 - **The video mode list lost modes before the menu ever saw them**, at three separate stacked caps,
   none of which logged anything. It also never removed the duplicate entries a monitor advertises
   once per refresh rate, so the caps were being spent on repeats. The list now dedupes, sorts by

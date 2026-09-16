@@ -3199,8 +3199,17 @@ void  V_SetupFont( int font_size, fontinfo_t * fip, uint32_t option )
     {
         drawfont.dupx0 = vid.dupx;
         drawfont.dupy0 = vid.dupy;
-        drawfont.fdupx0 = vid.fdupx;
-        drawfont.fdupy0 = vid.fdupy;
+        // [Arcade] A whole screen page (V_SCALEEXACT) is laid out against the
+        // whole screen, so its text must be placed by the uncapped scales,
+        // exactly as V_SetupDraw does for drawinfo.fdupx0/fdupy0.  These are
+        // read only by the OpenGL branch of V_DrawString, which draws each
+        // glyph at drawinfo's (uncapped) scale and places the line by these.
+        // Taking the capped vid.fdupx/fdupy here put the lines 7.2 pixels a
+        // unit apart while drawing the glyphs 10.8 tall on a 1920x2160 screen,
+        // and the attract score table ran together (ultrawide.md, portrait).
+        // Sideways it is the same bug on a screen wider than 16:9.
+        drawfont.fdupx0 = ( option & V_SCALEEXACT )? vid.fdupx_fill : vid.fdupx;
+        drawfont.fdupy0 = ( option & V_SCALEEXACT )? vid.fdupy_fill : vid.fdupy;
     }
     else
     {
