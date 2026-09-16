@@ -843,7 +843,9 @@ launch.
 **If a linked game shows PAUSE when nobody pressed it**, a cabinet has fallen out of step with the
 host and the host is stopping everyone for a moment while it fixes that cabinet. First make sure every cabinet
 runs the **same build**: the Cabinet Link page says **SCORES: DIFFERENT BUILD** when they don't.
-To trace it, start each cabinet with `-logfile <file>`, play until it happens, and run
+Mismatched builds were the whole cause the first time this happened. Update every cabinet with
+`git checkout main`, `git pull --ff-only` and a rebuild, and check that `git rev-parse --short HEAD`
+prints the same code on each. If the pauses continue with matching builds, trace them: start each cabinet with `-logfile <file>`, play until it happens, and run
 `tools/nettrace-diff.py` on the three log files.
 
 ### Joining a game
