@@ -559,6 +559,10 @@ void Got_NetXCmd_NameColor(xcmd_t * xc)
     // Format:  color byte, player_name str0, skin_name str0.
     // color
     sk = READBYTE(lcp); // unsigned read
+    // [Arcade] NETTRACE: in Team Deathmatch a colour is a team.
+    if( sk != p->skincolor )
+        GenPrintf( EMSG_errlog, "NETTRACE color tic=%u player %d (%s) %d -> %d ingame=%d\n",
+                   gametic, pn, pname, p->skincolor, sk, playeringame[pn] );
     P_SetPlayer_color( p, sk );
 
     // Players 0..(MAXPLAYERS-1) are init as Player 1 ..
@@ -922,6 +926,8 @@ void Command_Pause(void)
     else
         buf = !paused;
 
+    // [Arcade] NETTRACE: a pause asked for on this cabinet (key or console).
+    GenPrintf( EMSG_errlog, "NETTRACE pausecmd tic=%u set=%d\n", gametic, buf );
     Send_NetXCmd(XD_PAUSE, &buf, 1);  // as mainplayer
 }
 
@@ -932,6 +938,10 @@ void Got_NetXCmd_Pause(xcmd_t * xc)
         paused ^= 1;
     else
         paused = READBYTE(xc->curpos);
+
+    GenPrintf( EMSG_errlog, "NETTRACE pause tic=%u paused=%d by player %d (%s)\n",
+               gametic, paused, xc->playernum,
+               (xc->playernum < MAXPLAYERS) ? player_names[xc->playernum] : "?" );
 
     if (!demoplayback)
     {

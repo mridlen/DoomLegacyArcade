@@ -700,7 +700,12 @@ void    SV_ResetServer( void );
 // By Server
 void    SV_Send_State( byte server_pause );
 //  wait_timeout : wait timeout in ticks
-void    SV_network_wait_timer( uint16_t wait_timeout );
+// [Arcade] why: logged as NETTRACE, since this pause shows as "PAUSE".
+void    SV_network_wait_timer( uint16_t wait_timeout, const char * why );
+// [Arcade] NETTRACE: one line of this cabinet's game state, comparable
+// between cabinets at the same gametic.
+void    NT_Snapshot( const char * why );
+extern unsigned int  nettrace_blocked_hits;  // p_inter.c
 
 // By Client
 void    CL_Splitscreen_Player_Manager( void );

@@ -342,7 +342,7 @@ static void CV_botrandom_OnChange( void )
 
     // [WDJ] Updating the random number generators in the middle of a game, ugh.
     if( netgame )
-        SV_network_wait_timer( 35 );  // pause everybody
+        SV_network_wait_timer( 35, "bot random seed changed" );  // pause everybody
     
     if( cv_bot_randseed.state & CS_MODIFIED )
         B_Rand_SetIndex( cv_bot_randseed.value );

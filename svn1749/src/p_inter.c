@@ -1910,6 +1910,11 @@ void P_DeathMessages ( mobj_t*       target,
     }
 }
 
+// [Arcade] Hits the team or coop rules stopped, for the NETTRACE snapshot
+// (d_clisrv.c): a count that differs between cabinets at the same tic says
+// the team rule is where they parted.
+unsigned int  nettrace_blocked_hits = 0;
+
 // WARNING : check cv_fraglimit>0 before call this function !
 void P_CheckFragLimit(player_t *p)
 {
@@ -3435,6 +3440,7 @@ hexen_bypass_1:
         else
         {
             takedamage = false;  // block damage
+            nettrace_blocked_hits++;  // [Arcade] NETTRACE snapshot
         }
         target_player->attacker = source;
     }

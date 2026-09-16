@@ -157,6 +157,7 @@
 #include "m_misc.h"
 #include "am_map.h"
 #include "m_random.h"
+#include "st_stuff.h"  // [Arcade] ST_PlayerFrags, for NETTRACE
 #include "mserv.h"
 #include "t_script.h"
 
@@ -1735,6 +1736,7 @@ no_text_cmd:
 // ----- Server/Client Responses
 static void CL_ConnectToServer(void);
 static int16_t  Consistency(void);
+static void  NT_Cons_History( const char * who );  // [Arcade] NETTRACE
 static void Net_Packet_Handler(void);
 static void SV_Reset_NetNode(byte nnode);
 static boolean SV_Add_Join_Waiting(void);
@@ -2270,6 +2272,9 @@ static void state_handler( void )
         // Update the random generators.
         random_state_checkset( & netbuffer->u.state.rs, "PT_STATE", RSC_client_set ); // to sync P_Random
     }
+    if( (paused != 0) != (netbuffer->u.state.server_pause != 0) )
+        GenPrintf( EMSG_errlog, "NETTRACE statepause tic=%u server_tic=%u paused=%d (from server)\n",
+                   gametic, serv_gametic, netbuffer->u.state.server_pause );
     paused = netbuffer->u.state.server_pause;
 
 #if 0
@@ -2288,8 +2293,11 @@ static byte      network_wait_pause = 0;
 
 // Server
 //  wait_timeout : wait timeout in ticks
-void  SV_network_wait_timer( uint16_t wait_timeout )
+void  SV_network_wait_timer( uint16_t wait_timeout, const char * why )
 {
+    // [Arcade] This is the "PAUSE" nobody pressed: every cabinet shows it.
+    GenPrintf( EMSG_errlog, "NETTRACE waitpause tic=%u timeout=%u already=%d why=%s\n",
+               gametic, wait_timeout, network_wait_pause != 0, why );
     if( wait_timeout > network_wait_timer )   network_wait_timer = wait_timeout;
 
     if( ! network_wait_pause )
@@ -2357,6 +2365,8 @@ keep_waiting:
     return;
 
 unpause_game:
+    if( network_wait_pause )  // RQ_CLOSE_ACK comes here with no pause on
+        GenPrintf( EMSG_errlog, "NETTRACE waitpause end tic=%u\n", gametic );
     if( network_wait_pause == NETWORK_WAIT_ACTIVE_FLAG )  // originally was not paused
     {
         // All clients except the server.
@@ -2829,7 +2839,7 @@ static void SV_Send_SaveGame(int to_node)
 {
     size_t  length;
 
-    SV_network_wait_timer( 90 );  // pause game during download
+    SV_network_wait_timer( 90, "sending a savegame" );  // pause game during download
 
     P_Alloc_savebuffer( 1 );	// large buffer, but no header
     if(! savebuffer)   goto buffer_err;
@@ -3032,6 +3042,12 @@ static void repair_handler_client( byte nnode )
     if( server )
         return;  // Ignore attempts to corrupt server.
 
+    // [Arcade] The server found this cabinet out of step.  What it had, and the
+    // last BACKUPTICS consistency values, before the repair overwrites them.
+    GenPrintf( EMSG_errlog, "NETTRACE repair received tic=%u type=%d\n", gametic, rq_type );
+    NT_Snapshot( "before-repair" );
+    NT_Cons_History( "client" );
+
     if( rq_type < RQ_REQ_TO_SERVER )
     {
         // Server repairs client.
@@ -3184,7 +3200,7 @@ static void repair_handler_server( byte nnode )
         netbuffer->u.repair.u.player_id = 255;  // all players in game
      case RQ_REQ_PLAYER:
         // Client has requested a player repair
-        SV_network_wait_timer( 18 );  // keep alive
+        SV_network_wait_timer( 18, "player repair requested" );  // keep alive
         nnode_state[nnode] = NOS_repair_player;
         SV_Send_player_repair( netbuffer->u.repair.u.player_id, 3, nnode );
         break;
@@ -5348,6 +5364,24 @@ static void SV_consistency_fault( byte nnode, tic_t fault_tic, int btic )
         GenPrintf(EMSG_warn, "Consistency failure tic %d: node %d   consistency( server=%X client=%X )\n",
             fault_tic, nnode, sv_con, cl_con );
     }
+    // [Arcade] Always, whatever verbose says: this is what leads to the
+    // unexplained PAUSE (a repair pauses every cabinet).
+    {
+        byte pind;
+        char who[96];
+        int  len = 0;
+        who[0] = 0;
+        for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+        {
+            byte pn = nnode_to_player[pind][nnode];
+            if( pn >= MAXPLAYERS || len >= (int)sizeof(who) )  continue;
+            len += snprintf( who + len, sizeof(who) - len, " %d=%s", pn, player_names[pn] );
+        }
+        GenPrintf( EMSG_errlog, "NETTRACE consfault tic=%u msgtic=%u node=%d faults=%d server=%X client=%X netrepair=%d players:%s\n",
+                   gametic, fault_tic, nnode, confault, sv_con, cl_con, cv_SV_netrepair.EV, who );
+        NT_Snapshot( "at-fault" );
+        NT_Cons_History( "server" );
+    }
 
     if( confault >= consistency_limit_fatal[cv_SV_netrepair.EV] )
     {
@@ -6231,6 +6265,53 @@ static void Net_Packet_Handler(void)
 // sends out a packet
 
 // no more use random generator, because at very first tic isn't yet synchronized
+// [Arcade] NETTRACE.  One line of the game state that decides a deathmatch,
+// taken where every cabinet can take it at the same gametic, so two cabinets'
+// logs can be lined up tic for tic and the first difference found.
+//   pn=colour/health/x,y/frags  -- colour is the team in Team Deathmatch.
+void  NT_Snapshot( const char * why )
+{
+    char  buf[MAXPLAYERS * 40 + 1];
+    int   pn, len = 0;
+
+    buf[0] = 0;
+    for( pn = 0; pn < MAXPLAYERS && len < (int)sizeof(buf); pn++ )
+    {
+        player_t * p = &players[pn];
+        if( ! playeringame[pn] )  continue;
+        len += snprintf( buf + len, sizeof(buf) - len, " %d=%d/%d/%d,%d/%d",
+                         pn, p->skincolor, p->health,
+                         p->mo ? (p->mo->x >> FRACBITS) : -99999,
+                         p->mo ? (p->mo->y >> FRACBITS) : -99999,
+                         ST_PlayerFrags(pn) );
+    }
+    GenPrintf( EMSG_errlog, "NETTRACE snap %s tic=%u server=%d paused=%d teamplay=%d teamdamage=%d"
+               " rnd=%d cons=%X blocked=%u |%s\n",
+               why, gametic, server, paused, cv_teamplay.EV, cv_teamdamage.EV,
+               P_Rand_GetIndex(), (uint16_t) consistency[ BTIC_INDEX( gametic ) ],
+               nettrace_blocked_hits, buf );
+}
+
+// The last BACKUPTICS consistency values, oldest first, as tic:value.  The
+// server's line and the client's line cover the same tics around a fault, so
+// the first tic where they differ is where the two games parted.
+static void  NT_Cons_History( const char * who )
+{
+    char  buf[BACKUPTICS * 16 + 1];
+    int   i, len = 0;
+    tic_t t0 = (gametic >= BACKUPTICS - 1) ? gametic - (BACKUPTICS - 1) : 0;
+
+    buf[0] = 0;
+    for( i = 0; i < BACKUPTICS && len < (int)sizeof(buf); i++ )
+    {
+        tic_t t = t0 + i;
+        if( t > gametic )  break;
+        len += snprintf( buf + len, sizeof(buf) - len, " %u:%X",
+                         t, (uint16_t) consistency[ BTIC_INDEX( t ) ] );
+    }
+    GenPrintf( EMSG_errlog, "NETTRACE conshist %s tic=%u%s\n", who, gametic, buf );
+}
+
 static int16_t Consistency(void)
 {
     int16_t ret=0;
@@ -6516,6 +6597,9 @@ void TryRunTics (tic_t realtics)
             {
                 // Consistency is calculated first thing in gametic.
                 consistency[ BTIC_INDEX( gametic ) ] = Consistency();
+                // [Arcade] NETTRACE: every 5 s, at the same tic on every cabinet.
+                if( netgame && (gametic % 175) == 0 )
+                    NT_Snapshot( "tic" );
             }
         }
     }
