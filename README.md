@@ -59,6 +59,10 @@ Discord is likely to get you banned.
 - **Ultrawide screens.** 21:9 and 32:9 panels are supported properly — the view is drawn at the
   monitor's real shape with the field of view widened to match, rather than a 4:3 picture stretched
   across it, and the menus, HUD and full-screen pages no longer stretch with it.
+- **Portrait and tall screens.** On a screen narrower than 4:3 — a monitor on its side, 1920x2160,
+  1080x1920 — the HUD, status bar, menus and weapon keep Doom's normal proportions instead of being
+  drawn tall and thin. The HUD still sits along the bottom edge. Menus are centred with the spare
+  height above and below.
 - **Full-screen menus and score pages.** The attract pages, the intermission and the finale fill the
   screen at any resolution instead of sitting in a letterboxed 4:3 box with a tiled floor texture
   around the edges.
@@ -505,6 +509,11 @@ to anyone else running this port. Each is written up in full in the commit that 
   holding only the legacy 4:3 and 16:9 sizes the monitor also happens to advertise. It reads as "not
   supported" rather than "a constant ate it". The cap is now 5120x2160, and the view, field of view,
   weapon and 2D layer all follow the real aspect instead of stretching.
+- **HUD and weapon were skinny on portrait screens.** At 1920x2160 the 3D view looked right, but
+  the status numbers, HUD icons, menus and gun were drawn about a third too narrow. The wide-screen
+  fix had no counterpart for tall screens, so the art's height followed the screen. It is now held
+  to Doom's 4:3 proportions in both renderers. Nothing changes on a screen 4:3 or wider. On 5:4
+  (1280x1024) the gun and the OpenGL HUD are about 6% wider, which is their correct shape.
 - **The video mode list lost modes before the menu ever saw them**, at three separate stacked caps,
   none of which logged anything. It also never removed the duplicate entries a monitor advertises
   once per refresh rate, so the caps were being spent on repeats. The list now dedupes, sorts by

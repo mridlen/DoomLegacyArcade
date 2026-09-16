@@ -19,7 +19,12 @@ resolution, which is what made both of these read as renderer bugs:
     sat half the leftover left of centre -- 96px at 512x384, 203px at 1366x768,
     and nothing at all at 640x480 or 1920x1080.
 
-Neither is visible to a headless run and neither is measured by anything else,
+A third: on a screen narrower than 4:3 (portrait, 1920x2160) the vertical art
+scale followed the tall screen and everything was drawn a third too skinny.
+vid.fdupy is capped there now and vid.fdupy_fill keeps the exact height for
+placement; check_art_shape holds the art to its shape on every screen.
+
+None of these is visible to a headless run or measured by anything else,
 so extract the arithmetic that ships -- ST_drawOverlayNum from st_stuff.c, the
 HU_* placement helpers from hu_stuff.c, and V_Setup_VideoDraw's scale
 derivation from v_video.c -- VERBATIM, by brace matching, stub what they touch,
@@ -114,7 +119,7 @@ rendermode_t rendermode;
 typedef struct {
     int   width, height;
     int   dupx_fill, dupy;
-    float fdupx_fill, fdupy;
+    float fdupx_fill, fdupy, fdupy_fill;
     float fdupx;
     byte  dupx;
 } viddef_t;
@@ -240,6 +245,56 @@ static void check_scale_pair( int w, int h, const char * ren )
 }
 
 
+// [Arcade] The art must keep its shape: drawn width per base unit over drawn
+// height per base unit stays between 4:3 (0.833, what Doom's art was drawn
+// for) and 16:9 (1.111, the cap for wide screens).  Before the portrait cap,
+// 1920x2160 drew it at 6 by 10.8, a ratio of 0.556, and the HUD was a third
+// too skinny.  check_scale_pair could not see that: it measures the whole
+// numbers against the exact ratio, and the exact ratio WAS the skinny one.
+//
+// OpenGL draws at the floats, so they must be inside the band.  Software
+// draws at the whole numbers, which cannot always land inside it -- 800x600
+// is 1.0 against 0.833 by design -- so there the check is that the pair is
+// never narrower than the nearest pair to 0.833 would be.
+static void check_art_shape( int w, int h, const char * ren )
+{
+    char  buf[160];
+
+    if( rendermode != render_soft )
+    {
+        float r = vid.fdupx / vid.fdupy;
+        if( r < (5.0f / 6.0f) - 1.0e-4f || r > (10.0f / 9.0f) + 1.0e-3f )
+        {
+            snprintf(buf, sizeof buf,
+                "fdupx/fdupy %.3f/%.3f = %.3f, outside 0.833..1.111",
+                vid.fdupx, vid.fdupy, r);
+            fail("art out of shape", w, h, ren, buf);
+        }
+    }
+    else
+    {
+        float r = (float)vid.dupx / (float)vid.dupy;
+        // Narrower than 4:3 by more than a whole step of dupy can explain.
+        float floor_r = (float)vid.dupx / (float)(vid.dupx * 6 / 5 + 1);
+        if( r < floor_r - 1.0e-4f )
+        {
+            snprintf(buf, sizeof buf,
+                "dupx/dupy %d/%d = %.3f, skinnier than %.3f",
+                vid.dupx, vid.dupy, r, floor_r);
+            fail("art out of shape", w, h, ren, buf);
+        }
+    }
+
+    // The layout still spans the screen: the fill scales are the exact ones.
+    if( fabsf( vid.fdupy_fill * BASEVIDHEIGHT - h ) > 0.5f
+        || fabsf( vid.fdupx_fill * BASEVIDWIDTH - w ) > 0.5f )
+        fail("fill scale not the screen", w, h, ren, "fdupx_fill/fdupy_fill");
+    // And the art still fits on it.
+    if( (int)(BASEVIDHEIGHT * vid.fdupy + 0.5f) > h
+        || BASEVIDHEIGHT * vid.dupy > h || BASEVIDWIDTH * vid.dupx > w )
+        fail("art larger than screen", w, h, ren, "200 rows do not fit");
+}
+
 // STTNUM digits are 14x16; STYSNUM (the compact ones) are 4x6.
 static patch_t tallnum[11];
 static patch_t shortnum[11];
@@ -363,10 +418,10 @@ static void check_press_fire_y( int w, int h, const char * ren )
     float sy = (rendermode == render_soft)? (float)vid.dupy : vid.fdupy;
     int   row = BASEVIDHEIGHT - ST_HEIGHT - 8;
     int   y_px = (int)( HU_Screen_Y( row ) * sy );
-    int   want = (int)( row * vid.fdupy );
+    int   want = (int)( row * vid.fdupy_fill );
     int   bottom = y_px + (int)(7 * sy);           // hu_font glyphs are 7 tall
-    int   classic_px = (int)((BASEVIDHEIGHT - ST_HEIGHT) * vid.fdupy);
-    int   overlay_px = (int)(198 * vid.fdupy) - (int)(16 * sy);
+    int   classic_px = (int)((BASEVIDHEIGHT - ST_HEIGHT) * vid.fdupy_fill);
+    int   overlay_px = (int)(198 * vid.fdupy_fill) - (int)(16 * sy);
     char  detail[256];
 
     // Quantised to whole base units, as every V_SCALESTART position is.
@@ -403,7 +458,7 @@ static void check_press_fire_y( int w, int h, const char * ren )
 static void check_center_y( int w, int h, const char * ren )
 {
     float sy = (rendermode == render_soft)? (float)vid.dupy : vid.fdupy;
-    int   band = (int)((BASEVIDHEIGHT - ST_HEIGHT) * vid.fdupy);
+    int   band = (int)((BASEVIDHEIGHT - ST_HEIGHT) * vid.fdupy_fill);
     int   art_h = 24;                              // a plausible M_GAMOVR
     int   y_px = (int)( HU_Center_Y( art_h, BASEVIDHEIGHT - ST_HEIGHT ) * sy );
     int   above = y_px;
@@ -478,6 +533,9 @@ static struct mode modes[] = {
     { 800, 600 }, { 1024, 768 }, { 1280, 720 }, { 1280, 1024 },
     { 1366, 768 }, { 1600, 900 }, { 1920, 1080 }, { 2560, 1080 },
     { 2560, 1440 }, { 3440, 1440 }, { 3840, 1080 },
+    // [Arcade] Portrait and narrower than 4:3.
+    { 1920, 2160 }, { 1080, 1920 }, { 768, 1024 }, { 1200, 1920 },
+    { 1440, 2560 }, { 1024, 1280 }, { 600, 800 },
 };
 #define NMODES  (int)(sizeof(modes)/sizeof(modes[0]))
 
@@ -503,11 +561,14 @@ int main( int argc, char ** argv )
             set_mode( w, h );
 
             if( verbose && r == 0 )
-                printf("  %4dx%-4d  dupx=%d fdupx=%.4f  dupy=%d fdupy=%.4f\n",
-                       w, h, vid.dupx, vid.fdupx, vid.dupy, vid.fdupy);
+                printf("  %4dx%-4d  dupx=%d fdupx=%.4f  dupy=%d fdupy=%.4f"
+                       "  fdupy_fill=%.4f\n",
+                       w, h, vid.dupx, vid.fdupx, vid.dupy, vid.fdupy,
+                       vid.fdupy_fill);
 
             if( r == 0 )   // integers, so once per mode is enough
                 check_scale_pair( w, h, ren );
+            check_art_shape( w, h, ren );
             check_digits( w, h, ren, tallnum, "STTNUM" );
             check_digits( w, h, ren, shortnum, "STYSNUM" );
             check_flash( w, h, ren );
@@ -576,11 +637,21 @@ SELFCHECKS = [
      {'OVERLAYNUM': ('int  wfv = (int)(( wf * art_dupx ) + 0.5f);',
                      'int  wfv = (int)(( wf * art_dupx * 1.6f ) + 0.5f);')}),
     ("rows placed down 200*dupy instead of down the screen",
-     {'SCREENY': ('return (int)(( base_y * vid.fdupy ) / HU_Art_ScaleY());',
+     {'SCREENY': ('return (int)(( base_y * vid.fdupy_fill ) / HU_Art_ScaleY());',
                   'return base_y;')}),
     ("vertical centring against the layout box instead of the screen",
-     {'CENTERY': ('int   y = (int)(( (base_bottom * vid.fdupy) - (base_h * sy) ) / (2.0f * sy));',
+     {'CENTERY': ('int   y = (int)(( (base_bottom * vid.fdupy_fill) - (base_h * sy) ) / (2.0f * sy));',
                   'int   y = (base_bottom - base_h) / 2;')}),
+    ("no portrait cap: art a third too skinny at 1920x2160",
+     {'SCALES': ('if( vid.fdupy > fdupy_max )   vid.fdupy = fdupy_max;',
+                 '(void)fdupy_max;')}),
+    ("width-limited pair takes the widest dupx instead of the closest",
+     {'SCALES': ('dx = best_dx;\n                vid.dupy = best_dy;',
+                 '{ int dy = (int)( (dx / ratio) + 0.5f );'
+                 ' if( dy < 1 ) dy = 1; if( dy < vid.dupy ) vid.dupy = dy; }')}),
+    ("portrait rows placed by the capped art scale, not the screen",
+     {'SCREENY': ('return (int)(( base_y * vid.fdupy_fill ) / HU_Art_ScaleY());',
+                  'return (int)(( base_y * vid.fdupy ) / HU_Art_ScaleY());')}),
 ]
 
 

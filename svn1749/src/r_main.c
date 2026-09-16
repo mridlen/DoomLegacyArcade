@@ -1195,6 +1195,27 @@ std_fit:
             pspriteiscale = FixedDiv( FRACUNIT, pspritescale );
         }
     }
+    // [Arcade] And the mirror image: on a screen NARROWER than 4:3 the ratio
+    // falls below the art's 0.83 -- 0.56 at 1920x2160 -- and the gun comes
+    // out a third too skinny.  Raise the horizontal scale to 4:3 proportions,
+    // the same floor vid.fdupy gets in V_Setup_VideoDraw.
+    //
+    // The weapon is then wider than a 320 unit frame fits across the view,
+    // which is fine: it is positioned from centerx, and the band clip in
+    // R_DrawPSprite crops a sprite that reaches past the edge.  Doom's
+    // weapon frames are well inside the middle of the frame, so nothing is
+    // actually lost.  pspriteyscale stays, for the sky, as above.
+    //
+    // Exact integer gate, so 4:3 itself does not run this at all.
+    if( ((int64_t)vid.width * 3) < ((int64_t)vid.height * 4) )
+    {
+        fixed_t  psp_x_min = (fixed_t)(( (int64_t)pspriteyscale * 5 ) / 6);
+        if( pspritescale < psp_x_min )
+        {
+            pspritescale  = psp_x_min;
+            pspriteiscale = FixedDiv( FRACUNIT, pspritescale );
+        }
+    }
 #endif
 
     // thing clipping

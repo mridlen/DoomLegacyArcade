@@ -1366,7 +1366,15 @@ void ST_CalcPos(void)
         if( rendermode != render_soft )
         {
             stbar_x = 0;
-            stbar_y = BASEVIDHEIGHT - stbar_height/vid.fdupy;
+            // [Arcade] The bottom of the screen in layout rows, which is
+            // BASEVIDHEIGHT only while fdupy is the exact height.  On a
+            // portrait screen it is capped (v_video.c), the bar is placed by
+            // it, and BASEVIDHEIGHT would put the bar two thirds of the way
+            // down.  Elsewhere the ratio is exactly 1.0 -- fdupy is assigned
+            // from fdupy_fill, and x/x is exact in float where 200*x/x need
+            // not be -- so this is the arithmetic it always was.
+            stbar_y = (BASEVIDHEIGHT * (vid.fdupy_fill / vid.fdupy))
+                      - stbar_height/vid.fdupy;
         }
         else
 #endif
@@ -1919,7 +1927,9 @@ void ST_overlayDrawer ( byte vind, player_t * plyr )
     // above always said: how big to draw a thing, and where to put it.  The
     // layout spans the cell; the art keeps its shape.
     xdiv = vid.fdupx_fill / cols;
-    ydiv = sv_fdupy / rows;
+    // [Arcade] Likewise down: fdupy is capped on a portrait screen so the art
+    // keeps its shape, and the layout must still reach the bottom.
+    ydiv = vid.fdupy_fill / rows;
 
     // Draw screen0, scaled, abs position
     // [Arcade] Shrink the overlay art to match a half-width view.  The

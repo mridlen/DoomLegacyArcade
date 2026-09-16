@@ -209,6 +209,11 @@ typedef struct {
     float  fdupx, fdupy; // dup pixels per SCALEPATCH
 #ifdef HWRENDER
     float  fdupx0, fdupy0;  // dup per SCALESTART
+    // [Arcade] Screen pixels added to every y drawn through drawinfo in
+    // OpenGL, the hardware twin of start_offset's V_CENTERMENU margin.  Zero
+    // except on a screen narrower than 4:3, where the capped 2D layer is
+    // shorter than the screen and a menu is centred in the spare height.
+    float  fstart_y;
 #endif
     byte  dupx, dupy; // dup pixels for some screen sizes, per SCALEPATCH
     byte  dupx0, dupy0; // dup per SCALESTART

@@ -7,6 +7,9 @@ the aspect filter on the Video Modes page (`m_menu.c`). For the *present* path �
 why software fullscreen stretches rather than letterboxes — see `software-fullscreen.md`; for the
 Video Modes page's paging and sorting, `menus.md`.
 
+Portrait and other screens narrower than 4:3 are the same problem turned on its side, and are
+covered here too (after part 6).
+
 It began as one request — "can it do 21:9 or 32:9" — with a suggested answer: an aspect ratio
 selector in the video options, to cut down how many resolutions are listed at once. The selector was
 the right idea and it is the last part of this document. It was not the hard part. Five separate
@@ -144,6 +147,8 @@ proportion all the art was drawn for. At 16:9 the ratio is 1.11, at 21:9 1.48, a
 
 **`R_ExecuteSetViewSize` does the same thing for the weapon**, `pspritescale` coming off the view
 width and `pspriteyscale` off the height, and works out to exactly the same `0.625 * w/h`.
+(That is the *software* weapon. The OpenGL weapon never reads `pspritescale` and is **not** capped
+on a wide screen. See "What is still not done".)
 
 Both are now **capped at the proportions of a 16:9 screen**, and **both caps are gated on an exact
 integer test of the screen shape** — `vid.width * 9 > vid.height * 16` — rather than on comparing
@@ -425,6 +430,98 @@ level's animated textures have advanced a frame. A size can come out CHANGED wit
 between the two builds capable of doing it — 1024x768 did exactly that here. When the diff and the
 arithmetic disagree, the arithmetic wins and the pictures settle it.
 
+## Portrait and other tall screens: part 5 turned on its side
+
+Reported from a 1920x2160 panel: "the gameplay appears correctly, but the HUD elements and weapons
+appear slightly skinny". Same cause as part 5, from the other direction. The caps above only
+handled screens *wider* than 16:9, and nothing handled screens *narrower* than 4:3.
+
+On a tall screen the **width** is what runs out. The 320 unit layout has to fit across, so the
+horizontal scale can't grow past `width/320`, and the vertical scale followed the tall screen on its
+own. At 1920x2160 that is 6 across by 10.8 down, a ratio of **0.56** against the art's 0.83, so
+everything was drawn a third too narrow. The 3D view was fine: AUTO `viewfit` already picks "fit
+height" below `r_width < 760`, and the projection has its own aspect handling.
+
+| screen | art ratio before | after (OpenGL floats) | after (software pair) |
+| --- | --- | --- | --- |
+| 1920x2160 (8:9) | 0.56 | 6 / 7.2 = 0.833 | 5 / 6 = 0.833 |
+| 1080x1920 (9:16) | 0.35 | 3.375 / 4.05 = 0.833 | 3 / 4 = 0.75 |
+| 768x1024 (3:4) | 0.47 | 2.4 / 2.88 = 0.833 | 2 / 2 = 1.0 |
+| 1280x1024 (5:4) | 0.78 | 4 / 4.8 = 0.833 | 4 / 5 = 0.8, **unchanged** |
+| anything 4:3 or wider | — | unchanged | unchanged |
+
+### What changed
+
+- **`vid.fdupy` is capped at `fdupx * 6/5`** (written as `width * 3 / 800`, one division, for the
+  float reason in part 5) when `width * 3 < height * 4`. That is an exact integer gate, so 4:3
+  itself never runs it.
+- **`vid.fdupy_fill` is new**, the uncapped `height/200`, the vertical twin of `fdupx_fill`.
+  `vid.fdupy` had been doing two jobs, art height and "where is row N on the screen", and a cap
+  can only apply to the first. Placement reads the fill value: `HU_Screen_Y`, `HU_Center_Y`, the
+  overlay's `ydiv`, and `V_SCALEEXACT` pages (patch scale, start scale and `y0_scale`). Art reads
+  the capped one: `drawinfo.fdupy`/`fdupy0` for everything that is not `V_SCALEEXACT`,
+  `HU_Art_ScaleY`, `sf_dupy`, `art_dupy`, `stbar_height`.
+- **The OpenGL status bar row** was `BASEVIDHEIGHT - stbar_height/fdupy`. It is placed by the art
+  scale, so with the cap that would have put the bar two thirds of the way down. It is now
+  `BASEVIDHEIGHT * (fdupy_fill/fdupy) - stbar_height/fdupy`. It is written with `x/x`, which is
+  exactly 1.0 in float, rather than `200*x/x`, which need not be, so every other screen gets the
+  identical number. The software bar already used `(height - stbar_height)/dupy` and needed nothing.
+- **OpenGL menus are centred vertically in the spare height.** Software has always done this
+  through `vid.centerofs`, and GL had no equivalent because the layer always filled the screen.
+  `drawinfo.fstart_y` is set for `V_CENTERMENU` only when the cap engaged (`fdupy < fdupy_fill`,
+  exact, since one is assigned from the other). It is added wherever GL turns drawinfo coordinates
+  into pixels: the three `HWR_Draw*Patch` functions, `V_DrawScaledFill` and `V_DrawVidFlatFill`.
+  **The same gap exists sideways for ultrawide GL** (below), and was left alone: there the 16:9
+  cap engages by 0.05% at 1366x768, so a horizontal twin would move the cabinet's menus by a third
+  of a pixel.
+- **The software weapon gets a floor**: `pspritescale >= pspriteyscale * 5/6`, same gate. The
+  weapon is then wider than a 320 unit frame fits across the view. That is fine: it is placed from
+  `centerx`, the band clip in `R_DrawPSprite` crops it, and Doom's weapon frames sit well inside
+  the middle. `pspriteyscale` stays, for the sky.
+- **The OpenGL weapon is widened separately**, because it never used `pspritescale`.
+  `HWR_DrawPSprite` puts a 320x200 frame into view space (x/40, y/25 at depth 4) under a
+  `gluPerspective` of aspect 1.0 over the viewport, so it maps onto the viewport exactly the way
+  the 2D layer does. Its ratio is `0.625 * viewport w/h / projection aspect`. **That is
+  `0.625 * width/height` in every view layout**, because each split divides the viewport and the
+  projection aspect by the same factor. So one widening factor, `4h / 3w`, applied to the vertex
+  x about the centre, covers all of them.
+
+### The whole-number pair needed a search
+
+With the cap in, `check_scale_pair` went red at 1920x2160: the pairing picked **6 by 7** (0.857)
+while **5 by 6** is exactly 0.833. The clamp branch from part 5 only ever tried the widest `dupx`
+and then rounded `dupy` to suit. That is fine when the width is short by one step, as at 800x600,
+and wrong when it is short by several. It now tries every `dupx` that fits, with the `dupy` either
+side of the ideal, and keeps the closest. On a tie it takes the wider shape, then the larger size,
+which is the tie-break the test encodes. 800x600 still comes out 2 by 2, and no screen 4:3 or wider
+reaches the branch any differently.
+
+**The trade is size for shape again**: at 1920x2160 the software HUD is 5x rather than 6x. 6 by 7
+is only 3% off and would be invisible, but "closest pair" is the rule this file already argued for
+at 1366x768, and a rule with a "unless it is small" exception is how 800x600 went wrong.
+
+### How it was checked
+
+- `tools/hudtext-test.py` now runs seven tall sizes as well, with a new `check_art_shape`. OpenGL's
+  floats must be inside 0.833..1.111. The software pair must not be skinnier than a step of `dupy`
+  explains. The fill scales must be the screen, and the art must fit on it. **`check_scale_pair`
+  alone could never have caught this bug**: it measures the whole numbers against the exact ratio,
+  and the exact ratio *was* the skinny one. `--selfcheck` gained three bugs to reinstate (no cap;
+  rows placed by the capped scale; the widest-`dupx` pairing), and all three go red.
+- The scale table for every pre-existing size in the test is identical to main's except 1280x1024,
+  whose OpenGL `fdupy` moves 5.12 → 4.80 (6% skinny, now in shape). Its software pair is 4/5 either
+  way.
+- `tools/shotsheet.py --nomonsters`, software, before and after: 1366x768 and 1920x1080 are
+  byte-identical. 1920x2160, 1080x1920 and 768x1024 changed, and the pictures show the pistol and the
+  status numbers back in proportion with the HUD row still on the bottom edge. 1280x1024 changed
+  through the weapon floor alone. OpenGL at 1024x768 is byte-identical.
+- **OpenGL at a tall size could not be captured here.** The offscreen driver only offers 1024x768,
+  SDL3 has no setting for its display size, and there is no Xvfb on the laptop. The GL arithmetic
+  is covered by the extracted test. The GL weapon, the GL status bar row and the GL menu centring
+  need a look on a real portrait screen.
+- The demo suite reported the same 16 known Doom 2 desyncs with and without the change, and the
+  same 80 demos in sync. This is render and 2D code only.
+
 ## Four players on an ultrawide: `cv_split4`
 
 `D_View_Grid` (`multiplayer-views.md`) offered 1x2 or 2x1 for two views and 2x2 for four, full stop.
@@ -497,6 +594,15 @@ there and `/2` is what `>>= 1` was.
   21:9 or 32:9 monitor want it (74 and 90 degrees a player, against 143 and 155 for the stacked
   halves, which are 4.8:1 and 7.1:1 slits) but the default is still Top/Bottom everywhere. An AUTO
   value that picked by aspect would be the same shape of change as `cv_split4`'s table above.
+- **The OpenGL weapon is not capped on a wide screen.** Part 5 capped `pspritescale`, which only
+  the software renderer reads. `HWR_DrawPSprite` maps a 320x200 frame onto the viewport, so at 32:9
+  the GL gun is still 2.22 wide to 1 tall. The portrait section adds the widening half of the fix
+  in that function. The narrowing half is the same few lines, but its gate opens at 1366x768 and
+  it would move the cabinet's weapon, so it is a separate change.
+- **OpenGL menus are probably not centred sideways on a wide screen.** This comes from reading
+  the code; nobody has seen it on a screen. GL has no `start_offset`, so with `fdupx` capped the
+  menu should be drawn from the left edge. The portrait section adds `fstart_y` for
+  the vertical case only, for the same reason as above.
 - **Nothing has been run on real ultrawide hardware.** Everything here is a software drawing size
   scaled into a 16:9 desktop, which exercises the projection, the 2D scale and the view grid, but
   not an actual OpenGL mode switch to 3440x1440 — the one thing raising `MAXVIDWIDTH` was for. That

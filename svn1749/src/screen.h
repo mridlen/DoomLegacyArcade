@@ -164,6 +164,13 @@ typedef struct viddef_s
  // and wider as the display does.  See V_Setup_VideoDraw.
     int         dupx_fill;
     float       fdupx_fill;
+ // [Arcade] The vertical twin: height/200 with no cap.  fdupy above is capped
+ // on a screen narrower than 4:3 (portrait), so the art keeps its shape; this
+ // is still the exact screen height, and is what anything PLACED down the
+ // screen, or meant to fill it, has to use.  Equal to fdupy on every screen
+ // 4:3 or wider.  There is no dupy_fill: a V_SCALEEXACT page takes its
+ // vertical scale from the float in software too.
+    float       fdupy_fill;
     float       fx_center,fy_center; // half width height
     float       fx_scale2,fy_scale2; // 2.0 / width, 2.0 / height
     int         centerofs;       // centering for the scaled menu gfx

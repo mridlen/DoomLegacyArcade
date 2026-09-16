@@ -136,7 +136,7 @@ void HWR_DrawPatch (MipPatch_t* gpatch, int x, int y, uint32_t option)
 
       // V_SetupDraw now has fdupx0, fdupy0 derived from V_SCALESTART.
       stx = x * drawinfo.fdupx0 * 2.0f;
-      sty = y * drawinfo.fdupy0 * 2.0f;
+      sty = ((y * drawinfo.fdupy0) + drawinfo.fstart_y) * 2.0f;  // [Arcade] portrait menu centring
     }
     else
     {
@@ -203,7 +203,7 @@ void HWR_DrawSmallPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byte
 
     // V_SetupDraw now has fdupx0, fdupy0 derived from V_SCALESTART.
     stx = x * drawinfo.fdupx0 * 2.0f;
-    sty = y * drawinfo.fdupy0 * 2.0f;
+    sty = ((y * drawinfo.fdupy0) + drawinfo.fstart_y) * 2.0f;  // [Arcade] portrait menu centring
 
     v[0].x = v[3].x = (stx - gpatch->leftoffset*pdupx)/vid.width - 1;
     v[2].x = v[1].x = (stx + (gpatch->width - gpatch->leftoffset)*pdupx)/vid.width - 1;
@@ -244,7 +244,7 @@ void HWR_DrawMappedPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byt
 
     // V_SetupDraw now has fdupx0, fdupy0 derived from V_SCALESTART.
     stx = x * drawinfo.fdupx0 * 2.0f;
-    sty = y * drawinfo.fdupy0 * 2.0f;
+    sty = ((y * drawinfo.fdupy0) + drawinfo.fstart_y) * 2.0f;  // [Arcade] portrait menu centring
     
     v[0].x = v[3].x = (stx - gpatch->leftoffset*pdupx)/vid.width - 1;
     v[2].x = v[1].x = (stx + (gpatch->width - gpatch->leftoffset)*pdupx)/vid.width - 1;

@@ -697,11 +697,11 @@ static int HU_Center_X( int base_w )
 }
 
 // A layout row, placed down the whole screen height instead of down 200*dupy.
-// vid.fdupy is the exact height scale and is never capped, so this is the
-// vertical twin of st_stuff.c's ydiv.
+// vid.fdupy_fill is the exact height scale and is never capped (vid.fdupy is,
+// on a portrait screen), so this is the vertical twin of st_stuff.c's ydiv.
 static int HU_Screen_Y( int base_y )
 {
-    return (int)(( base_y * vid.fdupy ) / HU_Art_ScaleY());
+    return (int)(( base_y * vid.fdupy_fill ) / HU_Art_ScaleY());
 }
 
 // Centre something base_h layout units tall inside a band base_bottom layout
@@ -709,7 +709,7 @@ static int HU_Screen_Y( int base_y )
 static int HU_Center_Y( int base_h, int base_bottom )
 {
     float sy = HU_Art_ScaleY();
-    int   y = (int)(( (base_bottom * vid.fdupy) - (base_h * sy) ) / (2.0f * sy));
+    int   y = (int)(( (base_bottom * vid.fdupy_fill) - (base_h * sy) ) / (2.0f * sy));
     return (y < 0)? 0 : y;
 }
 

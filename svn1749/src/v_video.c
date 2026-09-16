@@ -1338,7 +1338,8 @@ void V_SetupDraw( uint32_t screenflags )
         drawinfo.dupx = fill_x ? vid.dupx_fill : vid.dupx;
         drawinfo.dupy = vid.dupy;
         drawinfo.fdupx = fill_x ? vid.fdupx_fill : vid.fdupx;
-        drawinfo.fdupy = vid.fdupy;
+        // [Arcade] And the vertical twin, capped on a portrait screen.
+        drawinfo.fdupy = fill_x ? vid.fdupy_fill : vid.fdupy;
     }
     else
     {   // Unscaled and Small text.
@@ -1385,7 +1386,7 @@ void V_SetupDraw( uint32_t screenflags )
         drawinfo.dupy0 = vid.dupy;
 #ifdef HWRENDER
         drawinfo.fdupx0 = ( screenflags & V_SCALEEXACT )? vid.fdupx_fill : vid.fdupx;
-        drawinfo.fdupy0 = vid.fdupy;
+        drawinfo.fdupy0 = ( screenflags & V_SCALEEXACT )? vid.fdupy_fill : vid.fdupy;
 #endif
     }
     else
@@ -1409,7 +1410,7 @@ void V_SetupDraw( uint32_t screenflags )
         drawinfo.x0_scale = ( screenflags & V_SCALEEXACT )?
               (fixed_t)( vid.fdupx_fill * FRACUNIT ) : (drawinfo.dupx0 << FRACBITS);
         drawinfo.y0_scale = ( screenflags & V_SCALEEXACT )?
-              (fixed_t)( vid.fdupy * FRACUNIT ) : (drawinfo.dupy0 << FRACBITS);
+              (fixed_t)( vid.fdupy_fill * FRACUNIT ) : (drawinfo.dupy0 << FRACBITS);
     }
     else
     {
@@ -1434,6 +1435,17 @@ void V_SetupDraw( uint32_t screenflags )
         // 320 columns already span the screen and this is zero.
         drawinfo.start_offset += (vid.widthbytes - (V_scale_x(BASEVIDWIDTH) * vid.bytepp)) / 2;
     }
+#ifdef HWRENDER
+    drawinfo.fstart_y = 0.0f;
+    // [Arcade] OpenGL has no start_offset, so a menu was only ever centred
+    // because it filled the screen.  On a portrait screen the capped layer
+    // is 200*fdupy of a taller screen; put half the spare height above it,
+    // as vid.centerofs does in software.  The test is exact: fdupy is
+    // assigned from fdupy_fill and only differs where the cap engaged, so
+    // every other screen gets exactly 0.
+    if( (screenflags & V_CENTERMENU) && (vid.fdupy < vid.fdupy_fill) )
+        drawinfo.fstart_y = ( vid.height - (BASEVIDHEIGHT * vid.fdupy) ) / 2.0f;
+#endif
     if (screenflags & V_CENTERMENU)
     {
         // Center the menu by adding a left and top margin.
@@ -2503,7 +2515,7 @@ void V_DrawScaledFill(int x, int y, int w, int h, byte color)
 #ifdef HWRENDER
     if( rendermode != render_soft )
     {
-        HWR_DrawVidFill( x * drawinfo.fdupx0, y * drawinfo.fdupy0,
+        HWR_DrawVidFill( x * drawinfo.fdupx0, (y * drawinfo.fdupy0) + drawinfo.fstart_y,
                          w * drawinfo.fdupx, h * drawinfo.fdupy, color );
         return;
     }
@@ -2574,7 +2586,7 @@ void V_DrawFlatFill(int x, int y, int w, int h, int scale, lumpnum_t flatnum)
         if( w == vid.width )
             HWR_DrawVidFlatFill(x, y, w, h, scale, flatnum);
         else
-            HWR_DrawVidFlatFill((x * drawinfo.fdupx0), (y * drawinfo.fdupy0),
+            HWR_DrawVidFlatFill((x * drawinfo.fdupx0), (y * drawinfo.fdupy0) + drawinfo.fstart_y,
                 (w * drawinfo.fdupx), (h * drawinfo.fdupy), scale, flatnum);
         return;
     }
@@ -3567,7 +3579,8 @@ void V_Setup_VideoDraw(void)
     vid.dupx_fill = vid.width / BASEVIDWIDTH;
     vid.fdupx_fill = (float)vid.width / BASEVIDWIDTH;
     vid.dupy = vid.height / BASEVIDHEIGHT;
-    vid.fdupy = (float)vid.height / BASEVIDHEIGHT;
+    vid.fdupy_fill = (float)vid.height / BASEVIDHEIGHT;
+    vid.fdupy = vid.fdupy_fill;
 
     //
     // The cap is written as one division of the pixel height, not as
@@ -3594,6 +3607,35 @@ void V_Setup_VideoDraw(void)
     {
         float  fdupx_max = (float)( (double)vid.height / 180.0 );
         if( vid.fdupx > fdupx_max )   vid.fdupx = fdupx_max;
+    }
+    // [Arcade] The mirror image, for a screen NARROWER than 4:3 -- a monitor
+    // turned on its side, 1920x2160 half of a stacked pair, 1080x1920.
+    //
+    // There the width is what runs out: the 320 unit layout has to fit
+    // across, so the horizontal scale cannot grow, and the vertical one
+    // followed the tall screen on its own.  At 1920x2160 that was 6 across by
+    // 10.8 down, a ratio of 0.56 against the 0.83 the art was drawn for, and
+    // the status numbers, the HUD icons and the menus all came out a third
+    // too skinny -- while the 3D view, which picks "fit height" there and has
+    // its own projection, looked right.
+    //
+    // So the vertical ART scale is capped at 4:3 proportions, fdupx * 6/5,
+    // and the height left over is spare.  fdupy_fill keeps the exact height,
+    // which is what positions down the screen and whole screen pages need:
+    // the HUD is still laid out down the full height, only drawn in shape.
+    //
+    // 4:3 rather than 5:4 because 4:3 IS the art's shape, and the only
+    // existing shape this reaches is 5:4 (1280x1024).  There the software
+    // pair is unchanged -- the whole numbers are 4 and 5 either way -- and
+    // only OpenGL's float scale moves, by the 6% that was skinny.
+    //
+    // An exact integer test for the same reason as the wide cap above: at
+    // exactly 4:3 this must not run at all, not run and nearly do nothing.
+    // Written as one division of the pixel width for the same float reason.
+    if( ((int64_t)vid.width * 3) < ((int64_t)vid.height * 4) )
+    {
+        float  fdupy_max = (float)( (double)vid.width * 3.0 / 800.0 );
+        if( vid.fdupy > fdupy_max )   vid.fdupy = fdupy_max;
     }
     // [Arcade] The two whole-number scales are chosen TOGETHER, preserving the
     // ratio between them, instead of flooring each axis on its own.
@@ -3649,16 +3691,48 @@ void V_Setup_VideoDraw(void)
             // bottom of the screen.
             //
             // Whole screen 2D pages are unaffected -- V_SCALEEXACT scales y by
-            // the exact vid.fdupy, not by this whole number (screen-fill.md).
+            // the exact vid.fdupy_fill, not by this whole number
+            // (screen-fill.md).
             // This reaches the menus, the HUD and the status bar only.
             dx = vid.dupx_fill;
 
             if( ratio > 0.0f )
             {
-                int  dy = (int)( (dx / ratio) + 0.5f );
+                // [Arcade] Search, rather than take the widest dx.  On a
+                // portrait screen the width runs out by far more than a step,
+                // and the widest dx is not always the closest: at 1920x2160
+                // it gives 6 by 7 (0.857) where 5 by 6 is exactly the 0.833
+                // wanted.  So try every dx that fits, with the dy either side
+                // of the ideal, and keep the closest -- on a tie the wider
+                // shape, then the larger size, which is the tie-break
+                // tools/hudtext-test.py holds this to.  800x600 still comes
+                // out 2 by 2.  dy only ever comes down, as above.
+                int    best_dx = dx, best_dy = vid.dupy;
+                float  best_err = 1.0e9f, best_r = 0.0f;
+                int    tx, k;
 
-                if( dy < 1 )  dy = 1;
-                if( dy < vid.dupy )  vid.dupy = dy;
+                for( tx = vid.dupx_fill; tx >= 1; tx-- )
+                {
+                    int  ty0 = (int)( tx / ratio );
+                    for( k = 0; k < 2; k++ )
+                    {
+                        int    ty = ty0 + k;
+                        float  r, err;
+
+                        if( ty < 1 )  ty = 1;
+                        if( ty > vid.dupy )  ty = vid.dupy;
+                        r = (float)tx / (float)ty;
+                        err = (r > ratio)? (r - ratio) : (ratio - r);
+                        if( (err < best_err - 1.0e-4f)
+                            || ((err < best_err + 1.0e-4f) && (r > best_r + 1.0e-4f)) )
+                        {
+                            best_err = err;  best_r = r;
+                            best_dx = tx;  best_dy = ty;
+                        }
+                    }
+                }
+                dx = best_dx;
+                vid.dupy = best_dy;
             }
         }
         if( dx < 1 )  dx = 1;

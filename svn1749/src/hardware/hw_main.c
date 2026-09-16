@@ -4118,6 +4118,22 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
     vxtx[3].tow = vxtx[2].tow = 0.0f;
     vxtx[0].tow = vxtx[1].tow = gpatch->max_t;
 
+    // [Arcade] The weapon is a 320x200 frame mapped onto the viewport, so
+    // like the software one its width to height works out as
+    // 0.625 * width / height -- in every view layout, since each split
+    // divides the viewport and the projection aspect by the same amount.  On
+    // a screen narrower than 4:3 that is skinnier than the art (0.56 at
+    // 1920x2160, against 0.83), so widen it about the centre to 4:3
+    // proportions, the same floor r_main.c gives pspritescale.  It crops at
+    // the viewport edge like the rest of the view.  Exact integer gate, so
+    // every screen 4:3 or wider runs exactly what it did.
+    if( ((int64_t)vid.width * 3) < ((int64_t)vid.height * 4) )
+    {
+        float  widen = (4.0f * vid.height) / (3.0f * vid.width);
+        for (i = 0; i < 4; i++)
+            vxtx[i].x *= widen;
+    }
+
     // project clipped vertices, [WDJ] can be done on one set of verts
     for (i = 0; i < 4; i++)
     {
