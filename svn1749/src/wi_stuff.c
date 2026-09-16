@@ -1250,6 +1250,87 @@ static void WI_Init_DeathmatchStats(void)
 
 
 
+// [Arcade] ---- Intermission tables for more players than the classic
+// layouts hold. ----
+//
+// DoomLegacy allows MAXPLAYERS=32, but neither intermission table was built
+// for that many and neither said anything about the ones it left out.  The
+// netgame table steps 16 base units per player from y 62 and its percentage
+// patches are 12 tall, so player 9's row starts below the 200-line screen and
+// is simply not drawn; the deathmatch rankings step 12 from y 60 and break out
+// of the loop at the screen edge after 12.  The rankings are sorted highest
+// first, so what went missing there was the bottom of the scoreboard.
+//
+// The fix is a compact fallback, NOT a replacement: the small hu_font in place
+// of the WINUM patches, 8-unit rows, and a second column when one will not
+// hold everyone.  It engages only when the classic layout cannot fit the
+// players present, so 8 in a netgame and 12 in a deathmatch look exactly as
+// they always did.
+//
+// A compact row is a 9-unit colour bar (one more than the pitch, so the bars
+// of a column touch, as they do at the classic pitch).
+
+#define WI_C_PITCH      8       // base units between compact rows
+#define WI_C_ROW_H      9       // height of a compact row's colour bar
+#define WI_C_BOTTOM   199       // last base line a compact row may touch
+
+// How many compact rows fit in one column, from ytop down.
+static int WI_Compact_Rows( int ytop )
+{
+    int  rows = ((WI_C_BOTTOM - (WI_C_ROW_H - 1) - ytop) / WI_C_PITCH) + 1;
+    return (rows < 1) ? 1 : rows;
+}
+
+// [Arcade] Truncate a name to the widest prefix that fits max_w base units.
+//
+// The classic tables truncate to a character count, which is only ever right
+// for one string: hu_font is proportional, 'M' and 'W' are 9 units and 'I' is
+// 4, so six characters is anything from 24 to 54 units.  The compact columns
+// have no spare width to absorb that -- and the classic 4th ranking column at
+// x 245 already runs 8 units off the right of the screen with six 'M's in it.
+// Measure instead.  dest must hold destsize bytes, and may be name itself:
+// every character is read before the byte at that same index is written.
+static void WI_Fit_Name( char * dest, int destsize, const char * name, int max_w )
+{
+    char  cb[2] = { 0, 0 };
+    int   w = 0, n = 0;
+
+    while( name[n] && (n < destsize - 1) )
+    {
+        cb[0] = name[n];
+        w += V_StringWidth( cb );
+        if( w > max_w )  break;
+        dest[n] = name[n];
+        n++;
+    }
+    dest[n] = 0;
+}
+
+// [Arcade] Draw a string with its right edge at x_right.
+static void WI_Draw_String_RJ( int x_right, int y, int att, const char * str )
+{
+    V_DrawString( x_right - V_StringWidth(str), y, att, str );
+}
+
+// [Arcade] Rows per sub-column of a ranking table, balanced -- two half-full
+// columns rather than one full column and a stub.  A table shorter than
+// max_rows stays a single column, so the small team table is not split in
+// two.  max_rows 0 never wraps, which is the classic table.
+//   Its own function so tools/interfit-test.py can check the capacity this
+// gives against the width WI_Rank_Fit hands out for it.
+static int WI_Rank_Rows( int scorelines, int max_rows )
+{
+    int  rows = scorelines;
+
+    if( (max_rows > 0) && (rows > max_rows) )
+    {
+        int  ncol = (scorelines + max_rows - 1) / max_rows;
+        rows = (scorelines + ncol - 1) / ncol;
+    }
+    return (rows < 1) ? 1 : rows;
+}
+
+
 //  Quick-patch for the Cave party 19-04-1998 !!
 //
 //  width : the column width
@@ -1258,9 +1339,52 @@ static void WI_Init_DeathmatchStats(void)
 // past base y 200, so the old hardcoded BASEVIDHEIGHT test broke out after a
 // single row -- which read as "the players on 0 points are missing", since
 // the table is sorted highest first.
-void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
+// [Arcade] Where a compact ranking's colour bar, count and name sit inside a
+// sub-column, given the widest count that table will draw.
+//   Its own function so tools/interfit-test.py can drive it; the measuring
+// loop that feeds it lives in the drawer, which is where the counts are.
+#define WI_C_NAME_MIN  34       // the name never gets less than this
+
+typedef struct {
+    int  bar_w;     // colour bar, behind the count
+    int  num_x;     // right edge of the count, from the row x
+    int  name_x;
+    int  name_w;
+} wi_rankcol_t;
+
+#define WI_C_NUM_PAD    4       // colour bar overhang, plus the gap to the name
+
+static void WI_Rank_Col_Fit( int sub_w, int num_w, wi_rankcol_t * out )
+{
+    int  floor_w = V_StringWidth("88");   // so a table of zeroes is not hairline
+    // A count can in principle be enormous -- Buchholz multiplies frag counts
+    // together -- and the name must not be squeezed out altogether.  Past
+    // this the number runs into the name, which is what the classic table has
+    // always done with anything over three digits.
+    int  ceil_w  = sub_w - WI_C_NAME_MIN - WI_C_NUM_PAD;
+
+    if( num_w > ceil_w )   num_w = ceil_w;
+    if( num_w < floor_w )  num_w = floor_w;
+
+    out->num_x  = num_w;
+    out->bar_w  = num_w + 2;
+    out->name_x = num_w + WI_C_NUM_PAD;
+    out->name_w = sub_w - out->name_x;
+}
+
+// [Arcade] pitch, max_rows, col_dx, sub_w: the compact layout's extras, see
+// the block above.  The table is laid out column-major -- one sub-column filled
+// top to bottom, then the next -- so the sort order still reads downwards.
+//   pitch    : base units between rows (12 is the classic pitch)
+//   max_rows : wrap into another sub-column past this many rows, 0 to never
+//              wrap (the classic table).  A table shorter than this stays a
+//              single column, so the small team table is not split in two.
+//   col_dx   : base units from one sub-column to the next
+//   sub_w    : usable width of a sub-column, 0 for the classic fixed layout
+static
+void WI_Draw_Ranking_Cols(const char * title, int x, int y, fragsort_t * fragtable,
                     int scorelines, boolean large, int white, int colwidth,
-                    int y_limit)
+                    int y_limit, int pitch, int max_rows, int col_dx, int sub_w)
 {
     char  buf[33];
     int   i,j;
@@ -1268,15 +1392,49 @@ void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
     int   plnum;
     int   frags;
     int   colornum;
+    int   rows;
+    int   bar_w  = large ? 40 : 26;   // the colour bar, behind the count
+    int   num_x  = large ? 32 : 24;   // right edge of the count, from the row x
+    int   name_x = large ? 64 : 29;
+    int   name_w = 0;                 // 0: truncate by colwidth, as ever
     fragsort_t temp;
 
-   
+
     if( EN_heretic )
         colornum = 230;
     else
         colornum = 0x78;
-   
+
     if( colwidth > 32 )  colwidth=32;
+
+    rows = WI_Rank_Rows( scorelines, max_rows );
+
+    if( sub_w > 0 )
+    {
+        // [Arcade] Compact: size the count field to the widest count actually
+        // in this table rather than to three digits, and give what that saves
+        // to the names.  With 32 players on two digit frags that is the
+        // difference between "PLAYER" thirty-two times and "PLAYER12" -- two
+        // of hu_font's 8-unit digits is most of another character.
+        //   The classic table keeps its "%3i": V_StringWidth charges 4 units
+        // for each padding space, so the format is part of where its numbers
+        // sit and changing it would move them.
+        wi_rankcol_t  rc;
+        int  num_w = 0;
+
+        for (i=0; i<scorelines; i++)
+        {
+            int  w;
+            sprintf(buf, "%i", fragtable[i].count);
+            w = V_StringWidth(buf);
+            if( w > num_w )  num_w = w;
+        }
+        WI_Rank_Col_Fit( sub_w, num_w, &rc );
+        bar_w  = rc.bar_w;
+        num_x  = rc.num_x;
+        name_x = rc.name_x;
+        name_w = rc.name_w;
+    }
 
     // sort the frags count
     for (i=0; i<scorelines; i++)
@@ -1297,6 +1455,14 @@ void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
     // draw rankings
     for (i=0; i<scorelines; i++)
     {
+        // [Arcade] Column-major placement.  With the classic ncol=1 this is
+        // the old running y and x, one row per iteration.
+        int  cx = x + ((i / rows) * col_dx);
+        int  cy = y + ((i % rows) * pitch);
+
+        if (cy >= y_limit)
+            continue;         // dont draw past the bottom of this view
+
         frags = fragtable[i].count;
         plnum = fragtable[i].num;
 
@@ -1305,26 +1471,106 @@ void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
         color = (skin_color) ?
            SKIN_TO_SKINMAP(skin_color)[ colornum ]
          : reg_colormaps[ colornum ];  // default green skin
-        V_DrawScaledFill (x-1,y-1, (large ? 40 : 26),9, color);
+        V_DrawScaledFill (cx-1,cy-1, bar_w,9, color);
 
         // draw frags count, right justified
-        sprintf(buf,"%3i", frags );
-        V_DrawString (x+(large ? 32 : 24)-V_StringWidth(buf), y, 0, buf);
+        sprintf(buf, (sub_w > 0) ? "%i" : "%3i", frags );
+        V_DrawString (cx+num_x-V_StringWidth(buf), cy, 0, buf);
 
         // draw name, truncate to colwidth
         memset(buf, ' ', 32);  // to defeat string centering
         snprintf(buf, 31, "%s", fragtable[i].name );
-        buf[colwidth] = 0;  // truncate to column width
-        V_DrawString (x+(large ? 64 : 29), y,
+        if( name_w > 0 )
+            WI_Fit_Name( buf, sizeof(buf), buf, name_w );  // to the real width
+        else
+            buf[colwidth] = 0;  // truncate to column width
+        V_DrawString (cx+name_x, cy,
                       ((plnum == white) ? V_WHITEMAP : 0), buf);
-
-        y += 12;
-        if (y >= y_limit)
-            break;            // dont draw past the bottom of this view
     }
 }
 
+// The classic single-column table, at the classic 12-unit pitch.
+void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
+                    int scorelines, boolean large, int white, int colwidth,
+                    int y_limit)
+{
+    WI_Draw_Ranking_Cols( title, x, y, fragtable, scorelines, large, white,
+                          colwidth, y_limit, 12, 1, 0, 0 );
+}
+
 #define RANKINGY 60
+// [Arcade] The team tables have always started 20 units lower than the
+// deathmatch ones; named so the layout can be told which it is dealing with.
+#define TEAMRANKINGY 80
+
+// [Arcade] ---- How the ranking tables are laid out for this many players. ----
+//
+// Compact sub-columns are 79 base units apart from x 4, so the fourth ends at
+// 241 and its name field at 319 -- inside the 320-unit screen, which the
+// classic fourth column at x 245 is not once a name is six 'M's wide.
+#define WI_RANK_X0      4
+#define WI_RANK_DX     79
+#define WI_RANK_SUB_W  78       // usable width of a sub-column
+
+typedef struct {
+    boolean  compact;    // small rows
+    byte     ntable;     // ranking tables drawn: the usual 4, or 2 when each
+                         // needs two sub-columns to hold everyone
+    int      pitch;
+    int      max_rows;   // rows per sub-column, 0 for the classic single column
+    int      col_dx;
+    int      sub_w;      // usable width of one sub-column, 0 for classic
+    int      y_limit;
+    int      x[4];       // left edge of table 0..ntable-1
+} wi_rankfit_t;
+
+// Pure arithmetic, so tools/interfit-test.py can lift it out and check every
+// player count against the screen.
+//   num_pl : lines the tallest of the tables will hold
+//   ytop   : base y of the first row.  The deathmatch tables start at 60, the
+//            team tables at 80, so they do not hold the same number of rows.
+static void WI_Rank_Fit( int num_pl, int ytop, wi_rankfit_t * out )
+{
+    int  i, per_col, ncol;
+    // Rows the classic table holds: it steps 12 from ytop and breaks once y
+    // has reached the bottom of the screen, so the last row starts above it.
+    int  classic_rows = (BASEVIDHEIGHT - ytop + 11) / 12;
+
+    // Everybody fits the classic table, so nothing changes.
+    if( num_pl <= classic_rows )
+    {
+        out->compact  = false;
+        out->ntable   = 4;
+        out->pitch    = 12;
+        out->max_rows = 0;
+        out->col_dx   = 0;
+        out->sub_w    = 0;
+        out->y_limit  = BASEVIDHEIGHT;
+        out->x[0] = 5;  out->x[1] = 85;  out->x[2] = 165;  out->x[3] = 245;
+        return;
+    }
+
+    per_col = WI_Compact_Rows( ytop );          // 17 from y 60, 14 from y 80
+    ncol    = (num_pl + per_col - 1) / per_col; // sub-columns each table needs
+
+    out->compact  = true;
+    out->pitch    = WI_C_PITCH;
+    out->max_rows = per_col;
+    out->col_dx   = WI_RANK_DX;
+    out->sub_w    = WI_RANK_SUB_W;
+    out->y_limit  = ytop + (per_col * WI_C_PITCH);
+
+    // There are four sub-column widths across the screen to share out.  Each
+    // table needs ncol of them, so the tables that fit are 4/ncol -- and the
+    // ones that drop out are Buchholz and indiv. first.  They are tie-break
+    // curiosities, while Frags and deads answer "how did I do"; a scoreboard
+    // that silently omits half the players is worse than one that omits two
+    // of its four rankings.
+    out->ntable = 4 / ncol;
+    if( out->ntable < 1 )  out->ntable = 1;
+    for( i = 0; i < 4; i++ )
+        out->x[i] = WI_RANK_X0 + (i * ncol * WI_RANK_DX);
+}
 
 // Called by WI_Drawer
 static void WI_Draw_DeathmatchStats(void)
@@ -1332,6 +1578,8 @@ static void WI_Draw_DeathmatchStats(void)
     int          i,j;
     int          scorelines;
     int          whiteplayer;
+    int          num_pl = 0;
+    wi_rankfit_t fit;
     fragsort_t   fragtab[MAXPLAYERS];
 
     // all WI is draw screen0, scale
@@ -1346,6 +1594,11 @@ static void WI_Draw_DeathmatchStats(void)
     //  view.
     whiteplayer = demoplayback ? displayplayer : consoleplayer;
 
+    // [Arcade] Pick the layout from the head count, before any table is drawn.
+    for (i=0; i<MAXPLAYERS; i++)
+        if (playeringame[i])  num_pl++;
+    WI_Rank_Fit( num_pl, RANKINGY, &fit );
+
     // count frags for each present player
     scorelines = 0;
     for (i=0; i<MAXPLAYERS; i++)
@@ -1359,75 +1612,91 @@ static void WI_Draw_DeathmatchStats(void)
             scorelines++;
         }
     }
-    WI_Draw_Ranking("Frags", 5, RANKINGY, fragtab, scorelines, false, whiteplayer, 6,
-                    BASEVIDHEIGHT);
+    WI_Draw_Ranking_Cols("Frags", fit.x[0], RANKINGY, fragtab, scorelines, false,
+                    whiteplayer, 6, fit.y_limit,
+                    fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
 
-    // count buchholz
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
+    // [Arcade] Buchholz and indiv. are drawn only while there is width for
+    // them; past 17 players their two columns go to the second half of the
+    // Frags and deads tables.
+    if( fit.ntable == 4 )
     {
-        if (playeringame[i])
+        // count buchholz
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
         {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
-                if (playeringame[j] && i!=j)
-                     fragtab[scorelines].count+= dm_frags[i][j]*(dm_totals[j]+dm_frags[j][j]);
-
-            fragtab[scorelines].num = i;
-            fragtab[scorelines].color = players[i].skincolor;
-            fragtab[scorelines].name  = player_names[i];
-            scorelines++;
-        }
-    }
-    WI_Draw_Ranking("Buchholz", 85, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
-
-    // count individual
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
-    {
-        if (playeringame[i])
-        {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
+            if (playeringame[i])
             {
-                if (playeringame[j] && i!=j)
-                {
-                     if(dm_frags[i][j]>dm_frags[j][i])
-                         fragtab[scorelines].count+=3;
-                     else
-                         if(dm_frags[i][j]==dm_frags[j][i])
-                              fragtab[scorelines].count+=1;
-                }
-            }
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
+                    if (playeringame[j] && i!=j)
+                         fragtab[scorelines].count+= dm_frags[i][j]*(dm_totals[j]+dm_frags[j][j]);
 
-            fragtab[scorelines].num = i;
-            fragtab[scorelines].color = players[i].skincolor;
-            fragtab[scorelines].name  = player_names[i];
-            scorelines++;
+                fragtab[scorelines].num = i;
+                fragtab[scorelines].color = players[i].skincolor;
+                fragtab[scorelines].name  = player_names[i];
+                scorelines++;
+            }
         }
+        WI_Draw_Ranking_Cols("Buchholz", fit.x[1], RANKINGY, fragtab, scorelines, false,
+                        whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
+
+        // count individual
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
+        {
+            if (playeringame[i])
+            {
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
+                {
+                    if (playeringame[j] && i!=j)
+                    {
+                         if(dm_frags[i][j]>dm_frags[j][i])
+                             fragtab[scorelines].count+=3;
+                         else
+                             if(dm_frags[i][j]==dm_frags[j][i])
+                                  fragtab[scorelines].count+=1;
+                    }
+                }
+
+                fragtab[scorelines].num = i;
+                fragtab[scorelines].color = players[i].skincolor;
+                fragtab[scorelines].name  = player_names[i];
+                scorelines++;
+            }
+        }
+        WI_Draw_Ranking_Cols("indiv.", fit.x[2], RANKINGY, fragtab, scorelines, false,
+                        whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
-    WI_Draw_Ranking("indiv.", 165, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count deads
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
+    if( fit.ntable >= 2 )
     {
-        if (playeringame[i])
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
         {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
+            if (playeringame[i])
             {
-                if (playeringame[j])
-                     fragtab[scorelines].count+=dm_frags[j][i];
-            }
-            fragtab[scorelines].num   = i;
-            fragtab[scorelines].color = players[i].skincolor;
-            fragtab[scorelines].name  = player_names[i];
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
+                {
+                    if (playeringame[j])
+                         fragtab[scorelines].count+=dm_frags[j][i];
+                }
+                fragtab[scorelines].num   = i;
+                fragtab[scorelines].color = players[i].skincolor;
+                fragtab[scorelines].name  = player_names[i];
 
-            scorelines++;
+                scorelines++;
+            }
         }
+        WI_Draw_Ranking_Cols("deads", fit.x[fit.ntable - 1], RANKINGY, fragtab, scorelines,
+                        false, whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
-    WI_Draw_Ranking("deads", 245, RANKINGY, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 }
 
 boolean teamingame(int teamnum)
@@ -1460,6 +1729,8 @@ static void WI_Draw_TeamsStats(void)
     int          i,j;
     int          scorelines;
     int          whiteplayer;
+    int          num_teams = 0;
+    wi_rankfit_t fit;
     fragsort_t   fragtab[MAXPLAYERS];
 
     // all WI is draw screen0, scale
@@ -1479,79 +1750,101 @@ static void WI_Draw_TeamsStats(void)
         whiteplayer = demoplayback ? displayplayer_ptr->skin
                                    : consoleplayer_ptr->skin;
 
+    // [Arcade] Pick the layout from the team count, before any table is drawn.
+    // These tables start at y 80, not 60, so they hold two rows fewer than the
+    // deathmatch ones -- WI_Rank_Fit is told where they start rather than
+    // assuming.
+    for (i=0; i<MAXPLAYERS; i++)
+        if (teamingame(i))  num_teams++;
+    WI_Rank_Fit( num_teams, TEAMRANKINGY, &fit );
+
     // count frags for each present player
     scorelines = HU_Create_TeamFragTbl(fragtab,dm_totals,dm_frags);
 
-    WI_Draw_Ranking("Frags", 5, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
+    WI_Draw_Ranking_Cols("Frags", fit.x[0], TEAMRANKINGY, fragtab, scorelines, false,
+                    whiteplayer, 6, fit.y_limit,
+                    fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
 
-    // count buchholz
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
+    if( fit.ntable == 4 )
     {
-        if (teamingame(i))
+        // count buchholz
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
         {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
+            if (teamingame(i))
             {
-                if (teamingame(j) && i!=j)
-                    fragtab[scorelines].count+= dm_frags[i][j]*dm_totals[j];
-            }
-
-            fragtab[scorelines].num   = i;
-            fragtab[scorelines].color = i;
-            fragtab[scorelines].name  = get_team_name(i);
-            scorelines++;
-        }
-    }
-    WI_Draw_Ranking("Buchholz", 85, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
-
-    // count individuel
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
-    {
-        if (teamingame(i))
-        {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
-            {
-                if (teamingame(j) && i!=j)
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
                 {
-                     if(dm_frags[i][j]>dm_frags[j][i])
-                         fragtab[scorelines].count+=3;
-                     else
-                         if(dm_frags[i][j]==dm_frags[j][i])
-                              fragtab[scorelines].count+=1;
+                    if (teamingame(j) && i!=j)
+                        fragtab[scorelines].count+= dm_frags[i][j]*dm_totals[j];
                 }
-            }
 
-            fragtab[scorelines].num = i;
-            fragtab[scorelines].color = i;
-            fragtab[scorelines].name  = get_team_name(i);
-            scorelines++;
+                fragtab[scorelines].num   = i;
+                fragtab[scorelines].color = i;
+                fragtab[scorelines].name  = get_team_name(i);
+                scorelines++;
+            }
         }
+        WI_Draw_Ranking_Cols("Buchholz", fit.x[1], TEAMRANKINGY, fragtab, scorelines, false,
+                        whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
+
+        // count individuel
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
+        {
+            if (teamingame(i))
+            {
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
+                {
+                    if (teamingame(j) && i!=j)
+                    {
+                         if(dm_frags[i][j]>dm_frags[j][i])
+                             fragtab[scorelines].count+=3;
+                         else
+                             if(dm_frags[i][j]==dm_frags[j][i])
+                                  fragtab[scorelines].count+=1;
+                    }
+                }
+
+                fragtab[scorelines].num = i;
+                fragtab[scorelines].color = i;
+                fragtab[scorelines].name  = get_team_name(i);
+                scorelines++;
+            }
+        }
+        WI_Draw_Ranking_Cols("indiv.", fit.x[2], TEAMRANKINGY, fragtab, scorelines, false,
+                        whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
-    WI_Draw_Ranking("indiv.", 165, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 
     // count deads
-    scorelines = 0;
-    for (i=0; i<MAXPLAYERS; i++)
+    if( fit.ntable >= 2 )
     {
-        if (teamingame(i))
+        scorelines = 0;
+        for (i=0; i<MAXPLAYERS; i++)
         {
-            fragtab[scorelines].count = 0;
-            for (j=0; j<MAXPLAYERS; j++)
+            if (teamingame(i))
             {
-                if (teamingame(j))
-                     fragtab[scorelines].count+=dm_frags[j][i];
-            }
-            fragtab[scorelines].num   = i;
-            fragtab[scorelines].color = i;
-            fragtab[scorelines].name  = get_team_name(i);
+                fragtab[scorelines].count = 0;
+                for (j=0; j<MAXPLAYERS; j++)
+                {
+                    if (teamingame(j))
+                         fragtab[scorelines].count+=dm_frags[j][i];
+                }
+                fragtab[scorelines].num   = i;
+                fragtab[scorelines].color = i;
+                fragtab[scorelines].name  = get_team_name(i);
 
-            scorelines++;
+                scorelines++;
+            }
         }
+        WI_Draw_Ranking_Cols("deads", fit.x[fit.ntable - 1], TEAMRANKINGY, fragtab,
+                        scorelines, false, whiteplayer, 6, fit.y_limit,
+                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
-    WI_Draw_Ranking("deads", 245, 80, fragtab, scorelines, false, whiteplayer, 6, BASEVIDHEIGHT);
 }
 
 
@@ -1859,12 +2152,259 @@ done:
 
 #define NETGAME_STAT_148
 
+// [Arcade] ---- The compact netgame table. ----
+//
+// The classic table gives each player a 16-unit row and draws the percentages
+// with the 12-unit WINUM patches, which is 8 rows between the headers at y 62
+// and the bottom of the screen.  The compact one draws the numbers in the
+// small hu_font instead, at the 8-unit compact pitch, and wraps into a second
+// column when one will not hold everyone -- 17 rows a column, so two columns
+// cover MAXPLAYERS.
+//
+// The percentages lose their '%' glyph here (9 units each, 27 a row, which is
+// most of a name): the column headings carry it instead.  Everything is right
+// justified into its field, so the ragged edge is on the left where the eye
+// is not comparing them.
+//
+// The fields are sized to the widest value that will actually be drawn, not
+// to "100" -- three digits cost 21 units where two cost 16, three times over,
+// and that width is the difference between a name that reads "PLAYER" and one
+// that reads "PLAYER12".  Never from the counters, which climb over several
+// seconds: a field that widened part way through the count-up would shove
+// every name in the table sideways while the player was reading it.
+#define WI_C_MARGIN     3       // screen edge to the first column
+#define WI_C_COLGAP     4       // between the two columns
+#define WI_C_MARK_W     5       // gutter for the "you are here" marker
+// Floors and ceilings on the measured fields.  The floor keeps a table of
+// zeroes from looking like a mistake; the ceiling is what stops the numbers
+// eating the name column.
+//   23 is "100" (21 units, and '1' is only 5 of them) plus the gap: no
+// percentage can be wider, so this only ever catches a caller that measured
+// something else.  32 is "-999" plus the gap.  At both ceilings at once the
+// name field is 49 units in a two-column table, which is still wider than its
+// own "Player" heading -- tools/interfit-test.py checks exactly that, and
+// caught the ceiling being 26 before it was 23.
+#define WI_C_PCT_MIN   12
+#define WI_C_PCT_MAX   23
+#define WI_C_FRAG_MIN  10
+#define WI_C_FRAG_MAX  32
+// First row of the compact table, with its headings on the line above.  Ten
+// units above the classic first row, which the compact headings do not need.
+#define WI_NG_COMPACT_Y   60
+
+typedef struct {
+    byte  ncol;        // columns of rows
+    byte  rows;        // rows in each column
+    int   col_x[2];    // left edge of each column
+    int   col_w;
+    int   name_w;      // the colour bar, and the name drawn in it
+    int   pct_w;       // a percentage field, as clamped
+    int   frag_w;      // the frags field, 0 when there is no frags column
+    int   x_kills;     // right edge of each number field, from col_x
+    int   x_items;
+    int   x_secret;
+    int   x_frags;
+} wi_ngfit_t;
+
+// Pure arithmetic, so tools/interfit-test.py can lift it out and check every
+// player count against the screen.
+//   num_pl    : players to place
+//   pct_w     : width wanted for one percentage field, measured by the caller
+//   frag_w    : width wanted for the frags field, 0 for no frags column
+//   name_want : width the longest name present wants, 0 to take what is going
+//   ytop      : base y of the first row
+static void WI_Netgame_Fit( int num_pl, int pct_w, int frag_w, int name_want,
+                            int ytop, wi_ngfit_t * out )
+{
+    int  per_col = WI_Compact_Rows( ytop );
+    int  numw, avail, pad;
+
+    if( pct_w < WI_C_PCT_MIN )  pct_w = WI_C_PCT_MIN;
+    if( pct_w > WI_C_PCT_MAX )  pct_w = WI_C_PCT_MAX;
+    if( frag_w > 0 )
+    {
+        if( frag_w < WI_C_FRAG_MIN )  frag_w = WI_C_FRAG_MIN;
+        if( frag_w > WI_C_FRAG_MAX )  frag_w = WI_C_FRAG_MAX;
+    }
+    out->pct_w  = pct_w;
+    out->frag_w = frag_w;
+    numw = (3 * pct_w) + frag_w;
+
+    out->ncol = (num_pl > per_col) ? 2 : 1;
+    // Balanced, so 20 players are 10 and 10 rather than 17 and 3.
+    out->rows = (num_pl + out->ncol - 1) / out->ncol;
+    if( out->rows > per_col )  out->rows = per_col;
+    if( out->rows < 1 )  out->rows = 1;
+
+    out->col_w = (BASEVIDWIDTH - (2 * WI_C_MARGIN)
+                  - ((out->ncol - 1) * WI_C_COLGAP)) / out->ncol;
+
+    // The name gets what is left, but no more than the longest name present
+    // actually wants.  Nine players in a single column otherwise get a colour
+    // bar 211 units long with a short name at one end of it and the
+    // percentages stranded at the other, which reads as a broken layout
+    // rather than a roomy one.  Whatever that leaves over is split either
+    // side, so the block sits in the middle of its column.
+    avail = out->col_w - numw - WI_C_MARK_W;
+    out->name_w = avail;
+    if( name_want > 0 )
+    {
+        // Never narrower than the "Player" heading the drawer writes over it,
+        // whatever the names are: a heading that did not fit its own column
+        // would be the one thing on the page nobody could explain.
+        int  floor_w = V_StringWidth("Player");
+        int  want = name_want + 2;   // the gap inside the colour bar
+
+        if( floor_w < WI_C_NAME_MIN )  floor_w = WI_C_NAME_MIN;
+        if( want < floor_w )  want = floor_w;
+        if( want < avail )  out->name_w = want;
+    }
+
+    pad = (out->col_w - (WI_C_MARK_W + out->name_w + numw)) / 2;
+    out->col_x[0] = WI_C_MARGIN + pad;
+    out->col_x[1] = WI_C_MARGIN + out->col_w + WI_C_COLGAP + pad;
+
+    out->x_kills  = WI_C_MARK_W + out->name_w + pct_w;
+    out->x_items  = out->x_kills + pct_w;
+    out->x_secret = out->x_items + pct_w;
+    out->x_frags  = out->x_secret + frag_w;
+}
+
+// [Arcade] A percentage as the compact table shows it: blank while it is
+// still counting up, "-" where there was nothing of that kind on the map.
+// Mirrors WI_Draw_Percent's two negative cases.
+static void WI_Percent_Str( char * buf, int bufsize, int pernum )
+{
+    if( pernum == -100 )
+        snprintf( buf, bufsize, "-" );     // none on the map
+    else if( pernum < 0 )
+        buf[0] = '\0';                     // not counted up yet
+    else
+        snprintf( buf, bufsize, "%d", pernum );
+}
+
+// [Arcade] The compact netgame table, drawn in place of the classic one when
+// there are more players than that one holds.  Called by WI_Draw_NetgameStats,
+// which has already drawn the background and the level name.
+static void WI_Draw_Netgame_Compact( int ytop )
+{
+    char        buf[MAXPLAYERNAME + 1];
+    wi_ngfit_t  fit;
+    int         num_pl = 0;
+    int         i, n, colornum;
+    int         pct_w, frag_w, name_want;
+    int         y_hdr = ytop - WI_C_PITCH - 1;
+
+    for (i=0 ; i<MAXPLAYERS ; i++)
+        if( playeringame[i] )  num_pl++;
+
+    // Field widths from the widest value that will actually be drawn, taken
+    // from the final figures rather than from the counters -- see the block
+    // above.  The headings set the floor, since a heading that did not fit
+    // its own column would be the one thing on the page nobody could explain.
+    pct_w  = V_StringWidth("K%");
+    frag_w = dofrags ? V_StringWidth("F") : 0;
+    name_want = V_StringWidth("Player");    // the heading over that column
+    for (i=0 ; i<MAXPLAYERS ; i++)
+    {
+        int  final[3], k, w;
+
+        if( !playeringame[i] )  continue;
+
+        w = V_StringWidth( player_names[i] );
+        if( w > name_want )  name_want = w;
+
+        final[0] = (wbs->maxkills  > 0) ? (wb_plyr[i].skills  * 100) / wbs->maxkills  : -100;
+        final[1] = (wbs->maxitems  > 0) ? (wb_plyr[i].sitems  * 100) / wbs->maxitems  : -100;
+        final[2] = (wbs->maxsecret > 0) ? (wb_plyr[i].ssecret * 100) / wbs->maxsecret : -100;
+        for( k = 0; k < 3; k++ )
+        {
+            WI_Percent_Str( buf, sizeof(buf), final[k] );
+            w = V_StringWidth( buf );
+            if( w > pct_w )  pct_w = w;
+        }
+
+        if( dofrags )
+        {
+            snprintf( buf, sizeof(buf), "%d", ST_PlayerFrags(i) );
+            w = V_StringWidth( buf );
+            if( w > frag_w )  frag_w = w;
+        }
+    }
+    pct_w += 2;                        // a gap to whatever is on its left
+    if( dofrags )  frag_w += 2;
+
+    WI_Netgame_Fit( num_pl, pct_w, frag_w, name_want, ytop, &fit );
+
+    colornum = ( EN_heretic ) ? 230 : 0x78;
+
+    // Column headings.  These carry the '%' that the rows do not.
+    for (i=0 ; i<fit.ncol ; i++)
+    {
+        int  cx = fit.col_x[i];
+
+        V_DrawString( cx + WI_C_MARK_W, y_hdr, V_WHITEMAP, "Player" );
+        WI_Draw_String_RJ( cx + fit.x_kills,  y_hdr, V_WHITEMAP, "K%" );
+        WI_Draw_String_RJ( cx + fit.x_items,  y_hdr, V_WHITEMAP, "I%" );
+        WI_Draw_String_RJ( cx + fit.x_secret, y_hdr, V_WHITEMAP, "S%" );
+        if( dofrags )
+            WI_Draw_String_RJ( cx + fit.x_frags, y_hdr, V_WHITEMAP, "F" );
+    }
+
+    n = 0;
+    for (i=0 ; i<MAXPLAYERS ; i++)
+    {
+        int  cx, cy;
+        byte skin_color, color;
+
+        if (!playeringame[i])
+            continue;
+
+        if( n >= (fit.ncol * fit.rows) )
+            break;                  // no room left, cannot happen at MAXPLAYERS
+
+        cx = fit.col_x[ n / fit.rows ];
+        cy = ytop + ((n % fit.rows) * WI_C_PITCH);
+        n++;
+
+        skin_color = players[i].skincolor;
+        color = (skin_color) ?
+           SKIN_TO_SKINMAP(skin_color)[ colornum ]
+         : reg_colormaps[ colornum ];  // default green skin
+
+        // The colour bar behind the name is the player's identity here: there
+        // is no room for the status-bar face the classic table marks the
+        // console player with, so that gets the marker gutter instead.
+        V_DrawScaledFill( cx + WI_C_MARK_W, cy - 1, fit.name_w, WI_C_ROW_H, color );
+        if( i == me )
+            V_DrawString( cx, cy, V_WHITEMAP, ">" );
+
+        WI_Fit_Name( buf, sizeof(buf), player_names[i], fit.name_w - 2 );
+        V_DrawString( cx + WI_C_MARK_W + 1, cy, V_WHITEMAP, buf );
+
+        WI_Percent_Str( buf, sizeof(buf), cnt_kills[i] );
+        WI_Draw_String_RJ( cx + fit.x_kills, cy, V_WHITEMAP, buf );
+        WI_Percent_Str( buf, sizeof(buf), cnt_items[i] );
+        WI_Draw_String_RJ( cx + fit.x_items, cy, V_WHITEMAP, buf );
+        WI_Percent_Str( buf, sizeof(buf), cnt_secret[i] );
+        WI_Draw_String_RJ( cx + fit.x_secret, cy, V_WHITEMAP, buf );
+
+        if( dofrags )
+        {
+            snprintf( buf, sizeof(buf), "%d", cnt_frags[i] );
+            WI_Draw_String_RJ( cx + fit.x_frags, cy, V_WHITEMAP, buf );
+        }
+    }
+}
+
 // Called by WI_Drawer
 static void WI_Draw_NetgameStats(void)
 {
     // Hardware or software render.
     int  i, x, y, y10;
     int  pwidth, ngsx;
+    // [Arcade] Deciding between the two layouts, before either is drawn.
+    int  num_pl = 0, classic_rows, hdr_h;
 
     // all WI is draw screen0, scale
     WI_Slam_Background();
@@ -1873,6 +2413,26 @@ static void WI_Draw_NetgameStats(void)
     WI_Draw_AnimatedBack();
 
     WI_Draw_LF();
+
+    // [Arcade] Does the classic table hold everyone?  Its first row sits under
+    // the heading patches and each one is WI_SPACINGY lower, with a percentage
+    // patch drawn 10 below the row's own y -- so the last row that fits is the
+    // last whose percentage still ends above the bottom of the screen.
+    // Measured rather than assumed, because the heading is FontB in Heretic
+    // and a patch in Doom, and they are not the same height.
+    for (i=0 ; i<MAXPLAYERS ; i++)
+        if( playeringame[i] )  num_pl++;
+
+    hdr_h = FontBBaseLump ? V_TextBHeight("Kills") : V_patch(kills)->height;
+    classic_rows = ((BASEVIDHEIGHT - V_patch(percent)->height - 10
+                     - (NG_STATSY + hdr_h)) / WI_SPACINGY) + 1;
+    if( classic_rows < 1 )  classic_rows = 1;
+
+    if( num_pl > classic_rows )
+    {
+        WI_Draw_Netgame_Compact( WI_NG_COMPACT_Y );
+        return;
+    }
 
     ngsx = NG_STATSX + (V_patch(pl_face)->width/2) + (dofrags? 0 : 32);
     // draw stat titles (top line)

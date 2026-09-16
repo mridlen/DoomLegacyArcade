@@ -42,6 +42,11 @@ Discord is likely to get you banned.
   wide screen, each with their own HUD. A **join screen** after the skill select lets each panel
   press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous. Four players
   cost about the same as one: each view is drawn on its own core.
+- **The end-of-level scoreboards hold all 32 players.** A net game can have far more players than
+  the old intermission screens could show — the campaign table stopped at 8 and the deathmatch
+  rankings at 12, and the rest just weren't drawn. Past those counts the screens switch to a
+  smaller layout with a second column and fit everybody; below them they look exactly as they
+  always did.
 - **Campaign and Deathmatch start in one press.** New Game offers the two games people actually
   ask for, already set up: **Campaign** plays the episode, solo or as co-op depending on how many
   press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen and one
@@ -1028,6 +1033,15 @@ How long the join screen waits is on the Timeouts page, below.
 Set the panel count first, then run the guided setup for each panel. Panels 3 and 4 have no preset
 bindings on purpose — the two built-in schemes are chosen so one keyboard can drive two players, and
 there is no third set that wouldn't collide.
+
+**Big net games.** The cabinet itself has at most four panels, but a networked game can hold up to
+32 players, and the end-of-level scoreboards were built for far fewer than that — the campaign table
+showed the first 8 and the deathmatch rankings the top 12, with everyone else simply missing and
+nothing on screen to say so. Past those counts both screens now switch to a smaller layout that
+fits everybody: smaller type, tighter rows, and a second column when one won't hold them all. Below
+those counts the screens are exactly what they always were. In a really big deathmatch the two extra
+ranking tables (Buchholz and indiv.) give up their space so that Frags and deads can each use two
+columns and list all 32.
 
 ### Choosing a resolution, and tuning performance
 

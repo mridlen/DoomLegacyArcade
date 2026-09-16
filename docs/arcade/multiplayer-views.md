@@ -1,6 +1,6 @@
 # Four local players, the 2x2 view grid and the join screen
 
-*Part of the DoomLegacy arcade cabinet build. Read before touching `D_NumViews`/`D_NumLocalPlayers`, `localplayer*[]`, viewport geometry in `r_main.c`/`r_draw.c`/`hw_main.c`, the HUD grid in `st_stuff.c`, or the rankings overlay in `hu_stuff.c`.*
+*Part of the DoomLegacy arcade cabinet build. Read before touching `D_NumViews`/`D_NumLocalPlayers`, `localplayer*[]`, viewport geometry in `r_main.c`/`r_draw.c`/`hw_main.c`, the HUD grid in `st_stuff.c`, the rankings overlay in `hu_stuff.c`, or the intermission tables (`WI_Draw_NetgameStats`, `WI_Draw_Ranking*`, `WI_*_Fit`) in `wi_stuff.c`.*
 
 See `CLAUDE.md` for the build, headless verification and the cross-cutting rules index.
 
@@ -710,3 +710,138 @@ being special. All four rows now use `V_WHITEMAP`.
 
 The console player is still marked, by the things that were always doing the marking: the face
 patch and the shoulder banner drawn under it in that player's colour. Those stay.
+
+## Intermission tables past 8 and 12 players
+
+`MAXPLAYERS` is **32**, and neither intermission table was built for anything like that many.
+Neither said so, either — they simply stopped drawing.
+
+| screen | drawer | held | what happened to the rest |
+| --- | --- | --- | --- |
+| Campaign / co-op | `WI_Draw_NetgameStats` | **8** | rows step `WI_SPACINGY` (16) from base y 62 and the percentage patches are 12 tall, so player 9's row starts below the 200-line screen |
+| Deathmatch | `WI_Draw_DeathmatchStats` → `WI_Draw_Ranking` | **12** | rows step 12 from y 60 and the loop breaks at the screen edge |
+| Team deathmatch | `WI_Draw_TeamsStats` | **10** | same, from y 80 |
+
+The deathmatch case is the worse of the two, because those tables are **sorted highest first** — so
+what vanished was the bottom of the scoreboard, and everyone still listed looked correct.
+
+### The rule this follows
+
+**The classic layouts are untouched at the counts they can hold.** 8 in a campaign game, 12 in a
+deathmatch and 10 teams draw exactly what they always drew, down to the x positions — the big
+`WINUM` percentages, the 16-unit rows, the status-bar face and its shoulder banner.
+`tools/interfit-test.py` asserts that directly (`classic layout altered`), because the easy mistake
+here is to improve a screen nobody asked to have improved.
+
+Past those counts both fall back to a **compact** layout: the small proportional `hu_font` instead
+of the patches, **8-unit rows** (the glyphs are 7 tall, so 8 is the floor), and a **second column**
+when one will not hold everyone. 17 rows fit a column, so two columns cover all 32.
+
+### Campaign / co-op
+
+`WI_Draw_Netgame_Compact`, laid out by `WI_Netgame_Fit`. One row is a marker gutter, a colour bar
+with the name in it, then Kills / Items / Secrets and — only when `dofrags` says somebody actually
+has a frag total — Frags, all right justified so the ragged edge is on the left where the eye is not
+comparing them. `dofrags` is normally **false** in campaign play, since a co-op frag only exists if
+a player killed a player, so the fourth column usually is not there at all and the names get its
+width.
+
+- **The percentages lose their `%` glyph and the headings carry it** (`K%`, `I%`, `S%`, `F`). At 9
+  units a `%` is 27 units a row across three columns, which is most of a name.
+- **The number fields are sized to the widest value that will actually be drawn**, not to `"100"`.
+  Three digits cost 21 units where two cost 16, three times over, and with a frags column that
+  difference is what separates a table reading `PLAYER` sixteen times from one reading `PLAYER12`.
+  The widths come from the **final** figures, never from `cnt_kills[]` and friends: those climb over
+  several seconds, and a field that widened part way through the count-up would shove every name in
+  the table sideways while somebody was reading it.
+- `WI_C_PCT_MAX` is **23**, which is `"100"` plus the gap — no percentage can be wider. It was 26
+  and `tools/interfit-test.py` failed it: at 26, with a frags column, the name field came out at 46
+  units and its own `Player` heading is 48.
+- **The name field is capped at what the longest name present wants, and the block is centred in
+  its column.** Without that, nine players in a single column get a colour bar 211 units long with
+  a short name at one end and the percentages stranded at the other — which reads as a broken
+  layout rather than a roomy one. The cap floors at the width of the `Player` heading written over
+  it.
+- **There is no room for the face patch** (24x29 against an 8-unit row), so the console player is
+  marked with a `>` in a 5-unit gutter instead. The colour bar behind each name is the identity
+  marker either way, which is what the four-panel cabinet already relies on.
+
+### Deathmatch and team deathmatch
+
+`WI_Draw_Ranking_Cols` — `WI_Draw_Ranking` is now a wrapper that passes the classic pitch and no
+wrapping, so the in-game Tab rankings in `hu_stuff.c` are untouched. `WI_Rank_Fit` picks the
+layout, and it is told which `ytop` it is laying out for, because the deathmatch tables start at 60
+and the team tables at 80 and therefore do not hold the same number of rows.
+
+There are four sub-column widths across the screen (79 units each from x 4) and each table needs
+`ncol` of them, so **`ntable = 4 / ncol`**:
+
+| players | pitch | tables | each |
+| --- | --- | --- | --- |
+| up to 12 | 12 | Frags, Buchholz, indiv., deads | 1 column |
+| 13..17 | 8 | Frags, Buchholz, indiv., deads | 1 column |
+| 18..32 | 8 | **Frags, deads** | 2 columns |
+
+**Buchholz and indiv. are what gets dropped, deliberately.** They are tie-break curiosities; Frags
+and deads are the two that answer "how did I do". A scoreboard that silently omits half the players
+is worse than one that omits two of its four rankings.
+
+- Placement is **column-major** — one sub-column filled top to bottom, then the next — so the sort
+  order still reads downwards. With the classic `max_rows = 0` this is the old running x and y,
+  one row per iteration.
+- The compact tables get the **same measured count field** as the netgame one, via
+  `WI_Rank_Col_Fit`. The classic table keeps its `"%3i"`: `V_StringWidth` charges **4 units per
+  padding space**, so the format is part of where its numbers sit and changing it would move them.
+- A count has no upper bound in principle — Buchholz multiplies frag counts together — so
+  `WI_C_NAME_MIN` (34 units) is the floor the name is guaranteed. Past that the number runs into
+  the name, which is what the classic table has always done with anything over three digits.
+- **Four sub-columns across a 320-unit screen is the whole budget**, so once a two-digit count and
+  its colour bar are allowed for a name gets about 58 units — seven characters of `PLAYER`. There
+  is no arrangement that gives more while still showing four columns of names. The classic table's
+  six-character cap is not better, only less honest: it overruns the screen rather than truncating,
+  which is what the 12-player capture shows it doing at x 245.
+
+### What was deliberately left alone
+
+**The in-game Tab rankings** (`HU_Draw_Rankings_In_Cell`, `hu_stuff.c`) still show the top 9 across
+the whole screen and the top 4 in a view cell, and that cap is upstream's and on purpose — it is an
+overlay drawn over live play, and burying the game under 32 names while somebody is being shot at
+is not an improvement. It calls `WI_Draw_Ranking`, the classic wrapper, so nothing here reaches it.
+The intermission is a different case: the game has stopped and the screen has nothing else to do.
+
+### Names are truncated by measurement, not by counting characters
+
+`WI_Fit_Name` walks the name a glyph at a time and stops at the width it was given. The classic
+tables truncate to a character count (`colwidth`, 6), which is only ever right for one string:
+`hu_font` is proportional, `M` and `W` are 9 units and `I` is 4, so six characters is anything from
+24 to 54 units. **The classic fourth ranking column at x 245 already runs 8 units off the right of
+the screen** with six `M`s in it — that is the existing bug the measured version does not
+reproduce. The classic path is left alone all the same; it is not what this change is about.
+
+### Verified by
+
+- **`tools/interfit-test.py`** lifts `WI_Compact_Rows`, `WI_Fit_Name`, `WI_Rank_Rows`,
+  `WI_Rank_Col_Fit`, `WI_Rank_Fit` and `WI_Netgame_Fit` out of `wi_stuff.c` by brace matching and
+  drives them over every player count from 1 to 32, both table origins, every field width the
+  drawers can measure, and the worst names `hu_font` can produce. Glyph widths come from a real
+  IWAD when one can be found, checked against its own built-in table.
+  **`--selfcheck` reinstates 19 bugs and every one goes red** — and it earned its keep twice here:
+  one mutation stopped applying when the code it patched moved, and the centring check turned out
+  to be unable to tell "centred" from "pinned to the left", so a lone `pad >= 0` passed on a
+  deliberately broken build.
+- **Screenshots.** Nobody is going to gather 32 players to look at this, so a temporary
+  `-fakeplayers N` hook in `WI_Start` filled `playeringame[]`, `player_names[]` and `wb_plyr[]` and
+  the run was photographed at 8, 9, 17, 18 and 32 players in both modes, with and without the frags
+  column. **That is what found the truncation**: every numeric check was green while every name on
+  the screen read `PLAYER`. The scaffolding was reverted before the commit — `grep -rn fakeplayers
+  svn1749/src` must come back empty.
+- `make smoke`: 5 of 5.
+- `make demotest` was **inconclusive on this machine and said so** — 1 desync and 8 length
+  differences across 106 demos. The control is what settles it: the *same* binary compared against
+  itself, over a frozen copy of `legacyhome/demos`, reports the same demo
+  (`doom2_MAP01_sk2_speed.lmp`) with the same `loaded different levels` message and the same order
+  of length differences. The suite reports that failure with and without the change, so it does not
+  implicate the change. It is not a clean result and should not be written up as one; re-run it on
+  a quiet machine (the cabinet was being played throughout, which is itself enough to rewrite a
+  `.lmp` mid-suite). Neither suite reaches this screen in any case — `demotest` passes `-nodraw`
+  and never reaches an intermission at all.
