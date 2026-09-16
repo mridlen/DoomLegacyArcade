@@ -1490,12 +1490,16 @@ void WI_Draw_Ranking_Cols(const char * title, int x, int y, fragsort_t * fragtab
 }
 
 // The classic single-column table, at the classic 12-unit pitch.
+// [Arcade] max_rows 0, never wrap.  It was 1, which WI_Rank_Rows reads as one
+// row per sub-column: every line became its own column, and with col_dx 0
+// they were all drawn on top of each other.  That is the in-level rankings
+// (HU_Draw_Rankings_In_Cell), both the player and the team table.
 void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,
                     int scorelines, boolean large, int white, int colwidth,
                     int y_limit)
 {
     WI_Draw_Ranking_Cols( title, x, y, fragtable, scorelines, large, white,
-                          colwidth, y_limit, 12, 1, 0, 0 );
+                          colwidth, y_limit, 12, 0, 0, 0 );
 }
 
 #define RANKINGY 60

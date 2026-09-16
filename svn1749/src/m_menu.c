@@ -1443,6 +1443,7 @@ menu_t  MainDef =
 
 static void M_CampaignNewGame(int choice);
 static void M_DeathmatchNewGame(int choice);
+static void M_TeamDeathmatchNewGame(int choice);
 static void M_TwoPlayerMenu(int choice);
 static void M_EndGame(int choice);
 
@@ -1453,6 +1454,7 @@ enum
 {
     singlemulti_campaign = 0,
     singlemulti_deathmatch,
+    singlemulti_teamdm,
     singlemulti_singlelevel,
     singlemulti_multi,
     singlemulti_network,
@@ -1475,6 +1477,10 @@ menuitem_t SingleMulti_Menu[] =
     // standing at the panels.  Hidden on a one panel cabinet, with
     // Multiplayer, by M_Configure.
     {IT_CALL | IT_PATCH,"M_DEATHM","DEATHMATCH",M_DeathmatchNewGame ,'d'},
+    // [Arcade] The same deathmatch played in colour teams: teamplay Color,
+    // no friendly fire, and the join screen offers only the four team
+    // colours.  Hidden with Deathmatch on a one panel cabinet.
+    {IT_CALL | IT_PATCH,"M_TEAMDM","TEAM DEATHMATCH",M_TeamDeathmatchNewGame ,'t'},
     // [Arcade] Single Level belongs here, directly under Campaign,
     // rather than on the main menu beside New Game: it is another way to
     // *start a game*, not a peer of the New Game item.  Same M_SINLVL
@@ -3274,9 +3280,17 @@ void M_CampaignNewGame(int choice)
 // always started on MAP01.  The page carries the gamemode difference itself
 // (M_Configure swaps its one cvar row), so unlike the campaign above this
 // route has no gamemode test to make.
+// [Arcade] Whether the Deathmatch map page is starting a Team Deathmatch.
+// Set by whichever New Game row opened the page, which shares one map
+// selector (and one cv_dm_nextmap) between the two.
+static boolean  newgame_teams = false;
+
 static
 void M_DeathmatchNewGame(int choice)
 {
+    newgame_teams = false;
+    DeathmatchLevelDef.menutitlepic = "M_DEATHM";
+
     // A deathmatch is local multiplayer, so the split goes on the way the
     // Multiplayer page turns it on.  How many panels actually play is still
     // the join screen's answer, not this.
@@ -3289,6 +3303,16 @@ void M_DeathmatchNewGame(int choice)
     D_End_commandline();
 
     Push_Setup_Menu(&DeathmatchLevelDef);
+}
+
+// [Arcade] Team Deathmatch: the Deathmatch route with teams on.  The same map
+// page, titled with the row that reached it.
+static
+void M_TeamDeathmatchNewGame(int choice)
+{
+    M_DeathmatchNewGame( choice );
+    newgame_teams = true;
+    DeathmatchLevelDef.menutitlepic = "M_TEAMDM";   // in legacy.wad, 200x17
 }
 
 // =========================================================================
@@ -3517,6 +3541,12 @@ static void (*join_startfunc)(void) = NULL;
 // the whole screen, instead of being assumed to be at panel 1.
 static boolean join_first_press_starts = false;
 
+// [Arcade] Team Deathmatch: the colour row is the TEAM row, and offers only
+// the team colours (team_colors, with the Team Deathmatch start).
+static boolean join_teams = false;
+static void  M_Join_Team_Snap( byte panel );
+static void  M_Join_Team_Step( byte panel, int dir );
+
 // [Arcade] Cabinet Link: this join screen belongs to another cabinet's game.
 // Nothing here starts a game on its own -- the host sends START (d_linkgame.c)
 // and this cabinet connects to it -- and the countdown is the host's.
@@ -3712,6 +3742,8 @@ boolean  M_Join_Key( uint16_t key )
             {
                 join_pressed[panel] = JOIN_SETUP;
                 *row = JOIN_ROW_COLOR;
+                if( join_teams )
+                    M_Join_Team_Snap( panel );
                 S_StartSound(menu_sfx_enter);
                 if( join_first_press_starts )
                     M_Join_Start();
@@ -3782,7 +3814,12 @@ boolean  M_Join_Key( uint16_t key )
             if( dir )
             {
                 consvar_t * cv = M_Join_Row_Cvar( panel, *row );
-                if( cv )
+                if( join_teams && *row == JOIN_ROW_COLOR )
+                {
+                    M_Join_Team_Step( panel, dir );
+                    S_StartSound(menu_sfx_val);
+                }
+                else if( cv )
                 {
                     // Fires the OnChange, so a control scheme swaps this
                     // panel's turn and strafe pairs at once -- harmless here,
@@ -3918,8 +3955,11 @@ static void  M_Join_Drawer( void )
         // together in a 150 box rather than flinging the value to the far
         // edge of the screen.
         {
-            static const char * const labels[JOIN_NUM_ROWS] =
+            static const char * const labels_color[JOIN_NUM_ROWS] =
                 { "COLOR", "CROSSHAIR", "CONTROLS", NULL };
+            static const char * const labels_team[JOIN_NUM_ROWS] =
+                { "TEAM", "CROSSHAIR", "CONTROLS", NULL };
+            const char * const * labels = join_teams ? labels_team : labels_color;
             byte narrow = (cw < 150);
             int  bw = narrow ? cw : 150;
             int  bx = cx + (cw - bw)/2;
@@ -4435,10 +4475,14 @@ enum
 //   dmm        a deathmatch_cons_t value: DMM_coop or DMM_dm_both
 //   monsters   0/1, as the map command's -monsters wants
 //   timelimit  minutes, 0 for none
+//   teams      Team Deathmatch: teamplay by colour, no friendly fire.  Every
+//              other game says teamplay 0, because cv_teamplay is a NETVAR
+//              that nothing else resets, and a plain Deathmatch after a team
+//              one would otherwise still be played in teams.
 //
 // The map and skill come from newgame_map / newgame_skill, which both routes
 // have already filled in.
-static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit )
+static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit, boolean teams )
 {
     // How many panels checked in.  The join screen has already answered this
     // (D_Set_Join_Count); without one it is the panel count, i.e. everybody.
@@ -4509,6 +4553,9 @@ static void  M_Arcade_MP_Go( int dmm, int monsters, int timelimit )
                        split, dmm,
                        cv_fastmonsters_menu.EV, cv_respawnmonsters_menu.EV,
                        timelimit ) );
+    // [Arcade] teamdamage 0 is no friendly fire (P_DamageMobj).  Left alone
+    // outside Team Deathmatch: in coop it is the operator's friendly fire.
+    COM_BufAddText( teams ? "teamplay 1;teamdamage 0\n" : "teamplay 0\n" );
 
     // skin change, as M_StartServer_Go does for the same reason
     if (split
@@ -4543,7 +4590,7 @@ static void  M_NewGame_Go( void )
     // there is a coop campaign, not a solo run.
     if( D_Num_Joined_Players() + LKG_Remote_Players() > 1 )
     {
-        M_Arcade_MP_Go( DMM_coop, 1, 0 );   // monsters on, no time limit
+        M_Arcade_MP_Go( DMM_coop, 1, 0, false );   // monsters on, no time limit
         return;
     }
 
@@ -4566,7 +4613,91 @@ static void  M_Deathmatch_Go( void )
     // persists past this boot, and the ranked ruleset pins it to 0 anyway.
     CV_SetValue( &cv_bots, 0 );
 
-    M_Arcade_MP_Go( DMM_dm_both, 0, cv_dm_timelimit.value );
+    M_Arcade_MP_Go( DMM_dm_both, 0, cv_dm_timelimit.value, false );
+}
+
+// [Arcade] The team colours, in the order the join screen offers them.
+// Color_Names indices: teamplay Color names each team after its colour.
+static const byte  team_colors[] = { 3, 8, 0, 9 };   // Red, Blue, Green, Yellow
+#define NUM_TEAM_COLORS  (sizeof(team_colors)/sizeof(team_colors[0]))
+
+// Index into team_colors, or -1 when the colour is not a team's.
+static int  M_Team_Index( int color )
+{
+    int t;
+    for( t = 0; t < (int)NUM_TEAM_COLORS; t++ )
+    {
+        if( team_colors[t] == color )  return t;
+    }
+    return -1;
+}
+
+// Put panel on a team if its colour is not one.  A panel already wearing a
+// team colour keeps it; any other goes to the team with fewest of the panels
+// flagged in `others`, first in team_colors order on a tie -- so a cabinet of
+// default colours splits evenly without anyone touching anything.
+static void  M_Team_Snap( byte panel, const boolean * others )
+{
+    int count[NUM_TEAM_COLORS];
+    int t, best = 0;
+    byte p;
+
+    if( M_Team_Index( cv_playercolor[panel].value ) >= 0 )  return;
+
+    memset( count, 0, sizeof(count) );
+    for( p = 0; p < MAXSPLITSCREENPLAYERS; p++ )
+    {
+        if( p == panel || ! others[p] )  continue;
+        t = M_Team_Index( cv_playercolor[p].value );
+        if( t >= 0 )  count[t]++;
+    }
+    for( t = 1; t < (int)NUM_TEAM_COLORS; t++ )
+    {
+        if( count[t] < count[best] )  best = t;
+    }
+    CV_SetValue( &cv_playercolor[panel], team_colors[best] );
+}
+
+// The join screen's side of it: balanced against the panels already in.
+static void  M_Join_Team_Snap( byte panel )
+{
+    boolean in[MAXSPLITSCREENPLAYERS];
+    byte p;
+    for( p = 0; p < MAXSPLITSCREENPLAYERS; p++ )
+        in[p] = ( p < M_Join_NumPanels() ) && join_pressed[p] != JOIN_OUT;
+    M_Team_Snap( panel, in );
+}
+
+// Left/right on the TEAM row: the next team colour, wrapping.
+static void  M_Join_Team_Step( byte panel, int dir )
+{
+    int t = M_Team_Index( cv_playercolor[panel].value );
+    if( t < 0 )
+        t = 0;
+    else
+        t = ( t + dir + NUM_TEAM_COLORS ) % NUM_TEAM_COLORS;
+    CV_SetValue( &cv_playercolor[panel], team_colors[t] );
+}
+
+// [Arcade] Team Deathmatch's start.  The join screen has already put every
+// panel that pressed in on a team; this covers the route with no join screen,
+// where every panel plays with whatever colour it had.
+static void  M_TeamDeathmatch_Go( void )
+{
+    boolean in[MAXSPLITSCREENPLAYERS];
+    byte i, joined = D_Num_Joined_Players();
+
+    memset( in, 0, sizeof(in) );
+    for( i = 0; i < joined && i < MAXSPLITSCREENPLAYERS; i++ )
+    {
+        byte panel = D_Panel_Of( i );
+        if( panel >= MAXSPLITSCREENPLAYERS )  continue;
+        M_Team_Snap( panel, in );
+        in[panel] = true;
+    }
+
+    CV_SetValue( &cv_bots, 0 );   // as M_Deathmatch_Go
+    M_Arcade_MP_Go( DMM_dm_both, 0, cv_dm_timelimit.value, true );
 }
 
 static void  M_Deathmatch_Start( void )
@@ -4584,12 +4715,15 @@ static void  M_Deathmatch_Start( void )
     // deathmatch is about the *other* panels checking in.  A panel that is
     // already in can press Use to start at once, which is what the join
     // screen tells them.
-    if( M_Join_Open( M_Deathmatch_Go, false ) )
+    if( M_Join_Open( newgame_teams ? M_TeamDeathmatch_Go : M_Deathmatch_Go, false ) )
         return;
 
     D_Clear_Join_Count();   // no join screen: every panel plays
     D_Reset_View_Cells();
-    M_Deathmatch_Go();      // clears the menus itself
+    if( newgame_teams )
+        M_TeamDeathmatch_Go();
+    else
+        M_Deathmatch_Go();  // clears the menus itself
 }
 
 
@@ -4602,6 +4736,7 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
     // [Arcade] Cabinet Link: Deathmatch and Campaign invite other cabinets, and
     // a single panel cabinet asks who is playing when there is someone to ask.
     byte category = ( startfunc == M_Deathmatch_Go ) ? LKG_CAT_DEATHMATCH
+                  : ( startfunc == M_TeamDeathmatch_Go ) ? LKG_CAT_TEAMDM
                   : ( startfunc == M_NewGame_Go ) ? LKG_CAT_CAMPAIGN : LKG_CAT_NONE;
     boolean invite = cv_jointime.EV && LKG_Would_Invite( category );
 
@@ -4616,6 +4751,7 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
 
     join_startfunc = startfunc;
     join_first_press_starts = first_press_starts;
+    join_teams = ( startfunc == M_TeamDeathmatch_Go );
     join_endtic = (int)gametic + (cv_jointime.EV * TICRATE);
 
     D_Reset_View_Cells();
@@ -4684,6 +4820,7 @@ void  M_Join_Remote_Open( int secs )
     }
     join_startfunc = NULL;
     join_first_press_starts = false;
+    join_teams = ( LKG_Category() == LKG_CAT_TEAMDM );
     join_remote = true;
     join_endtic = (int)gametic + secs * TICRATE;
     D_Reset_View_Cells();
@@ -4769,6 +4906,11 @@ void  M_Join_Remote_Connect( const char * host, int port )
 void  M_Join_Test_Lock( byte panel, boolean lock )
 {
     if( ! join_active || panel >= M_Join_NumPanels() )  return;
+    if( join_teams && join_pressed[panel] == JOIN_OUT )
+    {
+        join_pressed[panel] = JOIN_SETUP;   // counted by the balance
+        M_Join_Team_Snap( panel );
+    }
     join_pressed[panel] = lock ? JOIN_LOCKED : JOIN_SETUP;
     // Checked on panel 1 only, which a test pressing several panels presses
     // last: locking panel 2 first must not start the game with panel 2 alone.
@@ -4787,7 +4929,10 @@ void  M_Link_Test_Host( byte category )
         M_ChooseSkill( sk_medium );
     }
     else
+    {
+        newgame_teams = ( category == LKG_CAT_TEAMDM );
         M_Deathmatch_Start();
+    }
 }
 
 
@@ -12663,6 +12808,9 @@ void M_Configure (void)
         // it has always been.
         SingleMulti_Menu[singlemulti_deathmatch].status = IT_HIDDEN;
         if( SingleMultiDef.lastOn == singlemulti_deathmatch )
+            SingleMultiDef.lastOn = 0;
+        SingleMulti_Menu[singlemulti_teamdm].status = IT_HIDDEN;
+        if( SingleMultiDef.lastOn == singlemulti_teamdm )
             SingleMultiDef.lastOn = 0;
 
         // Player 2's config screen is unreachable in play and meaningless

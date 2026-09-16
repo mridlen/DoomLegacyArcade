@@ -93,6 +93,8 @@ FUNCS = [
     'static void WI_Rank_Col_Fit( int sub_w, int num_w, wi_rankcol_t * out )',
     'static void WI_Rank_Fit( int num_pl, int ytop, wi_rankfit_t * out )',
     'static void WI_Netgame_Fit( int num_pl, int pct_w, int frag_w, int name_want,',
+    # The in-level rankings' wrapper, calling the stub below.
+    'void WI_Draw_Ranking(const char * title, int x, int y, fragsort_t * fragtable,',
 ]
 
 
@@ -198,6 +200,17 @@ static int V_StringWidth( const char * s )
 }
 
 %(structs)s
+
+/* WI_Draw_Ranking_Cols stub: records the layout WI_Draw_Ranking asks for. */
+typedef struct { int count, num, color; const char * name; } fragsort_t;
+static int  cols_pitch, cols_max_rows, cols_col_dx;
+static void WI_Draw_Ranking_Cols(const char * title, int x, int y, fragsort_t * fragtable,
+                    int scorelines, boolean large, int white, int colwidth,
+                    int y_limit, int pitch, int max_rows, int col_dx, int sub_w)
+{
+    cols_pitch = pitch;  cols_max_rows = max_rows;  cols_col_dx = col_dx;
+}
+static int WI_Rank_Rows( int scorelines, int max_rows );
 
 /* ---- verbatim from wi_stuff.c ---- */
 %(funcs)s
@@ -357,6 +370,32 @@ static void check_netgame(void)
                  n, V_StringWidth(buf), f.name_w);
         if( buf[0] == 0 )
             fail("netgame n=%%d: no room for even one letter", n);
+    }
+}
+
+/* ============ the in-level rankings ============ */
+/* WI_Draw_Ranking's rows must all land in different places.  Placement is
+   the drawer's own: cx = x + (i/rows)*col_dx, cy = y + (i%%rows)*pitch.  It
+   asked for max_rows 1 once, and every line was drawn on the first. */
+static void check_classic_wrapper(void)
+{
+    int  n, i, j;
+    for( n = 1; n <= MAXPLAYERS; n++ )
+    {
+        int  rows;
+        WI_Draw_Ranking( "Teams", 0, 0, NULL, n, 0, 0, 32, BASEVIDHEIGHT );
+        rows = WI_Rank_Rows( n, cols_max_rows );
+        for( i = 0; i < n; i++ )
+        for( j = i + 1; j < n; j++ )
+        {
+            if( (i / rows) * cols_col_dx == (j / rows) * cols_col_dx
+                && (i %% rows) * cols_pitch == (j %% rows) * cols_pitch )
+            {
+                fail("in-level rankings n=%%d: rows %%d and %%d drawn in the same place",
+                     n, i, j);
+                return;
+            }
+        }
     }
 }
 
@@ -521,6 +560,7 @@ int main(void)
 
     check_netgame();
     check_rankings();
+    check_classic_wrapper();
     check_fit_name();
 
     /* The two counts this was all about: 32 players must land in two
@@ -663,6 +703,9 @@ if '--selfcheck' in sys.argv:
         ('name truncation is off by one (one glyph too wide)',
          lambda s: s.replace('if( w > max_w )  break;',
                              'if( w > max_w + 1 )  break;')),
+        ('in-level rankings drawn on top of each other (max_rows 1)',
+         lambda s: s.replace('colwidth, y_limit, 12, 0, 0, 0 );',
+                             'colwidth, y_limit, 12, 1, 0, 0 );')),
         ('ranking rows not balanced across the sub-columns',
          lambda s: s.replace('rows = (scorelines + ncol - 1) / ncol;',
                              'rows = max_rows;')),

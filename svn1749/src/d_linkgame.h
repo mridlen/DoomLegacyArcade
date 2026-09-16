@@ -17,8 +17,14 @@ enum
 {
     LKG_CAT_NONE = 0,
     LKG_CAT_DEATHMATCH,
-    LKG_CAT_CAMPAIGN
+    LKG_CAT_CAMPAIGN,
+    // [Arcade] Appended, so a cabinet built before it ignores the invite
+    // (lkg_on_invite) rather than opening the wrong game.
+    LKG_CAT_TEAMDM
 };
+
+// The category of the game this cabinet is hosting or was invited to.
+byte         LKG_Category( void );
 
 // Called from LK_Ticker every pass while the link runs.
 void         LKG_Ticker( void );

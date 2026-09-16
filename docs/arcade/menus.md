@@ -316,6 +316,33 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - `M_Deathmatch_Start` now takes its map from `M_Deathmatch_MapName()` instead of
     `G_BuildMapName(epi+1,1)`, and nothing on this route sets `epi` any more.
 
+- **Team Deathmatch** (`M_TeamDeathmatchNewGame`, row `singlemulti_teamdm`, graphic `M_TEAMDM`
+  200x17 in `legacy.wad`). The Deathmatch route with `newgame_teams` set: the same
+  `DeathmatchLevelDef` map page (its `menutitlepic` is swapped to `M_TEAMDM` by the entry function
+  and back to `M_DEATHM` by Deathmatch's), then `M_Deathmatch_Start`, which hands the join screen
+  `M_TeamDeathmatch_Go` instead of `M_Deathmatch_Go`.
+  - **`M_Arcade_MP_Go` now takes `teams`** and *every* game it starts says `teamplay`: `1;
+    teamdamage 0` for a team game, `0` otherwise. `cv_teamplay` is a `CV_NETVAR` that nothing
+    else resets, so without the explicit `teamplay 0` the next plain Deathmatch after a team one
+    would still be played in teams. `teamdamage` is left alone outside Team Deathmatch — in coop
+    it is the operator's friendly-fire switch (`P_DamageMobj`: `!deathmatch && teamdamage`).
+  - **Teams are `teamplay 1` (Color)**, so a team *is* a `skincolor` and `TeamPlay_OnChange`
+    names it from `Color_Names`. The offered colours are `team_colors[]` = Red 3, Blue 8, Green 0,
+    Yellow 9, in that order.
+  - **The join screen** (`join_teams`, set in `M_Join_Open` from the start function and in
+    `M_Join_Remote_Open` from the invite's category) labels the colour row `TEAM` and steps
+    left/right through `team_colors` only (`M_Join_Team_Step`). On pressing in, `M_Team_Snap`
+    keeps a panel already in a team colour and puts any other on the team with fewest of the
+    panels already in, ties to the first in `team_colors` order. It writes `cv_playercolor[panel]`
+    — the same saved cvar the COLOR row always wrote. `M_TeamDeathmatch_Go` snaps again over the
+    joined panels for the route with no join screen.
+  - Hidden with Deathmatch on a one-panel cabinet (`M_Configure`).
+  - Linked cabinets: a new invite category `LKG_CAT_TEAMDM` (appended, so a cabinet built before
+    it drops the invite instead of opening a plain Deathmatch). → `cabinet-link.md`
+  - Verified by `tools/linktest.sh teamdm`: four panels a side, colours 1-8 going in, and every
+    player on both cabinets must come out as the predicted team colour with `teamplay=1
+    teamdamage=0`.
+
 - **Menu naming**: the New Game page offers **Campaign** and **Multiplayer**, where
   "Multiplayer" is *local* play on this cabinet (the old "Two Player Game" — no longer two player
   only) and uses the **`M_MULTI`** graphic, which reads "MULTIPLAYER". `M_2PLAYR` literally reads
