@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -1620,6 +1620,42 @@ case_names8() {
       the two cabinets list different players:
         host:   $h
         joiner: $j"
+}
+
+# Team Deathmatch, four a side.  Every player must end up in one of the four
+# team colours (Red 3, Blue 8, Green 0, Yellow 9) on both cabinets, a panel
+# already in a team colour keeping it and the rest balanced in join order
+# (panels lock 4 down to 1): host colours 1 2 3 4 -> 0 8 3 3, joiner
+# 5 6 7 8 -> 9 0 3 8.  The joining cabinet's join screen is a team one too,
+# which is the only way its players get team colours.  And the game is played
+# in colour teams with no friendly fire on both.
+case_teamdm() {
+    local d=$1 p=$2
+    LOCALPLAYERS=4 mkcab "$d/master"; LOCALPLAYERS=4 mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    LOCALPLAYERS=4 gamecfg "$d/master" 20; LOCALPLAYERS=4 gamecfg "$d/member" 20
+    setnames "$d/master" HA 1 2 3 4; setnames "$d/member" JB 5 6 7 8
+    run "$d/master" 60 0 -linktest -linkautohost teamdm -linkjoinpanels 4 -udpport $((p+100))
+    sleep 2
+    run "$d/member" 57 0 -linktest -linkautojoin -linkjoinpanels 4 -clientport $((p+101))
+    wait
+    expect "the host invited the other cabinet" "$d/master" "^LINKLOG .*invited other cabinets to TEAM DEATHMATCH"
+    expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to TEAM DEATHMATCH"
+    expect "the joining cabinet got its four" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=8 "
+    local h j n
+    h=$(lastline "$d/master" LINKNAMES); j=$(lastline "$d/member" LINKNAMES)
+    # teamplay 1 is Color; teamdamage 0 is no friendly fire.
+    case "$h" in "LINKNAMES teamplay=1 teamdamage=0 "*) ;; *) FAILS="$FAILS
+      the host is not playing colour teams without friendly fire: $h" ;; esac
+    case "$j" in "LINKNAMES teamplay=1 teamdamage=0 "*) ;; *) FAILS="$FAILS
+      the joining cabinet is not playing colour teams without friendly fire: $j" ;; esac
+    for n in HA1/0 HA2/8 HA3/3 HA4/3 JB1/9 JB2/0 JB3/3 JB4/8; do
+        case "$h" in *"=$n"*) ;; *) FAILS="$FAILS
+      the host does not have $n: $h" ;; esac
+        case "$j" in *"=$n"*) ;; *) FAILS="$FAILS
+      the joining cabinet does not have $n: $j" ;; esac
+    done
 }
 
 # Three cabinets, four a side, in one Campaign: twelve players.  Mark's first

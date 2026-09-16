@@ -52,6 +52,9 @@ Discord is likely to get you banned.
   press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen and one
   question asked — **which map to fight on**. The full **Multiplayer** page, with every setting on
   it, is still there for anyone who wants it.
+- **Team Deathmatch.** The same one-press deathmatch played in colour teams — **Red, Blue, Green
+  and Yellow** — with **no friendly fire**. The join screen's colour row becomes **TEAM** and
+  offers only those four; works across linked cabinets too.
 - **Smoother than 35 FPS.** Doom's simulation runs at 35 tics a second and the engine used to draw
   exactly one frame per tic. It now draws as many as the display can take, with everything moving
   interpolated between tics — so on a 60 or 144 Hz panel the motion is genuinely smoother, while the
@@ -786,12 +789,13 @@ operator guide for the restart-loop wrapper you'll want.
 
 ## Playing
 
-**New Game** offers four rows:
+**New Game** offers five rows:
 
 | | |
 | --- | --- |
 | **Campaign** | The normal game — episode, skill, play it through. One player or several: everyone who presses fire on the join screen plays it together in **co-op**, with monsters on. |
 | **Deathmatch** | Players against each other, set up already: weapons and items respawning, no monsters, no bots, five minutes on the clock. Asks which map to play on, and nothing else. |
+| **Team Deathmatch** | The same deathmatch, played in teams: Red, Blue, Green and Yellow. You can't hurt your own team. Asks which map, like Deathmatch. |
 | **Single Level** | One chosen map, straight back to the menu afterwards, on its own score table. |
 | **Multiplayer** | The page with every setting on it — map, skill, which co-op or deathmatch variant, monsters, bots. |
 
@@ -809,7 +813,16 @@ and the choice is the deathmatch's own: it does not disturb the map Single Level
 pointing at.
 
 Multiplayer here, in all of these, means everyone playing on *this* cabinet, sharing the screen.
-Deathmatch is hidden on a single-panel cabinet, alongside Multiplayer — one person can't have one.
+Deathmatch and Team Deathmatch are hidden on a single-panel cabinet, alongside Multiplayer — one
+person can't have one.
+
+**Team Deathmatch** is Deathmatch with the players split into colour teams: kills count for your
+team, and your own team's shots don't hurt you. On the join screen the **COLOR** row is called
+**TEAM** and only offers **RED, BLUE, GREEN and YELLOW**. A panel that is already one of those
+colours keeps it; any other panel is put on whichever team has the fewest players so far when it
+presses in, so a cabinet where nobody touches anything still splits evenly. Change team with
+left/right as usual. A cabinet that is invited to a linked Team Deathmatch gets the same TEAM row.
+The map page is the Deathmatch one, shared — picking an arena for one picks it for the other.
 
 **End Game** is on the main menu, at the bottom, and appears **only while a game is actually being
 played** — any kind: Campaign, Single Level or Multiplayer. On the attract screen there is

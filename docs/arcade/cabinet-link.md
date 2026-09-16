@@ -1318,7 +1318,8 @@ eight players). Their names, colours, weapon preferences and artifact uses never
 - **Test**: `names8` — four a side, every panel its own name and colour (`setnames`), and the joining
   cabinet renames panel 4 and recolours panel 3 15 s into the level with the new **`-linkcmdafter S
   "text"`** (console text S seconds of wall time into a linked level; a tic `wait` runs far behind in
-  the harness). The status now prints **`LINKNAMES`**, every player in the game as `pn=name/colour`,
+  the harness). (`LINKNAMES` has since gained a leading `teamplay=N teamdamage=N`, the team rules
+as the game is playing them; see Team Deathmatch below.) The status now prints **`LINKNAMES`**, every player in the game as `pn=name/colour`,
   and both cabinets must end with the same eight including the rename. Without the fix both listed
   `6=Player 7/0 7=Player 8/0`; with it `6=JB3/9 7=JB4NEW/8`. `names8 chaos8 campaign linkgame move8
   joinview msgfire menusetup iwadversion memberhost` pass, `make smoke` 5/5.
@@ -1987,3 +1988,15 @@ Answered by Mark on 2026-09-13; the sections above already reflect them.
    left confused; a cabinet already on its own join screen for the same game joins the earlier one.
    → *Cabinet state* and *During and after*
 6. **Master off: members keep full function on their own, sync later.** Assumed throughout.
+
+## Team Deathmatch over the link
+
+Invites carry a category byte, and Team Deathmatch is a third one, **`LKG_CAT_TEAMDM`**, appended
+after Campaign. `lkg_on_invite` drops any category it does not know, so a cabinet built before it
+ignores a Team Deathmatch invite rather than opening a plain Deathmatch join screen. The invited
+cabinet's join screen reads the category through **`LKG_Category()`** in `M_Join_Remote_Open` and
+becomes a team one (TEAM row, four colours) — which is the *only* thing that puts the remote
+players on teams, since each cabinet's players bring their own colour. `teamplay` and `teamdamage`
+themselves are `CV_NETVAR`s and arrive from the host with the rest. `-linkautohost teamdm` hosts
+one; `tools/linktest.sh teamdm` plays four a side and checks every player's colour and both rules on
+both cabinets.

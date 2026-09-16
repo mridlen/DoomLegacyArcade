@@ -18,6 +18,7 @@
 #include "m_menu.h"
 #include "r_state.h"   // rdraw_viewwidth, for the status line
 #include "g_game.h"    // players[], for the status line
+#include "d_netcmd.h"  // cv_teamplay, cv_teamdamage, for LINKNAMES
 #include "m_misc.h"
 #include "i_system.h"
 #include "m_argv.h"
@@ -2893,7 +2894,10 @@ static void  lk_net_status( void )
             }
         if( len >= (int) sizeof(buf) )  len = sizeof(buf) - 1;
         buf[len] = '\0';
-        GenPrintf( EMSG_errlog, "LINKNAMES%s\n", buf );
+        // [Arcade] The team rules too, as the game is playing them: they are
+        // NETVARs, so the joining cabinet's copy is the host's.
+        GenPrintf( EMSG_errlog, "LINKNAMES teamplay=%d teamdamage=%d%s\n",
+                   cv_teamplay.EV, cv_teamdamage.EV, buf );
     }
 }
 
