@@ -389,8 +389,21 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `max_s = newwidth/blockwidth`; when that works out to 1.0 the quad samples right up to the
     texture edge and the border bleeds in on every side. Where a patch *is* padded (`max_s < 1`)
     the clamp mode is irrelevant, because sampling never leaves [0,1] — a fringe there would come
-    from the transparent padding instead and would need the edge texels replicated. Nothing
-    observed needed that, but do not confuse the two failures.
+    from the transparent padding instead and would need the edge texels replicated. Do not
+    confuse the two failures — **and the second one did turn up**, see below.
+  - **The padded case: a dark line on the right and bottom only, reading as "drawn a pixel up and
+    to the left".** Reported on the Ultimate Doom episode 2 intermission (the Tower of Babel) and
+    then episode 3, after the `GL_CLAMP_TO_EDGE` fix had cleared episode 1. The reason episode 1
+    was fixed and 2 and 3 were not is only the patch sizes: every `WIA0xxxx` frame is 8x8 or 8x16
+    (one is 24x8), so it fills its block, while `WIA10000` is 56x40 in a 64x64 block and the
+    `WIA2xxxx` frames are 112x32, 232x24, 32x56 and so on. The quad samples up to `max_s`/`max_t`,
+    so the last column and row blend with the padding, which `Make_Mip_Block` fills with
+    transparent black. `HWR_MakePatch` now fills the **whole** padding with copies of the last
+    column and row — the whole of it, not one texel, because trilinear filtering (the cabinet's
+    setting) reads smaller mip levels where the padding is averaged further in. Patch sizes come
+    straight out of the wad's patch headers, which is the quickest way to tell which case a
+    fringe is. It also affected the `STCFN` HUD font, whose glyphs are rarely a power of two.
+    Verified the same way, crops of the E2M7 and E3M1 intermissions before and after.
   - **Do not "fix" this by forcing nearest filtering.** Note the cabinet's `gr_filtermode` is
     already set to `"Nearest"` and the render is plainly bilinear anyway, so that setting is not
     doing what it says — which is its own bug, and was not what produced the fringe.

@@ -911,6 +911,31 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                           0, 0,
                           patch, bytepp );
 
+    // [Arcade] Fill the padding with copies of the patch's last column and
+    // row.  A patch that is not a power of two sits in the top-left of a
+    // larger block, and the quad samples right up to max_s/max_t, so linear
+    // filtering blends the right and bottom edge texels with the padding --
+    // transparent black -- and the patch gets a dark line along those two
+    // sides.  On the Ultimate Doom episode 2 intermission the 56x40 tower
+    // frames (64x64 block) read as drawn a pixel up and to the left.  The
+    // episode 1 animations are all powers of two, which is why they only
+    // ever showed the GL_CLAMP fringe (r_opengl.c).  The whole padding is
+    // filled, not one texel, so the smaller mipmap levels are clean too.
+    if( newwidth > 0 && newheight > 0 )
+    {
+        int rowbytes = blockwidth * bytepp;
+        int x, y;
+        for( y = 0; y < newheight; y++ )
+        {
+            byte * row = block + (y * rowbytes);
+            byte * edge = row + ((newwidth - 1) * bytepp);
+            for( x = newwidth; x < blockwidth; x++ )
+                memcpy( row + (x * bytepp), edge, bytepp );
+        }
+        for( y = newheight; y < blockheight; y++ )
+            memcpy( block + (y * rowbytes), block + ((newheight - 1) * rowbytes), rowbytes );
+    }
+
     grPatch->max_s = (float)newwidth / (float)blockwidth;
     grPatch->max_t = (float)newheight / (float)blockheight;
 
