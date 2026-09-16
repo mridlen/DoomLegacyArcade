@@ -264,6 +264,11 @@ to anyone else running this port. Each is written up in full in the commit that 
   animations. Textures were clamped with OpenGL 1.0's `GL_CLAMP`, which samples the *border*
   colour, so filtering blended a transparent-black fringe into all four edges. Worst on the
   intermission animations, where magnification turns that fringe into a visible 2–3 pixel line.
+- **Graphics that are not a power-of-two size had a dark line on their right and bottom edges.**
+  Such a graphic is stored in the corner of a larger texture, and the empty space around it is
+  transparent black, which filtering blended into the edge. It was plainest on the Ultimate Doom
+  episode 2 and 3 intermission maps — the Tower of Babel looked drawn a pixel up and to the left —
+  and it touched the HUD font too. The empty space is now filled with copies of the edge pixels.
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and
