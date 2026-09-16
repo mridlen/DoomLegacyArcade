@@ -270,6 +270,12 @@ to anyone else running this port. Each is written up in full in the commit that 
   existed and the menu row was there, but the whole wipe was gated on the software renderer. It
   works in both now. Two latent bugs fell out of that: a wipe that hit its two-second timeout left
   freed state behind for the next one, and the screen capture ran even when the wipe was off.
+- **Invulnerability barely showed under OpenGL.** The sphere is supposed to turn the view into a
+  photographic negative — a mostly white screen — and instead it brightened slightly, like
+  night-vision goggles. The effect is a colormap, and the hardware renderer has no colormap, so all
+  it ever did with it was draw everything full bright. The view is now inverted with a blend pass
+  over the finished frame. Greyscale is the one part a fixed-function blend cannot do, so a red
+  wall comes out cyan where software makes it grey — right brightness, wrong hue.
 - **The spectre fuzz effect did not exist in OpenGL** — every partially invisible thing was drawn
   as flat translucency. The original boiling-outline effect is now reproduced on the hardware path,
   as far as a fixed-function backend can.

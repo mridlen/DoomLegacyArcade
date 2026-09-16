@@ -4772,6 +4772,48 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     if (!viewangleoffset && !camera.chase && cv_psprites.value && script_camera_on == false)
         HWR_DrawPlayerSprites();
 
+    // [Arcade] Invulnerability.  The software renderer runs every pixel of
+    // the view through the inverse colormap, which has no equivalent here --
+    // the hardware renderer only ever read fixedcolormap as "full bright",
+    // which is why the screen used to brighten slightly instead of going
+    // white.  Lay a white quad over the view cell with the PF_Invert blend
+    // (dest = white - dest) and the finished view is the negative of itself,
+    // dark areas white, which is the effect players expect.  Drawn after the
+    // weapon sprite so that it inverts too, and before the clip rect is put
+    // back so it covers this view's cell alone in a split game.
+    if( view_inverse_colormap )
+    {
+        vxtx3d_t  iv[4];
+        FSurfaceInfo_t  iSurf;
+
+        //  3--2
+        //  | /|
+        //  |/ |
+        //  0--1
+        // The view cell is the whole viewport here.  The near plane for the
+        // view is 3.99 (HWR_Clear_View), so a quad at the 2D convention's
+        // z=1 is clipped away entirely and nothing is drawn -- put it at
+        // z=4 where the player sprites are.  The fov is 90 and the aspect 1
+        // at that stage, so x and y of +/-z exactly span the viewport; a
+        // little over that, and the edges cannot be missed.
+        iv[0].x = iv[3].x = -4.2f;
+        iv[2].x = iv[1].x =  4.2f;
+        iv[0].y = iv[1].y = -4.2f;
+        iv[2].y = iv[3].y =  4.2f;
+        iv[0].z = iv[1].z = iv[2].z = iv[3].z = 4.0f;
+        iv[0].sow = iv[3].sow = 0.0f;
+        iv[2].sow = iv[1].sow = 1.0f;
+        iv[0].tow = iv[1].tow = 1.0f;
+        iv[2].tow = iv[3].tow = 0.0f;
+
+        // White source, so the blend is a plain 1 - dest.
+        iSurf.FlatColor.rgba = 0xFFFFFFFF;
+        iSurf.texflags = 0;
+        iSurf.polyflags = 0;
+        HWD.pfnDrawPolygon( &iSurf, iv, 4,
+            PF_NoTexture|PF_Modulated|PF_Invert|PF_NoDepthTest );
+    }
+
     //------------------------------------------------------------------------
     // put it off for menus etc
     if (cv_grfog.value)

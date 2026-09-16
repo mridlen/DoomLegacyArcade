@@ -124,6 +124,13 @@ extern lighttable_t*    zlight[LIGHTLEVELS][MAXLIGHTZ];
 
 extern R_TLS lighttable_t*    fixedcolormap;
 
+// [Arcade] The invulnerability colormap, by number.  Same value as p_user.c.
+#define INVERSECOLORMAP   32
+// [Arcade] Set by R_SetupFrame when this view's fixed colormap is the
+// inverse one.  The software renderer inverts per pixel through the
+// colormap; the hardware renderer has no colormap and needs to know.
+extern R_TLS boolean  view_inverse_colormap;
+
 extern R_TLS lightlev_t  extralight;      // extralight seen by most draws
 extern R_TLS lightlev_t  extralight_fog;  // partial extralight used by FF_FOG
 extern R_TLS lightlev_t  extralight_cm;   // partial extralight used by colormap->fog
