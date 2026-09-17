@@ -345,3 +345,30 @@ leaves player 1 on -1 with the rankings up and player 2 leading with the banner.
 `--cvar localplayers=4 --cvar split4=Grid` and colours 3/8/3/8 for two teams of two; for a
 free-for-all at half size use `--cvar "splitvertical=Side by Side"` (four players with one
 self-kill is a three-way tie, so no banner). `--cvar winningbanner=Off` checks the switch.
+
+### The crash it caused: team names that were never made
+
+The first cabinet Team Deathmatch with the banner segfaulted at once in `get_team_name`
+(`g_game.c`), called through `HU_Winning_Leader` → `HU_Create_TeamFragTbl`. Two faults, both
+upstream, that the banner exposed by asking for team names **every frame from the first**:
+
+- The bound was `team_num <= num_teams`. With no team created, team 0 — **Green** — read
+  `team_info[0]`, which is NULL.
+- No team had been created. Names are made only by `TeamPlay_OnChange`, and the crash dump had
+  `teamplay` 1 ("Color") with `num_teams` 0, so on the menu's route it never ran. `M_Arcade_MP_Go`
+  sets `netgame`/`server` before queuing `teamplay 1`, and a server's NETVAR change skips its own
+  OnChange (`CV_Set`, `call_enable` 0) and relies on the broadcast. Not reproduced headlessly
+  through the command line: `-teamplay`, and `teamplay 1` from the title under `-server`, both
+  named the teams.
+
+`get_team_name` now checks the bound and makes a missing name on demand from the same source
+the OnChange uses. The old dead-player team rankings had the same exposure: "Unknown team" for
+every team, and a crash if Green was playing.
+
+**Reproduced deterministically under gdb** instead: a wrapper passed to `shotsheet.py --binary`
+copies the real binary into the scratch directory and runs it under
+`gdb -batch` with a breakpoint on `TeamPlay_OnChange` whose commands are `return` / `continue`,
+so the teams are never named. With `-deathmatch -teamplay -splitscreen`, `color 0`, `color2 8`
+the old binary crashes with the cabinet's exact backtrace; the fixed one draws GREEN TEAM /
+BLUE TEAM and the banner. The wrapper needs a `legacyhome` beside it (a symlink will do),
+because `shotsheet.py` takes the home from the binary's directory.
