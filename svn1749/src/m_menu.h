@@ -67,6 +67,10 @@ void M_Init (void);
 // configures according to gamemode
 void M_Configure (void);
 
+// [Arcade] A colormap drawing hu_font in player colour `skin`; NULL when the
+// palette is not Doom's.  Shared with the HUD's team WINNING banner.
+byte *  M_Skin_Font_Map( byte skin );
+
 // [Arcade] Restart the program; does not return.
 //   game_idstr : -game short name, or NULL to keep the current game
 //   keep_packs : re-add the loaded level packs with -file, else drop them

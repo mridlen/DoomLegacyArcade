@@ -3849,7 +3849,8 @@ boolean  M_Join_Key( uint16_t key )
 // -- 256 bytes -- so it can never go stale against skintranstables, and one
 // fixed buffer per colour keeps the OpenGL cache, which is keyed by colormap
 // pointer, to one texture per glyph per colour.
-static byte *  M_Skin_Font_Map( byte skin )
+// [Arcade] Also used by the HUD's team WINNING banner (hu_stuff.c).
+byte *  M_Skin_Font_Map( byte skin )
 {
     static byte  fontmap[NUMSKINCOLORS][256];
     byte * map;

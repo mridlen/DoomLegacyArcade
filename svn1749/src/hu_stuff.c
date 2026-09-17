@@ -104,6 +104,7 @@
 #include "p_maputl.h"   // [Arcade] intercept_t, PT_ADDLINES
 #include "tables.h"     // [Arcade] finesine/finecosine
 #include "d_main.h"
+#include "m_menu.h"    // [Arcade] M_Skin_Font_Map
 
 #ifdef HWRENDER
 #include "hardware/hw_main.h"
@@ -714,6 +715,202 @@ static int HU_Center_Y( int base_h, int base_bottom )
 }
 
 
+//======================================================================
+//                       WINNING BANNER  [Arcade]
+//======================================================================
+// Deathmatch: "WINNING" across the top of the leader's view, each letter a
+// different colour and the colours marching along it, the old 8-bit way.
+// Team deathmatch: "BLUE TEAM WINNING" on every view of the leading team,
+// drawn in that team's colour.  Nobody is winning on a tie, so nothing shows
+// at the start of a round or while the lead is level.
+//
+// Placed on the second text line of each view's cell, centred: the first line
+// is where pickup messages print (the same reason HS_DemoLabel sits at y 8).
+
+// The rainbow, as palette ramps the font's red ramp 176..191 is mapped onto,
+// shade for shade (0 brightest, 15 the shadow).  Read out of PLAYPAL: red
+// 176.., orange 208.. (skipping its near-white start), yellow 224..231 then
+// the darker golds 160.., green 112.., blue 192.. (skipping its pale start),
+// magenta 250..254.
+#define HU_RAINBOW_COLORS  6
+static const byte hu_rainbow_ramp[HU_RAINBOW_COLORS][16] =
+{
+  { 176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191 },  // red
+  { 213,214,215,216,216,217,218,219,219,220,221,222,222,223,223,223 },  // orange
+  { 231,231,230,230,229,160,160,161,161,162,162,163,164,165,166,167 },  // yellow
+  { 112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127 },  // green
+  { 196,197,198,199,200,200,201,202,203,204,205,205,206,206,207,207 },  // blue
+  { 250,250,250,251,251,251,251,252,252,252,253,253,253,254,254,254 },  // magenta
+};
+
+// One fixed buffer per colour: the OpenGL patch cache is keyed by the
+// colormap pointer, so this keeps it to one texture per glyph per colour.
+// Doom palette only (see M_Skin_Font_Map); NULL elsewhere.
+static byte * HU_Rainbow_Map( int k )
+{
+    static byte  maps[HU_RAINBOW_COLORS][256];
+    static byte  built = 0;
+
+    if( ! EN_doom_etc )
+        return NULL;
+
+    if( ! built )
+    {
+        int c, i;
+        for( c = 0; c < HU_RAINBOW_COLORS; c++ )
+        {
+            for( i = 0; i < 256; i++ )
+                maps[c][i] = i;
+            for( i = 0; i < 16; i++ )
+                maps[c][176 + i] = hu_rainbow_ramp[c][i];
+            // 45 and 47 are the font's other shadow pixels, the RGB of 190/191.
+            maps[c][45] = hu_rainbow_ramp[c][14];
+            maps[c][47] = hu_rainbow_ramp[c][15];
+        }
+        built = 1;
+    }
+    return maps[k % HU_RAINBOW_COLORS];
+}
+
+// Draw a string one letter at a time, each in the next rainbow colour.
+// gametic moves the colours along the word, one step every 3 tics.  x, y and
+// the widths are all layout units, as V_SCALESTART expects.
+static void HU_Draw_Rainbow_String( int x, int y, const char * s )
+{
+    int  n;
+    char one[2];
+    one[1] = 0;
+
+    for( n = 0; s[n]; n++ )
+    {
+        // n - step, kept non-negative for the modulo.
+        int k = (n + HU_RAINBOW_COLORS - (int)((gametic / 3) % HU_RAINBOW_COLORS));
+        byte * map = HU_Rainbow_Map( k );
+        one[0] = s[n];
+        if( map )
+            V_DrawString_Mapped( x, y, 0, map, one );
+        else
+            V_DrawString( x, y, V_WHITEMAP, one );
+        x += V_StringWidth( one );
+    }
+}
+
+// Who is ahead, or -1 on a tie or with fewer than two contenders.
+// Individual: a player number.  Teams: a team number, as HU_Create_TeamFragTbl
+// numbers them (the skin colour in colour teams, the skin in skin teams).
+static int HU_Winning_Leader( void )
+{
+    fragsort_t  tab[MAXPLAYERS];
+    int  n = 0, i, best = -1, best_count = 0;
+    boolean tie = false;
+
+    if( cv_teamplay.EV )
+    {
+        n = HU_Create_TeamFragTbl( tab, NULL, NULL );
+    }
+    else
+    {
+        for( i = 0; i < MAXPLAYERS; i++ )
+        {
+            if( ! playeringame[i] )  continue;
+            tab[n].num   = i;
+            tab[n].count = ST_PlayerFrags(i);
+            n++;
+        }
+    }
+
+    if( n < 2 )  return -1;
+
+    for( i = 0; i < n; i++ )
+    {
+        if( best < 0 || tab[i].count > best_count )
+        {
+            best = tab[i].num;  best_count = tab[i].count;  tie = false;
+        }
+        else if( tab[i].count == best_count )
+            tie = true;
+    }
+    return tie ? -1 : best;
+}
+
+static void HU_Draw_Winning( void )
+{
+    static const char  win_msg[] = "WINNING";
+    byte  vind, num_views, cols, rows, col, row;
+    int   leader;
+    float sx, sy;
+
+    if( ! deathmatch )  return;
+
+    leader = HU_Winning_Leader();
+    if( leader < 0 )  return;
+
+    num_views = D_NumViews();
+    if( num_views >= 2 )
+        D_View_Grid( &cols, &rows );
+    else
+        cols = rows = 1;
+    if( cols < 1 )  cols = 1;
+    if( rows < 1 )  rows = 1;
+
+    sx = HU_Art_ScaleX();
+    sy = HU_Art_ScaleY();
+
+    for( vind = 0; vind < num_views; vind++ )
+    {
+        byte   pn = localplayer[vind];
+        char   team_msg[48];
+        const char * msg = win_msg;
+        byte * map = NULL;
+        int    cell_w, cell_h, w, x, y;
+
+        if( pn >= MAXPLAYERS || ! playeringame[pn] )  continue;
+        // The rankings cover this view while its player is dead.
+        if( HU_Rankings_For_View( vind, pn ) )  continue;
+
+        if( cv_teamplay.EV )
+        {
+            int team = (cv_teamplay.EV == 1) ? players[pn].skincolor
+                                             : players[pn].skin;
+            if( team != leader )  continue;
+            snprintf( team_msg, sizeof(team_msg), "%s %s",
+                      get_team_name(team), win_msg );
+            team_msg[sizeof(team_msg)-1] = 0;
+            msg = team_msg;
+            if( cv_teamplay.EV == 1 )
+                map = M_Skin_Font_Map( team );
+        }
+        else if( pn != leader )
+            continue;
+
+        D_Cell_Pos( (num_views >= 2) ? D_View_Cell(vind) : 0, &col, &row );
+        cell_w = vid.width / cols;
+        cell_h = vid.height / rows;
+
+        // A narrow cell (three or four columns) may not fit the team name;
+        // the colour still says which team, so drop to the bare word.
+        w = V_StringWidth( msg );
+        if( w * sx > cell_w )
+        {
+            msg = win_msg;
+            w = V_StringWidth( msg );
+        }
+
+        x = (int)(( (col * cell_w) + (cell_w - w * sx) / 2.0f ) / sx);
+        y = (int)(( row * cell_h ) / sy) + 8;
+        if( x < 0 )  x = 0;
+
+        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+        if( cv_teamplay.EV == 0 )
+            HU_Draw_Rainbow_String( x, y, msg );
+        else if( map )
+            V_DrawString_Mapped( x, y, 0, map, msg );
+        else
+            V_DrawString( x, y, V_WHITEMAP, (char*) msg );
+    }
+}
+
+
 //  Draw chat input
 //
 static void HU_Draw_Chat (void)
@@ -913,6 +1110,7 @@ void HU_Drawer(void)
         }
     }
 
+    HU_Draw_Winning();   // [Arcade]
     HU_Draw_GameOver();  // [Arcade]
     HU_Draw_Coords();   // [Arcade]
 

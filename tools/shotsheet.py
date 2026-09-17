@@ -74,7 +74,7 @@ display is then stretched to fill the monitor.  So a shot's own shape is the
 shape the monitor must be for it to look right -- which is exactly what makes
 the wrong ones obvious on the page.
 """
-import argparse, base64, os, re, shutil, struct, subprocess, sys, tempfile, zlib
+import argparse, base64, os, re, shlex, shutil, struct, subprocess, sys, tempfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, os.pardir))
@@ -147,7 +147,8 @@ STRIP_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 
 def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
-            extra_cvars=(), nomonsters=False, drawmode='Software 8bit'):
+            extra_cvars=(), nomonsters=False, drawmode='Software 8bit',
+            extra_args=(), exec_text=''):
     """Run the engine once and return (tga_path or None, info dict)."""
     rd = tempfile.mkdtemp(prefix='shotsheet.')
     info = {}
@@ -199,12 +200,13 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
         # starts a game only takes effect after the command buffer drains --
         # hence -warp on the command line and only the shot from here.
         open(os.path.join(home, 'autoexec.cfg'), 'w').write(
-            'wait %d\nscreenshot\n' % wait)
+            'wait %d\n%sscreenshot\n' % (wait, exec_text))
 
         argv = ['./doomlegacyarcade', '-game', game,
                 '-width', str(w), '-height', str(h)]
         if nomonsters:
             argv += ['-nomonsters']
+        argv += list(extra_args)
         if scene == 'game':
             argv += ['-skill', '3', '-warp', str(warp)]
         env = dict(os.environ,
@@ -351,6 +353,13 @@ def main():
                     help='set a cvar in the scratch config, repeatable -- e.g. '
                          '--cvar localplayers=4 --cvar split4="4 Columns". '
                          'Applied after the defaults, so it can override them.')
+    ap.add_argument('--args', default='',
+                    help='extra game arguments, e.g. "-deathmatch -splitscreen"')
+    ap.add_argument('--exec', dest='exec_cmd', action='append', default=[],
+                    metavar='TEXT',
+                    help='a console command run after --wait and just before '
+                         'the shot, repeatable; add "wait N" lines to space '
+                         'them -- e.g. --exec kill --exec "wait 20"')
     ap.add_argument('--title', default=None)
     ap.add_argument('--no-embed', action='store_true',
                     help='reference the PNG files beside the page instead of '
@@ -410,7 +419,9 @@ def main():
                       end='', flush=True)
                 tga, info = run_one(args.binary, w, h, scene, args.game,
                                     args.warp, args.wait, args.timeout, args.keep,
-                                    extra, args.nomonsters, args.drawmode)
+                                    extra, args.nomonsters, args.drawmode,
+                                    shlex.split(args.args),
+                                    ''.join(c + '\n' for c in args.exec_cmd))
                 it = {'w': w, 'h': h,
                       'scene': scene if len(scenes) > 1 else None}
                 if info.get('error'):
