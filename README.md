@@ -103,6 +103,11 @@ Discord is likely to get you banned.
   four categories at once, so a quick run of the first map usually takes the pacifist board without
   anyone trying. When a run is still holding one of them, **PACIFIST** or **TYSON** blinks at the top
   of the intermission.
+- **Who is winning, on your own screen.** In Deathmatch the player in the lead gets **WINNING**
+  at the top of their view, in rainbow letters that ripple along the word. In Team Deathmatch
+  every player on the leading team gets **BLUE TEAM WINNING** (or red, green, yellow), written in
+  the team's colour. Nobody gets it while the lead is tied, so it appears with the first frag and
+  moves the moment someone takes the lead. A dead player's view shows the rankings instead.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
   In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
   you can see both how long this level is taking and how the run is going. The two line up in

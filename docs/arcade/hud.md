@@ -301,3 +301,34 @@ status bar" passes happily on the *old* code, because the old code drew the text
 `160*dupy` down a screen that is `200*fdupy` tall. The property worth testing was that the row lands
 where the layout puts it, not that it stays above something. **A clean result from a check never
 shown to fail is not evidence.** → `screen-fill.md`
+
+## The WINNING banner
+
+`HU_Draw_Winning` (`hu_stuff.c`), called from `HU_Drawer`. Deathmatch only.
+
+- **Who**: `HU_Winning_Leader` — the unique top of `ST_PlayerFrags` over the players in the game,
+  or with `teamplay` on the unique top of `HU_Create_TeamFragTbl` (so the team number is the skin
+  colour in colour teams, the skin in skin teams). A tie, or fewer than two players/teams, is
+  nobody: nothing is drawn at 0-0.
+- **Where**: centred in each winning view's own cell (`D_View_Grid` + `D_Cell_Pos`), on the second
+  text line (`+8`) — the first is where pickup messages print, the same reason `HS_DemoLabel` sits
+  at y 8. A view showing the rankings (its player is dead, or holding scores) is skipped, since
+  the rankings cover it anyway. If the team string is wider than the cell (three or four columns)
+  it drops to the bare `WINNING`: the colour still names the team.
+- **Individual colour cycle**: each letter is drawn separately through one of six colormaps that
+  map the font's red ramp 176..191 onto a palette hue ramp — red, orange, yellow, green, blue,
+  magenta, read out of PLAYPAL, with each ramp's near-white start skipped. The letter's colour is
+  `(n - gametic/3) mod 6`, so the colours march along the word. Fixed per-colour buffers, because
+  the OpenGL patch cache is keyed by colormap pointer.
+- **Team colour** comes from `M_Skin_Font_Map` (`m_menu.c`, made public for this), the join
+  screen's map: font red onto the sprite green ramp, then through the skin translation, so the
+  text is the exact shades the team's sprites are drawn in. Skin teams (`teamplay 2`) have no
+  colour and draw grey.
+- Both maps return NULL outside the Doom palette (Heretic), and the text falls back to grey.
+- Drawing only; nothing here touches game state, so demos are unaffected.
+
+**Testing it headlessly** needs someone to be ahead, which `kill` provides: it credits the victim
+with a self-frag. `tools/shotsheet.py --args "-deathmatch -splitscreen" --exec kill --exec "wait 40"`
+leaves player 1 on -1 with the rankings up and player 2 leading with the banner. Add
+`--cvar color=3 --cvar color2=8 --exec "teamplay 1"` (before the `kill`) for the team version.
+`--args` and `--exec` were added to `shotsheet.py` for this.
