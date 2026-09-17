@@ -532,6 +532,14 @@ to anyone else running this port. Each is written up in full in the commit that 
   fix had no counterpart for tall screens, so the art's height followed the screen. It is now held
   to Doom's 4:3 proportions in both renderers. Nothing changes on a screen 4:3 or wider. On 5:4
   (1280x1024) the gun and the OpenGL HUD are about 6% wider, which is their correct shape.
+- **Split-screen views were tall and skinny on portrait screens.** With two players stacked (both
+  renderers), and with four players in OpenGL, everything in the 3D view was drawn twice as tall as
+  it should be. The HUD and weapon were fine. The width and height of each view were being worked
+  out from two different heights. Each view now keeps its proper shape. Two stacked players on a
+  portrait screen each get the same up-and-down view as a single player; four players each get a
+  half-size copy of the single-player view, as software already drew them. The same fix applies to
+  stacked players on a 21:9 or 32:9 screen. Nothing changes on a normal 4:3, 16:10 or 16:9 screen,
+  or for side-by-side players.
 - **The attract screen's best-times table ran together on portrait screens** (OpenGL), right after
   the fix above. The rows were being spaced by the new, smaller HUD scale while the letters were
   drawn at full-screen size. Text on full-screen pages — score boards, intermission, finale — is now

@@ -543,6 +543,71 @@ at 1366x768, and a rule with a "unless it is small" exception is how 800x600 wen
 - The demo suite reported the same 16 known Doom 2 desyncs with and without the change, and the
   same 80 demos in sync. This is render and 2D code only.
 
+### Split views on a portrait screen were twice as tall
+
+Reported straight after the above: "portrait mode multiplayer is the wrong aspect ratio. Everything
+shows tall and skinny. HUD elements and weapons look fine though", in 2 and 4 player modes. This was
+the 3D view, not the 2D layer, and it was in `R_ExecuteSetViewSize`'s **fit height** branch, which
+AUTO `viewfit` picks for every screen narrower than 4:3 (and every ultrawide one).
+
+Both renderers turn `vid.fit_width`/`vid.fit_height` into a view whose vertical to horizontal scale
+is `1.6 * fit_height / fit_width`. Software gets that from `projection_y / projection_x`. GL gets it
+from `atransform.scaley * aspect * viewport h / (scalex * viewport w)`, and every split layout's
+`gluPerspective` cancels its own viewport division. Fit height and fit width both come out at
+exactly 1.0 for a single view. The fit height branch set `fit_width` from `rdraw_viewheight`, which
+is **halved for a split**, and left `fit_height` at the full screen height, which is not. So:
+
+| layout | software | OpenGL |
+| --- | --- | --- |
+| single view | 1.0 | 1.0 |
+| side by side, columns | 1.0 | 1.0 |
+| stacked halves | **2.0** | **2.0** |
+| 2x2 | 1.0 (`fit_height` was already halved for `soft_columns`) | **2.0** |
+
+That is the report exactly: two players skinny in both renderers, four players skinny on the cabinet,
+which runs OpenGL. The HUD and weapon never read these values, which is why they looked fine. It hit
+stacked players on 21:9 and 32:9 too, which are also fit height.
+
+The fix takes width and height from the same height, per layout:
+
+- **Stacked halves fit their own height.** `fit_height` becomes the half, so each half gets the same
+  64 degrees of vertical view as a whole screen and whatever horizontal view its width then gives:
+  70 degrees at 1080x1920, and the 143/155 degrees at 21:9/32:9 in the table in the next section.
+  Before, those ultrawide rows were already right horizontally and wrong vertically. **This is a
+  choice, not the only answer.** The landscape stacked halves (fit width) crop a full screen
+  projection instead. Doing that here would be 39x35 degrees on a portrait screen, a pair of
+  binoculars.
+- **A 2x2 cell is a smaller copy of the whole screen**, so `fit_width` follows `vid.fit_height`,
+  which already measures in the right space for each renderer: half the screen in software, which
+  projects in cell pixels, and the whole screen in OpenGL, which scales the full screen projection
+  into the cell's viewport. Software is arithmetically unchanged. OpenGL now draws what software
+  always did.
+- **A single view and one row of views are untouched.** They take the old branch as it was, so a
+  reduced `viewsize` on a single view is as it was too. (Its aspect is also off under fit height, but
+  nobody runs a reduced view on a cabinet, and it is a separate change.)
+
+**Checked:**
+
+- `tools/shotsheet.py --nomonsters` in software, with 2 and 4 players, at 1080x1920, 1920x2160,
+  1366x768, 1920x1080 and 2560x720. As predicted, the two-player portrait and 32:9 shots changed and
+  every four-player software shot except 1366x768 was byte identical. 1366x768 also came out
+  "changed" at both counts, which fit width cannot do. **Re-running the unfixed binary produced
+  the fixed binary's image byte for byte**, so that was capture timing, the trap described earlier
+  in this document.
+- **OpenGL was checked at 1024x768 with `viewfit "Fit height"` forced**, since the offscreen driver
+  still offers no tall mode. That drives the same code as a portrait screen. The single view came out
+  byte identical. Two players were skinny before and correct after. In the 2x2, each cell is a half
+  size copy of the single view.
+- `make smoke` passes. `make demotest` cannot say anything here, because it runs `-nodraw` and never
+  reaches this code. On this machine, under load and with the cabinet running, it also reported
+  "ended at a different tic" and "loaded different levels" for the unfixed binary against its own
+  baseline, so its output was noise either way.
+- `tools/shotsheet.py` now forces `draw8bpp "Off"`. The cabinet's config has it on, and every shot
+  failed with "not an uncompressed 24bpp TGA (type 1, 8 bpp)".
+
+Not changed, and visible in the same captures: in OpenGL two-player the Kills/Items/Secrets block's
+letters overlap their counts. It looks the same before and after this change.
+
 ## Four players on an ultrawide: `cv_split4`
 
 `D_View_Grid` (`multiplayer-views.md`) offered 1x2 or 2x1 for two views and 2x2 for four, full stop.

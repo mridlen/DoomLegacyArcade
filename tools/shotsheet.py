@@ -175,6 +175,10 @@ def run_one(binary, w, h, scene, game, warp, wait, timeout, keep_dir,
         text = open(cfg, encoding='latin-1').read()
         settings = [('drawmode', '"%s"' % drawmode),
                     ('fullscreen', '"Yes"'),
+                    # A config with draw8bpp "On" makes the engine write a
+                    # paletted 8bpp TGA, which read_tga below refuses, and every
+                    # shot fails.
+                    ('draw8bpp', '"Off"'),
                     ('viewfit', '"AUTO"'),
                     ('localplayers', '"1"'),
                     # Without this the shots are NOT reproducible, and the way

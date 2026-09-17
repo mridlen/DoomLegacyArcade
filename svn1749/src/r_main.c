@@ -1090,7 +1090,29 @@ std_fit:
 #endif
         break;
      case 3:  // fit height
-        vid.fit_width = rdraw_viewheight * BASEVIDWIDTH / BASEVIDHEIGHT;
+        // [Arcade] Width and height have to come off the same height, or the
+        // view is stretched.  This took the width from the draw window, which
+        // is halved for a split, and left the height at the full screen -- so
+        // on a portrait screen (and an ultrawide one, which is fit height too)
+        // every stacked half and every OpenGL 2x2 cell came out twice as tall
+        // as it should be.
+        //
+        // Stacked halves fit their own height: the same 64 degrees of vertical
+        // view as a whole screen, and whatever horizontal view the half's
+        // width then gives.  A 2x2 cell is a smaller copy of the whole screen,
+        // and vid.fit_height already holds the height that copy is measured
+        // in -- half the screen in software, which projects in cell pixels,
+        // the whole screen in OpenGL, which scales the full screen projection
+        // into the cell's viewport.  A single view and side by side (one row)
+        // are exactly as they were.
+        if( view_rows >= 2 )
+        {
+            if( view_cols < 2 )
+                vid.fit_height = rdraw_viewheight;  // stacked halves
+            vid.fit_width = vid.fit_height * BASEVIDWIDTH / BASEVIDHEIGHT;
+        }
+        else
+            vid.fit_width = rdraw_viewheight * BASEVIDWIDTH / BASEVIDHEIGHT;
 #ifdef DEBUG_FIT_RATIO
     GenPrintf(EMSG_debug, "3> fit_width %i\n", vid.fit_width );
 #endif
