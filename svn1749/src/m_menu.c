@@ -6136,6 +6136,34 @@ menu_t  TimeoutsDef =
 };
 
 //===========================================================================
+//                        MESSAGES + BANNERS MENU  [Arcade]
+//===========================================================================
+
+// [Arcade] What the HUD writes over the view.  The Messages switches gate
+// the gameplay message lines (console.c), and the Winning Banner moved here
+// from Arcade Options.  The longest label, "Singleplayer Messages", measures
+// 157 against STCFN and ends at 217, clear of an "Off" value starting at 236.
+// Nothing indexes this array by position.
+menuitem_t MessagesBannersMenu[]=
+{
+    {IT_STRING | IT_CVAR,0, "Singleplayer Messages", &cv_msg_singleplayer, 0},
+    {IT_STRING | IT_CVAR,0, "Multiplayer Messages" , &cv_msg_multiplayer , 0},
+    {IT_STRING | IT_CVAR,0, "Winning Banner"       , &cv_winningbanner   , 0},
+};
+
+menu_t  MessagesBannersDef =
+{
+    "M_OPTTTL",
+    "Messages + Banners",
+    MessagesBannersMenu,
+    M_DrawGenericMenu,
+    NULL,
+    sizeof(MessagesBannersMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+//===========================================================================
 //                        ARCADE OPTIONS MENU  [Arcade]
 //===========================================================================
 
@@ -6156,8 +6184,8 @@ menuitem_t MenuOptionsMenu[]=
     {IT_SUBMENU| IT_WHITESTRING,0, "Timeouts >>"     , &TimeoutsDef     , 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
-    // [Arcade] The deathmatch WINNING banner (hu_stuff.c).
-    {IT_STRING | IT_CVAR,0, "Winning Banner"  , &cv_winningbanner , 0},
+    // [Arcade] Gameplay messages and the deathmatch WINNING banner.
+    {IT_SUBMENU| IT_WHITESTRING,0, "Messages + Banners >>", &MessagesBannersDef, 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
     // [Arcade] Networked cabinets: the settings and every other cabinet's
     // status.  Appended, and nothing indexes this array by position.

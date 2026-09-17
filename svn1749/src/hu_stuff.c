@@ -2039,14 +2039,28 @@ void Command_Chatmacro_f (void)
 // HU_Draw_Coords.  CV_SAVE, so only a -devmode session persists it.
 consvar_t cv_coords = {"coords", "0", CV_SAVE, CV_OnOff};
 
-// [Arcade] The deathmatch WINNING banner, Arcade Options -> Winning Banner.
-// Drawing only, so not a NETVAR and nothing to do with demos.
+// [Arcade] The deathmatch WINNING banner, Arcade Options -> Messages +
+// Banners -> Winning Banner.  Drawing only, so not a NETVAR and nothing to do
+// with demos.
 consvar_t cv_winningbanner = {"winningbanner", "1", CV_SAVE, CV_OnOff};
+
+// [Arcade] Gameplay messages (pickups, kills, locked doors) across the top of
+// the screen, Arcade Options -> Messages + Banners.  One switch for a single
+// player game (Campaign and Single Level alike), one for anything with more
+// than one person in it; which applies is HS_Scored_Game's answer, so the two
+// cannot disagree with the scoring about what "single player" means.  Read by
+// CONS_Printf (console.c), which still sends the line to the console when
+// they are Off.  Both Off by default: nobody at a cabinet reads them.  HUD
+// routing only -- not a NETVAR, no effect on the simulation or on demos.
+consvar_t cv_msg_singleplayer = {"msg_singleplayer", "0", CV_SAVE, CV_OnOff};
+consvar_t cv_msg_multiplayer  = {"msg_multiplayer",  "0", CV_SAVE, CV_OnOff};
 
 void HU_Register_Commands( void )
 {
     CV_RegisterVar( &cv_coords );   // [Arcade]
     CV_RegisterVar( &cv_winningbanner );   // [Arcade]
+    CV_RegisterVar( &cv_msg_singleplayer );   // [Arcade]
+    CV_RegisterVar( &cv_msg_multiplayer );    // [Arcade]
     COM_AddCommand ("say"    , Command_Say_f, CC_chat);
     COM_AddCommand ("sayto"  , Command_Sayto_f, CC_chat);
     COM_AddCommand ("sayteam", Command_Sayteam_f, CC_chat);

@@ -93,6 +93,7 @@
 #include "z_zone.h"
 #include "d_main.h"
 #include "d_clisrv.h"   // D_NumViews, for the shared-screen message rule
+#include "hs_stuff.h"   // [Arcade] HS_Scored_Game, for the Messages switches
 #include "m_argv.h"     // [Arcade] -logfile
 #include <time.h>       // [Arcade] -logfile timestamps
 
@@ -1303,6 +1304,16 @@ void GenPrintf_va (const byte emsg, const char * fmt, va_list ap)
         // draws on the second text line rather than the first, which is now
         // free -- left there so the caption does not move.
         if( (D_NumViews() > 1) || demoplayback )
+            viewnum = 5;  // console only
+
+        // [Arcade] The operator's Messages switches (Arcade Options ->
+        // Messages + Banners), one for single player and one for
+        // multiplayer.  Only the player message categories: pickups, locked
+        // doors and deathmatch kill lines all arrive as EMSG_playmsg, while
+        // EMSG_hud (pauses, players leaving) is left alone.
+        if( (ecat == EMSG_playmsg || ecat == EMSG_playmsg2)
+            && ! (HS_Scored_Game() ? cv_msg_singleplayer.EV
+                                   : cv_msg_multiplayer.EV) )
             viewnum = 5;  // console only
 
         // During game playing, honor the showmessage option.
