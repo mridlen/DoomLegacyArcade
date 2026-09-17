@@ -129,8 +129,12 @@ int  HU_FS_Display(int handle, boolean enable_draw);
 // [Arcade] Position readout, toggled from the Cheats menu.  Informational
 // only -- it does not void the run.
 extern consvar_t cv_coords;
-// [Arcade] Deathmatch WINNING banner on/off, Arcade Options.
+// [Arcade] Deathmatch WINNING banner on/off, Arcade Options -> Messages +
+// Banners.
 extern consvar_t cv_winningbanner;
+// [Arcade] Gameplay messages on the HUD, single player and multiplayer.
+extern consvar_t cv_msg_singleplayer;
+extern consvar_t cv_msg_multiplayer;
 void HU_Draw_Coords(void);
 
 #endif

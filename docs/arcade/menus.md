@@ -1022,6 +1022,22 @@ a named list — `Off`, 20, 30, 45, 60 — with the default raised from 20 to 30
   20 until the operator picks 30 on the page. See `CLAUDE.md` on `config.cfg` overriding compiled
   defaults.
 
+## Messages + Banners
+
+**Arcade Options → Messages + Banners >>** (`MessagesBannersMenu`/`MessagesBannersDef`), defined
+above `MenuOptionsMenu` like the other operator sub-pages, holds what the HUD writes over the view:
+
+- **Singleplayer Messages** (`cv_msg_singleplayer`) and **Multiplayer Messages**
+  (`cv_msg_multiplayer`), both default Off — the gameplay message lines. Behaviour in `hud.md`.
+- **Winning Banner** (`cv_winningbanner`, default On), moved here from Arcade Options. The cvar
+  kept its name, so a saved config still applies.
+
+Arcade Options stays twelve rows (`y 40..157, room for 4 more`): the banner row became the link.
+Nothing indexes either array by position. **"Singleplayer Messages" is the widest cvar label on
+the page at 157** against `STCFN`, so 60..217, clear of an `Off` value starting at 236 by 19; the
+link label "Messages + Banners >>" is 144. The page title is drawn from `M_OPTTTL` in Doom (no
+`FONTB` lumps); Heretic's `FONTB` has a `+`.
+
 ## The Video Modes page, and paging a list that used to be truncated
 
 `M_DrawVideoMode` lays the mode list out in three columns, filling down each column in turn, and it

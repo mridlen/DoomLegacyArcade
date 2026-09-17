@@ -106,6 +106,29 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Verified by counting suppressions: with a cheat generating messages, one player suppressed 0,
     four players 3, splitscreen 4; and an attract cycle suppressed 20 demo messages while a normal
     single player game suppressed none.
+- **…and off the HUD entirely by default, full screen included** — **Arcade Options → Messages +
+  Banners → Singleplayer Messages / Multiplayer Messages** (`cv_msg_singleplayer` /
+  `cv_msg_multiplayer`, `msg_singleplayer` / `msg_multiplayer`, `CV_SAVE`, both default **Off**,
+  defined in `hu_stuff.c`). Nobody at a cabinet reads a pickup line or a deathmatch kill line; they
+  only cover the view. Same block in `console.c`, same `viewnum = 5`, so they still reach the
+  console and the log.
+  - **Which switch applies is `HS_Scored_Game()`**, deliberately the scoring's own definition of
+    "single player": Campaign and Single Level solo (bots included) read the single player switch;
+    deathmatch, co-op and anything with more than one person reads the multiplayer one. Two
+    definitions would drift.
+  - **Only `EMSG_playmsg`/`EMSG_playmsg2`.** Pickups, locked doors (`PD_BLUEK` etc., msglevel 31)
+    and the obituaries in `p_inter.c` all arrive that way. `EMSG_hud` — pauses, players joining or
+    leaving — is not touched. Note the locked-door line goes too; the *oof* sound stays.
+  - **Layered on the rules above, not replacing them**: with Multiplayer Messages On, a split
+    screen or a demo still hides them. On matters for a single view in a multiplayer game — a bot
+    game, or a linked cabinet with one player.
+  - **Not gameplay**: routing only, no `PP_Random`, not a `NETVAR`, no demo header byte.
+  - `cv_showmessages` still applies underneath (the cabinet config has it at `Verbose`).
+  - Verified headlessly with temporary routing output and a `kill` from `autoexec.cfg` (the
+    obituary is an `EMSG_playmsg`), solo and `-deathmatch`, each switch alone: every case went to
+    the HUD only when its own switch was On. **The scratch config needs `localplayers "1"`** — the
+    cabinet's is `"4"`, which makes it a shared screen and hides everything, and the first pass of
+    this test read as "the switch does nothing".
 
 - **Ammo breakdown on the HUD** — element code **`b`**, new, so the compiled default is now
   **`"kahmfeistb"`**. All four ammo types with their maximum, in the small font up the right hand
@@ -305,7 +328,7 @@ shown to fail is not evidence.** → `screen-fill.md`
 ## The WINNING banner
 
 `HU_Draw_Winning` (`hu_stuff.c`), called from `HU_Drawer`. Deathmatch only, and only while
-`cv_winningbanner` (`winningbanner`, **Arcade Options → Winning Banner**, `CV_SAVE`, default On) is
+`cv_winningbanner` (`winningbanner`, **Arcade Options → Messages + Banners → Winning Banner**, `CV_SAVE`, default On) is
 on. Not a NETVAR: it only draws.
 
 - **Who**: `HU_Winning_Leader` — the unique top of `ST_PlayerFrags` over the players in the game,

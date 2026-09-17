@@ -109,7 +109,13 @@ Discord is likely to get you banned.
   the team's colour. Nobody gets it while the lead is tied, so it appears with the first frag and
   moves the moment someone takes the lead. A dead player's view shows the rankings instead. It is
   the same size as the level clock, so it shrinks with the views on a split screen. Turn it off
-  with **Options → Arcade Options → Winning Banner** (on by default).
+  with **Options → Arcade Options → Messages + Banners → Winning Banner** (on by default).
+- **No text messages over the game.** The lines Doom writes across the top of the screen —
+  "Picked up a shotgun", "You need a blue key", who fragged whom in Deathmatch — are off, because
+  nobody at a cabinet reads them and they only cover the view. They can be turned back on
+  separately for single player (Campaign and Single Level) and for multiplayer, under **Options →
+  Arcade Options → Messages + Banners** (both off by default). A split screen or an attract demo
+  never shows them either way.
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
   In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
   you can see both how long this level is taking and how the run is going. The two line up in
