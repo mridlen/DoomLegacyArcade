@@ -304,15 +304,25 @@ shown to fail is not evidence.** → `screen-fill.md`
 
 ## The WINNING banner
 
-`HU_Draw_Winning` (`hu_stuff.c`), called from `HU_Drawer`. Deathmatch only.
+`HU_Draw_Winning` (`hu_stuff.c`), called from `HU_Drawer`. Deathmatch only, and only while
+`cv_winningbanner` (`winningbanner`, **Arcade Options → Winning Banner**, `CV_SAVE`, default On) is
+on. Not a NETVAR: it only draws.
 
 - **Who**: `HU_Winning_Leader` — the unique top of `ST_PlayerFrags` over the players in the game,
   or with `teamplay` on the unique top of `HU_Create_TeamFragTbl` (so the team number is the skin
   colour in colour teams, the skin in skin teams). A tie, or fewer than two players/teams, is
   nobody: nothing is drawn at 0-0.
-- **Where**: centred in each winning view's own cell (`D_View_Grid` + `D_Cell_Pos`), on the second
-  text line (`+8`) — the first is where pickup messages print, the same reason `HS_DemoLabel` sits
-  at y 8. A view showing the rankings (its player is dead, or holding scores) is skipped, since
+- **Size**: the level clock's. `ST_overlayDrawer` divides the global `vid.dupx/dupy/fdupx/fdupy`
+  by the column count before drawing, so in a 2x2 (the cabinet's layout) or side by side the clock
+  is half size; the banner makes the same change and restores it on its single exit. The first
+  version drew at the full scale, which matched the clock in a stacked split (both 7 x 3.84 = 27px
+  in GL at 1024x768) and was twice its height in the 2x2. **Measure glyph heights with a lenient
+  colour test**: the font darkens towards the bottom, and a "bright red" filter clipped the clock
+  to 19px against the banner's 27 and made two equal sizes look different.
+- **Where**: centred in each winning view's own cell (`D_View_Grid` + `D_Cell_Pos`), in pixels
+  under `V_NOSCALE` as the clock is, one text line down (`8 * ` the *full* art scale, since the
+  pickup messages above it do not shrink with the grid) — the first line is where pickup messages
+  print, the same reason `HS_DemoLabel` sits at y 8. A view showing the rankings (its player is dead, or holding scores) is skipped, since
   the rankings cover it anyway. If the team string is wider than the cell (three or four columns)
   it drops to the bare `WINNING`: the colour still names the team.
 - **Individual colour cycle**: each letter is drawn separately through one of six colormaps that
@@ -331,4 +341,7 @@ shown to fail is not evidence.** → `screen-fill.md`
 with a self-frag. `tools/shotsheet.py --args "-deathmatch -splitscreen" --exec kill --exec "wait 40"`
 leaves player 1 on -1 with the rankings up and player 2 leading with the banner. Add
 `--cvar color=3 --cvar color2=8 --exec "teamplay 1"` (before the `kill`) for the team version.
-`--args` and `--exec` were added to `shotsheet.py` for this.
+`--args` and `--exec` were added to `shotsheet.py` for this. For the cabinet's 2x2, add
+`--cvar localplayers=4 --cvar split4=Grid` and colours 3/8/3/8 for two teams of two; for a
+free-for-all at half size use `--cvar "splitvertical=Side by Side"` (four players with one
+self-kill is a three-way tie, so no banner). `--cvar winningbanner=Off` checks the switch.

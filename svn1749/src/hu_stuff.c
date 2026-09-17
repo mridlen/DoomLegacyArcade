@@ -726,6 +726,13 @@ static int HU_Center_Y( int base_h, int base_bottom )
 //
 // Placed on the second text line of each view's cell, centred: the first line
 // is where pickup messages print (the same reason HS_DemoLabel sits at y 8).
+//
+// Drawn the size of the level clock beside it, which ST_overlayDrawer shrinks
+// by the column count: in a 2x2 the clock is half size, and a full size banner
+// towered over it.  The same scale change is made here, the same way (the
+// global vid scale, floats divided and integers rounded to them), and the text
+// is placed in pixels with V_NOSCALE as the clock is, so nothing depends on
+// which of the two scales a position was multiplied by.
 
 // The rainbow, as palette ramps the font's red ramp 176..191 is mapped onto,
 // shade for shade (0 brightest, 15 the shadow).  Read out of PLAYPAL: red
@@ -773,9 +780,9 @@ static byte * HU_Rainbow_Map( int k )
 }
 
 // Draw a string one letter at a time, each in the next rainbow colour.
-// gametic moves the colours along the word, one step every 3 tics.  x, y and
-// the widths are all layout units, as V_SCALESTART expects.
-static void HU_Draw_Rainbow_String( int x, int y, const char * s )
+// gametic moves the colours along the word, one step every 3 tics.  x and y
+// are pixels (V_NOSCALE); sx is the art scale the letters are drawn at.
+static void HU_Draw_Rainbow_String( int x, int y, float sx, const char * s )
 {
     int  n;
     char one[2];
@@ -791,7 +798,7 @@ static void HU_Draw_Rainbow_String( int x, int y, const char * s )
             V_DrawString_Mapped( x, y, 0, map, one );
         else
             V_DrawString( x, y, V_WHITEMAP, one );
-        x += V_StringWidth( one );
+        x += (int)( V_StringWidth( one ) * sx );
     }
 }
 
@@ -837,10 +844,12 @@ static void HU_Draw_Winning( void )
 {
     static const char  win_msg[] = "WINNING";
     byte  vind, num_views, cols, rows, col, row;
-    int   leader;
-    float sx, sy;
+    int   leader, line_y;
+    float sx;
+    byte  sv_dupx  = vid.dupx,  sv_dupy  = vid.dupy;
+    float sv_fdupx = vid.fdupx, sv_fdupy = vid.fdupy;
 
-    if( ! deathmatch )  return;
+    if( ! deathmatch || ! cv_winningbanner.EV )  return;
 
     leader = HU_Winning_Leader();
     if( leader < 0 )  return;
@@ -853,8 +862,20 @@ static void HU_Draw_Winning( void )
     if( cols < 1 )  cols = 1;
     if( rows < 1 )  rows = 1;
 
+    // One text line down, at the full scale: the messages above it do not
+    // shrink with the grid.
+    line_y = (int)( 8 * HU_Art_ScaleY() );
+
+    if( cols >= 2 )
+    {
+        vid.fdupx = sv_fdupx / (float)cols;
+        vid.fdupy = sv_fdupy / (float)cols;
+        vid.dupx  = (byte)(vid.fdupx + 0.5f);
+        vid.dupy  = (byte)(vid.fdupy + 0.5f);
+        if( vid.dupx < 1 )  vid.dupx = 1;
+        if( vid.dupy < 1 )  vid.dupy = 1;
+    }
     sx = HU_Art_ScaleX();
-    sy = HU_Art_ScaleY();
 
     for( vind = 0; vind < num_views; vind++ )
     {
@@ -896,18 +917,22 @@ static void HU_Draw_Winning( void )
             w = V_StringWidth( msg );
         }
 
-        x = (int)(( (col * cell_w) + (cell_w - w * sx) / 2.0f ) / sx);
-        y = (int)(( row * cell_h ) / sy) + 8;
+        x = (col * cell_w) + (int)( (cell_w - w * sx) / 2.0f );
+        y = (row * cell_h) + line_y;
         if( x < 0 )  x = 0;
 
-        V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH );
+        V_SetupDraw( 0 | V_NOSCALE | V_SCALEPATCH );
         if( cv_teamplay.EV == 0 )
-            HU_Draw_Rainbow_String( x, y, msg );
+            HU_Draw_Rainbow_String( x, y, sx, msg );
         else if( map )
             V_DrawString_Mapped( x, y, 0, map, msg );
         else
             V_DrawString( x, y, V_WHITEMAP, (char*) msg );
     }
+
+    // Single exit: the scale is always put back.
+    vid.dupx  = sv_dupx;   vid.dupy  = sv_dupy;
+    vid.fdupx = sv_fdupx;  vid.fdupy = sv_fdupy;
 }
 
 
@@ -2014,9 +2039,14 @@ void Command_Chatmacro_f (void)
 // HU_Draw_Coords.  CV_SAVE, so only a -devmode session persists it.
 consvar_t cv_coords = {"coords", "0", CV_SAVE, CV_OnOff};
 
+// [Arcade] The deathmatch WINNING banner, Arcade Options -> Winning Banner.
+// Drawing only, so not a NETVAR and nothing to do with demos.
+consvar_t cv_winningbanner = {"winningbanner", "1", CV_SAVE, CV_OnOff};
+
 void HU_Register_Commands( void )
 {
     CV_RegisterVar( &cv_coords );   // [Arcade]
+    CV_RegisterVar( &cv_winningbanner );   // [Arcade]
     COM_AddCommand ("say"    , Command_Say_f, CC_chat);
     COM_AddCommand ("sayto"  , Command_Sayto_f, CC_chat);
     COM_AddCommand ("sayteam", Command_Sayteam_f, CC_chat);

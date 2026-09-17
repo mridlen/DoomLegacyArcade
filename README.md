@@ -107,7 +107,9 @@ Discord is likely to get you banned.
   at the top of their view, in rainbow letters that ripple along the word. In Team Deathmatch
   every player on the leading team gets **BLUE TEAM WINNING** (or red, green, yellow), written in
   the team's colour. Nobody gets it while the lead is tied, so it appears with the first frag and
-  moves the moment someone takes the lead. A dead player's view shows the rankings instead.
+  moves the moment someone takes the lead. A dead player's view shows the rankings instead. It is
+  the same size as the level clock, so it shrinks with the views on a split screen. Turn it off
+  with **Options → Arcade Options → Winning Banner** (on by default).
 - **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
   In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
   you can see both how long this level is taking and how the run is going. The two line up in
