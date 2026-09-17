@@ -870,9 +870,11 @@ void  set_team_name( int team_num, const char * str )
 {
     // Create the team if it does not exist.
     // Because of the complexity, for now, will create team at init.
-    get_team( team_num );
+    // [Arcade] get_team returns NULL past MAXTEAMS, and then there is no
+    // slot to name: the old "<= num_teams" test let that through.
+    if( ! get_team( team_num ) )
+        return;
 
-    if( team_num <= num_teams )
     {
         char * name = team_info[team_num]->name;
         if( name )
@@ -883,13 +885,35 @@ void  set_team_name( int team_num, const char * str )
     }
 }
 
+// [Arcade] Two fixes, found when the HUD's WINNING banner started asking for
+// team names every frame and the cabinet crashed starting Team Deathmatch.
+//
+// The bound was "<= num_teams", one too many: with no team created yet, team
+// 0 (Green) read team_info[0], which is NULL.  And no team had been created,
+// because the names are only made by TeamPlay_OnChange, which does not always
+// run: M_Arcade_MP_Go sets netgame and server before queuing "teamplay 1",
+// and a server's NETVAR change skips its own OnChange and relies on the
+// broadcast coming back -- which, starting this way, evidently never runs it.  The
+// crash dump had teamplay 1 ("Color") and num_teams 0.
+//
+// So a missing name is made here, on demand, from the same source
+// TeamPlay_OnChange uses.  The old team rankings used to show "Unknown team"
+// for every team but Green -- and crash on Green -- the same way.
 char * get_team_name( int team_num )
 {
-    if( team_num <= num_teams )
+    if( team_num < 0 || team_num >= MAXTEAMS )
+        return "Unknown team";
+
+    if( team_num >= num_teams || team_info[team_num]->name == NULL )
     {
-        if( team_info[team_num]->name )
-            return team_info[team_num]->name;
+        if( cv_teamplay.EV == 1 && team_num < NUMSKINCOLORS )
+            set_team_name( team_num, Color_Names[team_num] );
+        else if( cv_teamplay.EV == 2 && team_num < numskins && skins[team_num] )
+            set_team_name( team_num, skins[team_num]->name );
     }
+
+    if( team_num < num_teams && team_info[team_num]->name )
+        return team_info[team_num]->name;
     return "Unknown team";
 }
 
