@@ -6156,6 +6156,8 @@ menuitem_t MenuOptionsMenu[]=
     {IT_SUBMENU| IT_WHITESTRING,0, "Timeouts >>"     , &TimeoutsDef     , 0},
     {IT_STRING | IT_CVAR,0, "Attract Volume"  , &cv_attractvolume , 0},
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
+    // [Arcade] The deathmatch WINNING banner (hu_stuff.c).
+    {IT_STRING | IT_CVAR,0, "Winning Banner"  , &cv_winningbanner , 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
     // [Arcade] Networked cabinets: the settings and every other cabinet's
     // status.  Appended, and nothing indexes this array by position.
