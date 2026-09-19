@@ -211,6 +211,11 @@ void S_ResumeSound(void);
 //
 // Updates music & sounds
 //
+// [Arcade] Reconcile the mixer with the volume cvars, including the attract
+// scaling.  Called every pass of D_DoomLoop and once at startup, so the mixer
+// is right before the title music can start.
+void S_Update_Volumes(void);
+
 void S_UpdateSounds(void);
 
 //  volume : volume control,  0..31

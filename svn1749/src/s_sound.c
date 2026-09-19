@@ -1384,6 +1384,46 @@ static int S_Attract_Scaled( int vol )
 }
 
 
+// Reconcile the mixer volumes with the volume cvars.
+//
+// Update sound/music volumes, if changed manually at console.
+//
+// [Arcade] ... and scale them down while the attract cycle is what is on
+// screen.  This is the only place the mixer volume is reconciled with the
+// cvars, so the attract scaling has to happen *here*: setting the mixer
+// directly from somewhere else would be undone by this comparison on the next
+// pass.  Coming out of attract into a game is likewise automatic -- the target
+// changes and this restores full volume.
+//
+// [Arcade] Split out of S_UpdateSounds and called from D_DoomLoop on every
+// pass, plus once at startup as soon as S_Init has brought the mixer up.
+// S_UpdateSounds is called only when a tic advanced, and at boot the first tic
+// does not run until the local client/server handshake finishes -- measured 51
+// tics, 1.4 seconds, during which the title music had already started and was
+// playing at full volume.  That is the cabinet "coming in hot and then calming
+// down".  The mixer must already be at attract volume before anything can play
+// through it, which means before D_DoomLoop, not one tic into it.
+//
+// Not skipped in devmode, unlike most cabinet behaviour: an operator changing
+// this setting needs to hear what it does, and there is no lockdown reason to
+// suppress it.
+void S_Update_Volumes(void)
+{
+    int  want_sfx, want_mus;
+
+    if( dedicated )
+        return;   // S_Init did not bring a mixer up
+
+    want_sfx = S_Attract_Scaled( cv_soundvolume.value );
+    want_mus = S_Attract_Scaled( cv_musicvolume.value );
+
+    if (mix_sfxvolume != want_sfx)
+        S_SetSfxVolume(want_sfx);
+    if (mix_musicvolume != want_mus)
+        S_SetMusicVolume(want_mus);
+}
+
+
 // Called by D_DoomLoop upon tics.
 // Not called when dedicated.
 void S_UpdateSounds(void)
@@ -1395,28 +1435,7 @@ void S_UpdateSounds(void)
 
     mobj_t *listener = displayplayer_ptr->mo;
 
-    // Update sound/music volumes, if changed manually at console.
-    //
-    // [Arcade] ... and scale them down while the attract cycle is what is on
-    // screen.  This is the only place the mixer volume is reconciled with the
-    // cvars, and it runs every frame from D_DoomLoop whatever the gamestate,
-    // so the attract scaling has to happen *here*: setting the mixer directly
-    // from somewhere else would be undone by this comparison on the next
-    // frame.  Coming out of attract into a game is likewise automatic -- the
-    // target changes and this restores full volume within a frame.
-    //
-    // Not skipped in devmode, unlike most cabinet behaviour: an operator
-    // changing this setting needs to hear what it does, and there is no
-    // lockdown reason to suppress it.
-    {
-        int  want_sfx = S_Attract_Scaled( cv_soundvolume.value );
-        int  want_mus = S_Attract_Scaled( cv_musicvolume.value );
-
-        if (mix_sfxvolume != want_sfx)
-            S_SetSfxVolume(want_sfx);
-        if (mix_musicvolume != want_mus)
-            S_SetMusicVolume(want_mus);
-    }
+    S_Update_Volumes();
 
 #ifdef HW3SOUND
     if (hws_mode != HWS_DEFAULT_MODE)

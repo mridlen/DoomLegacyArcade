@@ -226,13 +226,45 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   silent attract screen, `100` is the stock behaviour. Sound and music are scaled together: the
   question being asked is "how loud is the cabinet when nobody is playing", and that is one
   question.
-  - **It has to be applied in `S_UpdateSounds` (`s_sound.c`), and nowhere else.** That function is
-    the single place the mixer volume is reconciled with the cvars, it runs every frame from
-    `D_DoomLoop` whatever the gamestate, and it re-asserts `cv_soundvolume`/`cv_musicvolume` on any
-    mismatch. So setting the mixer directly from anywhere else — at the start of a demo, say — is
-    silently undone on the next frame. `S_Attract_Scaled()` changes the *target* that comparison
-    comes from, which is why coming out of attract into a game restores full volume by itself,
-    within a frame, with no second hook.
+  - **It has to be applied in the one reconcile, `S_Update_Volumes` (`s_sound.c`), and nowhere
+    else.** That function is the single place the mixer volume is reconciled with the cvars, and it
+    re-asserts `cv_soundvolume`/`cv_musicvolume` on any mismatch. So setting the mixer directly from
+    anywhere else — at the start of a demo, say — is silently undone on the next pass.
+    `S_Attract_Scaled()` changes the *target* that comparison comes from, which is why coming out of
+    attract into a game restores full volume by itself, with no second hook.
+    - It **used to live inside `S_UpdateSounds`**, on the reasoning that `S_UpdateSounds` "runs
+      every frame from `D_DoomLoop` whatever the gamestate". That stopped being true when the
+      positional-sound update was made tic-paced (`if( tic_advanced ) S_UpdateSounds();`, correct
+      in itself — calling it several times per tic is repeated effort, not finer sound), and the
+      volume went tic-paced with it as collateral. **Volume is not tic-paced work.** It is now its
+      own function, called from `D_DoomLoop` on **every** pass and from `S_UpdateSounds` as before.
+  - **The mixer must already be at attract volume before anything can play through it, which means
+    before `D_DoomLoop`, not one tic into it.** This shipped as a real cabinet bug: the attract
+    sound *"comes in hot and then calms down"* at boot. `S_Init` brings the mixer up at the cvars'
+    full volume, the title music starts from the first `D_Display`, and the first reconcile does not
+    happen until the first game tic runs — which is not immediate, because the local client/server
+    handshake has to finish first. Measured on this cabinet's own config (`attractvolume 25`,
+    `musicvolume 5`, `soundvolume 22`) with temporary instrumentation on every mixer change:
+
+      | | before | after |
+      | --- | --- | --- |
+      | `S_Init` sets the mixer | t=0, sfx 22 / music 5 | t=0, sfx 22 / music 5 |
+      | attract scaling applied | **t=51** (1.4 s) | **t=0** |
+      | title music starts | t=1, at music **5** | t=2, at music **1** |
+
+    So the cabinet advertised at 5x the intended music volume and 4.4x the sfx volume for the first
+    second and a half of every boot. The fix is one extra `S_Update_Volumes()` call in `D_DoomMain`
+    immediately after `S_Init`, while nothing is playing yet.
+    - **Not a fade.** `I_PlaySong` uses `Mix_FadeInMusic` with a 400 ms ramp, which ramps *to*
+      whatever `Mix_VolumeMusic` currently is — so it was a clean fade in to the wrong volume, and
+      the audible "calming down" 1.4 s later was the reconcile finally landing. Worth stating
+      because a volume that ramps looks like a fade setting, and the fade was innocent.
+    - The 51 tics are not a constant: that was a software-drawmode headless run. The cabinet does a
+      real OpenGL mode switch on the way into the loop, so its window is at least that long.
+    - Starting a game still restores full volume, and now does so *earlier* rather than later — a
+      `-warp` run reconciles at t=0 (attract, because `demo_ctrl` is not set yet) and restores
+      sfx 22 / music 5 at t=10 when the level actually starts, instead of never having dropped.
+      Both ends of the round trip were re-measured; only the timing moved.
   - **A menu open over the attract screen counts as "in use", not as attract.** The moment somebody
     presses a key the cabinet is being used, even though the attract cycle is technically still what
     is on screen — any keypress over a demo raises the menu — and the menu's own sounds were being
