@@ -1685,6 +1685,10 @@ has to compile both ways. The Makefile already had the Windows libraries (`-lssl
   - The arguments are UTF-8 from SDL's WinMain and are converted for `CreateProcessW`.
   - The executable comes from `GetModuleFileNameW`, not `argv[0]`.
   - Handles are not inherited, and the process then `exit(0)`s as `I_Quit` does.
+  - **A new process does not get the foreground for free**, which is what made Devmode Restart come
+    back behind whatever else was open — intermittently, since it depended on what held the
+    foreground at the moment this one let go of it. `AllowSetForegroundWindow` here and
+    `I_Raise_Window` in the new process fix it; written up in `menus.md`.
   - **Consequence: the restarted program is a new process.** Anything that launches the cabinet
     and waits for it to exit sees an exit at every restart. A "restart it when it quits" wrapper
     would start a second copy. Launch the exe directly, from a shortcut or the Startup folder.

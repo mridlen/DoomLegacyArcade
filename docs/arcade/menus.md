@@ -570,6 +570,35 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       checked with the usual dummy harness; see `CLAUDE.md`. The control shot is what caught it —
       a title screen captured the same way was equally black, which is the only reason the first
       all-black splash capture was not read as the text failing to draw.
+  - **The new copy takes the foreground itself** (`I_Raise_Window`, `sdl/i_video.c`). A restart is a
+    new process on Windows (`M_Restart_Windows`), and a new process's window does not simply become
+    the foreground one: `SetForegroundWindow` — which is what `SDL_RaiseWindow` calls — is refused
+    unless the caller already owns the foreground or has been granted it, and a refused call
+    silently flashes the taskbar button instead of raising anything. **This is why Devmode Restart
+    came back behind the browser, and why it did it only sometimes.** The restarting process
+    destroys its window in `D_Quit_Save` *before* it starts the new copy, so by then the foreground
+    has already passed to whatever was behind the game; if that left the desktop with no foreground
+    owner the request was allowed, and if another program had taken it the request was refused.
+    Which of the two happened depends on what else was running, so the same keypress worked one
+    time and not the next. The fix is in three parts, and the third is the one that does not depend
+    on Windows' goodwill:
+    - `AllowSetForegroundWindow( ASFW_ANY )` before `D_Quit_Save`, while this process still owns
+      the foreground and the keypress — after the window is gone the right to hand the foreground
+      on has gone with it — and `AllowSetForegroundWindow( pi.dwProcessId )` again by id once
+      `CreateProcessW` has returned one.
+    - `SDL_HINT_FORCE_RAISEWINDOW`, so SDL's own raises (the mode-change path in `ogl_sdl.c`)
+      force activation too. Set by its string rather than the macro, which an SDL older than
+      2.0.22 does not define.
+    - `I_Raise_Window` attaches this thread's input queue to the foreground thread's with
+      `AttachThreadInput`, which makes the two one input state so the request is granted, then
+      `BringWindowToTop`/`SetForegroundWindow`/`SetActiveWindow`/`SetFocus`, then detaches. It
+      restores a minimized window only when `IsIconic` says it is one: `SW_RESTORE` on a window
+      that is not would undo the fullscreen size SDL had just set.
+    It is called once, from the tail of `I_RequestFullGraphics` where `graphics_state` becomes
+    `VGS_fullactive` — the single funnel both renderers pass through once the real window exists,
+    so it covers every launch and not only a restart. That is deliberate on a cabinet: the game is
+    what the person in front of it is meant to be using, so it takes the screen and the keyboard.
+    On Linux it is the plain `SDL_RaiseWindow`; the Win32 calls are `#ifdef __WIN32__`.
   - Entries whose IWAD is missing are hidden, via `D_Game_Available()` (`d_main.c`), which tries
     each candidate filename from `game_desc_table` through the engine's own `Search_doomwaddir` —
     so the normal search paths and alternate names (`doomu.wad`/`doom_se.wad`/`doom.wad`) all

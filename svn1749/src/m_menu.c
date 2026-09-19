@@ -5413,6 +5413,13 @@ static void M_Restart_Windows( char ** argv )
     // or sockets open after it has gone.
     if( ! CreateProcessW( exe, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) )
         goto fail;
+    // [Arcade] Name the new process specifically as well as the blanket
+    // grant above, so it may take the foreground when its window comes up.
+    // Windows refuses SetForegroundWindow from a process that does not own
+    // the foreground, and by then this one will not exist.  See
+    // I_Raise_Window (sdl/i_video.c), which does not depend on this.
+    AllowSetForegroundWindow( pi.dwProcessId );
+
     CloseHandle( pi.hThread );
     CloseHandle( pi.hProcess );
     free( line );
@@ -5574,6 +5581,16 @@ void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const ch
     // QUIT_normal is required: the other severities force a 3 second sleep
     // in D_Quit_Save.  Suppress the ENDOOM screen it would otherwise print,
     // since we are relaunching rather than returning to a terminal.
+#ifdef __WIN32__
+    // [Arcade] Hand the foreground on to the copy that is about to be
+    // started.  It has to be done here, while this process still owns the
+    // foreground window and the keypress that got us here: D_Quit_Save
+    // destroys the window, and after that the right to give the foreground
+    // away has gone with it.  The new process's id is not known yet, so the
+    // grant is ASFW_ANY; M_Restart_Windows repeats it by id once it has one.
+    AllowSetForegroundWindow( ASFW_ANY );
+#endif
+
     cv_textout.EV = 0;
     D_Quit_Save( QUIT_normal );
 
