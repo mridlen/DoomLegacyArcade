@@ -96,6 +96,11 @@ static int testbpp = 0;
 #include "r_threads.h"
   // [Arcade] R_Threads_Parallel, for the draw8bpp expansion
 
+#if defined(SDL2) && defined(__WIN32__)
+#include <SDL_syswm.h>
+  // [Arcade] SDL_GetWindowWMInfo, to reach the HWND for I_Raise_Window
+#endif
+
 
 //Hudler: 16/10/99: added for OpenGL gamma correction
 RGBA_t  gamma_correction = {0x7F7F7F7F};
@@ -1824,6 +1829,12 @@ void I_StartupGraphics( void )
         }
     }
 
+    // [Arcade] Make SDL's own SDL_RaiseWindow calls take the foreground
+    // rather than flash the taskbar (SDL_HINT_FORCE_RAISEWINDOW, SDL 2.0.22
+    // and later; named by its string so an older SDL header still builds).
+    // I_Raise_Window does not rely on this.
+    SDL_SetHint( "SDL_HINT_FORCE_RAISEWINDOW", "1" );
+
     native_bitpp = 0;
     int num_video_displays = SDL_GetNumVideoDisplays();
     for(vi=0; vi < num_video_displays; vi++)
@@ -1902,6 +1913,76 @@ void I_StartupGraphics( void )
 abort_error:
     // cannot return without a display screen
     I_Error("StartupGraphics Abort\n");
+}
+
+
+// [Arcade] Bring the game window to the front and give it the keyboard.
+//
+// This is a cabinet, not a desktop program: whatever else is on the screen,
+// the game is what the person in front of it is meant to be using, and it
+// gets the input.  It matters most after a restart -- Devmode Restart, a
+// game switch, a pack unload, Select Game Sync -- because that is a *new
+// process* (see M_Restart_Windows), and a new process's window does not
+// simply become the foreground one.
+//
+// On Windows it usually does not.  SetForegroundWindow, which is what
+// SDL_RaiseWindow calls, is refused unless the caller already owns the
+// foreground or has been granted it; a refused call silently flashes the
+// taskbar button instead.  The restarting process destroys its own window in
+// D_Quit_Save *before* it starts the new copy, so by the time the new window
+// exists the foreground has already gone to whatever was behind the game --
+// and whether that leaves the desktop with no foreground owner (where the
+// request is allowed) or with another program holding it (where it is not)
+// depends on what else is running.  That is why the hotkey came back to the
+// front sometimes and hid behind the browser the rest of the time.
+//
+// Attaching this thread's input queue to the current foreground thread's
+// makes the two one input state, so the request comes from the foreground
+// thread's point of view and is granted.  The attach is undone immediately.
+// SDL_HINT_FORCE_RAISEWINDOW makes SDL's own raises (the mode-change path in
+// ogl_sdl.c) do the same thing, on SDL 2.0.22 and later; the code below does
+// not depend on the hint being honoured.
+static
+void I_Raise_Window( void )
+{
+#ifdef SDL2
+    if( sdl_window == NULL )  return;
+    if( sdl_window_unshown )  return;   // the hidden startup window
+
+    SDL_RaiseWindow( sdl_window );
+
+#ifdef __WIN32__
+    {
+        SDL_SysWMinfo  wmi;
+        SDL_VERSION( &wmi.version );
+        if( SDL_GetWindowWMInfo( sdl_window, &wmi )
+            && wmi.subsystem == SDL_SYSWM_WINDOWS )
+        {
+            HWND  hwnd = wmi.info.win.window;
+            HWND  fgwnd = GetForegroundWindow();
+            DWORD  self_thread = GetCurrentThreadId();
+            DWORD  fg_thread = fgwnd ? GetWindowThreadProcessId( fgwnd, NULL ) : 0;
+            BOOL  attached = FALSE;
+
+            if( fg_thread && (fg_thread != self_thread) )
+                attached = AttachThreadInput( self_thread, fg_thread, TRUE );
+
+            // Only when minimized: SW_RESTORE on a window that is not would
+            // undo the fullscreen size SDL just set.
+            if( IsIconic( hwnd ) )
+                ShowWindow( hwnd, SW_RESTORE );
+
+            BringWindowToTop( hwnd );
+            SetForegroundWindow( hwnd );
+            SetActiveWindow( hwnd );
+            SetFocus( hwnd );
+
+            if( attached )
+                AttachThreadInput( self_thread, fg_thread, FALSE );
+        }
+    }
+#endif
+#endif
 }
 
 
@@ -2070,6 +2151,11 @@ found_modes:
     I_StartupMouse( false );
 
     graphics_state = VGS_fullactive;
+
+    // [Arcade] Take the screen and the keyboard.  This is the one funnel both
+    // renderers pass through once the real window exists, and it is where a
+    // restarted program claims the foreground back.
+    I_Raise_Window();
 
 #if defined(MAC_SDL) && defined( DEBUG_MAC )
     SDL_Delay( 4 * 1000 );  // [WDJ] DEBUG: to see if errors are due to startup or activity

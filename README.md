@@ -1049,6 +1049,14 @@ config on the way out**, and comes back up locked. There is no separate save ste
 a desktop; the settings are saved by the same code that saves them when a `-devmode` session quits
 normally.
 
+**The relaunched program comes back in front.** A restart starts a fresh copy of the program, and on
+Windows a fresh copy does not get the screen and the keyboard just for asking — if something else
+has the foreground, Windows refuses and flashes the taskbar button instead. That is why Devmode
+Restart used to come back hidden behind a browser some of the time and work fine the rest. It now
+takes the foreground for itself, on every launch, not only a restart: this is a cabinet, so the
+game is meant to be the thing in front of you. If you are running it windowed on a desktop, expect
+it to steal focus when it starts.
+
 **The key only works at the attract screen.** During a game, an intermission, a finale or an
 initials entry it does nothing at all. That is deliberate — the restart throws away whatever is
 running, so without the rule a stray press could take a player's run, or a record they had earned
