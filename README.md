@@ -166,6 +166,19 @@ Discord is likely to get you banned.
   routine; there is no way to keep one and not the other. Turning it on or off is safe for the
   high-score board either way: each record demo remembers which way it was set and replays
   correctly, so old records keep working after you change it.
+- **The pickup flash looks like Doom again.** Picking up health, armour, ammo or a key used to
+  paint a solid green block over that number on the status bar — a DoomLegacy extra that reads as a
+  graphics glitch rather than as a signal, since nothing on screen explains it. **Pickup Flash**
+  (Options → Effects Options, operator-only) now ships as **Vanilla**: no green block, just the
+  yellow screen tint the original game gives you when you pick something up. `Status` is still
+  there if you want the old behaviour back, along with `Half` (a gentler tint) and `Off`.
+- **Translucency is on again.** The cabinet had been running with **Translucency** set to `Off`,
+  so the see-through things — plasma, the various DoomLegacy translucent sprites — were drawn
+  solid. It now ships as **Auto**, which is what DoomLegacy intends: translucent wherever the game
+  says a thing is translucent, and it leaves any DEH/BEX patch a wad brings with it in charge of
+  its own. Same page, also operator-only.
+  - Both of these are purely how the game *looks*. Neither affects the high-score board, and
+    neither changes how a recorded demo plays back.
 - **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
   readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
   except the position readout, which only shows information.

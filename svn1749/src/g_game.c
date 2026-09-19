@@ -664,7 +664,12 @@ CV_PossibleValue_t idlewarntime_cons_t[] = {
 consvar_t cv_idlewarntime = { "idlewarntime", "15", CV_SAVE, idlewarntime_cons_t };
 
 consvar_t cv_showmessages     = {"showmessages","2",CV_SAVE | CV_CALL | CV_NOINIT,showmessages_cons_t,ShowMessage_OnChange};
-consvar_t cv_pickupflash      = {"pickupflash" ,"1",CV_SAVE, pickupflash_cons_t};
+// [Arcade] Default "Vanilla" (3), was "Status" (1).  "Status" fills a
+// FLASH_COLOR (palette 0x72, a green) rectangle behind the HUD numbers and
+// over the keys box on a pickup; on the cabinet that reads as a graphical
+// glitch rather than a signal.  "Vanilla" is the original Doom yellow screen
+// tint.  Render-only: no PP_Random, not CV_NETVAR, not in the demo header.
+consvar_t cv_pickupflash      = {"pickupflash" ,"3",CV_SAVE, pickupflash_cons_t};
 consvar_t cv_weapon_recoil    = {"weaponrecoil","0",CV_SAVE | CV_NETVAR, CV_OnOff};  // Boom weapon recoil
 
 consvar_t cv_allowturbo       = {"allowturbo"  ,"0",CV_NETVAR | CV_CALL, CV_YesNo, AllowTurbo_OnChange};
