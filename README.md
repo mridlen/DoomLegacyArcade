@@ -191,6 +191,8 @@ Discord is likely to get you banned.
   the attract screen silent, `100` is the old behaviour. Defaults to 50. **Pressing anything brings
   the sound straight back up to normal** — the menu you land on should not be quieter than the demo
   that got your attention — and it drops back down again if you walk away without starting a game.
+  The attract screen comes up at this volume from the first note at boot; it used to spend the first
+  second and a half at full volume before settling.
 - **Quit is off the menu.** **Options → Arcade Options → Disable/Enable Menu Options → Quit Menu**
   puts the Quit Game entry back for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
   never see. A `-devmode` session always keeps Quit whatever the setting says, so the operator is

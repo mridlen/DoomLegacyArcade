@@ -1967,6 +1967,14 @@ void D_DoomLoop(void)
                 D_Tic_Timing( gametic - tic_before );
         }
         LK_Ticker();   // [Arcade] Cabinet Link: presence out, log lines in; cheap when off
+
+        // [Arcade] Keep the mixer in step with the volume cvars and the
+        // attract scaling every pass, not only on the passes that advanced a
+        // tic.  S_UpdateSounds below is deliberately tic-paced (positional
+        // sound is tic-paced work), but the volume is not: gating it on a tic
+        // left boot, and every attract/menu transition, a tic behind.
+        if( ! dedicated )
+            S_Update_Volumes();
         {
 #ifdef CLIENTPREDICTION2
         boolean  tic_advanced = (singletics || spirit_update);
@@ -4818,6 +4826,13 @@ fatal_error_action:
     // Music init is in I_StartupSound
     I_StartupSound();
     S_Init(cv_soundvolume.value, cv_musicvolume.value);
+    // [Arcade] S_Init sets the mixer to the cvars' full volume.  Scale it to
+    // the attract volume immediately, while nothing is playing yet: the title
+    // music starts before the loop's first tic, and the reconcile in
+    // S_UpdateSounds does not run until one does -- measured 51 tics into the
+    // run, because the local client/server handshake has to finish first.  The
+    // cabinet came up at full volume for a second and a half and then dropped.
+    S_Update_Volumes();
 
     CONS_Printf(text[ST_INIT_NUM]);
     ST_Init();
