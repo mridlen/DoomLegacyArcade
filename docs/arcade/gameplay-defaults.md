@@ -364,3 +364,46 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     and an earlier draft of this note said 96, which was a miscount of the listing rather than a
     changed tree — worth counting with `wc -l` rather than by eye, since a demo count is exactly
     the kind of number that later gets treated as evidence that files went missing.)
+
+- **Pickup Flash defaults to `Vanilla`, and Translucency to `Auto`.** Both are *look of the game*
+  settings on **Options → Effects Options**, which the lockdown hides — so the operator is the only
+  person who can reach them, and whatever they default to is what every player sees forever.
+  - **Pickup Flash: `cv_pickupflash` (`g_game.c`) changed from `"1"` (`Status`) to `"3"`
+    (`Vanilla`).** The four values are `pickupflash_cons_t` = `Off` / `Status` / `Half` / `Vanilla`,
+    and they are two different effects, not four strengths of one:
+    - `Status` (1) is a **DoomLegacy addition**. On a pickup it fills a solid rectangle of
+      `FLASH_COLOR` behind the affected status-bar number — `ST_drawOverlayNum` paints
+      `wfv*3` by `hfv` behind the digits, `ST_Draw_Widgets` sets `STLIB_FLASH` on the ammo, armor
+      and health widgets and fills the whole keys box. `FLASH_COLOR` is **palette index `0x72`**
+      (`st_stuff.c`, `st_lib.c`), which is in Doom's green ramp (112–127). That is the "green
+      flash": an opaque green block appearing over the HUD for a few tics, with no vanilla
+      equivalent and nothing on screen to explain it, which reads as a rendering fault rather than
+      a signal. Reported exactly that way.
+    - `Vanilla` (3) is the **original Doom** behaviour: no status-bar block at all, just the yellow
+      screen tint from `plyr->bonuscount`, via the `EV >= 2` branch and
+      `pickupflash_table[4] = {6,5,4,3}` — index 3 gives shift 3, the strongest tint and the one
+      vanilla uses. `Half` (2) is the same tint at shift 4.
+    - **Render-only, so no demo work was needed.** It is plain `CV_SAVE`: not `CV_NETVAR`, not in
+      the demo header, not in `hs_ranked_rules[]`, and nothing under it draws `PP_Random` — the
+      trap that caught the rocket trails. It changes what is painted after the frame, never the
+      simulation, so record demos are unaffected in both directions.
+  - **Translucency: the compiled default was already right — the *config* was not.**
+    `cv_translucency` (`p_fab.c`) has shipped `"1"` = `Auto` all along, so no source change was
+    needed. The tracked `cabinet/legacyhome/config.cfg` said `translucency "Off"`, and **a config
+    line beats the compiled default** (`install-config.md`), so every install built from the
+    checkout ran with translucency off no matter what the declaration said. Changed to
+    `translucency "Auto"`.
+    - `Auto` maps to `TE_ext` in `translucency_en_table[]` — translucency on for anything whose
+      `mobjinfo` carries `MF_TRANSLUCENT`, DoomLegacy's extensions included, and it is the value
+      that leaves a DEH/BEX patch's own flags in charge (`Translucency_OnChange` only prints
+      "overridden by controls" when the setting is *not* Auto).
+    - Also render-only: `P_SetTranslucencies` touches nothing but the `FF_TRANSMASK` bits of
+      `state->frame`, which the sprite drawers read and the play code does not. No flags, no RNG.
+  - **`cabinet/legacyhome/config.cfg` had to change for both**, not just for translucency. The
+    compiled default only governs a cvar with **no line in the config**, and this one has had a
+    `pickupflash` line since the portable install landed (commit `1a50e8c`, which captured the
+    cabinet's config of the day — neither line was a deliberate arcade decision). Changing the
+    declaration alone would have left every existing install exactly as it was, which is the
+    "changing a default in source does nothing" trap `install-config.md` records; changing only the
+    config would have left a fresh cabinet with no config file on the old behaviour. Both are now
+    `Vanilla` / `Auto` and agree.
