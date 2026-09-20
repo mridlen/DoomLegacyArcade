@@ -567,6 +567,26 @@ language_t      language = english;     // Language.
 
 // Intermission state
 int             totalkills, totalitems, totalsecret;
+
+// [Arcade] Which player worked the exit, for the EXIT1 marker on the
+// multiplayer tally (wi_stuff.c).  -1 when nothing player-driven ended the
+// level: a boss death, a console exitlevel, a FraggleScript exit, or a level
+// that ended before anyone touched a switch.
+//
+// A plain global rather than a field in wbstartstruct_t on purpose.  That
+// struct is written by p_saveg and shared with the netgame protocol, so
+// widening it is a savegame and protocol change for a decoration; this is set
+// during the level, read once at the intermission, and cleared on the next
+// load.  Every client runs the same simulation from the same ticcmds, so they
+// all record the same player without anything being sent.
+int  exit_player_num = -1;
+
+// [Arcade] Called just before G_ExitLevel / G_SecretExitLevel from the
+// switch and walkover specials, which are the only two a player drives.
+void G_Note_Exit_Player( mobj_t * mo )
+{
+    exit_player_num = (mo && mo->player) ? (int)(mo->player - players) : -1;
+}
 wb_start_t      wminfo;                 // parms for world map / intermission
 
 // Demo state
@@ -1616,6 +1636,7 @@ void Command_Turbo_f (void)
 // Called from:  G_InitNew, G_DoReborn, G_DoWorldDone, Command_Restart_f
 void G_DoLoadLevel (boolean resetplayer)
 {
+    exit_player_num = -1;   // [Arcade] nobody has worked the exit yet
     int             i;
 
     levelstarttic = gametic;        // for time calculation

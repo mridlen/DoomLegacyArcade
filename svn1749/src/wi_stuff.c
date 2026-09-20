@@ -1528,6 +1528,22 @@ typedef struct {
     int      x[4];       // left edge of table 0..ntable-1
 } wi_rankfit_t;
 
+// [Arcade] Characters of name the classic table can show.
+//
+// The compact layout measures its name field in base units (sub_w) and ignores
+// this, but the classic one truncates by character count -- it was 6, because
+// four tables across 320 units left 80 each.  With Buchholz and indiv. gone
+// each table has 160, so the name field runs from x+29 to the next table's
+// edge.  hu_font is proportional and its widest glyphs are 9 units, so the
+// worst case is (160 - 29) / 9 = 14 characters.  Deliberately the worst case:
+// a name of narrower letters simply has room to spare, whereas sizing for the
+// average would push 'MMMMMMMMMMMMMM' into the next column.  Checked by
+// tools/interfit-test.py, which measures against the real STCFN lumps.
+static int  wi_name_chars( const wi_rankfit_t * fit )
+{
+    return fit->compact ? 6 : 14;
+}
+
 // Pure arithmetic, so tools/interfit-test.py can lift it out and check every
 // player count against the screen.
 //   num_pl : lines the tallest of the tables will hold
@@ -1544,13 +1560,17 @@ static void WI_Rank_Fit( int num_pl, int ytop, wi_rankfit_t * out )
     if( num_pl <= classic_rows )
     {
         out->compact  = false;
-        out->ntable   = 4;
+        out->ntable   = 2;
         out->pitch    = 12;
         out->max_rows = 0;
         out->col_dx   = 0;
         out->sub_w    = 0;
         out->y_limit  = BASEVIDHEIGHT;
-        out->x[0] = 5;  out->x[1] = 85;  out->x[2] = 165;  out->x[3] = 245;
+        // [Arcade] Two tables across the screen, not four.  Buchholz and
+        // indiv. are gone (see WI_Draw_DeathmatchStats), so Frags and Deaths
+        // get half the screen each instead of a quarter, and the names that
+        // used to be cut to six characters have room to be read.
+        out->x[0] = 5;  out->x[1] = 165;  out->x[2] = 165;  out->x[3] = 245;
         return;
     }
 
@@ -1564,13 +1584,14 @@ static void WI_Rank_Fit( int num_pl, int ytop, wi_rankfit_t * out )
     out->sub_w    = WI_RANK_SUB_W;
     out->y_limit  = ytop + (per_col * WI_C_PITCH);
 
-    // There are four sub-column widths across the screen to share out.  Each
-    // table needs ncol of them, so the tables that fit are 4/ncol -- and the
-    // ones that drop out are Buchholz and indiv. first.  They are tie-break
-    // curiosities, while Frags and deads answer "how did I do"; a scoreboard
-    // that silently omits half the players is worse than one that omits two
-    // of its four rankings.
+    // There are four sub-column widths across the screen to share out and each
+    // table needs ncol of them, so 4/ncol would fit -- but there are only two
+    // tables to draw now, Frags and Deaths.  Past 17 players Frags takes two
+    // sub-columns and Deaths the other two; past 34, Frags alone is the whole
+    // screen and Deaths drops, because a scoreboard that silently omits half
+    // the players is worse than one that omits a ranking.
     out->ntable = 4 / ncol;
+    if( out->ntable > 2 )  out->ntable = 2;
     if( out->ntable < 1 )  out->ntable = 1;
     for( i = 0; i < 4; i++ )
         out->x[i] = WI_RANK_X0 + (i * ncol * WI_RANK_DX);
@@ -1617,64 +1638,21 @@ static void WI_Draw_DeathmatchStats(void)
         }
     }
     WI_Draw_Ranking_Cols("Frags", fit.x[0], RANKINGY, fragtab, scorelines, false,
-                    whiteplayer, 6, fit.y_limit,
+                    whiteplayer, wi_name_chars(&fit), fit.y_limit,
                     fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
 
-    // [Arcade] Buchholz and indiv. are drawn only while there is width for
-    // them; past 17 players their two columns go to the second half of the
-    // Frags and deads tables.
-    if( fit.ntable == 4 )
-    {
-        // count buchholz
-        scorelines = 0;
-        for (i=0; i<MAXPLAYERS; i++)
-        {
-            if (playeringame[i])
-            {
-                fragtab[scorelines].count = 0;
-                for (j=0; j<MAXPLAYERS; j++)
-                    if (playeringame[j] && i!=j)
-                         fragtab[scorelines].count+= dm_frags[i][j]*(dm_totals[j]+dm_frags[j][j]);
-
-                fragtab[scorelines].num = i;
-                fragtab[scorelines].color = players[i].skincolor;
-                fragtab[scorelines].name  = player_names[i];
-                scorelines++;
-            }
-        }
-        WI_Draw_Ranking_Cols("Buchholz", fit.x[1], RANKINGY, fragtab, scorelines, false,
-                        whiteplayer, 6, fit.y_limit,
-                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
-
-        // count individual
-        scorelines = 0;
-        for (i=0; i<MAXPLAYERS; i++)
-        {
-            if (playeringame[i])
-            {
-                fragtab[scorelines].count = 0;
-                for (j=0; j<MAXPLAYERS; j++)
-                {
-                    if (playeringame[j] && i!=j)
-                    {
-                         if(dm_frags[i][j]>dm_frags[j][i])
-                             fragtab[scorelines].count+=3;
-                         else
-                             if(dm_frags[i][j]==dm_frags[j][i])
-                                  fragtab[scorelines].count+=1;
-                    }
-                }
-
-                fragtab[scorelines].num = i;
-                fragtab[scorelines].color = players[i].skincolor;
-                fragtab[scorelines].name  = player_names[i];
-                scorelines++;
-            }
-        }
-        WI_Draw_Ranking_Cols("indiv.", fit.x[2], RANKINGY, fragtab, scorelines, false,
-                        whiteplayer, 6, fit.y_limit,
-                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
-    }
+    // [Arcade] Buchholz and indiv. used to be drawn here.  They are chess
+    // tie-break systems inherited from upstream -- Buchholz weights your frags
+    // by how well the people you fragged did, indiv. scores each head-to-head
+    // pairing 3/1/0 -- and on an arcade cabinet nobody has ever known that.
+    // They took half the width of the scoreboard to answer a question no
+    // player was asking, while the two that matter, Frags and Deaths, were
+    // squeezed into a quarter each with names cut to six characters.
+    //
+    // They are gone rather than hidden behind a setting: an operator toggle
+    // for a ranking nobody can interpret is still a row in a menu somebody has
+    // to understand.  The frag matrix they were computed from is untouched, so
+    // restoring them is re-adding the two blocks, not recovering data.
 
     // count deads
     if( fit.ntable >= 2 )
@@ -1697,8 +1675,8 @@ static void WI_Draw_DeathmatchStats(void)
                 scorelines++;
             }
         }
-        WI_Draw_Ranking_Cols("deads", fit.x[fit.ntable - 1], RANKINGY, fragtab, scorelines,
-                        false, whiteplayer, 6, fit.y_limit,
+        WI_Draw_Ranking_Cols("Deaths", fit.x[fit.ntable - 1], RANKINGY, fragtab, scorelines,
+                        false, whiteplayer, wi_name_chars(&fit), fit.y_limit,
                         fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
 }
@@ -1766,63 +1744,12 @@ static void WI_Draw_TeamsStats(void)
     scorelines = HU_Create_TeamFragTbl(fragtab,dm_totals,dm_frags);
 
     WI_Draw_Ranking_Cols("Frags", fit.x[0], TEAMRANKINGY, fragtab, scorelines, false,
-                    whiteplayer, 6, fit.y_limit,
+                    whiteplayer, wi_name_chars(&fit), fit.y_limit,
                     fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
 
-    if( fit.ntable == 4 )
-    {
-        // count buchholz
-        scorelines = 0;
-        for (i=0; i<MAXPLAYERS; i++)
-        {
-            if (teamingame(i))
-            {
-                fragtab[scorelines].count = 0;
-                for (j=0; j<MAXPLAYERS; j++)
-                {
-                    if (teamingame(j) && i!=j)
-                        fragtab[scorelines].count+= dm_frags[i][j]*dm_totals[j];
-                }
-
-                fragtab[scorelines].num   = i;
-                fragtab[scorelines].color = i;
-                fragtab[scorelines].name  = get_team_name(i);
-                scorelines++;
-            }
-        }
-        WI_Draw_Ranking_Cols("Buchholz", fit.x[1], TEAMRANKINGY, fragtab, scorelines, false,
-                        whiteplayer, 6, fit.y_limit,
-                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
-
-        // count individuel
-        scorelines = 0;
-        for (i=0; i<MAXPLAYERS; i++)
-        {
-            if (teamingame(i))
-            {
-                fragtab[scorelines].count = 0;
-                for (j=0; j<MAXPLAYERS; j++)
-                {
-                    if (teamingame(j) && i!=j)
-                    {
-                         if(dm_frags[i][j]>dm_frags[j][i])
-                             fragtab[scorelines].count+=3;
-                         else
-                             if(dm_frags[i][j]==dm_frags[j][i])
-                                  fragtab[scorelines].count+=1;
-                    }
-                }
-
-                fragtab[scorelines].num = i;
-                fragtab[scorelines].color = i;
-                fragtab[scorelines].name  = get_team_name(i);
-                scorelines++;
-            }
-        }
-        WI_Draw_Ranking_Cols("indiv.", fit.x[2], TEAMRANKINGY, fragtab, scorelines, false,
-                        whiteplayer, 6, fit.y_limit,
-                        fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
-    }
+    // [Arcade] Buchholz and indiv. dropped here too -- same reasoning as the
+    // deathmatch table above, and a team scoreboard nobody can read is no
+    // better than a player one.
 
     // count deads
     if( fit.ntable >= 2 )
@@ -1845,8 +1772,8 @@ static void WI_Draw_TeamsStats(void)
                 scorelines++;
             }
         }
-        WI_Draw_Ranking_Cols("deads", fit.x[fit.ntable - 1], TEAMRANKINGY, fragtab,
-                        scorelines, false, whiteplayer, 6, fit.y_limit,
+        WI_Draw_Ranking_Cols("Deaths", fit.x[fit.ntable - 1], TEAMRANKINGY, fragtab,
+                        scorelines, false, whiteplayer, wi_name_chars(&fit), fit.y_limit,
                         fit.pitch, fit.max_rows, fit.col_dx, fit.sub_w);
     }
 }
@@ -1991,9 +1918,33 @@ static void WI_Init_NetgameStats(void)
 
 static void WI_update_NetgameStats(void)
 {
+    extern consvar_t cv_mp_tally_hold;   // m_menu.c, in no header
 
     int  i, cnt_target;
     boolean     stillticking = false;
+
+    // [Arcade] Hold the multiplayer campaign tally up for a while before any
+    // press can dismiss it.
+    //
+    // This function is only reached for a multiplayer non-deathmatch game
+    // (WI_Ticker breaks out for deathmatch and sends single player to
+    // WI_update_Stats), so the hold applies exactly where it was asked for and
+    // needs no further test.
+    //
+    // The press is *discarded*, not deferred.  Merely declining to act on
+    // accelerate_stage would leave it set, and the page would then vanish the
+    // instant the hold expired -- which is precisely the "somebody mashed fire
+    // and nobody got to read it" case, just moved later.  Cleared, a player
+    // who wants to skip has to press again once the tally has actually been
+    // up, and WI_checkForAccelerate only sets the flag on the press edge, so
+    // holding the button down does not queue one either.
+    //
+    // bcnt is tics since the intermission opened (zeroed in WI_Start).
+    if( cv_mp_tally_hold.EV > 0
+        && bcnt < (uint32_t)(cv_mp_tally_hold.EV * TICRATE) )
+    {
+        accelerate_stage = 0;
+    }
 
     if (accelerate_stage && ng_state != 10)
     {
@@ -2402,6 +2353,46 @@ static void WI_Draw_Netgame_Compact( int ytop )
 }
 
 // Called by WI_Drawer
+
+// [Arcade] The EXIT sign beside whoever worked the exit switch.
+//
+// Campaign multiplayer only: in a four-player game the tally is the one place
+// the room finds out who actually ended the level, and "somebody opened the
+// door" is worth a line of the scoreboard.  exit_player_num (g_game.c) is -1
+// unless a player drove a switch or walkover special, so a boss death or a
+// console exitlevel draws nothing.
+//
+// Which sign depends on the room left, measured rather than assumed.  EXIT1
+// is 32 units wide and EXIT2 is 8, and the stat columns end at
+// ngsx + (dofrags ? 4 : 3) * NG_SPACINGX -- which is x 300 when frags are
+// shown and 268 when they are not, leaving 20 and 52 units to the screen edge.
+// So the wide sign fits a coop tally and only the narrow one fits once a frags
+// column appears.  Both are IWAD wall patches; Heretic has neither, hence the
+// existence check rather than a faith-based W_CachePatchName.
+static void WI_Draw_Exit_Mark( int pnum, int row_y, int last_col_x )
+{
+    const char * name;
+    patch_t *    pp;
+    int          avail = BASEVIDWIDTH - 2 - last_col_x;
+
+    if( exit_player_num != pnum )  return;
+
+    name = (avail >= 32) ? "EXIT1" : "EXIT2";
+    if( W_CheckNumForName( name ) == NO_LUMP )
+    {
+        name = "EXIT2";
+        if( W_CheckNumForName( name ) == NO_LUMP )  return;   // not this IWAD
+    }
+    pp = W_CachePatchName( name, PU_CACHE );
+    if( pp->width > avail )  return;   // no honest way to fit it
+
+    // V_DrawScaledPatch applies the patch's own offsets, and these two carry
+    // large ones (EXIT1 is (15,11)), so they are added back to land the sign
+    // where it is asked for rather than 15 left and 11 up of it.
+    V_DrawScaledPatch( BASEVIDWIDTH - 2 - pp->width + pp->leftoffset,
+                       row_y + pp->topoffset, pp );
+}
+
 static void WI_Draw_NetgameStats(void)
 {
     // Hardware or software render.
@@ -2488,6 +2479,8 @@ static void WI_Draw_NetgameStats(void)
     {
         if (!playeringame[i])
             continue;
+
+        WI_Draw_Exit_Mark( i, y, ngsx + (dofrags ? 4 : 3) * NG_SPACINGX );
 
         byte skin_color = players[i].skincolor;
         // [Arcade] Every name in grey.  Upstream drew the console player's name

@@ -778,13 +778,72 @@ There are four sub-column widths across the screen (79 units each from x 4) and 
 
 | players | pitch | tables | each |
 | --- | --- | --- | --- |
-| up to 12 | 12 | Frags, Buchholz, indiv., deads | 1 column |
-| 13..17 | 8 | Frags, Buchholz, indiv., deads | 1 column |
-| 18..32 | 8 | **Frags, deads** | 2 columns |
+| up to 12 | 12 | **Frags, Deaths** | 1 column, half the screen each |
+| 13..17 | 8 | **Frags, Deaths** | 1 column |
+| 18..34 | 8 | **Frags, Deaths** | 2 columns |
+| 35+ | 8 | **Frags** | the whole screen |
 
-**Buchholz and indiv. are what gets dropped, deliberately.** They are tie-break curiosities; Frags
-and deads are the two that answer "how did I do". A scoreboard that silently omits half the players
-is worse than one that omits two of its four rankings.
+**Buchholz and indiv. are gone entirely now, not just dropped when space is tight.** They are chess
+tie-break systems — Buchholz weights your frags by how well the people you fragged did, indiv.
+scores each head-to-head pairing 3/1/0 — and on an arcade cabinet nobody has ever known that. They
+took half the width of the scoreboard to answer a question no player was asking, while Frags and
+Deaths were squeezed into a quarter each with names cut to six characters.
+
+They are removed rather than hidden behind an operator setting: a toggle for a ranking nobody can
+interpret is still a row in a menu somebody has to understand. The frag matrix they were computed
+from is untouched, so restoring them means re-adding the two blocks in `WI_Draw_DeathmatchStats`,
+not recovering lost data.
+
+## The campaign tally: holding it, and who opened the exit
+
+Two things about the multiplayer campaign tally, both `wi_stuff.c`.
+
+**The tally is held before any press can dismiss it.** `cv_mp_tally_hold` (0..60 s, default 25,
+**Options → Arcade Options → Timeouts → Tally Hold**). A single-player tally is the player's own
+business and they may skip it as fast as they like; a four-player one is not, because it is the
+only time the room finds out how the other three did, and whoever reaches fire first takes that
+away from everyone else — usually the player already going for the next game.
+
+- The gate sits at the top of `WI_update_NetgameStats`, which is reached **only** for a
+  multiplayer non-deathmatch game (`WI_Ticker` breaks out for deathmatch and sends single player to
+  `WI_update_Stats`), so it applies exactly where it was asked for and needs no further test.
+- **The press is discarded, not deferred.** Declining to act on `accelerate_stage` while leaving it
+  set would make the page vanish the instant the hold expired — the same "somebody mashed fire and
+  nobody read it" outcome, just moved later. Cleared, a skipper has to press again once the tally
+  has actually been up; `WI_checkForAccelerate` only sets the flag on the press edge, so holding
+  the button does not queue one either.
+- `bcnt` is tics since the intermission opened (zeroed in `WI_Start`), which is why the hold needs
+  no timer of its own. Deathmatch is untouched — its rankings already sit until somebody presses.
+- 0 disables it. The idle timeout still rescues an abandoned cabinet and is far longer than the
+  60-second maximum, so this cannot strand the machine.
+
+**An EXIT sign marks whoever worked the exit.** `WI_Draw_Exit_Mark`, drawn on that player's row of
+the campaign tally.
+
+- `exit_player_num` (`g_game.c`) is set by `G_Note_Exit_Player` from the five player-driven exit
+  specials — normal and secret, switch (`p_switch.c`) and walkover (`p_spec.c`), plus Heretic's —
+  and is `-1` otherwise, so a boss death, a console `exitlevel` or a FraggleScript exit draws
+  nothing. `G_DoLoadLevel` clears it.
+- **A plain global, not a field in `wbstartstruct_t`.** That struct is written by `p_saveg` and
+  shared with the netgame protocol, so widening it is a savegame and protocol change for a
+  decoration. Every client runs the same simulation from the same ticcmds, so they all record the
+  same player with nothing sent.
+- **Which sign depends on measured room, not on hope.** `EXIT1` is 32 units wide and `EXIT2` is 8;
+  the stat columns end at `ngsx + (dofrags ? 4 : 3) * NG_SPACINGX`, which is x 300 with a frags
+  column and 268 without, leaving 20 and 52 units to the screen edge. So the wide sign fits a coop
+  tally and only the narrow one fits once frags appear. Both are IWAD wall patches and **Heretic
+  has neither**, hence the `W_CheckNumForName` test rather than a faith-based
+  `W_CachePatchName`; if even the narrow one will not fit, nothing is drawn.
+- Both patches carry large offsets (`EXIT1` is (15,11)) and `V_DrawScaledPatch` applies them, so
+  they are added back or the sign lands 15 left and 11 up of where it was asked for.
+
+**The classic table is now two tables of 160 units instead of four of 80**, at x 5 and 165, and
+`"deads"` is drawn as `"Deaths"`. The freed width goes to the names: `wi_name_chars` returns 14
+characters for the classic layout where it was 6, derived from (160 - 29) / 9 with 9 the widest
+`hu_font` glyph — the worst case on purpose, since a name of narrower letters simply has room to
+spare while sizing for the average would push `MMMMMMMMMMMMMM` into the next column.
+`tools/interfit-test.py` pins the new layout exactly as it pinned the old one, and its `--selfcheck`
+gained a case for a table count that silently reverts to four.
 
 - Placement is **column-major** — one sub-column filled top to bottom, then the next — so the sort
   order still reads downwards. With the classic `max_rows = 0` this is the old running x and y,

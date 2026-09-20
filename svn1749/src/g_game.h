@@ -320,6 +320,10 @@ boolean G_SnapshotDemo (const char * filename);
 void G_Synclog_Tic (void);  // [Arcade] demo desync diagnostic
 
 // --- Level Func
+// [Arcade] Record who worked the exit, before exiting.  See g_game.c.
+extern int  exit_player_num;
+void G_Note_Exit_Player( mobj_t * mo );
+
 void G_ExitLevel (void);
 void G_SecretExitLevel (void);
 void G_NextLevel (void);

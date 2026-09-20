@@ -564,6 +564,7 @@ boolean P_UseSpecialLine ( mobj_t*       thing,
         if(cv_allowexitlevel.EV)
         {
             P_ChangeSwitchTexture(line,0);
+            G_Note_Exit_Player( thing );   // [Arcade] EXIT1 marker
             G_ExitLevel ();
         }
         break;
@@ -637,6 +638,7 @@ boolean P_UseSpecialLine ( mobj_t*       thing,
       case 51:
         // Secret EXIT
         P_ChangeSwitchTexture(line,0);
+        G_Note_Exit_Player( thing );   // [Arcade] EXIT1 marker
         G_SecretExitLevel ();
         break;
 

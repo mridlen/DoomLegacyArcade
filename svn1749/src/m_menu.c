@@ -622,6 +622,27 @@ consvar_t cv_jointime = {"jointime", "30", CV_SAVE, jointime_cons_t };
 CV_PossibleValue_t initialstimeout_cons_t[] = {{0,"MIN"},{180,"MAX"},{0,NULL}};
 consvar_t cv_initialstimeout = {"initialstimeout", "60", CV_SAVE, initialstimeout_cons_t };
 
+// [Arcade] How long the multiplayer campaign tally is held before a button
+// press can dismiss it, in seconds.
+//
+// The single-player tally is the player's own business and they may skip it as
+// fast as they like.  A four-player campaign tally is not: it is the only time
+// anybody sees how the other three did, and whoever hits fire first takes that
+// away from the rest of the room.  On a cabinet that is usually the player
+// already reaching for the next game.
+//
+// So the accelerate that skips the counters, and the one that leaves the page,
+// are both ignored until this expires (WI_update_NetgameStats, wi_stuff.c).
+// It is not a countdown to anything: once the hold passes, the page waits for
+// a press exactly as it always did.  Deathmatch is untouched -- its rankings
+// already sit until somebody presses fire.
+//
+// 0 disables the hold, restoring the previous behaviour.  The idle timeout
+// still rescues an abandoned cabinet, and is much longer than the maximum
+// here, so this cannot strand the machine.
+CV_PossibleValue_t mptallyhold_cons_t[] = {{0,"MIN"},{60,"MAX"},{0,NULL}};
+consvar_t cv_mp_tally_hold = {"mptallyhold", "25", CV_SAVE, mptallyhold_cons_t };
+
 // [Arcade] Which game the cabinet boots into, instead of whichever IWAD the
 // engine's search happens to find first.  Also an operator setting, saved only
 // from a -devmode session.
@@ -6138,6 +6159,10 @@ menuitem_t TimeoutsMenu[]=
     // wide and ends at 234, two pixels short of an "Off" value starting at
     // 236.  This one is 136 and leaves 40.
     {IT_STRING | IT_CVAR,0, "Join Screen Timeout", &cv_jointime      , 0},
+    // [Arcade] "Tally Hold" rather than "Multiplayer Tally Hold": the longer
+    // label measures 213 against STCFN and would run past the value column,
+    // which on this page starts at 236 (see menus.md).  This one is 92.
+    {IT_STRING | IT_CVAR,0, "Tally Hold"      , &cv_mp_tally_hold  , 0},
 };
 
 menu_t  TimeoutsDef =
@@ -12532,6 +12557,7 @@ consvar_t * menu_init_cvar_list[] =
   &cv_dm_nextepmap,     // [Arcade]
   &cv_deathmatch_menu,
   &cv_dm_timelimit,     // [Arcade]
+  &cv_mp_tally_hold,    // [Arcade] multiplayer campaign tally hold
   &cv_wait_players,
   &cv_wait_timeout,
   &cv_serversearch,
