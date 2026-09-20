@@ -2933,6 +2933,11 @@ boolean P_SetupLevel (int      to_episode,
     P_LoadThings (level_lumpnum+ML_THINGS);
     P_CloseWeapons ();
 
+    // [Arcade] Count the monsters Max and Tyson will not ask for.  Before
+    // P_SpawnSpecials, which turns some sector specials into thinkers and may
+    // clear the number this reads.
+    HS_Count_Exempt_Kills();
+
     // set up world state
     P_SpawnSpecials ();
     P_Init_BrainTarget();

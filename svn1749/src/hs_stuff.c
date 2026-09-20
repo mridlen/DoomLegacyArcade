@@ -21,6 +21,7 @@
 #include "screen.h"
 #include "m_menu.h"     // M_LevelPack_LoadedName
 #include "p_local.h"    // ranked ruleset cvars
+#include "p_tick.h"     // [Arcade] thinker walk, for the death-exit kill exemption
 #include "p_spec.h"     // cv_zerotags
 #include "d_netcmd.h"   // cv_itemrespawn, cv_respawnmonsters
 #include "s_sound.h"    // cv_rndsoundpitch
@@ -2611,6 +2612,60 @@ tic_t  HS_Cumulative_Tics( void )
 boolean  HS_Run_Is_Pacifist( void ) { return hs_cat_alive[HS_CAT_pacifist]; }
 boolean  HS_Run_Is_Tyson( void )    { return hs_cat_alive[HS_CAT_tyson]; }
 
+
+// [Arcade] ---- Monsters you are not expected to kill. ----
+//
+// Sector special 11 is the death exit -- "EXIT SUPER DAMAGE", the E1M8 finale
+// (p_spec.c).  Standing in one takes the player to 10 health and ends the
+// level, so a monster placed inside one cannot reliably be reached and killed:
+// going in after it ends the run.  E1M8 is the example, and on a cabinet
+// scoring Max and Tyson that made those categories unattainable on such a map
+// through no fault of the player.
+//
+// So monsters in a death-exit sector do not count toward the kill requirement
+// for Max and Tyson.  The *displayed* kill percentage is untouched and will
+// still read under 100% -- it is the honest count of what is on the map -- but
+// the category is awarded on what was actually killable.
+//
+// **Counted where they start, not where they end up**, and that direction
+// matters.  Counting at the exit would let a player herd monsters into the
+// death sector to have them written off, which is a worse failure than the one
+// this fixes.  Counted at spawn, the exemption is a property of how the mapper
+// placed the thing and nothing the player does can change it.  A monster that
+// wanders out and is then killed simply pushes the kill count past the
+// requirement, which still reads as Max.
+#define HS_DEATH_EXIT_SPECIAL  11
+
+int  hs_exempt_kills = 0;
+
+void  HS_Count_Exempt_Kills( void )
+{
+    thinker_t * th;
+
+    hs_exempt_kills = 0;
+
+    for( th = thinkercap.next; th != &thinkercap; th = th->next )
+    {
+        mobj_t * mo;
+
+        if( th->function != TFI_MobjThinker )  continue;
+
+        mo = (mobj_t*) th;
+        if( ! (mo->flags & MF_COUNTKILL) )  continue;   // what totalkills counts
+        if( mo->health <= 0 )  continue;
+        if( ! mo->subsector )  continue;
+
+        // p_spec.c takes the Doom branch only for special < 32, and 11 is the
+        // death exit in Heretic too (P_Heretic_PlayerInSpecialSector), so one
+        // number covers both.
+        if( mo->subsector->sector->special == HS_DEATH_EXIT_SPECIAL )
+            hs_exempt_kills++;
+    }
+
+    if( hs_exempt_kills > 0 )
+        GenPrintf( EMSG_ver, "Kill exemption: %d monster(s) in a death-exit sector\n",
+                   hs_exempt_kills );
+}
 
 void HS_NewGame( void )
 {

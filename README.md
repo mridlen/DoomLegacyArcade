@@ -1008,6 +1008,13 @@ map, per skill and per category:
   far. Items are not required. Miss either on any level and the run drops to speed-only for the
   rest of that game.
 
+**Monsters you cannot reach do not count against you.** Some levels put monsters inside the sector
+that ends the level by killing you — E1M8 is the example, with 15 of its 41 monsters in there.
+Walking in to fight them ends the run, so Max and Tyson were impossible on that map through no
+fault of yours. Those monsters are now left out of the kill requirement. **The kill percentage on
+the tally still shows the real number and will read under 100%**, but the run is judged on what was
+actually killable, so **MAX** and **TYSON** can still be awarded.
+
 A run is scored only under the standard ruleset. Change a gameplay setting and the HUD shows
 `UNRANKED` — you can play on, but nothing is recorded. **Dying also ends scoring** for the rest of
 the run: levels already finished keep their records, but nothing after counts. That one is not
