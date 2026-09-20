@@ -2239,6 +2239,9 @@ static void  M_SingleLevel_WatchMax  ( int choice )  { M_SingleLevel_PlayDemo(1)
 // Called from G_DoWorldDone when the chosen level is finished: drop back to
 // this menu with the times refreshed, so a player grinding one map can go
 // straight round again.  The idle timeout still rescues an abandoned cabinet.
+// [Arcade] Raised directly by M_SingleLevel_Finished; see there.
+static void  M_Initials_Open( void );
+
 void  M_SingleLevel_Finished( void )
 {
     // Command_ExitGame_f clears single_level_mode, and it is left cleared.
@@ -2254,6 +2257,32 @@ void  M_SingleLevel_Finished( void )
     Command_ExitGame_f();       // tears the game down and starts the title
     M_StartControlPanel();
     Push_Setup_Menu( &SingleLevelDef );
+
+    // [Arcade] Raise the initials prompt here, not from M_Initials_Ticker.
+    //
+    // Leaving it to the ticker put the Single Level page on screen first and
+    // the prompt on top of it a moment later, so a player who had just taken a
+    // record saw the menu they had come from before being asked to sign for
+    // it.  The order is not a coincidence and not a race with anything
+    // external: Command_ExitGame_f above is what *arms* the prompt (it calls
+    // HS_Run_Finished), so at the top of this function nothing is pending yet
+    // -- measured, `SLORDER finished gametic=102 pending=0` -- and the page is
+    // pushed in between.  Whether the page then got a frame to itself depended
+    // on where the wipe and the title teardown landed, which is why it was
+    // "usually, but not always".
+    //
+    // Opening it here closes that window completely: there is no engine code
+    // between the push and this call that can draw.  The ticker keeps its own
+    // opening for every other route (a campaign run, a death, a quit), and it
+    // returns early when initials_active is already set, so this cannot open
+    // the page twice.
+    //
+    // M_Initials_Open reads initials_opened_panel from menuactive, which
+    // M_StartControlPanel above has just set, so it takes the "a page was
+    // already open underneath" branch and M_Initials_Confirm pops back to the
+    // Single Level page -- exactly the flow this route has always had.
+    if( HS_Initials_Pending() && ! M_Initials_Active() )
+        M_Initials_Open();
 }
 
 
