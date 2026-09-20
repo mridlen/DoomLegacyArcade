@@ -58,6 +58,11 @@ void  Command_ClearHighScores_f(void);   // console: clearhighscores (keeps a ba
 // cabinets instead of being cleared again.  Master (or unlinked) only.
 void  HS_Restore_Scores(const char * folder);
 void  Command_RestoreHighScores_f(void);   // console: restorehighscores [folder]
+// [Arcade] Monsters in a death-exit sector, which Max and Tyson do not
+// require you to kill.  Counted at level load; see hs_stuff.c.
+extern int  hs_exempt_kills;
+void  HS_Count_Exempt_Kills( void );
+
 void  HS_NewGame(void);
 // [Arcade] Reset the intermission's per-run display state when a demo starts.
 // A replayed record demo spans several levels and passes through real level

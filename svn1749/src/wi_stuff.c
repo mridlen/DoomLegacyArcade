@@ -2572,8 +2572,16 @@ static void WI_Init_Stats(void)
     // [Arcade] all_kills is tyson's per-level condition: 100% kills, secrets
     // not required.  Split out rather than recomputed at the call site so the
     // two categories cannot drift apart, the same reason sp_maxed exists.
+    // [Arcade] Monsters placed in a death-exit sector are not required: going
+    // in after them ends the level, so they were never killable.  See
+    // HS_Count_Exempt_Kills (hs_stuff.c).  The percentage drawn below is left
+    // alone deliberately -- it is the honest count of what is on the map, and
+    // will read under 100% on a run that still earns Max.
+    int  kill_target = wbs->maxkills - hs_exempt_kills;
+    if( kill_target < 0 )  kill_target = 0;
+
     boolean all_kills =
-        ( wbs->maxkills  <= 0 || wb_plyr[me].skills  >= wbs->maxkills );
+        ( kill_target <= 0 || wb_plyr[me].skills >= kill_target );
     boolean maxed = all_kills
      && ( wbs->maxsecret <= 0 || wb_plyr[me].ssecret >= wbs->maxsecret );
     sp_maxed = maxed;   // [Arcade] for the MAX indicator, see WI_Draw_Stats

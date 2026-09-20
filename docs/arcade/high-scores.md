@@ -999,6 +999,38 @@ correctly records neither max nor tyson (it gets no kills).
   - `all_kills` is computed once and `maxed` built from it, rather than the two being written out
     separately, so they cannot drift apart — the same reason `sp_maxed` exists.
 
+### Monsters you are not expected to kill
+
+**Sector special 11 is the death exit** — "EXIT SUPER DAMAGE", the E1M8 finale (`p_spec.c`).
+Standing in one drops the player to 10 health and ends the level, so a monster placed inside one
+cannot reliably be reached and killed: going in after it ends the run. That made Max and Tyson
+unattainable on such a map through no fault of the player.
+
+`HS_Count_Exempt_Kills` (`hs_stuff.c`) counts `MF_COUNTKILL` monsters whose sector carries that
+special, and `WI_Init_Stats` requires `wbs->maxkills - hs_exempt_kills` rather than `maxkills`.
+Measured on **E1M8: 15 of its 41 monsters**, so the kill requirement there is 26.
+
+- **The displayed percentage is untouched and will read under 100% on a run that earns Max.** That
+  is the point, not an oversight: the percentage is the honest count of what is on the map, while
+  the category is awarded on what was actually killable. The blinking `MAX`/`TYSON` indicator
+  follows the category, so the two deliberately disagree on a map like this.
+- **Counted where the monsters start, not where they end up**, and the direction matters. Counting
+  at the exit would let a player herd monsters into the death sector to have them written off —
+  a worse failure than the one this fixes. Counted at spawn, the exemption is a property of how
+  the mapper placed the thing and nothing the player does can change it. A monster that wanders
+  out and is then killed simply pushes the kill count past the requirement, which still reads as
+  satisfied.
+- **Counted before `P_SpawnSpecials`**, which turns some sector specials into thinkers and may
+  clear the number being read.
+- `p_spec.c` takes the Doom branch only for `special < 32`, and 11 is the death exit in Heretic too
+  (`P_Heretic_PlayerInSpecialSector`), so one constant covers both.
+- **No existing record is invalidated.** The requirement only ever goes down, so every entry
+  already on a board stays valid and the change simply makes the category reachable from now on.
+
+Verified by forcing the kill count at the intermission and reading the result on E1M8: `all_kills`
+is 0 at 25 kills and 1 at 26, exactly the 41 − 15 boundary. `maxed` stays 0 there because Max also
+wants the secrets, which is correct.
+
 ### The per-category endpoint machinery was generalised
 
 Each category ends where *it* ends, not where the speed run ends — the reason `hs_max_endmap` /
