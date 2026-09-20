@@ -447,10 +447,25 @@ attract demo therefore sits until somebody walks up to the machine.
 - **Two clocks, because the obvious one may be the thing that broke.** During a demo `TryRunTics`
   sets `cl_need_tic = gametic + realtics + cv_playdemospeed.value` and only runs tics while that
   exceeds `gametic` — so a `realtics` stuck at zero (`I_GetTime` not advancing) freezes the
-  simulation while the loop spins on. A watchdog measuring only elapsed time would be reading the
-  same stopped clock it is meant to catch. It also counts **passes of the loop**, which keep coming
-  however the timer behaves, and fires on either: 5 seconds or 3000 passes without `gametic`
-  moving.
+  simulation while the loop spins on. A watchdog measuring only `I_GetTime` would be reading the
+  same stopped clock it is meant to catch. The second clock is **`time()`**, the OS clock, which is
+  independent of `SDL_GetTicks` (what `I_GetTime` is built on). It fires on either: 5 seconds of
+  `I_GetTime` or 5 seconds of wall clock without `gametic` moving.
+- **The second clock was a count of loop passes first, and that was wrong.** The assumption was
+  that 3000 passes must take longer than five seconds at any plausible frame rate. The loop can do
+  3000 passes inside a **single tic**. Caught on a healthy `-playdemo` run under a software GL
+  driver, which spins the loop hard while the first frame's textures upload:
+
+  ```
+  ATTRACT_FREEZE: ... realtics=0 ... stalled=0s/3000passes
+  ```
+
+  Zero seconds. The watchdog skipped a demo that was working perfectly — on a cabinet that means
+  attract demos cut short for no reason, and it is worse on a Pi than on the laptop because a
+  slower machine spins more passes per tic. `time()` has one second of resolution, which is ample
+  for a five second timeout, and cannot be fooled this way. **A watchdog needs testing against a
+  machine that is merely slow, not only against one that has genuinely stopped** — the interesting
+  false positive is the one that looks exactly like the fault.
 - **Watched only for an attract demo.** Not while paused, not with a menu open, not outside
   `GS_LEVEL`. A game somebody is playing may sit as long as they like, and a demo behind an open
   menu is a state the player put it in.

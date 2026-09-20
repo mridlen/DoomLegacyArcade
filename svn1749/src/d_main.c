@@ -1879,16 +1879,32 @@ boolean spirit_update;
 // demo TryRunTics computes cl_need_tic as (gametic + realtics + playdemospeed)
 // and only runs tics while that exceeds gametic, so a realtics stuck at zero
 // -- i.e. I_GetTime not advancing -- freezes the simulation while the loop
-// spins on.  A watchdog that measured only elapsed time would be reading the
-// same stopped clock it is meant to catch.  So it also counts passes of the
-// loop, which keep coming however the timer is behaving, and fires on either.
+// spins on.  A watchdog that measured only I_GetTime would be reading the same
+// stopped clock it is meant to catch.
+//
+// **The second clock is time(), not a count of loop passes.**  Counting passes
+// was the first attempt and it was wrong: the guess behind it was that 3000
+// passes must take longer than five seconds at any plausible frame rate, and
+// the loop can do 3000 passes inside a *single tic*.  Caught in the act on a
+// healthy -playdemo run under a software GL driver, which spins the loop hard
+// while the first frame's textures upload:
+//
+//     ATTRACT_FREEZE: ... realtics=0 ... stalled=0s/3000passes
+//
+// Zero seconds.  The watchdog skipped a demo that was working perfectly, which
+// on the cabinet means attract demos being cut short for no reason -- worse on
+// a Pi than on the laptop, since a slower machine spins more passes per tic.
+//
+// time() is the OS clock, independent of SDL_GetTicks (which is what I_GetTime
+// is built on), so it still measures a real five seconds if I_GetTime stops.
+// One second of resolution is ample for a five second timeout.
 //
 // What it does NOT do is guess at a cause.  The freeze has not been
 // reproduced, so this logs the state and gets the cabinet moving again; the
 // log line is the thing that will identify it next time.  Grep ATTRACT_FREEZE.
 
 #define AFW_STALL_TICS    (5*TICRATE)   // 5 s of I_GetTime not moving a tic
-#define AFW_STALL_PASSES  3000          // ... or this many loop passes
+#define AFW_STALL_SECS    5             // ... or 5 s of the OS clock
 
 // [Arcade] -demofreeze N: stop feeding realtics once an attract demo reaches
 // tic N, reproducing the freeze on demand.  A watchdog that has never been
@@ -1920,14 +1936,12 @@ static boolean D_Demo_Freeze_Test( void )
 
 static void D_Attract_Watchdog( tic_t entertic, tic_t tic_before, tic_t realtics )
 {
-    static tic_t  last_adv_time  = 0;
-    static uint32_t last_adv_pass = 0;
-    static uint32_t pass_count    = 0;
+    static tic_t  last_adv_time = 0;
+    static time_t last_adv_wall = 0;
     tic_t  need = 0, make = 0;
-    uint32_t stalled_passes;
+    time_t now_wall = time(NULL);
+    long   stalled_wall;
     tic_t  stalled_time;
-
-    pass_count++;
 
     // Only an attract demo is watched.  A game somebody is playing can be
     // paused or sat in a menu for as long as they like, and a demo behind an
@@ -1935,34 +1949,34 @@ static void D_Attract_Watchdog( tic_t entertic, tic_t tic_before, tic_t realtics
     if( ! demoplayback || paused || menuactive || gamestate != GS_LEVEL )
     {
         last_adv_time = entertic;
-        last_adv_pass = pass_count;
+        last_adv_wall = now_wall;
         return;
     }
 
     if( gametic != tic_before )   // progress
     {
         last_adv_time = entertic;
-        last_adv_pass = pass_count;
+        last_adv_wall = now_wall;
         return;
     }
 
     // entertic can go backwards only if I_GetTime does, which would make this
     // unsigned subtraction enormous; treat that as a stall too rather than
     // wrapping into a very long wait.
-    stalled_time   = entertic - last_adv_time;
-    stalled_passes = pass_count - last_adv_pass;
+    stalled_time = entertic - last_adv_time;
+    stalled_wall = (long)(now_wall - last_adv_wall);
 
-    if( stalled_time < AFW_STALL_TICS && stalled_passes < AFW_STALL_PASSES )
+    if( stalled_time < AFW_STALL_TICS && stalled_wall < AFW_STALL_SECS )
         return;
 
     D_Tic_Counters( &need, &make );
     GenPrintf( EMSG_error,
        "ATTRACT_FREEZE: demo stopped advancing -- gametic=%u leveltime=%d "
-       "realtics=%u cl_need_tic=%u maketic=%u stalled=%us/%upasses "
+       "realtics=%u cl_need_tic=%u maketic=%u stalled=%us_engine/%lds_wall "
        "gamestate=%d demo_ctrl=%u singletics=%d\n",
        (unsigned)gametic, leveltime, (unsigned)realtics,
        (unsigned)need, (unsigned)make,
-       (unsigned)(stalled_time / TICRATE), (unsigned)stalled_passes,
+       (unsigned)(stalled_time / TICRATE), stalled_wall,
        (int)gamestate, (unsigned)demo_ctrl, (int)singletics );
 
     // Recover by moving the attract cycle on.  The next page is a fresh start
@@ -1982,7 +1996,7 @@ static void D_Attract_Watchdog( tic_t entertic, tic_t tic_before, tic_t realtics
     // immediately after TryRunTics returned, which is where TryRunTics would
     // have called it from anyway, and outside the tic loop.
     last_adv_time = entertic;
-    last_adv_pass = pass_count;
+    last_adv_wall = now_wall;
     D_DoAdvanceDemo();
 }
 
