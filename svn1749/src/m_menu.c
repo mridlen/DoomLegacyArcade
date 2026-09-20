@@ -6160,6 +6160,10 @@ menu_t  TimeoutsDef =
 // the gameplay message lines (console.c), and the Winning Banner moved here
 // from Arcade Options.  The longest label, "Singleplayer Messages", measures
 // 157 against STCFN and ends at 217, clear of an "Off" value starting at 236.
+// Values are right-aligned (M_DrawGenericMenu draws at BASEVIDWIDTH - x -
+// width), so the right edge here is 260 and a wider value runs back toward its
+// own label.  The widest is now the Winning Banner's "Rainbow", 53, starting at
+// 207; that row's label is 101 and ends at 161, so the gap is 46.
 // Nothing indexes this array by position.
 menuitem_t MessagesBannersMenu[]=
 {

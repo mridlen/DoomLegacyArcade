@@ -328,8 +328,17 @@ shown to fail is not evidence.** → `screen-fill.md`
 ## The WINNING banner
 
 `HU_Draw_Winning` (`hu_stuff.c`), called from `HU_Drawer`. Deathmatch only, and only while
-`cv_winningbanner` (`winningbanner`, **Arcade Options → Messages + Banners → Winning Banner**, `CV_SAVE`, default On) is
-on. Not a NETVAR: it only draws.
+`cv_winningbanner` (`winningbanner`, **Arcade Options → Messages + Banners → Winning Banner**, `CV_SAVE`, default
+Rainbow) is not Off. Not a NETVAR: it only draws.
+
+The setting has three values, `CV_WinningBanner[]` in `hu_stuff.c`: **Off**, **Rainbow** (the
+per-letter ripple, what the banner has always done) and **Cycle** (the whole word one colour at a
+time). `"On"` is kept in the table as a fourth, unlisted entry worth 1, so a `config.cfg` written
+while this was an on/off cvar still loads as Rainbow instead of being rejected and silently reset.
+It is listed *after* `{1,"Rainbow"}` on purpose: `CV_get_possiblevalue_string` (`command.c`)
+returns the first entry matching the value, so the menu shows and the config saves back
+"Rainbow". Verified by loading a config at each of the four names and checking `M_Verify_Config`
+reported no complaint, with a fifth run at `"Bogus"` to prove the check goes red.
 
 - **Who**: `HU_Winning_Leader` — the unique top of `ST_PlayerFrags` over the players in the game,
   or with `teamplay` on the unique top of `HU_Create_TeamFragTbl` (so the team number is the skin
@@ -348,11 +357,21 @@ on. Not a NETVAR: it only draws.
   print, the same reason `HS_DemoLabel` sits at y 8. A view showing the rankings (its player is dead, or holding scores) is skipped, since
   the rankings cover it anyway. If the team string is wider than the cell (three or four columns)
   it drops to the bare `WINNING`: the colour still names the team.
-- **Individual colour cycle**: each letter is drawn separately through one of six colormaps that
+- **Team play ignores the setting.** Cycle applies to the plain-deathmatch banner only; with
+  `teamplay` on, the colour is what says *which team* is winning, which is the point of the
+  banner, so it is not the setting's to repaint.
+- **Individual colour cycle** (Rainbow): each letter is drawn separately through one of six colormaps that
   map the font's red ramp 176..191 onto a palette hue ramp — red, orange, yellow, green, blue,
   magenta, read out of PLAYPAL, with each ramp's near-white start skipped. The letter's colour is
   `(n - gametic/3) mod 6`, so the colours march along the word. Fixed per-colour buffers, because
   the OpenGL patch cache is keyed by colormap pointer.
+- **Whole-word colour cycle** (Cycle): `HU_Draw_Cycle_String`, the same six ramps in the same
+  order, but one map for the entire string, `(gametic / HU_CYCLE_TICS) mod 6`. **The rate had to
+  differ from the rainbow's.** The rainbow steps every 3 tics and reads as motion because adjacent
+  letters already differ; a word that changes colour *all at once* every 3 tics is a 12Hz flash
+  across the top of the view. `HU_CYCLE_TICS` is 10 — 3.5 changes a second, slow enough to read
+  the word as a colour rather than as flicker. Both drawers fall back to `V_WHITEMAP` on a
+  non-Doom palette, where `HU_Rainbow_Map` returns NULL.
 - **Team colour** comes from `M_Skin_Font_Map` (`m_menu.c`, made public for this), the join
   screen's map: font red onto the sprite green ramp, then through the skin translation, so the
   text is the exact shades the team's sprites are drawn in. Skin teams (`teamplay 2`) have no

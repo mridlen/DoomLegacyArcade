@@ -104,12 +104,17 @@ Discord is likely to get you banned.
   anyone trying. When a run is still holding one of them, **PACIFIST** or **TYSON** blinks at the top
   of the intermission.
 - **Who is winning, on your own screen.** In Deathmatch the player in the lead gets **WINNING**
-  at the top of their view, in rainbow letters that ripple along the word. In Team Deathmatch
+  at the top of their view, in rainbow letters that ripple along the word — or, if you prefer,
+  in one colour at a time, the whole word turning red, then orange, yellow, green, blue and
+  magenta. In Team Deathmatch
   every player on the leading team gets **BLUE TEAM WINNING** (or red, green, yellow), written in
   the team's colour. Nobody gets it while the lead is tied, so it appears with the first frag and
   moves the moment someone takes the lead. A dead player's view shows the rankings instead. It is
-  the same size as the level clock, so it shrinks with the views on a split screen. Turn it off
-  with **Options → Arcade Options → Messages + Banners → Winning Banner** (on by default).
+  the same size as the level clock, so it shrinks with the views on a split screen.
+  **Options → Arcade Options → Messages + Banners → Winning Banner** sets it to **Rainbow** (the
+  rippling letters, the default), **Cycle** (the whole word one colour at a time) or **Off**. Team
+  Deathmatch always uses the team's colour whichever of the two is picked, since there the colour
+  is what tells you which team is ahead.
 - **No text messages over the game.** The lines Doom writes across the top of the screen —
   "Picked up a shotgun", "You need a blue key", who fragged whom in Deathmatch — are off, because
   nobody at a cabinet reads them and they only cover the view. They can be turned back on
