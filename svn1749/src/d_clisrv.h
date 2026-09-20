@@ -725,6 +725,9 @@ void    D_WaitPlayer_Drawer( void );
 boolean D_WaitPlayer_Response( int key );
 
 // How many ticks to run.
+// [Arcade] Tic counters for the attract freeze watchdog's diagnostic line.
+void    D_Tic_Counters( tic_t * out_need, tic_t * out_make );
+
 void    TryRunTics (tic_t realtic);
 extern tic_t  local_maketics;   // [Arcade] ticcmds this cabinet has built (-tictiming)
 

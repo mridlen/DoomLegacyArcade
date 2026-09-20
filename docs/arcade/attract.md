@@ -429,6 +429,60 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   blinks on `gametic & 16`, the same cadence as `PRESS FIRE TO START` and the intermission's
   `NEW RECORD`, so the attract screen has one heartbeat rather than three.
 
+### The attract demo freezes, and how it is caught
+
+The cabinet has been found sitting on a frozen attract demo — on the laptop and on a Pi, the same
+day, so not a fluke. The program was otherwise alive: the Devmode Restart key still worked. So it
+is **not a hang**. The loop, the input and the drawing were all running and only the simulation had
+stopped advancing.
+
+**Nothing else rescues it.** `G_Idle_Timeout_Check` deliberately does not run during demo playback —
+an attract demo generates no input, so the idle timer would expire every time and kick to the title
+— which is right for a demo that is playing and exactly wrong for one that has stopped. A frozen
+attract demo therefore sits until somebody walks up to the machine.
+
+`D_Attract_Watchdog` (`d_main.c`), called once per pass of `D_DoomLoop` straight after
+`TryRunTics`.
+
+- **Two clocks, because the obvious one may be the thing that broke.** During a demo `TryRunTics`
+  sets `cl_need_tic = gametic + realtics + cv_playdemospeed.value` and only runs tics while that
+  exceeds `gametic` — so a `realtics` stuck at zero (`I_GetTime` not advancing) freezes the
+  simulation while the loop spins on. A watchdog measuring only elapsed time would be reading the
+  same stopped clock it is meant to catch. It also counts **passes of the loop**, which keep coming
+  however the timer behaves, and fires on either: 5 seconds or 3000 passes without `gametic`
+  moving.
+- **Watched only for an attract demo.** Not while paused, not with a menu open, not outside
+  `GS_LEVEL`. A game somebody is playing may sit as long as they like, and a demo behind an open
+  menu is a state the player put it in.
+- **The recovery must not depend on what broke, and testing is what found that.** The first version
+  called `D_AdvanceDemo`, which only raises `DEMO_seq_advance` for `TryRunTics` to act on — *inside*
+  `if( cl_need_tic > gametic )`, the very test that is false when `realtics` is stuck. The recovery
+  was waiting on the thing that had stopped. Measured: the watchdog fired **25 times** over one
+  frozen demo and the cabinet never moved on. It now calls `D_DoAdvanceDemo` directly, which is
+  where `TryRunTics` would have called it from anyway, and one firing recovers.
+- **It does not guess at a cause.** The freeze has not been reproduced on demand, so this logs the
+  state and gets the cabinet moving; the log line is what will identify it next time. Grep
+  `ATTRACT_FREEZE`. It carries `gametic`, `leveltime`, `realtics`, `cl_need_tic`, `maketic`, how
+  long and how many passes it stalled, `gamestate`, `demo_ctrl` and `singletics` — enough to tell a
+  stopped timer (`realtics=0`, `cl_need_tic == gametic`) from a stalled demo stream or a wedged
+  game state. `cl_need_tic` and `maketic` are file-static in `d_clisrv.c`, hence `D_Tic_Counters`
+  rather than widening their scope for a log message.
+
+**`-demofreeze N` reproduces it on demand**, stopping `realtics` once an attract demo reaches
+leveltime N. A watchdog never seen to fire is not evidence of anything. Verified both ways:
+
+```
+./doomlegacyarcade -game doomu -demofreeze 100
+  -> 3 freezes, 3 firings, 3 recoveries, three different demos played
+./doomlegacyarcade -game doomu                  (4 minutes, 3 demos)
+  -> 0 firings
+```
+
+**Key it on `leveltime` and `GS_LEVEL`, not `gametic`.** Keyed on `gametic` the simulator fired
+while the demo start was still a pending `gameaction` — and with no tics running that action never
+executes, so the demo never loaded at all and the watchdog, which ignores anything that is not
+`GS_LEVEL`, never saw it. Freezing the thing before it starts is not the fault being reproduced.
+
 ### The chase camera gets stuck, and how it is unstuck
 
 **`MT_CHASECAM` collides with the world.** It is `MF_NOBLOCKMAP|MF_NOSECTOR`, so nothing can collide

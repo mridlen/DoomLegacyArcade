@@ -91,6 +91,11 @@ Discord is likely to get you banned.
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
   takes no coins.
+- **The attract screen gets itself moving again if a demo stops.** Very occasionally an attract
+  demo would freeze — the machine still responded, but the demo sat there and, because the idle
+  timeout is switched off while a demo plays, nothing moved it on until somebody came over. The
+  cabinet now notices within about five seconds and skips to the next attract screen by itself, and
+  writes a line to the log saying what state it was in when it happened.
 - **A chase camera on some record demos.** Every third record demo in the attract cycle is shown
   from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
   over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
