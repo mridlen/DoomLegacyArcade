@@ -1993,6 +1993,50 @@ Answered by Mark on 2026-09-13; the sections above already reflect them.
    → *Cabinet state* and *During and after*
 6. **Master off: members keep full function on their own, sync later.** Assumed throughout.
 
+## Music Cabinet
+
+Music does not survive being played on several machines at once. Nothing keeps the tracks in step:
+each cabinet starts its own at its own moment and they drift within a few bars. Syncing them properly
+is not available with what is to hand — SDL_mixer exposes no sample-accurate playback clock, and a
+streamed track has its own timebase — and **starting** them together only delays the drift. Real
+linked arcade hardware does not phase-lock audio either; it designates whose speakers carry it.
+
+`cv_link_musiccab` ("link_musiccab", **Arcade Options → Cabinet Link Options → Music Cabinet**,
+`CV_SAVE`, default "All"). Values are cabinet **names**: "All", then this cabinet's own name, then
+every pinned peer.
+
+- **The list is built from the pins, not from the peers that happen to be online.**
+  `LK_Known_Names` (`d_link.c`) reads `lk_set.name` and `lk_shared.pins`, which come from
+  `legacyhome/link/pins.txt`. That matters for *when*, not just for completeness — see below.
+- **`M_Link_Music_Build_List` is called from `D_DoomMain` immediately after `LK_Init` and therefore
+  before `M_LoadConfig`.** A `CV_SAVE` cvar stores its *label*, and a label that is not in the
+  `PossibleValue` list when the config loads is refused and the cvar falls back to its default. Built
+  after the config, the operator's choice would have been silently reset on every restart, and
+  everything would still have looked fine on the machine where it was set. LK_Init at d_main.c:4297,
+  M_LoadConfig at 4593 — that ordering is the whole reason this can be an ordinary saved cvar.
+- **Muted only during a linked game.** `M_Link_Music_Muted` (`m_menu.c`) is false unless
+  `LK_In_Linked_Game()`, which is `lku_mode != LKU_NONE` — the sealed UDP game channel, up only while
+  cabinets are actually playing together. A cabinet on its own, in Single Level, or on the attract
+  screen keeps its music whatever the setting says. It is a "who carries the music" setting, not a
+  "mute this cabinet" switch.
+- **Applied in `S_Update_Volumes` (`s_sound.c`)**, the one place the mixer volumes are set, which
+  D_DoomLoop already calls every pass. So it follows the attract scaling and the volume cvars without
+  a second mechanism, and coming out of a linked game restores the music by itself.
+- Sound effects are untouched: they belong on the cabinet they happen on.
+
+Verified by forcing the linked-game condition and reading the result: "All" and this cabinet's own
+name both play, another cabinet's name mutes, and with the force removed nothing mutes at all.
+
+### The page stopped explaining itself
+
+`M_Draw_LinkOptions` used to print a paragraph under each setting. Three settings needing three
+paragraphs of on-screen text said more about the page than about the settings, and 272 units of menu
+font is a poor place to write a sentence. They are in `README.md` now, where the operator reading the
+manual gets better prose than the page could hold.
+
+The "THIS CABINET IS NOT THE MASTER" line stays. It is not an explanation of a setting — it is the
+reason none of them will do anything, which is worth saying where the settings are.
+
 ## Team Deathmatch over the link
 
 Invites carry a category byte, and Team Deathmatch is a third one, **`LKG_CAT_TEAMDM`**, appended

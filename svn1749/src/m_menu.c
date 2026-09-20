@@ -690,6 +690,57 @@ consvar_t cv_link_gamesync = {"link_gamesync", "0", CV_SAVE, CV_OnOff };
 // master's setting; Off by default -- it writes files on another machine.
 consvar_t cv_link_copywads = {"link_copywads", "0", CV_SAVE, CV_OnOff };
 
+// [Arcade] Music Cabinet: which cabinet's speakers carry the music while
+// cabinets are playing a linked game together.
+//
+// Sound effects are per-cabinet and belong where they happen, but music does
+// not survive being played on several machines at once: nothing keeps the
+// tracks in step, they drift within a few bars, and the result is worse than
+// one cabinet playing alone.  Real linked arcade hardware does not try to
+// phase-lock audio either -- it designates which cabinet's speakers carry it.
+// So does this.  Pick the middle cabinet of the row.
+//
+// The values are cabinet *names*, filled in by M_Link_Music_Build_List from
+// this cabinet's name and the pins.  "All" is the default and means every
+// cabinet plays its own music, which is what they did before this existed.
+#define LINK_MUSICCAB_MAX  66      // 64 pins, "All", terminator
+CV_PossibleValue_t link_musiccab_cons_t[ LINK_MUSICCAB_MAX ] = { {0,"All"}, {0,NULL} };
+consvar_t cv_link_musiccab = {"link_musiccab", "All", CV_SAVE, link_musiccab_cons_t };
+
+// [Arcade] Fill the Music Cabinet list.  Called from D_DoomMain straight after
+// LK_Init, which is before M_LoadConfig -- so a saved name is a value the cvar
+// already knows and accepts, rather than one it rejects back to the default on
+// every restart.
+void  M_Link_Music_Build_List( void )
+{
+    static char  names[LINK_MUSICCAB_MAX][LK_NAME_LEN];
+    int  n, i, w = 1;
+
+    n = LK_Known_Names( names, LINK_MUSICCAB_MAX );
+    for( i = 0; i < n && w < LINK_MUSICCAB_MAX - 1; i++ )
+    {
+        link_musiccab_cons_t[w].value = w;
+        link_musiccab_cons_t[w].strvalue = names[i];
+        w++;
+    }
+    link_musiccab_cons_t[w].value = 0;
+    link_musiccab_cons_t[w].strvalue = NULL;
+}
+
+// [Arcade] Should this cabinet stay quiet?  Read by S_Update_Volumes.
+//
+// Only while a linked game is actually running.  A cabinet playing on its own
+// -- Single Level, a solo campaign, the attract screen -- keeps its music
+// whatever this is set to, because there is nothing for it to be out of step
+// with.
+boolean  M_Link_Music_Muted( void )
+{
+    if( cv_link_musiccab.value == 0 )  return false;   // "All"
+    if( ! LK_In_Linked_Game() )        return false;   // playing alone
+    if( ! cv_link_musiccab.string )    return false;
+    return strcmp( cv_link_musiccab.string, LK_Name() ) != 0;
+}
+
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has
 // no Quit button -- quitting drops the player out to a desktop they should
 // never see, and on an unattended machine nothing brings the game back -- so
@@ -8269,6 +8320,7 @@ menuitem_t LinkOptionsMenu[] =
 {
     {IT_STRING | IT_CVAR, 0, "Select Game Sync", &cv_link_gamesync, 0},
     {IT_STRING | IT_CVAR, 0, "Copy Missing Wads", &cv_link_copywads, 0},
+    {IT_STRING | IT_CVAR, 0, "Music Cabinet"    , &cv_link_musiccab, 0},
 };
 
 // Draw text word-wrapped to width, measured with the menu font rather than
@@ -8306,12 +8358,14 @@ static void  M_Draw_LinkOptions( void )
     y = LinkOptionsDef.y + 40;
     if( LK_Role() != LK_ROLE_MASTER )
         y = M_Link_Wrap( 24, y, 272, 0, "THIS CABINET IS NOT THE MASTER: ONLY THE MASTER'S SETTINGS COUNT." ) + 6;
-    y = M_Link_Wrap( 24, y, 272, V_WHITEMAP,
-                 "SELECT GAME SYNC: A GAME CHOSEN ON SELECT GAME ON ANY LINKED CABINET IS "
-                 "CHOSEN ON THE OTHERS TOO. A CABINET IN A GAME SWITCHES WHEN IT IS OVER." ) + 6;
-    M_Link_Wrap( 24, y, 272, V_WHITEMAP,
-                 "COPY MISSING WADS: ONE WITHOUT THAT GAME GETS IT FROM THE MASTER - AN IWAD "
-                 "INTO WADS BESIDE THE PROGRAM, A LEVEL PACK INTO LEVELS - THEN SWITCHES." );
+    // [Arcade] The per-option explanations that used to be printed here live in
+    // README.md instead.  Three settings needing three paragraphs of on-screen
+    // text said more about the page than about the settings, and an operator
+    // reading a manual can have better sentences than one squeezed into 272
+    // units of menu font.  The "not the master" line above stays: that is not
+    // an explanation of a setting, it is the reason none of them will do
+    // anything.
+    (void) y;
 }
 
 menu_t  LinkOptionsDef =
@@ -13504,6 +13558,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_gameoptionsmenu,  // [Arcade]
   &cv_chasecamdemo,     // [Arcade]
   &cv_link_gamesync,    // [Arcade] Select Game Sync
+  &cv_link_musiccab,    // [Arcade] Music Cabinet
   &cv_link_copywads,    // [Arcade] Copy Missing Wads
   &cv_initialstimeout,  // [Arcade]
 

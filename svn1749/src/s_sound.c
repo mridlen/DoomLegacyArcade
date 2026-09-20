@@ -1417,6 +1417,16 @@ void S_Update_Volumes(void)
     want_sfx = S_Attract_Scaled( cv_soundvolume.value );
     want_mus = S_Attract_Scaled( cv_musicvolume.value );
 
+    // [Arcade] Music Cabinet: while cabinets are playing a linked game, only
+    // the chosen one carries the music (m_menu.c, cv_link_musiccab).  Sound
+    // effects are untouched -- they belong where they happen; it is music that
+    // cannot be played on several machines at once without drifting.  A
+    // cabinet playing on its own is never muted.
+    {
+        extern boolean M_Link_Music_Muted( void );
+        if( M_Link_Music_Muted() )  want_mus = 0;
+    }
+
     if (mix_sfxvolume != want_sfx)
         S_SetSfxVolume(want_sfx);
     if (mix_musicvolume != want_mus)

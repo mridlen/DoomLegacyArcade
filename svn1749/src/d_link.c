@@ -73,6 +73,8 @@ void        LK_Ticker( void )       { }
 void        LK_Shutdown( void )     { }
 lk_role_e   LK_Role( void )         { return LK_ROLE_OFF; }
 const char* LK_Name( void )         { return ""; }
+int         LK_Known_Names( char (*out)[LK_NAME_LEN], int max )  { (void)out; (void)max; return 0; }
+boolean     LK_In_Linked_Game( void )  { return false; }
 const char* LK_Id_Short( void )     { return ""; }
 int         LK_Peers( lk_peer_info_t * out, int max )  { (void)out; (void)max; return 0; }
 boolean     LK_Send( const byte * t, byte ty, const byte * d, int l )  { (void)t; (void)ty; (void)d; (void)l; return false; }
@@ -2955,6 +2957,40 @@ void  LK_Shutdown( void )
 lk_role_e    LK_Role( void )      { return lk_set.role; }
 const char * LK_Name( void )      { return lk_set.name; }
 const char * LK_Id_Short( void )  { return lk_id_short; }
+
+// [Arcade] See d_link.h.  Own name first, then the pins, skipping blanks, the
+// "-" a nameless pin is written as, and duplicates.
+int  LK_Known_Names( char (*out)[LK_NAME_LEN], int max )
+{
+    int i, j, n = 0;
+
+    if( max <= 0 )  return 0;
+
+    if( lk_set.name[0] )
+        dl_strncpy( out[n++], lk_set.name, LK_NAME_LEN );
+
+    if( ! lk_inited )  return n;   // settings exist before the thread does
+
+    lk_lock();
+    for( i = 0; i < lk_shared.num_pins && n < max; i++ )
+    {
+        const char * nm = lk_shared.pins[i].name;
+
+        if( ! nm[0] || (nm[0] == '-' && nm[1] == 0) )  continue;
+        for( j = 0; j < n; j++ )
+            if( strcmp( out[j], nm ) == 0 )  break;
+        if( j < n )  continue;
+
+        dl_strncpy( out[n++], nm, LK_NAME_LEN );
+    }
+    lk_unlock();
+    return n;
+}
+
+boolean  LK_In_Linked_Game( void )
+{
+    return lku_mode != LKU_NONE;
+}
 
 int  LK_Peers( lk_peer_info_t * out, int max )
 {

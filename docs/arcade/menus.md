@@ -1012,6 +1012,10 @@ for one more — so seven rows moved to two new pages hung off it, to leave room
 - **Disable/Enable Menu Options >>** (`MenuDisableMenu`/`MenuDisableDef`, titled "Menu Options"):
   Cheats Menu, Multiplayer Menu, Quit Menu, Game Options — every switch for how much menu a player
   is given.
+- **Cabinet Link Options** (`LinkOptionsMenu`/`LinkOptionsDef`) is three rows now: Select Game Sync,
+  Copy Missing Wads and **Music Cabinet** (`cv_link_musiccab`). Its values are cabinet *names*, filled
+  in at startup rather than compiled in — see `cabinet-link.md` for why that has to happen before the
+  config loads. The page no longer prints an explanation under each setting; those are in `README.md`.
 - **Timeouts >>** (`TimeoutsMenu`/`TimeoutsDef`): Initials Timeout, Idle Timeout, Idle Warning,
   Join Screen Timeout (below), and **Tally Hold** (`cv_mp_tally_hold`, "mptallyhold", 0..60
   seconds, default 25) — how long the multiplayer campaign tally is held before a press can

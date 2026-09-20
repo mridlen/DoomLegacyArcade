@@ -4295,6 +4295,9 @@ restart_command:
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
     AU_Init();   // [Arcade] load the operator audit counters, count this boot
     LK_Init();   // [Arcade] Cabinet Link settings and identity; starts nothing
+    // [Arcade] Music Cabinet's value list is cabinet names, and it has to exist
+    // before M_LoadConfig below or a saved name is rejected into the default.
+    { extern void M_Link_Music_Build_List(void); M_Link_Music_Build_List(); }
 
     // [Arcade] Must be after legacyhome/configfile_main are resolved and
     // before IdentifyVersion below, which is what acts on it.
