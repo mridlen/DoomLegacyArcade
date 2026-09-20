@@ -1891,6 +1891,7 @@ P_CrossSpecialLine ( line_t * line, int side, mobj_t* thing )
         // EXIT!
         if( cv_allowexitlevel.EV )
         {
+            G_Note_Exit_Player( thing );   // [Arcade] EXIT1 marker
             G_ExitLevel ();
             line->special = 0;  // heretic have right
         }
@@ -1972,7 +1973,10 @@ P_CrossSpecialLine ( line_t * line, int side, mobj_t* thing )
       case 124:
         // Secret EXIT
         if( cv_allowexitlevel.EV )
+        {
+            G_Note_Exit_Player( thing );   // [Arcade] EXIT1 marker
             G_SecretExitLevel ();
+        }
         break;
 
       case 125:
@@ -2145,6 +2149,7 @@ P_CrossSpecialLine ( line_t * line, int side, mobj_t* thing )
         {
             if( cv_allowexitlevel.EV )
             {
+                G_Note_Exit_Player( thing );   // [Arcade] EXIT1 marker
                 G_SecretExitLevel ();
                 goto W1clear;
             }

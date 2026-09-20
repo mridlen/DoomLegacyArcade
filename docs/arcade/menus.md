@@ -1013,7 +1013,11 @@ for one more — so seven rows moved to two new pages hung off it, to leave room
   Cheats Menu, Multiplayer Menu, Quit Menu, Game Options — every switch for how much menu a player
   is given.
 - **Timeouts >>** (`TimeoutsMenu`/`TimeoutsDef`): Initials Timeout, Idle Timeout, Idle Warning,
-  and Join Screen Timeout (below).
+  Join Screen Timeout (below), and **Tally Hold** (`cv_mp_tally_hold`, "mptallyhold", 0..60
+  seconds, default 25) — how long the multiplayer campaign tally is held before a press can
+  dismiss it. Labelled "Tally Hold" and not "Multiplayer Tally Hold": the longer label measures
+  213 against `STCFN` and would run into the value column, which starts at 236 on this page. This
+  one is 92. Behaviour in `multiplayer-views.md`.
 
 Arcade Options is ten rows now (`y 40..137, room for 6 more`); the new pages are four and three.
 The two links sit where the rows were, after Boot Game.

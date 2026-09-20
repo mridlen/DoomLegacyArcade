@@ -440,14 +440,19 @@ static void check_rankings(void)
             fail("rank y=%%d n=%%d: y_limit %%d clips the last row at %%d",
                  ytop, n, f.y_limit, ytop + ((rows - 1) * f.pitch));
 
-        /* 4. The classic layout, unchanged, for every count that fits it.
-              Anything here is a change to a screen that was never wrong. */
+        /* 4. The classic layout, pinned, for every count that fits it.
+              This used to pin the upstream four-table layout (x 5/85/165/245).
+              It is now two tables, Frags and Deaths, at 5 and 165 -- Buchholz
+              and indiv. were removed because nobody on a cabinet can read
+              them, and the freed width went to the names.  Still pinned, so
+              that a later accidental change to a screen that is now right
+              still shows up here. */
         if( !f.compact )
         {
-            if( f.pitch != 12 || f.ntable != 4 || f.max_rows != 0
+            if( f.pitch != 12 || f.ntable != 2 || f.max_rows != 0
                 || f.col_dx != 0 || f.sub_w != 0
                 || f.y_limit != BASEVIDHEIGHT
-                || f.x[0] != 5 || f.x[1] != 85 || f.x[2] != 165 || f.x[3] != 245 )
+                || f.x[0] != 5 || f.x[1] != 165 )
                 fail("rank y=%%d n=%%d: classic layout altered "
                      "(pitch %%d ntable %%d x %%d/%%d/%%d/%%d)",
                      ytop, n, f.pitch, f.ntable,
@@ -693,8 +698,11 @@ if '--selfcheck' in sys.argv:
          lambda s: s.replace('if( num_pl <= classic_rows )',
                              'if( num_pl < classic_rows )')),
         ('ranking classic x positions shifted',
-         lambda s: s.replace('out->x[0] = 5;  out->x[1] = 85;',
-                             'out->x[0] = 6;  out->x[1] = 85;')),
+         lambda s: s.replace('out->x[0] = 5;  out->x[1] = 165;',
+                             'out->x[0] = 6;  out->x[1] = 165;')),
+        ('ranking classic drops back to four tables',
+         lambda s: s.replace('        out->ntable   = 2;',
+                             '        out->ntable   = 4;')),
         ('ranking y_limit clips the last compact row',
          lambda s: s.replace('out->y_limit  = ytop + (per_col * WI_C_PITCH);',
                              'out->y_limit  = ytop + ((per_col - 1) * WI_C_PITCH);')),

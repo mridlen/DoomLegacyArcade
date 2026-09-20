@@ -1141,9 +1141,16 @@ there is no third set that wouldn't collide.
 showed the first 8 and the deathmatch rankings the top 12, with everyone else simply missing and
 nothing on screen to say so. Past those counts both screens now switch to a smaller layout that
 fits everybody: smaller type, tighter rows, and a second column when one won't hold them all. Below
-those counts the screens are exactly what they always were. In a really big deathmatch the two extra
-ranking tables (Buchholz and indiv.) give up their space so that Frags and deads can each use two
-columns and list all 32.
+those counts the screens are exactly what they always were.
+
+The deathmatch scoreboard now shows **Frags and Deaths**, each across half the screen, with room for
+real names. In a multiplayer campaign the end-of-level tally now **stays up for 25
+seconds before anybody can skip it** — it is the only time the room sees how everyone did, and one
+player reaching for fire used to take that away from the other three. Set it with
+**Options → Arcade Options → Timeouts → Tally Hold** (0 to 60 seconds, 0 turns it off). Whoever
+worked the exit switch gets a small **EXIT** sign beside their name on that tally. It used to show four tables — the two extra ones were *Buchholz* and *indiv.*, chess
+tie-break scores that almost nobody can interpret, and they were taking half the board while names
+were cut to six characters.
 
 ### Choosing a resolution, and tuning performance
 
