@@ -312,7 +312,10 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
   finished frame lands on the panel — a thing **screenshots cannot see**, since the capture is of
-  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py`, `tools/restartquote-test.py` (the Windows restart's command-line
+  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py`, `tools/cvarlist-test.py` (no
+`CV_PossibleValue_t` list repeats a value — the precondition `CV_ValueIncDec` states in its own
+comment and nothing enforced; a duplicate leaves the cvar correct and makes the *menu arrows* step
+from the wrong index), `tools/restartquote-test.py` (the Windows restart's command-line
   quoting, round-tripped through the documented splitting rules) and
   `tools/menufit-test.py` (where every generic menu page's rows land: a row past the 200-line
   screen is silently not drawn, and an `IT_YOFFSET` link can end up sharing a y with a row inserted

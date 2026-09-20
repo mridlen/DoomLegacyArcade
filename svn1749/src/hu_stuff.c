@@ -2072,13 +2072,24 @@ consvar_t cv_coords = {"coords", "0", CV_SAVE, CV_OnOff};
 // [Arcade] The deathmatch WINNING banner, Arcade Options -> Messages +
 // Banners -> Winning Banner.  Drawing only, so not a NETVAR and nothing to do
 // with demos.
-// [Arcade] Off / Rainbow / Cycle.  "On" is kept as an unlisted alias for
-// Rainbow so that a config written before this setting grew a third value
-// still loads as what it meant; CV_get_possiblevalue_string returns the first
-// entry matching the value, so "Rainbow" is what gets shown and saved back.
-// The default stays Rainbow, which is what the banner has always done.
+// [Arcade] Off / Rainbow / Cycle.  The default stays Rainbow, which is what
+// the banner has always done.
+//
+// No entry may repeat a value here.  This first shipped with a fourth
+// {1,"On"} entry, so that a config written while this was an on/off cvar
+// would still load; it broke the menu.  CV_ValueIncDec (command.c) finds the
+// current entry by scanning the list for a matching value and keeping the
+// *last* match -- it says so itself: "this code do not support more than same
+// value for differant PossibleValue" -- so Rainbow resolved to index 3 rather
+// than 1, and the arrows stepped from there: right went to Off, left went to
+// Cycle, and stepping right from Cycle landed on the duplicate "On".
+//
+// An old config saying "On" is instead refused by name, which leaves the cvar
+// at its registered default -- 1, Rainbow, exactly what "On" meant.  The only
+// trace is one M_Verify_Config complaint, until that machine next saves a
+// -devmode session.
 CV_PossibleValue_t CV_WinningBanner[] =
-   {{0,"Off"}, {1,"Rainbow"}, {2,"Cycle"}, {1,"On"}, {0,NULL}};
+   {{0,"Off"}, {1,"Rainbow"}, {2,"Cycle"}, {0,NULL}};
 consvar_t cv_winningbanner = {"winningbanner", "1", CV_SAVE, CV_WinningBanner};
 
 // [Arcade] Gameplay messages (pickups, kills, locked doors) across the top of
