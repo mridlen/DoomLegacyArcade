@@ -1020,46 +1020,6 @@ code. `sudo debsums -s` audits every installed file; a couple of `rpi-*` config 
 changed is normal (the Pi's own first-boot scripts rewrite them), flagged binaries or libraries are
 not.
 
-## The pistol's black seam: transparent texels are black as well as transparent
-
-**Symptom.** A black line across the pistol while firing, in OpenGL only, with Bilinear or
-Trilinear filtering and never with Nearest. No other weapon showed it. Worst in a dark room — the
-E1M8 death-exit sector made it obvious, where the muzzle flash read as "pasted over" the gun.
-
-**Cause.** `Make_Mip_Block` (`hw_cache.c`) clears an RGBA texture block with
-`memset(block, 0, ...)`, so every texel a patch does not cover is `(0,0,0,0)` — **black as well as
-transparent**. `GL_NEAREST` never samples between texels, so it cannot see that. A linear filter
-averages the four texels around each sample, so along a sprite's silhouette the sprite's own colour
-is averaged with black and the edge darkens. Trilinear shows it too, because the mipmaps are built
-from the same block.
-
-**Why the pistol alone**, which is the part that misled the search for a long time. The fringe
-traces the outline of whatever is drawn, and on most sprites that outline falls against the world
-and reads as ordinary edge shading. `PISFA0`, the pistol's muzzle flash, is 41x38 and sits
-**inside** the weapon's silhouette: it is drawn fullbright over a weapon lit by the sector, so in a
-dark room the flash is bright, the gun behind it is nearly black, and the fringe draws a dark line
-across the gun. Every other muzzle flash is out at the barrel, over the scene rather than over the
-weapon.
-
-**Fix.** `HWR_Bleed_Alpha` gives transparent texels the colour of the opaque texels beside them and
-leaves their alpha at zero — the standard alpha bleed. Nothing about what is drawn changes, since
-alpha 0 is still invisible; the filter simply has no black left to find. Two rings, because
-bilinear samples one texel away and the first mipmap level halves that reach. It runs before the
-existing padding fill, so the padding inherits bled colour rather than black.
-
-**Measured**, E1M1, 274 cached patches: transparent texels that sit beside an opaque one and are
-still pure black went from **10899 to 66** — the remainder sit beside sprite pixels that are
-genuinely black, which is correct. On screen 1230 sampled pixels came out visibly lighter, up to
-+176. Startup cost is not measurable: 2.99 s against 3.04 s median over three runs each.
-
-**`-nobleed`** turns it off without a rebuild, so the effect can be A/B'd on the cabinet.
-
-**Two general lessons.** A filtering-only artifact is nearly always the texture rather than the
-geometry — the chain of hypotheses that started at clipping and geometry was wrong from the first
-step, and "only with bilinear and trilinear" would have cut straight to it. And "which sprite is
-special?" was the wrong question: the pistol's flash is not special, its *placement* is. Ask where
-an artifact would be **visible**, not only where it is produced.
-
 ## The encoding trap, and how it was closed
 
 Fourteen files in this tree were not valid UTF-8, and **plain `grep` skips such

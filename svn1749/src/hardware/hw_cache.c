@@ -107,7 +107,6 @@
 #include "doomincl.h"
 
 #include "hw_glob.h"
-#include "../m_argv.h"  // [Arcade] -nobleed
 #include "hw_drv.h"
 
 #include "doomstat.h"
@@ -844,91 +843,6 @@ static void HWR_GenerateFogTexture (int texnum, Mipmap_t * mipmap,
 // Called from HWR_Draw* -> HWR_LoadMappedPatch
 // Called from HWR_GetPatch
 // Called from W_CachePatchNum, W_CacheMappedPatchNum
-
-// [Arcade] ---- Bleed sprite colour into the transparent texels around it. ----
-//
-// Make_Mip_Block clears an RGBA block to (0,0,0,0), so every texel a patch
-// does not cover is *black* as well as transparent.  With GL_NEAREST that is
-// invisible: a texel is either drawn or it is not.  With GL_LINEAR the filter
-// averages the four texels around each sample, so along the silhouette the
-// sprite's own colour is mixed with black and the edge comes out dark.  The
-// mipmaps trilinear builds average the same black in, so it shows there too.
-//
-// On most sprites that dark fringe lands against the world and nobody notices.
-// On the pistol it lands on the gun: PISFA0, the muzzle flash, is 41x38 and
-// sits *inside* the weapon's silhouette, drawn fullbright over a weapon lit by
-// the sector.  In a dark room -- the E1M8 death exit is the case that showed
-// it -- the flash is bright, the pistol behind it is nearly black, and the
-// fringe traces the flash's outline as a dark line across the gun.  That is
-// the "seam" and the reason it is the pistol and no other weapon: every other
-// muzzle flash sits out at the barrel, over the scene rather than over the
-// weapon.
-//
-// The fix is the usual one: give the transparent texels the colour of the
-// opaque ones beside them and leave their alpha at zero.  Nothing about what
-// is drawn changes -- alpha 0 is still invisible -- but the filter now has no
-// black to find.  Two rings, because bilinear samples one texel away and the
-// first mipmap level halves that reach.
-#define HWR_BLEED_RINGS  2
-
-static void HWR_Bleed_Alpha( byte * block, int bw, int bh, int bytepp )
-{
-    int ring, x, y;
-
-    // [Arcade] -nobleed turns this off without a rebuild, so the effect can be
-    // A/B'd on the cabinet if it is ever suspected of something.
-    if( M_CheckParm("-nobleed") )  return;
-
-    if( bytepp != 4 && bytepp != 2 )  return;   // no alpha channel to bleed for
-    if( bw < 2 || bh < 2 )  return;
-
-    // alpha is the last byte of the texel in both formats
-    for( ring = 0; ring < HWR_BLEED_RINGS; ring++ )
-    {
-        boolean changed = false;
-
-        for( y = 0; y < bh; y++ )
-        {
-            for( x = 0; x < bw; x++ )
-            {
-                byte * t = block + ((y * bw) + x) * bytepp;
-                int    dx, dy;
-
-                if( t[bytepp-1] != 0 )  continue;   // already opaque
-
-                // Take the first opaque neighbour.  Averaging them would be
-                // marginally smoother and costs a second pass to avoid
-                // reading texels this ring has already written; the fringe is
-                // gone either way.
-                for( dy = -1; dy <= 1; dy++ )
-                {
-                    for( dx = -1; dx <= 1; dx++ )
-                    {
-                        byte * n;
-                        int nx = x + dx, ny = y + dy;
-
-                        if( (dx == 0 && dy == 0)
-                            || nx < 0 || nx >= bw || ny < 0 || ny >= bh )
-                            continue;
-
-                        n = block + ((ny * bw) + nx) * bytepp;
-                        if( n[bytepp-1] == 0 )  continue;
-
-                        memcpy( t, n, bytepp - 1 );   // colour only
-                        t[bytepp-1] = 0;              // still invisible
-                        changed = true;
-                        goto next_texel;
-                    }
-                }
-next_texel:
-                continue;
-            }
-        }
-
-        if( ! changed )  break;   // nothing left adjacent to opaque
-    }
-}
-
 void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                     uint32_t drawflags)
 {
@@ -996,11 +910,6 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                           patch->width, patch->height,
                           0, 0,
                           patch, bytepp );
-
-    // [Arcade] Bleed the sprite's colour into the transparent texels beside it,
-    // before the padding fill below copies edge texels outward, so the padding
-    // inherits bled colour rather than black.  See HWR_Bleed_Alpha.
-    HWR_Bleed_Alpha( block, blockwidth, blockheight, bytepp );
 
     // [Arcade] Fill the padding with copies of the patch's last column and
     // row.  A patch that is not a power of two sits in the top-left of a
