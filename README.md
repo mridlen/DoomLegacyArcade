@@ -96,6 +96,10 @@ Discord is likely to get you banned.
   timeout is switched off while a demo plays, nothing moved it on until somebody came over. The
   cabinet now notices within about five seconds and skips to the next attract screen by itself, and
   writes a line to the log saying what state it was in when it happened.
+- **No dark outline on sprites in OpenGL.** With Bilinear or Trilinear texture
+  filtering, sprites used to pick up a thin dark fringe along their edges. It was most obvious as a
+  black line across the pistol while firing — worst in a dark room, where the muzzle flash looked
+  pasted on rather than part of the gun. Fixed.
 - **A chase camera on some record demos.** Every third record demo in the attract cycle is shown
   from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
   over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
