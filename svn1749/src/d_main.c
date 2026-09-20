@@ -1860,6 +1860,132 @@ boolean spirit_update;
 //#define SAVECPU_EXPERIMENTAL
 
 // Called by port main program.
+
+// [Arcade] ---- Attract freeze watchdog. ----
+//
+// The cabinet has been found sitting on a frozen attract demo, on the laptop
+// and on a Pi, with the program otherwise alive -- the Devmode Restart key
+// still worked.  So this is not a hang: the loop, the input and the drawing
+// were all running and only the simulation had stopped advancing.
+//
+// **Nothing else rescues it.** G_Idle_Timeout_Check deliberately does not run
+// during demo playback (an attract demo generates no input, so the idle timer
+// would expire every time and kick to the title), which is right for a demo
+// that is playing and exactly wrong for one that has stopped.  A frozen
+// attract demo therefore sits until somebody walks up to the machine, which
+// on an unattended cabinet means until somebody notices.
+//
+// Two clocks, because the obvious one can be the thing that broke.  During a
+// demo TryRunTics computes cl_need_tic as (gametic + realtics + playdemospeed)
+// and only runs tics while that exceeds gametic, so a realtics stuck at zero
+// -- i.e. I_GetTime not advancing -- freezes the simulation while the loop
+// spins on.  A watchdog that measured only elapsed time would be reading the
+// same stopped clock it is meant to catch.  So it also counts passes of the
+// loop, which keep coming however the timer is behaving, and fires on either.
+//
+// What it does NOT do is guess at a cause.  The freeze has not been
+// reproduced, so this logs the state and gets the cabinet moving again; the
+// log line is the thing that will identify it next time.  Grep ATTRACT_FREEZE.
+
+#define AFW_STALL_TICS    (5*TICRATE)   // 5 s of I_GetTime not moving a tic
+#define AFW_STALL_PASSES  3000          // ... or this many loop passes
+
+// [Arcade] -demofreeze N: stop feeding realtics once an attract demo reaches
+// tic N, reproducing the freeze on demand.  A watchdog that has never been
+// seen to fire is not evidence of anything, and this is the only way to see
+// this one fire without waiting for the fault to happen again on its own.
+// It simulates the realtics-stuck-at-zero shape described above, which is
+// what makes the simulation stop while the loop keeps running.
+static tic_t  demo_freeze_tic = 0;      // 0 = off
+static byte   demo_freeze_checked = 0;
+
+static boolean D_Demo_Freeze_Test( void )
+{
+    if( ! demo_freeze_checked )
+    {
+        int p = M_CheckParm("-demofreeze");
+        demo_freeze_checked = 1;
+        if( p && (p + 1) < myargc )
+            demo_freeze_tic = (tic_t) atoi( myargv[p+1] );
+    }
+    // leveltime, not gametic, and GS_LEVEL: the demo has to be *playing*.
+    // Keyed on gametic this fired while the demo start was still a pending
+    // gameaction -- and with no tics running that action never executes, so
+    // the demo never loaded at all and the watchdog (which ignores anything
+    // that is not GS_LEVEL) never saw it.  Freezing the thing before it
+    // starts is not the fault being reproduced.
+    return demo_freeze_tic && demoplayback && (gamestate == GS_LEVEL)
+           && (leveltime >= (int)demo_freeze_tic);
+}
+
+static void D_Attract_Watchdog( tic_t entertic, tic_t tic_before, tic_t realtics )
+{
+    static tic_t  last_adv_time  = 0;
+    static uint32_t last_adv_pass = 0;
+    static uint32_t pass_count    = 0;
+    tic_t  need = 0, make = 0;
+    uint32_t stalled_passes;
+    tic_t  stalled_time;
+
+    pass_count++;
+
+    // Only an attract demo is watched.  A game somebody is playing can be
+    // paused or sat in a menu for as long as they like, and a demo behind an
+    // open menu is a state the player put it in.
+    if( ! demoplayback || paused || menuactive || gamestate != GS_LEVEL )
+    {
+        last_adv_time = entertic;
+        last_adv_pass = pass_count;
+        return;
+    }
+
+    if( gametic != tic_before )   // progress
+    {
+        last_adv_time = entertic;
+        last_adv_pass = pass_count;
+        return;
+    }
+
+    // entertic can go backwards only if I_GetTime does, which would make this
+    // unsigned subtraction enormous; treat that as a stall too rather than
+    // wrapping into a very long wait.
+    stalled_time   = entertic - last_adv_time;
+    stalled_passes = pass_count - last_adv_pass;
+
+    if( stalled_time < AFW_STALL_TICS && stalled_passes < AFW_STALL_PASSES )
+        return;
+
+    D_Tic_Counters( &need, &make );
+    GenPrintf( EMSG_error,
+       "ATTRACT_FREEZE: demo stopped advancing -- gametic=%u leveltime=%d "
+       "realtics=%u cl_need_tic=%u maketic=%u stalled=%us/%upasses "
+       "gamestate=%d demo_ctrl=%u singletics=%d\n",
+       (unsigned)gametic, leveltime, (unsigned)realtics,
+       (unsigned)need, (unsigned)make,
+       (unsigned)(stalled_time / TICRATE), (unsigned)stalled_passes,
+       (int)gamestate, (unsigned)demo_ctrl, (int)singletics );
+
+    // Recover by moving the attract cycle on.  The next page is a fresh start
+    // for whatever went wrong, and a cabinet that heals itself beats one that
+    // waits to be noticed.
+    //
+    // **D_DoAdvanceDemo, not D_AdvanceDemo, and this is the whole point of
+    // having tested it.**  D_AdvanceDemo only raises DEMO_seq_advance, which
+    // TryRunTics acts on *inside* `if( cl_need_tic > gametic )` -- and during
+    // a demo cl_need_tic is (gametic + realtics + playdemospeed), so when
+    // realtics is stuck at zero that test is false and the flag is never
+    // looked at.  The recovery would have been waiting on exactly the thing
+    // that had stopped.  Measured: with the flag version the watchdog fired
+    // 25 times over one frozen demo and the cabinet never moved on.
+    //
+    // Calling it straight from here is safe at this point in the loop: it is
+    // immediately after TryRunTics returned, which is where TryRunTics would
+    // have called it from anyway, and outside the tic loop.
+    last_adv_time = entertic;
+    last_adv_pass = pass_count;
+    D_DoAdvanceDemo();
+}
+
 void D_DoomLoop(void)
 {
     char acbuf[_MAX_PATH ];
@@ -1955,6 +2081,10 @@ void D_DoomLoop(void)
         }
 #endif
 
+        // [Arcade] -demofreeze: simulate the attract freeze.  See the watchdog.
+        if( D_Demo_Freeze_Test() )
+            realtics = 0;
+
         // process tics (but maybe not if realtic==0)
         {   // [Arcade] -frameprofile
             double fp_s = FP_Now();
@@ -1965,6 +2095,7 @@ void D_DoomLoop(void)
                 client_tic_time = FP_Now();   // [Arcade] see D_Interp_Frac
             if( tictiming )
                 D_Tic_Timing( gametic - tic_before );
+            D_Attract_Watchdog( entertic, tic_before, realtics );
         }
         LK_Ticker();   // [Arcade] Cabinet Link: presence out, log lines in; cheap when off
 

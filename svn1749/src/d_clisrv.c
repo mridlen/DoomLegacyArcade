@@ -6468,6 +6468,16 @@ static  int     net_load;
 #endif
 
 //  realtics: 0..5
+// [Arcade] The tic counters, for the attract freeze watchdog's diagnostic
+// line (D_Attract_Watchdog, d_main.c).  Both are file static here and the
+// watchdog only reads them, so an accessor is preferable to widening their
+// scope for a log message.
+void D_Tic_Counters( tic_t * out_need, tic_t * out_make )
+{
+    if( out_need )  *out_need = cl_need_tic;
+    if( out_make )  *out_make = maketic;
+}
+
 void TryRunTics (tic_t realtics)
 {
     // the machine have laged but is not so bad
