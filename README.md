@@ -95,6 +95,9 @@ Discord is likely to get you banned.
   from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
   over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
   the machine has frozen. Only record demos get it — the stock Doom demos are nobody's record.
+  (Chase cam demos used to drift out of step partway through and finish doing something other than
+  the run that was recorded — most visibly on a chainsaw run. Fixed: the camera no longer changes
+  what the player does, only where you watch it from.)
 - **Pacifist and Tyson runs are tracked too**, in Single Player and Single Level, each with its own
   score pages. **Pacifist** means never damaging a monster — shooting past them, running by, and
   letting them fight each other are all fine, but blowing up a barrel that hurts one is not.
