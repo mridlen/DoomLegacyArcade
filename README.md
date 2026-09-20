@@ -91,6 +91,10 @@ Discord is likely to get you banned.
   captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
   4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
   takes no coins.
+- **Setting a record in Single Level asks for your initials straight away.** The Single Level menu
+  used to reappear first, for a moment, before the initials prompt arrived on top of it. Now the
+  prompt comes up as you leave the intermission, and backing out of it still returns you to the
+  Single Level page.
 - **The attract screen gets itself moving again if a demo stops.** Very occasionally an attract
   demo would freeze — the machine still responded, but the demo sat there and, because the idle
   timeout is switched off while a demo plays, nothing moved it on until somebody came over. The

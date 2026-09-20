@@ -728,11 +728,33 @@ more players than they were built for — are in `multiplayer-views.md`.
       the `drawp` offset is non-zero -- filled edge to edge. A software capture cannot show the
       palette tint (it is written with the base palette), so the palette half rests on the GL
       capture and on `ST_Palette0` being the same reset `D_DoAdvanceDemo` already relies on.
-  - **Raised from `M_Ticker`, not from the run-end path.** `Command_ExitGame_f` only *arms* it
+  - **Raised from `M_Ticker` for every route but one.** `Command_ExitGame_f` only *arms* it
     (`HS_Initials_Pending`). Opening from the ticker keeps it independent of the order things
-    happen in on the way back to the title — `M_SingleLevel_Finished` calls `Command_ExitGame_f`
-    and *then* pushes its own page, so a prompt opened inline would be buried by it. From the
-    ticker it lands on top of whatever settled, and backing out returns there.
+    happen in on the way back to the title: it lands on top of whatever settled, and backing out
+    returns there.
+  - **Single Level raises it inline instead, and had to.** The reasoning above — "a prompt opened
+    inline would be buried" — was right about the danger and wrong about the cure.
+    `M_SingleLevel_Finished` calls `Command_ExitGame_f` (which arms the prompt) and *then* pushes
+    the Single Level page, so from the ticker the page reached the screen first and the player who
+    had just taken a record saw the menu they came from before being asked to sign for it.
+    Measured with a log at each step: at the top of `M_SingleLevel_Finished` nothing is pending yet
+    (`SLORDER finished gametic=102 pending=0`), and the page is pushed between the arming and the
+    ticker's next look. Whether the page then got a frame to itself depended on where the wipe and
+    the title teardown landed, which is why it was "usually, but not always".
+    - It now calls `M_Initials_Open` itself, immediately after the push, so no engine code that
+      could draw runs in between. The burial the old comment feared does not happen because
+      `M_Initials_Open` reads `initials_opened_panel` from `menuactive`, which
+      `M_StartControlPanel` has just set — so it takes the "a page was already open underneath"
+      branch and `M_Initials_Confirm` pops back to the Single Level page, which is the flow this
+      route always intended.
+    - The ticker keeps its own opening for every other route, and returns early once
+      `initials_active` is set, so the page cannot be opened twice.
+    - **Driving this headlessly needs three separate hacks** and is worth knowing before trying
+      again: `single_level_mode` is only ever set from the menus, the intermission waits for a
+      button press no headless run can give, and the cabinet config's `localplayers 4` makes the
+      run multiplayer and therefore unscored. A temporary arm-at-level-load switch, a temporary
+      console command to drive the return, and `localplayers 1` were all needed to see the
+      ordering at all.
   - **Driven from the translated keys**, unlike the join screen: it is taken *after*
     `M_Cabinet_Menu_Key`, because stick up/down to cycle a letter is exactly what that produces,
     and this page does not care which panel is entering. The join screen needs the opposite.
