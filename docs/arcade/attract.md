@@ -374,13 +374,55 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Both are guarded on the module's own `attract_chasecam` flag, so they can only undo a change
     *this code* made — `cv_chasecam` is an ordinary cvar a `-devmode` session may have set by hand
     at the title screen, and clearing that unasked would look like the console command not working.
-- **It does not desync the record demos, and this was measured rather than reasoned.** The camera
-  is a view, not part of the simulation: `MT_CHASECAM` is
-  `MF_NOBLOCKMAP|MF_NOSECTOR|MF_NOGRAVITY|MF_FLOAT` (`info.c`), so it is in neither the blockmap
-  nor any sector list and nothing in the playsim can see it. Proven by playing the same record demo
-  with `chasecam 0` and `chasecam 1` and fingerprinting the player every 35 tics — position,
-  height, angle and health were **identical at all 43 samples across 1925 tics**. Worth keeping in
-  mind before putting anything *else* in front of a record demo.
+- **It used to desync the record demos, and the paragraph that used to sit here said it did not.**
+  That is worth keeping, because the wrong claim was *measured*, not merely reasoned — and the
+  measurement is what made it convincing.
+
+  The reasoning was sound as far as it went: `MT_CHASECAM` is
+  `MF_NOBLOCKMAP|MF_NOSECTOR|MF_NOGRAVITY|MF_FLOAT` (`info.c`), so the camera mobj is in neither
+  the blockmap nor any sector list and nothing in the playsim can see *it*. The check played the
+  same record demo with `chasecam 0` and `chasecam 1` and fingerprinted the player every 35 tics:
+  position, height, angle and health, identical at all 43 samples across 1925 tics.
+
+  **It was looking at the wrong fields, and it stopped too early.** The camera never touched the
+  player's position — it changed `player->bob`, which was in none of the four fields sampled, and
+  the first visible consequence on that demo lands at tic **5845**, three times past where the
+  check stopped. The mechanism had nothing to do with the mobj's flags:
+
+  1. `P_PlayerThink` (`p_user.c`) called `P_CalcHeight` only in the `else` of
+     `if (camera.chase == player) P_MoveChaseCamera(player);` — so with the camera on, the
+     player's own view height and bob were never recomputed.
+  2. `player->bob` is **not** display state. `A_WeaponReady` (`p_pspr.c`) parks the weapon sprite
+     at `sy = WEAPONTOP + FixedMul(player->bob, finesine[angf])`.
+  3. `A_Lower`/`A_Raise` step `sy` by a fixed speed until it passes `WEAPONBOTTOM`/`WEAPONTOP`, so
+     a frozen bob changes **how many tics a weapon takes to lower and raise**.
+  4. Weapon switches therefore complete on different tics, attacks fire on different tics, and the
+     `P_Random` those attacks draw moves with them. `PP_Random`'s `pr` argument is a lie — it is
+     one shared index (`m_random.c`) — so from there the whole simulation diverges.
+
+  Measured on `doomu-sl_E1M2_sk0_tyson`, same binary and same demo, camera off against on:
+  `player->bob` differed from **tic 20**, `readyweapon` from **tic 1013** (one run had finished
+  switching to the chaingun while the other was still lowering the pistol), and `A_Saw` then drew
+  its three randoms at tic **5844** instead of 5847 — the first `-synclog` divergence, prnd 251
+  against 248.
+
+  The fix is that `P_CalcHeight` now runs whether or not the camera is on, and the camera is moved
+  **as well as** it rather than instead of it. `P_DeathThink` already called `P_CalcHeight`
+  unconditionally, which is the same conclusion reached for the dead player and never applied to
+  the live one.
+
+  **`make demotest` cannot see this class of bug, however many demos it replays**, and that is why
+  it went unnoticed: it passes `-nodraw`, `R_Update_Chase_Camera` is called from `D_Display`, so
+  the camera is never created and none of this code runs. Measured on the same demo: a `-nodraw`
+  run reported **0** camera moves and 0 spawns, the same demo drawn reported **10665** moves, 1
+  spawn and 16 unsticks. `tools/chasecam-test.py` is the check that does see it — it replays each
+  demo twice, camera off then on, *without* `-nodraw`, and compares the `-synclog` tic by tic. It
+  was shown red against the build before the fix (2 of its 4 default demos) and green after.
+
+  The general lesson, and it is the reason this paragraph is long: **a green result from a check
+  proves only that the thing it sampled did not change.** Sample the fields the mechanism would
+  actually move, run past where a divergence could first appear, and before believing a clean
+  result, make the check fail on purpose.
 - The caption is drawn in `HU_Drawer` (`hu_stuff.c`) inside the existing `demoplayback` block,
   directly under the demo label: that sits at y 8 and `hu_font` glyphs are 7 tall, so **y 18**
   clears it and stays well above the status bar. Centred, so its width needs no measuring. It

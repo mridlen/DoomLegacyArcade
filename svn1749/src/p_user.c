@@ -1330,14 +1330,41 @@ void P_PlayerThink (player_t* player)
 
     //added:26-02-98: calculate the camera movement
     //added:22-02-98: bob view only if looking by the marine's eyes
+    //
+    // [Arcade] P_CalcHeight runs whether or not the chase camera is on, and
+    // the chase camera is moved as well as it, not instead of it.
+    //
+    // Upstream treated these as alternatives: looking through the camera meant
+    // the player's own view height was never recomputed.  That is not a
+    // display choice, because P_CalcHeight maintains player->bob, and bob is
+    // simulation state that the weapon state machine reads --
+    // A_WeaponReady parks the weapon sprite at
+    // "sy = WEAPONTOP + FixedMul(player->bob, finesine[angf])" (p_pspr.c), and
+    // A_Lower/A_Raise then step sy by a fixed speed until it passes
+    // WEAPONBOTTOM/WEAPONTOP.  So a frozen bob changes how many tics a weapon
+    // takes to lower and raise, which moves the tic every weapon switch
+    // completes on, which moves the tic every attack fires on, which moves
+    // every P_Random those attacks draw.  P_Random is one shared index
+    // (m_random.c), so from there the whole simulation diverges.
+    //
+    // Measured on doomu-sl_E1M2_sk0_tyson, chase camera off against on, same
+    // binary and same demo: player->bob differed from tic 20, the readyweapon
+    // differed from tic 1013 (one run had finished switching to the chaingun
+    // while the other was still lowering the pistol), and A_Saw then drew its
+    // three randoms at tic 5844 instead of 5847 -- the first synclog
+    // divergence, prnd 251 against 248.
+    //
+    // This is why the attract screen's record demos desynced: they are
+    // recorded with the camera off and replayed with it on (cv_chasecamdemo,
+    // d_main.c), so playback ran a measurably different simulation from the
+    // one that was recorded.  P_DeathThink already called P_CalcHeight
+    // unconditionally, which is the same conclusion reached for the dead
+    // player and never applied to the live one.
+#ifndef CLIENTPREDICTION2
+    P_CalcHeight (player);  // viewheight adjust, bob view
+#endif
     if (camera.chase == player)
         P_MoveChaseCamera ( player );  // camera view adjust
-    else
-#ifdef CLIENTPREDICTION2
-        ;
-#else
-        P_CalcHeight (player);  // viewheight adjust, bob view
-#endif
 
 
     // check special sectors : damage & secrets

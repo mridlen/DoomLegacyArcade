@@ -354,8 +354,48 @@ differing field says a great deal:
 `leveltime` restarts at 1 on each level of a multi-level demo, so the log line
 number and the leveltime are both reported; they only agree on the first level.
 
+## What this suite is blind to: anything that only runs while drawing
+
+`-nodraw` is what makes this suite fast, and it is also a hole in it. The engine
+enters `D_Display` every tic but does not draw, so **any simulation state written
+from the drawing path is never written during a demotest run** — and a suite that
+replays 119 demos and reports three green lines reads as much stronger evidence
+than it is.
+
+The case that proved it: `R_Update_Chase_Camera` is called from `D_Display`
+(`d_main.c`), and it is what creates the chase camera and sets `camera.chase`.
+`P_PlayerThink` then called `P_CalcHeight` only when the camera was *off*, so with
+it on `player->bob` froze — and bob is read by `A_WeaponReady` to place the weapon
+sprite, which changes how many tics `A_Lower`/`A_Raise` need, which moves every
+weapon switch and every attack, which moves every `P_Random` they draw. A real
+gameplay divergence, invisible here. Measured on `doomu-sl_E1M2_sk0_tyson`:
+
+| run | camera moves | spawns | unsticks |
+| --- | --- | --- | --- |
+| `-nodraw` (what this suite does) | 0 | 0 | 0 |
+| drawn | 10665 | 1 | 16 |
+
+So: **a green demotest after a change that touches the renderer, the camera or
+anything else reached from `D_Display` means "no gameplay regression on the paths
+this suite exercises", not "no gameplay regression."**
+
+`tools/chasecam-test.py` covers the camera specifically. It replays each demo
+twice — `chasecam 0` then `chasecam 1` — **without** `-nodraw`, and compares the
+`-synclog` tic by tic; the two must be identical, because the cabinet records its
+record demos with the camera off and replays them on the attract screen with it on
+(`cv_chasecamdemo`). Default is four representative demos (about half a minute),
+`--all` does the whole home, and a filter substring works as it does here. It has
+been shown red as well as green: against the build before the fix, 2 of its 4
+default demos diverged at leveltime 5845, prnd 248 against 251.
+
+**Run it after any change to the chase camera** — which includes the line-of-sight
+and jitter work, since both move the camera differently and the camera must stay
+outside the simulation. See `attract.md` for the full account.
+
 ## Related
 
+- `docs/arcade/attract.md` — the chase camera on record demos, and the measured-but-wrong
+  claim that it never desynced them.
 - `docs/arcade/gameplay-defaults.md` — what counts as gameplay-affecting, the
   demo header, and the bias-by-one rule for new header bytes.
 - `docs/arcade/high-scores.md` — where the demos come from and what they are for.
