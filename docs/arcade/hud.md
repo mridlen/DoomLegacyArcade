@@ -333,12 +333,24 @@ Rainbow) is not Off. Not a NETVAR: it only draws.
 
 The setting has three values, `CV_WinningBanner[]` in `hu_stuff.c`: **Off**, **Rainbow** (the
 per-letter ripple, what the banner has always done) and **Cycle** (the whole word one colour at a
-time). `"On"` is kept in the table as a fourth, unlisted entry worth 1, so a `config.cfg` written
-while this was an on/off cvar still loads as Rainbow instead of being rejected and silently reset.
-It is listed *after* `{1,"Rainbow"}` on purpose: `CV_get_possiblevalue_string` (`command.c`)
-returns the first entry matching the value, so the menu shows and the config saves back
-"Rainbow". Verified by loading a config at each of the four names and checking `M_Verify_Config`
-reported no complaint, with a fifth run at `"Bogus"` to prove the check goes red.
+time).
+
+**No entry in a `PossibleValue` list may repeat a value, and getting this wrong breaks the menu
+rather than the cvar.** This first shipped with a fourth `{1,"On"}` entry, so that a `config.cfg`
+written while this was an on/off cvar would still load rather than be refused by name.
+`CV_set_str_value` handled it perfectly and `CV_get_possiblevalue_string` still displayed
+"Rainbow" — every check run at the time passed. But `CV_ValueIncDec` (`command.c`) finds the
+current entry by scanning the list for a matching value and keeping the **last** match, and says
+so in a comment: *"this code do not support more than same value for differant PossibleValue"*.
+So Rainbow resolved to index 3, not 1, and the arrow keys stepped from there — right to `Off`,
+left to `Cycle`, and right from `Cycle` onto the duplicate `On`. Three values, six apparent
+behaviours, and the cvar itself was never wrong.
+
+The lesson is about *where* to test: loading a value and drawing it is not the same as **walking
+the list with the arrow keys**, which is the only thing that reads the list positionally. An old
+config saying `"On"` is now refused by name, which leaves the cvar at its registered default — 1,
+Rainbow, exactly what `"On"` meant — at the cost of one `M_Verify_Config` complaint until that
+machine next saves a `-devmode` session.
 
 - **Who**: `HU_Winning_Leader` — the unique top of `ST_PlayerFrags` over the players in the game,
   or with `teamplay` on the unique top of `HU_Create_TeamFragTbl` (so the team number is the skin

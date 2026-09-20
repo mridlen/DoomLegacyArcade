@@ -1059,8 +1059,9 @@ above `MenuOptionsMenu` like the other operator sub-pages, holds what the HUD wr
 - **Singleplayer Messages** (`cv_msg_singleplayer`) and **Multiplayer Messages**
   (`cv_msg_multiplayer`), both default Off — the gameplay message lines. Behaviour in `hud.md`.
 - **Winning Banner** (`cv_winningbanner`, Off / Rainbow / Cycle, default Rainbow), moved here from
-  Arcade Options. The cvar kept its name, so a saved config still applies — including one from
-  before it grew a third value, since `"On"` is still accepted as Rainbow (`hud.md`). An `IT_CVAR`
+  Arcade Options. The cvar kept its name, so a saved config still applies; one written while it was
+  an on/off cvar loads as Rainbow, which is what `"On"` meant, after one complaint (`hud.md` — and
+  read the note there before adding a value to any `PossibleValue` list). An `IT_CVAR`
   row renders whatever `PossibleValue` holds, so widening it needed no menu change — but **the
   value is right-aligned, so a longer one grows back toward its label**:
   `M_DrawGenericMenu` draws it at `BASEVIDWIDTH - x - V_StringWidth(value)`, and on this page
