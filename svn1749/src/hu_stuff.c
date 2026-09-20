@@ -802,6 +802,27 @@ static void HU_Draw_Rainbow_String( int x, int y, float sx, const char * s )
     }
 }
 
+// [Arcade] The same palette ramps, but the whole word in one colour at a
+// time, stepping red -> orange -> yellow -> green -> blue -> magenta.  The
+// rainbow above steps a colour every 3 tics because each letter differs
+// anyway, so the motion reads as a scroll; a word that changes colour all at
+// once at that rate is a 12Hz flash across the top of the view.  10 tics is
+// 3.5 changes a second -- slow enough to read the word as a colour rather
+// than as flicker, fast enough to still look like it is cycling.
+#define HU_CYCLE_TICS  10
+
+static void HU_Draw_Cycle_String( int x, int y, float sx, const char * s )
+{
+    byte * map = HU_Rainbow_Map( (int)((gametic / HU_CYCLE_TICS) % HU_RAINBOW_COLORS) );
+
+    // Non-Doom palettes have no ramp table (HU_Rainbow_Map returns NULL), the
+    // same fallback the rainbow takes.
+    if( map )
+        V_DrawString_Mapped( x, y, 0, map, s );
+    else
+        V_DrawString( x, y, V_WHITEMAP, (char*) s );
+}
+
 // Who is ahead, or -1 on a tie or with fewer than two contenders.
 // Individual: a player number.  Teams: a team number, as HU_Create_TeamFragTbl
 // numbers them (the skin colour in colour teams, the skin in skin teams).
@@ -923,7 +944,16 @@ static void HU_Draw_Winning( void )
 
         V_SetupDraw( 0 | V_NOSCALE | V_SCALEPATCH );
         if( cv_teamplay.EV == 0 )
-            HU_Draw_Rainbow_String( x, y, sx, msg );
+        {
+            // [Arcade] Team play keeps the team colour whichever mode this is
+            // set to: there the colour says which team is winning, which is
+            // the whole point of the banner, so it is not the setting's to
+            // override.
+            if( cv_winningbanner.EV == 2 )
+                HU_Draw_Cycle_String( x, y, sx, msg );
+            else
+                HU_Draw_Rainbow_String( x, y, sx, msg );
+        }
         else if( map )
             V_DrawString_Mapped( x, y, 0, map, msg );
         else
@@ -2042,7 +2072,14 @@ consvar_t cv_coords = {"coords", "0", CV_SAVE, CV_OnOff};
 // [Arcade] The deathmatch WINNING banner, Arcade Options -> Messages +
 // Banners -> Winning Banner.  Drawing only, so not a NETVAR and nothing to do
 // with demos.
-consvar_t cv_winningbanner = {"winningbanner", "1", CV_SAVE, CV_OnOff};
+// [Arcade] Off / Rainbow / Cycle.  "On" is kept as an unlisted alias for
+// Rainbow so that a config written before this setting grew a third value
+// still loads as what it meant; CV_get_possiblevalue_string returns the first
+// entry matching the value, so "Rainbow" is what gets shown and saved back.
+// The default stays Rainbow, which is what the banner has always done.
+CV_PossibleValue_t CV_WinningBanner[] =
+   {{0,"Off"}, {1,"Rainbow"}, {2,"Cycle"}, {1,"On"}, {0,NULL}};
+consvar_t cv_winningbanner = {"winningbanner", "1", CV_SAVE, CV_WinningBanner};
 
 // [Arcade] Gameplay messages (pickups, kills, locked doors) across the top of
 // the screen, Arcade Options -> Messages + Banners.  One switch for a single

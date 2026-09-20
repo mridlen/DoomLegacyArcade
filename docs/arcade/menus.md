@@ -1058,8 +1058,16 @@ above `MenuOptionsMenu` like the other operator sub-pages, holds what the HUD wr
 
 - **Singleplayer Messages** (`cv_msg_singleplayer`) and **Multiplayer Messages**
   (`cv_msg_multiplayer`), both default Off — the gameplay message lines. Behaviour in `hud.md`.
-- **Winning Banner** (`cv_winningbanner`, default On), moved here from Arcade Options. The cvar
-  kept its name, so a saved config still applies.
+- **Winning Banner** (`cv_winningbanner`, Off / Rainbow / Cycle, default Rainbow), moved here from
+  Arcade Options. The cvar kept its name, so a saved config still applies — including one from
+  before it grew a third value, since `"On"` is still accepted as Rainbow (`hud.md`). An `IT_CVAR`
+  row renders whatever `PossibleValue` holds, so widening it needed no menu change — but **the
+  value is right-aligned, so a longer one grows back toward its label**:
+  `M_DrawGenericMenu` draws it at `BASEVIDWIDTH - x - V_StringWidth(value)`, and on this page
+  (`x` 60) that is a right edge of 260. `Rainbow` measures 53 against `STCFN`, so it starts at
+  207, where `Off` (24) started at 236. The check is per row, not against the page's widest
+  label: the `Winning Banner` label is 101, running 60..161, so the gap is 46. Measured from the
+  real `STCFN` lumps, not estimated.
 
 Arcade Options stays twelve rows (`y 40..157, room for 4 more`): the banner row became the link.
 Nothing indexes either array by position. **"Singleplayer Messages" is the widest cvar label on
