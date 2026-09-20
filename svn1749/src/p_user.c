@@ -62,6 +62,7 @@
 #include "d_event.h"
 #include "g_game.h"
 #include "p_local.h"
+#include "m_argv.h"  // [Arcade] -camlog
 #include "r_main.h"
 #include "r_things.h"
   // skins
@@ -763,6 +764,32 @@ boolean P_UndoPlayerChicken(player_t *player)
 // It now records who it is chasing.
 camera_t camera;
 
+// [Arcade] Consecutive tics the camera has been unable to see the player.
+// A file static rather than a camera_t field: camera_t is shared with the
+// FraggleScript camera and p_saveg writes that one, and this is transient
+// recovery state that no savegame should carry.  P_ResetCamera clears it.
+static int  cam_blind_tics = 0;
+
+// [Arcade] The follow distance actually in use, which is not always the one
+// the operator set.  See the "collision spring" note in P_MoveChaseCamera.
+static fixed_t  cam_dist_cur = 0;
+
+// [Arcade] -camlog: one line per tic describing where the chase camera is.
+//
+// Whether the camera is behaving is not a thing a headless run can look at and
+// not a thing anybody can judge reliably by eye, but it is entirely
+// measurable: how often it cannot see the player, how long the worst such
+// stretch lasts, and how often its direction reverses (which is what the
+// jitter is).  tools/camstats.py runs two builds over one demo and tabulates
+// exactly that.  Off unless asked for; one GenPrintf per tic when on.
+static int  cam_log = -1;
+static int  Cam_Log(void)
+{
+    if( cam_log < 0 )  cam_log = M_CheckParm("-camlog") ? 1 : 0;
+    return cam_log;
+}
+
+
 //#define VIEWCAM_DIST    (128<<FRACBITS)
 //#define VIEWCAM_HEIGHT  (20<<FRACBITS)
 
@@ -794,6 +821,8 @@ void P_ResetCamera (player_t *player)
 
     camera.mo->angle = player->mo->angle;
     camera.aiming = 0;
+    cam_blind_tics = 0;   // [Arcade] placed, so it can see the player again
+    cam_dist_cur   = cv_cam_dist.value;   // [Arcade] and at the full distance
 
 #ifdef THINKER_INTERPOLATIONS
     // [Arcade] Uncapped framerate: the camera did not travel here, it was
@@ -864,12 +893,80 @@ boolean PTR_FindCameraPoint (intercept_t* in)
 
 
 
+// [Arcade] ---- Raycasting the chase camera into place. ----
+//
+// The camera is moved by momentum through the ordinary mobj thinker, so
+// P_TryMove stops it against walls.  Aiming it at a spot the player cannot
+// see in a straight line therefore means driving it into geometry: in a
+// doorway or round a corner it wedges, the follow below keeps pushing it at
+// the wall, and because the push is recomputed every tic from a target it can
+// never reach, the result is the jitter -- it is not noise, it is the camera
+// being shoved into a wall 35 times a second.
+//
+// So the target is raycast first: trace from the player to the ideal spot and,
+// if anything blocks, bring the target in to just short of the obstruction.
+// The camera is then always aimed somewhere it can actually get to, which is
+// what the original authors were reaching for with the commented-out
+// P_PathTraverse and the disabled PTR_FindCameraPoint still sitting in here.
+//
+// On shared state: this runs inside P_PlayerThink, so it is simulation code
+// and must not change the simulation.  P_PathTraverse does validcount++ and
+// writes the trace/intercepts globals -- but the camera already drives
+// P_TryMove -> P_CheckPosition every tic, which does validcount++ too
+// (p_map.c), and tools/chasecam-test.py is green on that.  Both are
+// self-contained traversals that increment on entry, so nothing reads the
+// counter across them.  Verified rather than assumed: see the test results in
+// attract.md.
+
+static fixed_t  cam_trace_z;       // height the camera would pass through
+static fixed_t  cam_trace_height;  // and how tall it is
+static fixed_t  cam_trace_frac;    // nearest blocking fraction, FRACUNIT clear
+
+static boolean PTR_Camera_Trace (intercept_t * in)
+{
+    line_t * li = in->d.line;
+
+    if( ! (li->flags & ML_TWOSIDED) )
+        goto blocked;                   // one-sided: solid wall
+
+    P_LineOpening( li );                // sets opentop / openbottom / openrange
+
+    if( openrange <= 0 )
+        goto blocked;                   // closed door, or floor meets ceiling
+
+    // The gap exists, but the camera has to fit through it at its own height.
+    if( cam_trace_z < openbottom
+     || (cam_trace_z + cam_trace_height) > opentop )
+        goto blocked;
+
+    return true;                        // keep looking further along the ray
+
+blocked:
+    cam_trace_frac = in->frac;
+    return false;                       // stop the traversal here
+}
+
+// How much of the ray from (x1,y1) to (x2,y2) is clear at height z.
+// FRACUNIT means the whole of it.
+static fixed_t  P_Camera_Clear_Frac ( fixed_t x1, fixed_t y1,
+                                      fixed_t x2, fixed_t y2,
+                                      fixed_t z,  fixed_t height )
+{
+    cam_trace_z      = z;
+    cam_trace_height = height;
+    cam_trace_frac   = FRACUNIT;
+    P_PathTraverse( x1, y1, x2, y2, PT_ADDLINES, PTR_Camera_Trace );
+    return cam_trace_frac;
+}
+
 void P_MoveChaseCamera (player_t *player)
 {
     angle_t       angle;
     int           angf;   
     fixed_t       x, y, z, viewpointx, viewpointy;
     fixed_t       dist;
+    fixed_t       ideal_dist;             // [Arcade] length of the follow ray
+    boolean       cam_pulled_in = false;  // [Arcade] target moved in to a wall
     float         f1, f2;
     subsector_t*  newsubsec;
     mobj_t*       pmo = player->mo;
@@ -944,11 +1041,74 @@ void P_MoveChaseCamera (player_t *player)
 
     // sets ideal cam pos
     dist  = cv_cam_dist.value;
+    ideal_dist = dist;
     x = pmo->x - FixedMul( finecosine[angf], dist);
     y = pmo->y - FixedMul( finesine[angf], dist);
     z = pmo->z + (((unsigned int)cv_viewheight.EV)<<FRACBITS) + cv_cam_height.value;
 
-/*    P_PathTraverse ( pmo->x, pmo->y, x, y, PT_ADDLINES, PTR_UseTraverse );*/
+    // [Arcade] Raycast the follow distance, and move it like a collision
+    // spring: in at once, out gently.
+    //
+    // Bringing the target in to the first obstruction -- rather than aiming
+    // through the wall and letting P_TryMove stop the camera dead against it
+    // -- is what the commented-out P_PathTraverse here was reaching for.  But
+    // doing only that makes the jitter *worse*, which is worth recording
+    // because it is not obvious: as the player moves, the ray flips between
+    // blocked and clear from one tic to the next, so the target itself jumps
+    // between two distances and the camera chases something that will not sit
+    // still.  Measured on doomu-sl_E1M2_sk0_tyson, the naive version raised
+    // direction reversals from 105 to 153 while the target was pulled in on
+    // half of all tics.
+    //
+    // So the distance in use is a state variable, not a per-tic computation.
+    // It drops to whatever the ray allows immediately -- a wall that has just
+    // come between the camera and the player must be got in front of at once,
+    // or the view is inside it -- and recovers toward the operator's distance
+    // a step at a time once the way is clear.  Only the recovery is smoothed,
+    // because only the recovery can afford to be late.
+    {
+        fixed_t clear = P_Camera_Clear_Frac( pmo->x, pmo->y, x, y,
+                                             z, camera.mo->height );
+        fixed_t want  = ideal_dist;
+
+        if( clear < FRACUNIT )
+        {
+            // Stop short of the surface by the camera's own radius, plus a
+            // little, so it is not parked with its centre in the wall.  The
+            // margin is a distance, so it converts to a fraction of this
+            // particular ray -- at the default cv_cam_dist of 128 the 20-unit
+            // radius plus 8 is already a fifth of it, which is why it cannot
+            // be a constant fraction.
+            fixed_t margin = (ideal_dist > 0)
+                ? FixedDiv( camera.mo->radius + (8*FRACUNIT), ideal_dist )
+                : 0;
+            clear = (margin < clear) ? (clear - margin) : 0;
+            want  = FixedMul( ideal_dist, clear );
+        }
+
+        if( cam_dist_cur <= 0 || cam_dist_cur > ideal_dist )
+            cam_dist_cur = ideal_dist;          // first tic, or cvar lowered
+
+        if( want < cam_dist_cur )
+        {
+            cam_dist_cur = want;                // in at once
+        }
+        else if( want > cam_dist_cur )
+        {
+            // Out over about half a second at the default distance: slow
+            // enough not to read as a jump, quick enough that the camera is
+            // back behind the player before they have gone far.
+            fixed_t step = ideal_dist / (TICRATE/2);
+            if( step <= 0 )  step = FRACUNIT;
+            cam_dist_cur += step;
+            if( cam_dist_cur > want )  cam_dist_cur = want;
+        }
+
+        x = pmo->x - FixedMul( finecosine[angf], cam_dist_cur );
+        y = pmo->y - FixedMul( finesine[angf],   cam_dist_cur );
+
+        cam_pulled_in = ( cam_dist_cur < ideal_dist );   // for the log only
+    }
 
     // move camera down to move under lower ceilings
     newsubsec = R_IsPointInSubsector ((pmo->x + camera.mo->x)>>1,(pmo->y + camera.mo->y)>>1);
@@ -995,12 +1155,70 @@ void P_MoveChaseCamera (player_t *player)
 
     angle = G_ClipAimingPitch(angle);
     dist = camera.aiming - angle;
+
 #ifdef THINKER_INTERPOLATIONS
     // [Arcade] Uncapped framerate: the chase camera eases towards the aim
     // point, so its pitch changes every tic and needs its own history.
     camera.prev_aiming = camera.aiming;
 #endif
     camera.aiming -= (dist>>3);
+
+    // [Arcade] Line-of-sight recovery.
+    //
+    // The raycast above keeps the *target* visible, but the camera only closes
+    // cv_cam_speed of the gap per tic, so a player who rounds a corner briskly
+    // can still leave it looking at a wall for a moment.  A moment is fine --
+    // snapping the view every time the player clips a doorframe would be far
+    // worse than the occasional obscured second -- so this waits half a second
+    // of continuously not seeing the player before placing the camera back on
+    // them.
+    //
+    // Not while the target has been pulled in: that means the camera is
+    // deliberately close to the player because a wall is between them at the
+    // full distance, which is the close-quarters case where a snap is both
+    // unnecessary and most jarring.
+    if( Cam_Log() )
+    {
+        fixed_t cf = P_Camera_Clear_Frac( pmo->x, pmo->y,
+                                          camera.mo->x, camera.mo->y,
+                                          camera.mo->z, camera.mo->height );
+        GenPrintf( EMSG_warn, "CAM t=%d x=%d y=%d z=%d px=%d py=%d blocked=%d pulled=%d\n",
+                   leveltime, camera.mo->x, camera.mo->y, camera.mo->z,
+                   pmo->x, pmo->y, (cf < FRACUNIT) ? 1 : 0,
+                   cam_pulled_in ? 1 : 0 );
+    }
+
+    //
+    // "Up close" is measured from where the camera *is*, not from the distance
+    // being asked for.  Those are not the same thing and the difference is not
+    // small: the camera only closes cv_cam_speed of the gap per tic, so it
+    // trails the target badly whenever the target has just moved.  Testing the
+    // target instead suppressed the recovery for an entire 179-tic blind
+    // stretch -- five seconds of the attract screen looking at a wall -- while
+    // the camera was a perfectly ordinary 97 units from the player, because
+    // the *target* had been pulled inside the threshold.  P_AproxDistance
+    // overestimates by up to 12%, which only makes this slightly less eager to
+    // call something up close, so it is left as is.
+    if( P_AproxDistance( camera.mo->x - pmo->x, camera.mo->y - pmo->y )
+             < ((ideal_dist * 3) / 5) )
+    {
+        cam_blind_tics = 0;     // genuinely close in; a snap would be jarring
+    }
+    else if( P_Camera_Clear_Frac( pmo->x, pmo->y,
+                                  camera.mo->x, camera.mo->y,
+                                  camera.mo->z, camera.mo->height ) < FRACUNIT )
+    {
+        // TICRATE/2, so it follows the tic rate rather than assuming 35.
+        if( ++cam_blind_tics >= (TICRATE/2) )
+        {
+            P_ResetCamera (player);     // also clears cam_blind_tics
+            camera.mo->momx = camera.mo->momy = camera.mo->momz = 0;
+        }
+    }
+    else
+    {
+        cam_blind_tics = 0;
+    }
 }
 
 

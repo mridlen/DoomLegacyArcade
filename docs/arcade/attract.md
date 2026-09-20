@@ -474,10 +474,64 @@ means it tracks an operator who changes the hover distance.
 
 - **No demo desync**, re-verified after the change with the same fingerprint method — the record
   demos are what the chase camera is mostly used on, so this has to hold. See the desync note above.
-- **Still not a true fix.** The camera is unstuck rather than prevented from sticking; a raycast
-  placement (pull the camera in to the first wall between it and the player) is the fuller answer and
-  is what the dead code was reaching for. The trigger is cheap, safe and reuses tested code, which
-  the raycast would not.
+- **The raycast placement has since been built**, so the distance trigger is now the safety net
+  rather than the mechanism. See the next section.
+
+### Raycasting the camera, and getting the player back in shot
+
+The distance trigger unstuck the camera; it did not stop it sticking. What did is aiming it
+somewhere it can actually get to: `P_Camera_Clear_Frac` (`p_user.c`) traces from the player to the
+ideal spot with `P_PathTraverse(PT_ADDLINES)`, and the follow distance is cut to just short of
+whatever blocks it -- the camera's own radius plus 8, converted to a fraction of that particular
+ray, because at the default `cv_cam_dist` of 128 a 20-unit radius is already a fifth of it.
+
+- **The naive version makes the jitter worse, and that is the interesting part.** Recomputing the
+  distance every tic means the ray flips between blocked and clear as the player moves, so the
+  *target* jumps between two distances and the camera chases something that will not sit still.
+  Measured on `doomu-sl_E1M2_sk0_tyson`: direction reversals rose from **105 to 153** while the
+  target was pulled in on half of all tics. The jitter is not noise to be filtered, it is the camera
+  being driven at something unreachable — first a wall, then a flickering target.
+- **So the distance in use is state, not a per-tic result**: a collision spring. It drops to
+  whatever the ray allows *at once* (a wall that has just come between camera and player has to be
+  got in front of immediately, or the view is inside it) and recovers toward the operator's distance
+  a step at a time, `cv_cam_dist / (TICRATE/2)` per tic. Only the recovery is smoothed, because only
+  the recovery can afford to be late. That took reversals to **74**, below the original 105.
+- **Line-of-sight recovery** is the backstop: half a second (`TICRATE/2`) of continuously not seeing
+  the player and the camera is placed back on them via `P_ResetCamera`. Half a second rather than
+  immediately because snapping the view every time the player clips a doorframe would be far worse
+  than an obscured moment.
+- **"Up close" is measured from where the camera *is*, not from the distance being asked for**, and
+  getting this wrong is silent. The camera only closes `cv_cam_speed` of the gap per tic, so it
+  trails the target badly whenever the target has just moved. Suppressing the recovery on the
+  *target* distance held it off through an entire **179-tic** blind stretch — five seconds of
+  attract screen pointed at a wall — while the camera sat a perfectly ordinary 97 units from the
+  player. Testing the actual separation instead took the worst stretch to 59 tics on that demo and
+  to exactly **17** on `doomu_E4M1_sk0_speed`, which is the half-second cap doing its job.
+
+**Measured with `tools/camstats.py`**, which runs two builds over one demo through the engine's
+`-camlog` and tabulates it. Both builds need `-camlog`, so comparing against anything older than it
+means adding the switch to that build; the figures below came from a single build with the new
+behaviour toggled, which is the better method anyway — identical compiler output on both sides.
+
+| | E1M2 tyson (10665 tics) | | E4M1 speed (4664 tics) | |
+| --- | --- | --- | --- | --- |
+| | before | after | before | after |
+| tics with no sight of player | 15.5% | **4.2%** | 15.9% | **2.0%** |
+| longest blind stretch | 208 | **59** | 199 | **17** |
+| visible reversals (>2 units) | 53 | **23** | 12 | 14 |
+| camera-to-player median | 143 | 109 | 128 | 108 |
+
+**Read the jitter row honestly**: it halves on the indoor map with walls to bump into and is
+unchanged within noise on the open one. The bare reversal count includes sub-pixel wobble nobody
+can see, which is why `camstats.py` reports the >2-unit figure separately and that is the one to
+read.
+
+**It must not change the simulation**, which is the whole subject of the desync note above.
+`P_PathTraverse` does `validcount++` and writes the `trace`/`intercepts` globals, so this needed
+proving rather than assuming: the camera already drives `P_TryMove` -> `P_CheckPosition` every tic,
+which increments the same counter, and both are self-contained traversals that increment on entry
+so nothing reads the counter across them. `tools/chasecam-test.py` is green on the result — camera
+off and camera on produce identical `-synclog` output — and `make demotest` is 119/119.
 
 ### The chase camera crashed the cabinet, hours in
 
