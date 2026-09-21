@@ -1421,6 +1421,32 @@ Select Game Sync** set to **On** (it is **Off** until you turn it on):
 - Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator
   session is never switched by someone else's pick.
 
+**Music Cabinet: one cabinet carries the music while you play together.**
+
+Sound effects belong on the cabinet they happen on, and they stay there. Music is different: playing
+the same track on three machines at once does not stay in step — nothing keeps them aligned, they
+drift apart within a few bars, and the result is worse than one cabinet playing it alone. Real linked
+arcade hardware doesn't try to sync audio either; it just decides whose speakers carry it.
+
+Set **Options → Arcade Options → Cabinet Link Options → Music Cabinet** to the cabinet whose speakers
+should carry the music. The list is the cabinets this one knows — its own name first, then every
+cabinet it has been paired with — so on a row of three you might see **All**, **laptop**,
+**raspberrypi** and **DESKTOP-202K7KS**. **Pick the middle cabinet of the row**, so the music reaches
+both ends.
+
+- **If the cabinet you picked isn't in the game, the cabinet that started it plays instead.** Two
+  cabinets at one end of the row can play each other while the middle one sits on its attract screen,
+  and that game still gets music. The pick is a preference, not a requirement — there is always
+  exactly one cabinet carrying the music and never none.
+- **It only applies while cabinets are playing a linked game together.** A cabinet playing on its
+  own — Single Level, a solo campaign, or just sitting on the attract screen — always plays its own
+  music, whatever this is set to. It is not a "mute this cabinet" switch.
+- **All** is the default and means every cabinet plays its own music, which is what they did before
+  this setting existed.
+- Only music is affected. Sound effects are untouched everywhere.
+- Like every operator setting, it is saved from a `-devmode` session, and it remembers the cabinet by
+  *name* — so it survives a restart even before the other cabinets are back online.
+
 **Copy Missing Wads: the master hands over the game a member doesn't have.** With **Options → Arcade
 Options → Cabinet Link Options → Copy Missing Wads** set to **On** on the master (it is **Off** until you
 turn it on), a cabinet that can't follow a pick because it lacks the IWAD or the level pack gets the

@@ -135,6 +135,21 @@ boolean     LK_Poll_Event( lk_event_t * ev );
 // This cabinet's full id, or NULL before the link has an identity.
 const byte* LK_My_Fp( void );
 
+// [Arcade] Cabinet names this one knows: its own first, then every pinned
+// peer.  Copies into out and returns how many were written.
+//
+// The names come from the pins (legacyhome/link/pins.txt), which LK_Init loads
+// *before* config.cfg is read -- that ordering is what lets Music Cabinet be an
+// ordinary saved cvar whose value is a cabinet name, instead of one that
+// forgets the operator's choice on every restart because the list was still
+// empty when the config loaded.
+int         LK_Known_Names( char (*out)[LK_NAME_LEN], int max );
+
+// [Arcade] Is a linked game running on this cabinet right now?  True only
+// while the sealed game channel is up, which is exactly "playing with other
+// cabinets" -- a solo game, Single Level, or the attract screen is false.
+boolean     LK_In_Linked_Game( void );
+
 // Look a cabinet up by full id among the peers this one can see.
 boolean     LK_Peer_Find( const byte * fp, lk_peer_info_t * out );
 

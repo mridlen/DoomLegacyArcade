@@ -374,6 +374,51 @@ const char *  LKG_Join_Line( void )
     return lkg_line[0] ? lkg_line : NULL;
 }
 
+// [Arcade] Music Cabinet: does this cabinet carry the music right now?
+//
+// The operator picks a cabinet by name (cv_link_musiccab) -- normally the
+// middle of the row, so the music reaches both ends.  But the pick need not be
+// in every game: two cabinets at one end can play each other while the middle
+// one sits on its attract screen, and a rule of "only the pick plays" would
+// then leave that game with no music at all.
+//
+// So the pick is a preference with a fallback: **the chosen cabinet carries
+// the music when it is in the game, otherwise the cabinet that started the
+// game does.**  That yields exactly one carrier in every case and needs
+// nothing sent between cabinets:
+//
+//   - Any cabinet can tell whether it is itself the pick.
+//   - Only the host knows who actually joined, so only the host takes the
+//     fallback -- and there is always exactly one host.
+//
+// Which leaves the two cases whole: if the pick is playing (as host or as a
+// member) it carries the music and the host stays quiet unless it is also the
+// pick; if the pick is absent, no member claims it and the host does.
+boolean  LKG_Music_Here( const char * chosen )
+{
+    int i;
+
+    if( ! chosen || ! chosen[0] )  return true;   // nothing picked: play
+
+    if( strcmp( chosen, LK_Name() ) == 0 )  return true;   // I am the pick
+
+    // A member cannot see the roster, so it never takes the fallback.  If the
+    // pick is absent the host below will claim it.
+    if( lkg_mode != LKGM_GAME_HOST )  return false;
+
+    for( i = 0; i < LK_MAX_PEERS; i++ )
+    {
+        lk_peer_info_t  info;
+
+        if( ! lkg_remotes[i].used || ! lkg_remotes[i].joined )  continue;
+        if( ! LK_Peer_Find( lkg_remotes[i].fp, &info ) )  continue;
+        if( strcmp( info.name, chosen ) == 0 )
+            return false;       // the pick is in this game; it carries it
+    }
+
+    return true;                // the pick is not here: the host carries it
+}
+
 int  LKG_Players_In_Game( void )
 {
     int i, n = 0;
