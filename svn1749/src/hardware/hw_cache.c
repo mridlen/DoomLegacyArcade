@@ -852,6 +852,32 @@ static void HWR_GenerateFogTexture (int texnum, Mipmap_t * mipmap,
 // drawflags can be TF_Opaquetrans
 // Called from HWR_Draw* -> HWR_LoadMappedPatch
 // Called from HWR_GetPatch
+// [Arcade] True when every texel on the border of the art is opaque.  The art
+// sits at (margin, margin), width x height.  Only formats with an alpha byte
+// (the last one of the texel) can say; the others count as solid, so they
+// keep the old hard-edged layout.
+static boolean HWR_Art_Border_Solid( byte * block, int bw, int bytepp,
+                                     int margin, int width, int height )
+{
+    int x, y;
+#define ART_ALPHA(xx,yy)  block[ ((((yy)+margin) * bw) + (xx) + margin) * bytepp + bytepp - 1 ]
+
+    if( bytepp != 2 && bytepp != 4 )
+        return true;
+    for( x = 0; x < width; x++ )
+    {
+        if( ART_ALPHA(x, 0) == 0 || ART_ALPHA(x, height-1) == 0 )
+            return false;
+    }
+    for( y = 0; y < height; y++ )
+    {
+        if( ART_ALPHA(0, y) == 0 || ART_ALPHA(width-1, y) == 0 )
+            return false;
+    }
+    return true;
+#undef ART_ALPHA
+}
+
 // Called from W_CachePatchNum, W_CacheMappedPatchNum
 void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                     uint32_t drawflags)
@@ -859,12 +885,12 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     byte*   block;
     int     newwidth, newheight;
     int     bytepp;
-    // [Arcade] The world-sprite copy gets a transparent texel all round, so a
+    // [Arcade] The margin copies get a transparent texel all round, so a
     // linear filter has something to fade the silhouette into.  See
-    // HWR_GetSpritePatch.  Not when the block would have to be scaled to fit.
+    // HWR_GetMarginPatch.  Not when the block would have to be scaled to fit.
     int     margin = 0;
 
-    if( (drawflags & TF_SpriteCopy)
+    if( (drawflags & (TF_SpriteCopy|TF_2DCopy))
         && ! cv_grrounddown.value
         && patch->width + 2 <= 2048 && patch->height + 2 <= 2048 )
         margin = 1;
@@ -932,11 +958,6 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
         newwidth  = min( patch->width , blockwidth );
         newheight = min( patch->height, blockheight);
     }
-    if( margin )
-        grMipmap->tfflags |= TF_SpriteMargin;
-    else
-        grMipmap->tfflags &= ~TF_SpriteMargin;
-
     // [Arcade] With a margin the art is drawn one texel in: the region is the
     // margined size, so nothing is scaled, and the origin skips the margin.
     bytepp = format2bpp[ grMipmap->GR_format ];
@@ -945,6 +966,27 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                           patch->width + 2*margin, patch->height + 2*margin,
                           margin, margin,
                           patch, bytepp );
+
+    // [Arcade] A 2D picture whose whole border is solid is meant to meet the
+    // screen edge or the piece beside it -- the title screen, the status bar,
+    // an intermission map, the view border tiles, the scrolling end-of-Doom
+    // bunny -- and faded edges there would be a dark frame and seams.  Draw
+    // it again without the margin, exactly as before.  Text and menu art has
+    // holes in its border and keeps the margin.
+    if( margin && (drawflags & TF_2DCopy)
+        && HWR_Art_Border_Solid( block, blockwidth, bytepp,
+                                 margin, patch->width, patch->height ) )
+    {
+        margin = 0;
+        block = Make_Mip_Block(grMipmap);  // same size: cleared, not moved
+        newwidth  = min( patch->width , blockwidth );
+        newheight = min( patch->height, blockheight);
+        HWR_DrawPatchInCache( grMipmap,
+                              newwidth, newheight, blockwidth*bytepp,
+                              patch->width, patch->height,
+                              0, 0,
+                              patch, bytepp );
+    }
 
     // [Arcade] Fill the padding with copies of the patch's last column and
     // row.  A patch that is not a power of two sits in the top-left of a
@@ -971,10 +1013,17 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
             memcpy( block + (y * rowbytes), block + ((newheight - 1) * rowbytes), rowbytes );
     }
 
-    // [Arcade] max_s/max_t describe the 2D layout, which every other drawer
-    // of this patch reads; the sprite copy's own span is worked out by
-    // HWR_DrawSprite from the block size.
-    if( ! (drawflags & TF_SpriteCopy) )
+    // [Arcade] Whether the margin was really applied, and the span the drawn
+    // region covers, per copy.  The MipPatch_t's max_s/max_t are the base
+    // copy's, which the drawers that do not use a margin copy still read.
+    if( margin )
+        grMipmap->tfflags |= TF_SpriteMargin;
+    else
+        grMipmap->tfflags &= ~TF_SpriteMargin;
+    grMipmap->max_s = (float)newwidth / (float)blockwidth;
+    grMipmap->max_t = (float)newheight / (float)blockheight;
+
+    if( ! (drawflags & (TF_SpriteCopy|TF_2DCopy)) )
     {
         grPatch->max_s = (float)newwidth / (float)blockwidth;
         grPatch->max_t = (float)newheight / (float)blockheight;
@@ -1357,7 +1406,7 @@ void HWR_GetMappedPatch(MipPatch_t* gpatch, byte *colormap)
     {
         grmip = grmip->nextcolormap;
         // [Arcade] skip the world-sprite copies, which have a different layout
-        if (grmip->colormap==colormap && !(grmip->tfflags & TF_SpriteCopy))
+        if (grmip->colormap==colormap && !(grmip->tfflags & (TF_SpriteCopy|TF_2DCopy)))
         {
             HWR_LoadMappedPatch( grmip, gpatch );
             return;
@@ -1378,8 +1427,12 @@ void HWR_GetMappedPatch(MipPatch_t* gpatch, byte *colormap)
     HWR_LoadMappedPatch( newmip, gpatch );
 }
 
-// [Arcade] HWR_GetSpritePatch : the world-sprite copy of a patch, loaded and
-// bound, with a transparent texel all round (TF_SpriteMargin) when it fits.
+// [Arcade] HWR_GetMarginPatch : a copy of a patch with a transparent texel all
+// round (TF_SpriteMargin) when it fits, loaded and bound.  drawflags carries
+// TF_2DCopy for text, menus and the HUD, otherwise it is the world-sprite
+// copy (TF_SpriteCopy); plus TF_Opaquetrans.  The drawer reads the copy's own
+// max_s/max_t, and widens its quad by one texel each way when TF_SpriteMargin
+// is set so the art lands where it did.
 //
 // Sprites are cut tight to their art, so the top of a head or helmet sits on
 // the texture's first row.  With nothing transparent beyond it the linear
@@ -1392,21 +1445,28 @@ void HWR_GetMappedPatch(MipPatch_t* gpatch, byte *colormap)
 // A copy, not a change to the patch itself: the same lump can also be drawn
 // as 2D art (Heretic's inventory icons are sprites), and a full-screen 2D
 // picture must not fade at its edges -- that was the intermission's dark line.
-// It lives in the colormap chain, marked TF_SpriteCopy, so it is purged and
-// freed with the colormap copies.
-Mipmap_t * HWR_GetSpritePatch(MipPatch_t* gpatch, byte *colormap, uint32_t drawflags)
+// Text and menu graphics have the same problem -- a glyph's top touching its
+// box -- magnified by the 320x200 upscale, so they get a 2D copy on the same
+// terms, except that a picture with a solid border stays hard-edged
+// (HWR_Art_Border_Solid).  The two copies are separate because a solid
+// sprite still wants its margin.
+//
+// It lives in the colormap chain, marked TF_SpriteCopy or TF_2DCopy, so it is
+// purged and freed with the colormap copies.
+Mipmap_t * HWR_GetMarginPatch(MipPatch_t* gpatch, byte *colormap, uint32_t drawflags)
 {
     Mipmap_t   *grmip, *newmip;
 
     if( colormap == reg_colormaps )
         colormap = NULL;   // the same thing; one copy, not two
-    drawflags = (drawflags & TF_Opaquetrans) | TF_SpriteCopy;
+    drawflags = (drawflags & (TF_Opaquetrans|TF_2DCopy))
+              | ((drawflags & TF_2DCopy)? 0 : TF_SpriteCopy);
 
     for(grmip = &gpatch->mipmap ; grmip->nextcolormap ;)
     {
         grmip = grmip->nextcolormap;
         if( grmip->colormap == colormap
-            && (grmip->tfflags & (TF_SpriteCopy|TF_Opaquetrans)) == drawflags )
+            && (grmip->tfflags & (TF_SpriteCopy|TF_2DCopy|TF_Opaquetrans)) == drawflags )
         {
             HWR_LoadMappedPatch( grmip, gpatch );
             return grmip;

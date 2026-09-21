@@ -464,6 +464,26 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     frame, which magnifies the zombieman like walking up to him: the helmet's flat top becomes
     rounded, nothing else moves. Console `+forward` does not move the player in an autoexec, so
     `gr_fov` is the way to get a close-up headlessly.
+  - **Text, menu art and the HUD had both problems, and now get both fixes.** `HWR_DrawPatch` and
+    `HWR_DrawMappedPatch` drew with `PF_Translucent` (the dark rim) from a patch at texel (0,0) (the
+    hard box edge). Magnified by the 320x200 upscale it read as every word sitting in a dark
+    rectangle — the intermission's `KILLS`, the HUD counters. They now draw a **2D margin copy**
+    (`HWR_GetMarginPatch(..., TF_2DCopy)`) premultiplied (`PF_Environment`), through
+    `HWR_Draw_Margin_Quad`; a translucent HUD sets the flat colour's RGB to its alpha as well, which
+    is what premultiplied translucency needs.
+  - **A picture whose whole border is opaque keeps the old layout** (`HWR_Art_Border_Solid`,
+    checked once the art is drawn into the block). Those are the pictures meant to meet the screen
+    edge or the piece beside them — title screen, status bar, intermission map, view-border tiles,
+    the scrolling bunny — where a faded edge is a dark frame or a seam. A glyph whose top touches
+    its box still has holes in the rest of its border, so it gets the margin. Verified: the title
+    screen is byte-identical before and after, and on the Doom 2 intermission every changed pixel is
+    on or beside text (the empty background blocks have none).
+  - **Each copy carries its own span now** (`Mipmap_t.max_s/max_t`). `MipPatch_t.max_s/max_t`
+    describe the base copy, which the weapon and the splats still use; a margin copy's block can be
+    a larger power of two than the base one, so computing its span from the patch was only right
+    by luck. Changing `Mipmap_t` changes a header: `make clean`.
+  - `HWR_DrawPic` (Heretic raw pics and the `pic_t` formats) is untouched: an intensity-alpha pic is
+    not premultiplied, so the old blend is right for it.
 
 
 - **The demo header used to record the *previous* game's settings. Fixed — but the ordering that

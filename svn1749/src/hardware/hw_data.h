@@ -90,6 +90,10 @@ struct Mipmap_s {
     // multiple texture renderings, by colormap and TF_Opaquetrans
     struct Mipmap_s   *nextcolormap;  // next for this texture, linked list, malloc
     byte              *colormap;
+    // [Arcade] The texture span this copy's art (and margin, if it has one)
+    // covers, set by HWR_MakePatch.  The MipPatch_t's own max_s/max_t
+    // describe the base copy only; the margin copies differ from it.
+    float             max_s, max_t;
 
 // Private to driver   
     // opengl/glide
