@@ -2071,6 +2071,74 @@ manual gets better prose than the page could hold.
 The "THIS CABINET IS NOT THE MASTER" line stays. It is not an explanation of a setting — it is the
 reason none of them will do anything, which is worth saying where the settings are.
 
+### Tracing a silent cabinet: `-volog`
+
+A cabinet that joined a linked game hosted elsewhere went **completely** silent — sound effects as
+well as music — and came back the moment the game ended. Music Cabinet was the obvious suspect and
+was wrong, which is the whole reason this switch exists: four hypotheses were formed and killed in
+turn by reading the code, and the only thing that moved the diagnosis was numbers off the machine
+that does it.
+
+`-volog` prints a line whenever something changes, and **writes `volog.txt` beside the program**.
+The file is not a nicety. On Windows the program is a GUI binary with no console attached, and
+`LOGMESSAGES` is commented out of a normal build (`doomdef.h`), so a diagnostic that only calls
+`GenPrintf` is **invisible on the one machine that shows the fault**. That cost a whole round trip.
+Flushed per line, so a cabinet switched off at the wall still leaves what it had.
+
+Two kinds of line. The first is what the mixer was set to and what decided it:
+
+```
+VOLOG sfx=24 mus=0  cv_sfx=24 cv_mus=7 cv_attract=50 attract=0 menuover=0 musiccab_muted=1 netgame=1 gamestate=6
+```
+
+The second is the whole chain from "a sound was asked for" to "samples were mixed into the buffer
+handed to the audio device":
+
+```
+VOLOG sounds asked=52 inaud=8 nochan=0 nodata=0 started=44 mixchan=1061 peakvol=20/20 mixcalls=810 ...
+```
+
+| field | meaning | where it is counted |
+| --- | --- | --- |
+| `asked` | requests, however they end | top of `S_StartSoundAtVolume`, **before** the `nosoundfx` early-out |
+| `inaud` | dropped as out of earshot | the `!audible1` branch |
+| `nochan` | `S_get_channel` refused | |
+| `nodata` | the lump has no samples | |
+| `started` | published to the mixer | end of `I_StartSound` (`sdl/i_sound.c`) |
+| `mixchan` | channel-passes the mixer read samples from | `I_UpdateSound_sdl`, per buffer |
+| `peakvol` | loudest left/right volume started since the last report, 0..127 | `I_StartSound` |
+| `mixcalls` | post-mix callback invocations | `I_UpdateSound_sdl` |
+
+Reading it:
+
+- **`started` climbing, `mixchan` climbing, `peakvol` non-zero** — audible samples went into the
+  buffer handed to SDL. The engine is done; the fault is the device or the OS.
+- **`started` climbing, `mixchan` flat** — the mixer never sees the channels.
+- **`mixcalls` flat** — SDL_mixer stopped driving the device.
+- **a gap between `asked` and `started`** — one of `inaud`/`nochan`/`nodata` names which rejection
+  is eating them.
+
+Two traps this encodes:
+
+- **`asked` minus `inaud` is not "accepted"**, and reading it that way overstated one round's
+  conclusion. `S_get_channel` can refuse and a zero-length lump is dropped later still, which is
+  why `nochan` and `nodata` exist as their own columns.
+- **`mixchan` alone does not prove sound was audible.** A channel started at volume 0 is still read
+  by the mixer every buffer; it mixes silence. Set `soundvolume "0"` and `mixchan` climbs to within
+  a few counts of a normal run while `peakvol` reads `0/0`. The two fields have to be read together.
+
+`peakvol` is a **peak over the reporting window, not the latest value**, because a single snapshot
+lands on whatever sound happened to be last and one genuinely distant shot reads `0/0` while the
+cabinet is perfectly audible. That false alarm appeared in the first version of the field and is
+why it is a maximum now.
+
+Each column was shown to go red before being trusted: `-nosound` holds `started` at 0 while `asked`
+climbs to 89, and `soundvolume "0"` pins `peakvol` at `0/0` with everything else unchanged.
+
+The counters are always compiled in — a few increments — but nothing is printed or written without
+`-volog`.
+
+
 ## Team Deathmatch over the link
 
 Invites carry a category byte, and Team Deathmatch is a third one, **`LKG_CAT_TEAMDM`**, appended

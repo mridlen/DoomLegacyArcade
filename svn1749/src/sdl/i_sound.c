@@ -301,6 +301,16 @@ static void stop_channel( mix_channel_t * chanp )
 //  sep : separation, +/- 127, SURROUND_SEP special operation
 // Return a channel handle.
 unsigned int  volog_mix_calls = 0;   // [Arcade] -volog
+// [Arcade] -volog: the last links in the chain.  volog_snd_started counts
+// channels published to the mixer, volog_mix_chan counts the channel-passes
+// the mixer actually read samples from, and volog_last_[lr]vol is the
+// loudest left/right volume (0..127) any start computed since the last report
+// -- which is the one way a started, mixed channel can still be silent.  It is
+// a peak and not the latest value because a single sample lands on whatever
+// happened to be last, and one genuinely distant sound reads 0/0 while the
+// cabinet is perfectly audible.
+unsigned int  volog_snd_started = 0, volog_mix_chan = 0;
+int  volog_vol_peak_l = -1, volog_vol_peak_r = -1;
 
 int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
 {
@@ -448,6 +458,11 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     // and it did not hold on the Pi; mix_lock is what makes the half-written
     // channel unobservable now.  data_ptr still goes last, which costs nothing.
     chanp->data_ptr = sfx_data;
+
+    // [Arcade] -volog
+    if( leftvol  > volog_vol_peak_l )  volog_vol_peak_l = leftvol;
+    if( rightvol > volog_vol_peak_r )  volog_vol_peak_r = rightvol;
+    volog_snd_started++;
 
     // Assign current handle number.
     // Preserved so sounds could be stopped.
@@ -619,6 +634,15 @@ static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
     mix_lock_give();
     for (chan = 0; chan < NUM_CHANNELS; chan++)
         copy_start[chan] = chan_copy[chan].data_ptr;
+
+    // [Arcade] -volog: how many channels this pass will actually read samples
+    // from.  Climbing means sound reached the buffer handed to the device.
+    {
+        int  act = 0;
+        for (chan = 0; chan < NUM_CHANNELS; chan++)
+            if( copy_start[chan] )  act++;
+        volog_mix_chan += act;
+    }
 
     // Pointers in audio stream, left, right, end.
     // Left and right channels are multiplexed in the audio stream, alternating.

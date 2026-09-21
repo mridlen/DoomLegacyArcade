@@ -872,6 +872,11 @@ static
 // positional sound here while the mixer sits at full volume, which is silence
 // that no volume setting can explain -- see S_Update_Volumes.
 unsigned int  volog_snd_req = 0, volog_snd_inaudible = 0;
+// [Arcade] -volog: the other two ways a request dies before it reaches the
+// mixer.  "asked minus inaudible" is not "accepted", which is what the
+// previous run's numbers were read as: S_get_channel can refuse, and a
+// zero-length lump is dropped later still.
+unsigned int  volog_snd_nochan = 0, volog_snd_nodata = 0;
 
 void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
                           sfxid_t sfx_id, int volume,
@@ -1075,7 +1080,10 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
     // Dependent upon sfx flags
     cnum = S_get_channel(origin, sfx, priority);
     if (cnum < 0)
+    {
+        volog_snd_nochan++;   // [Arcade] -volog
         goto done;
+    }
 
     // cache data if necessary
     // NOTE : set sfx->data NULL sfx->lump -1 to force a reload
@@ -1092,7 +1100,10 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
     // [WDJ] From PrBoom, wad dakills has zero length sounds
     // (DSBSPWLK, DSBSPACT, DSSWTCHN, DSSWTCHX)
     if (sfx->length <= 0)
+    {
+       volog_snd_nodata++;   // [Arcade] -volog
        goto done;
+    }
 
 #ifdef SURROUND_SOUND
     // judgecutor:
@@ -1476,38 +1487,66 @@ void S_Update_Volumes(void)
         int flags = (D_Attract_Running() ? 1 : 0) | (D_Menu_Over_Attract() ? 2 : 0)
                   | (M_Link_Music_Muted() ? 4 : 0) | (netgame ? 8 : 0)
                   | (dedicated ? 16 : 0);
-        // Sounds asked for and sounds thrown away, reported every two seconds
-        // whether or not the volumes moved.  If the counts climb together the
-        // listener is wrong and every sound is being discarded; if nothing is
-        // asked for at all the silence is higher up than the sound code.
+        // The whole chain from "a sound was asked for" to "samples were mixed
+        // into the buffer handed to the audio device", reported every two
+        // seconds whether or not the volumes moved.  The silent cabinet has
+        // now cleared every layer above this one -- full volume, a valid
+        // listener, sounds accepted, and the mixer callback running without a
+        // single missed buffer -- so what is left is the handful of steps
+        // between S_StartSoundAtVolume deciding to play a sound and the mixer
+        // reading samples out of a channel.  Each one gets a number:
+        //
+        //   asked    requests, however they end
+        //   inaud    dropped as out of earshot
+        //   nochan   S_get_channel refused
+        //   nodata   the lump has no samples
+        //   started  reached I_StartSound and was published to the mixer
+        //   mixchan  channel-passes the mixer actually read samples from
+        //   peakvol  loudest left/right volume started since the last
+        //            report, 0..127
+        //
+        // started climbing with mixchan and a non-zero peakvol means audible
+        // samples went into the buffer and the engine is done: the fault is
+        // the device or the OS.  started climbing with mixchan flat means the
+        // mixer never sees the channels.  A gap between asked and started
+        // names which of the three rejections is eating them.
         {
             extern unsigned int volog_snd_req, volog_snd_inaudible;
-            extern unsigned int volog_mix_calls;
+            extern unsigned int volog_snd_nochan, volog_snd_nodata;
+            extern unsigned int volog_mix_calls, volog_snd_started, volog_mix_chan;
+            extern int volog_vol_peak_l, volog_vol_peak_r;
             extern tic_t I_GetTime( void );
             static uint32_t  next_ms = 0;
-            static unsigned int  last_req = 0, last_drop = 0, last_mix = 0;
+            static unsigned int  last_req = 0, last_mix = 0, last_chan = 0;
             uint32_t now = (uint32_t) I_GetTime();
             if( now >= next_ms )
             {
                 next_ms = now + (2*TICRATE);
-                if( volog_snd_req != last_req || volog_snd_inaudible != last_drop
-                    || volog_mix_calls != last_mix )
+                if( volog_snd_req != last_req || volog_mix_calls != last_mix
+                    || volog_mix_chan != last_chan )
                 {
                     const char * sfmt =
-                      "VOLOG sounds asked=%u dropped_inaudible=%u mixcalls=%u "
+                      "VOLOG sounds asked=%u inaud=%u nochan=%u nodata=%u started=%u "
+                      "mixchan=%u peakvol=%d/%d mixcalls=%u "
                       "nosoundfx=%d consoleplayer=%d displayplayer=%d listener_mo=%s\n";
                     int dp = displayplayer_ptr ? (int)(displayplayer_ptr - players) : -1;
                     const char * lm = (displayplayer_ptr && displayplayer_ptr->mo) ? "yes" : "NULL";
-                    last_req = volog_snd_req;  last_drop = volog_snd_inaudible;
-                    last_mix = volog_mix_calls;
+                    last_req = volog_snd_req;  last_mix = volog_mix_calls;
+                    last_chan = volog_mix_chan;
                     GenPrintf( EMSG_warn, sfmt, volog_snd_req, volog_snd_inaudible,
+                               volog_snd_nochan, volog_snd_nodata, volog_snd_started,
+                               volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r,
                                volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                     if( volog )
                     {
                         fprintf( volog, sfmt, volog_snd_req, volog_snd_inaudible,
+                                 volog_snd_nochan, volog_snd_nodata, volog_snd_started,
+                                 volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r,
                                  volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                         fflush( volog );
                     }
+                    // peak is per report window, so it can go back down
+                    volog_vol_peak_l = volog_vol_peak_r = -1;
                 }
             }
         }
