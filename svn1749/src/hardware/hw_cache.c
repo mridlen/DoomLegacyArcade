@@ -878,6 +878,37 @@ static boolean HWR_Art_Border_Solid( byte * block, int bw, int bytepp,
 #undef ART_ALPHA
 }
 
+// [Arcade] True for a letter or digit of one of the game's fonts, by lump name.
+// A glyph like 'I', '-', '.', '!' or 'H' is a solid block right out to its
+// box, so HWR_Art_Border_Solid takes it for a picture and it stays a hard
+// square -- but it is a letter, drawn on its own, and wants the soft edge
+// every other glyph gets.  Size cannot tell the two apart: '.' is 4x3 and
+// the view border's corner tile is 3x3.  The names are the engine's own font
+// lumps (hu_stuff.c, wi_stuff.c, st_stuff.c, sb_bar.c), which a replacement
+// font in a PWAD keeps.
+static boolean HWR_Is_Font_Glyph( lumpnum_t lumpnum )
+{
+    static const char * font_prefix[] = {
+        "STCFN", "FONTA", "FONTB",                       // hu_font, Heretic
+        "WINUM", "WIMINUS", "WIPCNT", "WICOLON",         // intermission
+        "STTNUM", "STTMINUS", "STTPRCNT",                // status bar, large
+        "STYSNUM", "STGNUM", "SMALLIN",                  // status bar, small
+        NULL
+    };
+    const char * name;
+    int i;
+
+    if( ! VALID_LUMP(lumpnum) )
+        return false;
+    name = wadfiles[WADFILENUM(lumpnum)]->lumpinfo[LUMPNUM(lumpnum)].name;
+    for( i = 0; font_prefix[i]; i++ )
+    {
+        if( strncasecmp( name, font_prefix[i], strlen(font_prefix[i]) ) == 0 )
+            return true;
+    }
+    return false;
+}
+
 // Called from W_CachePatchNum, W_CacheMappedPatchNum
 void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
                     uint32_t drawflags)
@@ -972,10 +1003,12 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     // an intermission map, the view border tiles, the scrolling end-of-Doom
     // bunny -- and faded edges there would be a dark frame and seams.  Draw
     // it again without the margin, exactly as before.  Text and menu art has
-    // holes in its border and keeps the margin.
+    // holes in its border and keeps the margin, and so does a font glyph that
+    // happens to be solid to its edge (HWR_Is_Font_Glyph).
     if( margin && (drawflags & TF_2DCopy)
         && HWR_Art_Border_Solid( block, blockwidth, bytepp,
-                                 margin, patch->width, patch->height ) )
+                                 margin, patch->width, patch->height )
+        && ! HWR_Is_Font_Glyph( grPatch->patch_lumpnum ) )
     {
         margin = 0;
         block = Make_Mip_Block(grMipmap);  // same size: cleared, not moved
