@@ -1427,6 +1427,41 @@ void S_Update_Volumes(void)
         if( M_Link_Music_Muted() )  want_mus = 0;
     }
 
+    // [Arcade] -volog: say what the mixer was set to and what decided it.
+    //
+    // Added for a cabinet that went completely silent -- sound as well as
+    // music -- while in a linked game it had joined, and came back afterwards.
+    // Three plausible explanations were each ruled out by reading the code
+    // (this function only ever assigns want_mus for the Music Cabinet; the
+    // attract scaling makes things quiet, not silent; the join path does
+    // disable the attract cycle), so the next step is to stop reasoning and
+    // read the numbers off the machine that does it.
+    //
+    // Prints only when something changes, so a whole session is a handful of
+    // lines.  Every input is on the line: if one of the volumes is 0, this
+    // says which cvar or which scaling made it 0 -- and if they are both
+    // healthy while the cabinet is silent, the mixer or the audio device is
+    // the place to look instead, not this code.
+    if( M_CheckParm("-volog") )
+    {
+        extern boolean M_Link_Music_Muted( void );
+        static int  last_sfx = -1, last_mus = -1, last_flags = -1;
+        int flags = (D_Attract_Running() ? 1 : 0) | (D_Menu_Over_Attract() ? 2 : 0)
+                  | (M_Link_Music_Muted() ? 4 : 0) | (netgame ? 8 : 0)
+                  | (dedicated ? 16 : 0);
+        if( want_sfx != last_sfx || want_mus != last_mus || flags != last_flags )
+        {
+            last_sfx = want_sfx;  last_mus = want_mus;  last_flags = flags;
+            GenPrintf( EMSG_warn,
+              "VOLOG sfx=%d mus=%d  cv_sfx=%d cv_mus=%d cv_attract=%d "
+              "attract=%d menuover=%d musiccab_muted=%d netgame=%d gamestate=%d\n",
+              want_sfx, want_mus,
+              cv_soundvolume.value, cv_musicvolume.value, cv_attractvolume.value,
+              (flags & 1) ? 1 : 0, (flags & 2) ? 1 : 0, (flags & 4) ? 1 : 0,
+              (flags & 8) ? 1 : 0, (int)gamestate );
+        }
+    }
+
     if (mix_sfxvolume != want_sfx)
         S_SetSfxVolume(want_sfx);
     if (mix_musicvolume != want_mus)
