@@ -87,6 +87,7 @@ enum
     LK_GM_GAME_SELECTED,  // game id: a member tells its master a player chose it
     LK_GM_GAME_SWITCH,    // u32 serial, game id: the master tells a member to follow
     LK_GM_GAME_CANNOT,    // u32 serial, game id, reason: a member could not
+    LK_GM_MUSIC_CAB,      // [Arcade] cabinet name: the master says who carries the music
     LK_GM_NUM
 };
 

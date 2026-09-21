@@ -72,6 +72,11 @@ static int         lkg_remote_players;
 static byte        lkg_sent_joined = 255, lkg_sent_locked = 255;
 static uint32_t    lkg_status_ms;
 
+// [Arcade] Music Cabinet: the pick the master last sent us.  Empty until one
+// arrives, which is why a member falls back to its own cvar (normally "All").
+static char        lkg_music_cab[LK_NAME_LEN];
+static uint32_t    lkg_music_ms;
+
 // Remote
 static byte        lkg_host_fp[LK_FP_BYTES];
 static char        lkg_host_name[LK_NAME_LEN];
@@ -394,6 +399,27 @@ const char *  LKG_Join_Line( void )
 // Which leaves the two cases whole: if the pick is playing (as host or as a
 // member) it carries the music and the host stays quiet unless it is also the
 // pick; if the pick is absent, no member claims it and the host does.
+// [Arcade] The Music Cabinet pick in force here.
+//
+// Cabinet Link Options is a master-only page, so a member has no way to be
+// given this by hand: its own cv_link_musiccab stays at the default and it
+// would play its own music forever.  The master therefore broadcasts its
+// setting (LKG_Ticker below) and a member uses what it was told.
+//
+// A member that has not heard yet falls back to its own cvar, which is "All"
+// unless somebody set it in an operator session -- so the failure mode is
+// every cabinet playing, the behaviour from before this setting existed,
+// rather than silence.
+const char * LKG_Music_Choice( void )
+{
+    extern consvar_t cv_link_musiccab;   // m_menu.c
+
+    if( LK_Role() == LK_ROLE_MASTER )
+        return cv_link_musiccab.string;
+
+    return lkg_music_cab[0] ? lkg_music_cab : cv_link_musiccab.string;
+}
+
 boolean  LKG_Music_Here( const char * chosen )
 {
     int i;
@@ -618,6 +644,28 @@ static void  lkg_on_event( const lk_event_t * ev )
         LKSEL_On_Event( ev );
         return;
     }
+    // [Arcade] Music Cabinet: the master telling every cabinet which one
+    // carries the music.  Only the master has the page (Cabinet Link Options
+    // is a master-only row), so without this a member never learns the pick
+    // and happily plays its own music -- which is exactly what it did.
+    if( ev->type == LK_GM_MUSIC_CAB )
+    {
+        if( ev->len > 0 )
+        {
+            char  buf[LK_NAME_LEN];
+            int   n = ev->len < LK_NAME_LEN ? ev->len : LK_NAME_LEN - 1;
+            memcpy( buf, p, n );
+            buf[n] = 0;
+            if( strcmp( buf, lkg_music_cab ) )
+            {
+                dl_strncpy( lkg_music_cab, buf, LK_NAME_LEN );
+                GenPrintf( EMSG_errlog,
+                           "LINKLOG Cabinet Link: the music cabinet is %s\n",
+                           lkg_music_cab[0] ? lkg_music_cab : "(unset)" );
+            }
+        }
+        return;
+    }
     if( ev->len < 8 )  return;
     nonce = get32( p + 4 );
 
@@ -731,6 +779,27 @@ static void  lkg_send_status( const byte * target, byte joined, byte locked, int
 
 void  LKG_Ticker( void )
 {
+    // [Arcade] Music Cabinet: the master tells everyone its pick.  Repeated
+    // rather than sent only on change, so a cabinet that was switched off, or
+    // that joined the link later, is told without anyone touching the menu.
+    // A cabinet name every four seconds is nothing next to the presence
+    // traffic already on this link.
+    if( LK_Built() && LK_Role() == LK_ROLE_MASTER )
+    {
+        uint32_t  now = lkg_now();
+        if( now - lkg_music_ms >= 4000 )
+        {
+            extern consvar_t cv_link_musiccab;   // m_menu.c
+            char  msg[LK_NAME_LEN];
+
+            lkg_music_ms = now;
+            memset( msg, 0, sizeof(msg) );
+            dl_strncpy( msg, cv_link_musiccab.string ? cv_link_musiccab.string : "All",
+                        LK_NAME_LEN );
+            LK_Send( NULL, LK_GM_MUSIC_CAB, (const byte*) msg, sizeof(msg) );
+        }
+    }
+
     lk_event_t  ev;
     uint32_t now;
     byte joined = 0;
