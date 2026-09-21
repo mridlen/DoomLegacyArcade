@@ -325,7 +325,13 @@ to anyone else running this port. Each is written up in full in the commit that 
   helmet — even with smoothing on. The art runs right up to the edge of its box there, so the
   smoothing had nothing to fade into and the outline stopped in a hard straight line. Sprites in
   the world now have a clear pixel of room around them to fade into, and look the same shape
-  everywhere else. Menus, the HUD and the intermission keep their sharp edges.
+  everywhere else.
+- **Menu, HUD and intermission lettering looked blocky** with smoothing on — each word sat in a
+  hard-edged dark box, because the letters' dark outline was cut off square where the art meets
+  its box, and darkened a second time as it was drawn. Text and menu graphics now get the same
+  treatment as the sprites and their outlines follow the letters. Pictures that fill their whole
+  box — the title screen, the status bar, the intermission maps — are drawn exactly as before, so
+  they still meet the screen edge cleanly.
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and

@@ -264,11 +264,16 @@ typedef enum
     TF_Opaquetrans      = 0x00000100,   // Some translucent pixels are opaque (fx1)
     TF_Fogsheet         = 0x00000200,   // Generate a fog sheet
     // [Arcade] The world-sprite copy of a patch, kept in the colormap chain
-    // apart from the 2D one (HWR_GetSpritePatch).
+    // apart from the base one (HWR_GetMarginPatch).
     TF_SpriteCopy       = 0x00000400,
     // [Arcade] Set by HWR_MakePatch when the art really was drawn one texel
-    // in from the edge, with a transparent margin all round.
+    // in from the edge, with a transparent margin all round.  On either kind
+    // of copy.
     TF_SpriteMargin     = 0x00000800,
+    // [Arcade] The 2D copy (text, menus, HUD): a margin too, unless the
+    // art's whole border is solid -- a picture meant to meet the screen edge
+    // or the piece beside it.  HWR_GetMarginPatch.
+    TF_2DCopy           = 0x00001000,
 }  TextureFlags_e;
 
 #ifdef TODO

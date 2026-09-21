@@ -111,6 +111,67 @@
 
 #define BLENDMODE PF_Translucent
 
+// [Arcade] Text, menu art and the HUD draw through a margin copy of the patch
+// (HWR_GetMarginPatch, TF_2DCopy): one clear texel all round, so the linear
+// filter fades a glyph's edge instead of stopping it in a hard line where the
+// art touches its box -- the blocky tops of the menu and HUD lettering once
+// the 320x200 art is scaled up.  The quad is widened by one texel each way,
+// so the art lands exactly where it did.  A picture with a solid border has
+// no margin (HWR_Art_Border_Solid) and draws as before.
+//
+// Drawn premultiplied, like the sprites (HWR_DrawSprite): the clear texels
+// are black, so a filtered edge is colour*a, and PF_Translucent would darken
+// it a second time.  A translucent HUD scales the colour by its alpha too,
+// which is what premultiplied alpha needs.
+#define PATCH_BLENDMODE  PF_Environment
+
+static void HWR_Draw_Margin_Quad( MipPatch_t * gpatch, Mipmap_t * mip,
+                                  float stx, float sty, float pdupx, float pdupy,
+                                  uint32_t option, uint32_t polyflags )
+{
+    vxtx3d_t  v[4];
+    float  left   = stx - (gpatch->leftoffset * pdupx);
+    float  right  = stx + ((gpatch->width - gpatch->leftoffset) * pdupx);
+    float  top    = sty - (gpatch->topoffset * pdupy);
+    float  bottom = sty + ((gpatch->height - gpatch->topoffset) * pdupy);
+
+    if( mip->tfflags & TF_SpriteMargin )
+    {
+        left -= pdupx;   right  += pdupx;
+        top  -= pdupy;   bottom += pdupy;
+    }
+
+//  3--2
+//  | /|
+//  |/ |
+//  0--1
+    v[0].x = v[3].x = left / vid.width - 1;
+    v[2].x = v[1].x = right / vid.width - 1;
+    v[0].y = v[1].y = 1 - top / vid.height;
+    v[2].y = v[3].y = 1 - bottom / vid.height;
+
+    v[0].z = v[1].z = v[2].z = v[3].z = 1.0f;
+
+    v[0].sow = v[3].sow = 0.0f;
+    v[2].sow = v[1].sow = mip->max_s;
+    v[0].tow = v[1].tow = 0.0f;
+    v[2].tow = v[3].tow = mip->max_t;
+
+    // clip it since it is used for bunny scroll in doom I
+    if (option & V_TRANSLUCENTPATCH)
+    {
+        FSurfaceInfo_t Surf;
+        byte alpha = cv_grtranslucenthud.value;
+        Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = alpha;
+        Surf.FlatColor.s.alpha = alpha;
+        HWD.pfnDrawPolygon( &Surf, v, 4, PATCH_BLENDMODE | PF_Modulated | polyflags );
+    }
+    else
+    {
+        HWD.pfnDrawPolygon( NULL, v, 4, PATCH_BLENDMODE | polyflags );
+    }
+}
+
 //
 // -----------------+
 // HWR_DrawPatch    : Draw a 'tile' graphic
@@ -125,7 +186,6 @@
 //          V_NOSCALE = vid coordinates
 void HWR_DrawPatch (MipPatch_t* gpatch, int x, int y, uint32_t option)
 {
-    vxtx3d_t      v[4];
     float stx, sty, pdupx, pdupy;
 
     if( option & V_DRAWINFO )
@@ -149,39 +209,10 @@ void HWR_DrawPatch (MipPatch_t* gpatch, int x, int y, uint32_t option)
     }
 
     // make patch ready in hardware cache
-    HWR_GetPatch (gpatch);
-
-//  3--2
-//  | /|
-//  |/ |
-//  0--1
-    v[0].x = v[3].x = (stx - (gpatch->leftoffset*pdupx))/vid.width - 1;
-    v[2].x = v[1].x = (stx + ((gpatch->width - gpatch->leftoffset)*pdupx))/vid.width - 1;
-    v[0].y = v[1].y = 1-(sty - (gpatch->topoffset*pdupy))/vid.height;
-    v[2].y = v[3].y = 1-(sty + ((gpatch->height - gpatch->topoffset)*pdupy))/vid.height;
-
-    v[0].z = v[1].z = v[2].z = v[3].z = 1.0f;
-
-    v[0].sow = v[3].sow = 0.0f;
-    v[2].sow = v[1].sow = gpatch->max_s;
-    v[0].tow = v[1].tow = 0.0f;
-    v[2].tow = v[3].tow = gpatch->max_t;
-
-    // clip it since it is used for bunny scroll in doom I
-    if (option & V_TRANSLUCENTPATCH)
-    {
-        FSurfaceInfo_t Surf;
-        Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = 0xff;
-        Surf.FlatColor.s.alpha = cv_grtranslucenthud.value;
-
-        HWD.pfnDrawPolygon( &Surf, v, 4,
-            BLENDMODE | PF_Modulated | PF_Clip | PF_NoZClip | PF_NoDepthTest);
-    }
-    else
-    {
-        HWD.pfnDrawPolygon( NULL, v, 4,
-            BLENDMODE | PF_Clip | PF_NoZClip | PF_NoDepthTest);
-    }
+    // [Arcade] the 2D margin copy; see HWR_Draw_Margin_Quad
+    HWR_Draw_Margin_Quad( gpatch, HWR_GetMarginPatch( gpatch, NULL, TF_2DCopy ),
+                          stx, sty, pdupx, pdupy,
+                          option, PF_Clip | PF_NoZClip | PF_NoDepthTest );
 }
 
 #if 0
@@ -232,11 +263,7 @@ void HWR_DrawSmallPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byte
 //          V_TRANSLUCENTPATCH
 void HWR_DrawMappedPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byte * colormap)
 {
-    vxtx3d_t      v[4];
     float stx, sty, pdupx, pdupy;
-
-    // make patch ready in hardware cache
-    HWR_GetMappedPatch (gpatch, colormap);
 
     // V_SetupDraw now has fdupx, fdupy derived from V_SCALEPATCH.
     pdupx = drawinfo.fdupx * 2.0f;
@@ -245,33 +272,12 @@ void HWR_DrawMappedPatch (MipPatch_t* gpatch, int x, int y, uint32_t option, byt
     // V_SetupDraw now has fdupx0, fdupy0 derived from V_SCALESTART.
     stx = x * drawinfo.fdupx0 * 2.0f;
     sty = ((y * drawinfo.fdupy0) + drawinfo.fstart_y) * 2.0f;  // [Arcade] portrait menu centring
-    
-    v[0].x = v[3].x = (stx - gpatch->leftoffset*pdupx)/vid.width - 1;
-    v[2].x = v[1].x = (stx + (gpatch->width - gpatch->leftoffset)*pdupx)/vid.width - 1;
-    v[0].y = v[1].y = 1-(sty - gpatch->topoffset*pdupy)/vid.height;
-    v[2].y = v[3].y = 1-(sty + (gpatch->height - gpatch->topoffset)*pdupy)/vid.height;
 
-    v[0].z = v[1].z = v[2].z = v[3].z = 1.0f;
-
-    v[0].sow = v[3].sow = 0.0f;
-    v[2].sow = v[1].sow = gpatch->max_s;
-    v[0].tow = v[1].tow = 0.0f;
-    v[2].tow = v[3].tow = gpatch->max_t;
-
-    // clip it since it is used for bunny scroll in doom I
-    if (option & V_TRANSLUCENTPATCH)
-    {
-        FSurfaceInfo_t Surf;
-        Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = 0xff;
-        Surf.FlatColor.s.alpha = cv_grtranslucenthud.value;
-        HWD.pfnDrawPolygon( &Surf, v, 4,
-            BLENDMODE | PF_Modulated | PF_Clip | PF_NoZClip | PF_NoDepthTest);
-    }
-    else
-    {
-        HWD.pfnDrawPolygon( NULL, v, 4,
-            BLENDMODE | PF_Clip | PF_NoZClip | PF_NoDepthTest);
-    }
+    // make patch ready in hardware cache
+    // [Arcade] the 2D margin copy, per colormap; see HWR_Draw_Margin_Quad
+    HWR_Draw_Margin_Quad( gpatch, HWR_GetMarginPatch( gpatch, colormap, TF_2DCopy ),
+                          stx, sty, pdupx, pdupy,
+                          option, PF_Clip | PF_NoZClip | PF_NoDepthTest );
 }
 
 void HWR_DrawPic(int x, int y, lumpnum_t lumpnum)

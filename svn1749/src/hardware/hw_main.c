@@ -3536,11 +3536,11 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
     // [Arcade] The world-sprite copy, with a transparent texel all round when
     // it fits (TF_SpriteMargin), so the silhouette can fade instead of
     // stopping in a hard line where the art touches its box.  See
-    // HWR_GetSpritePatch.
-    Mipmap_t * smip = HWR_GetSpritePatch(gpatch, spr->colormap, Surf.texflags);
+    // HWR_GetMarginPatch.
+    Mipmap_t * smip = HWR_GetMarginPatch(gpatch, spr->colormap, Surf.texflags);
     int   margin = (smip->tfflags & TF_SpriteMargin)? 1 : 0;
-    float max_s = gpatch->max_s;
-    float max_t = gpatch->max_t;
+    float max_s = smip->max_s;  // this copy's span, margin included
+    float max_t = smip->max_t;
     float x1 = spr->x1;
     float x2 = spr->x2;
     float topty = spr->ty - gpatch->height;
@@ -3556,8 +3556,6 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
         x2 += xtexel;
         topty -= 1.0f;
         ty    += 1.0f;
-        max_s = (float)(gpatch->width  + 2) / (float) smip->width;
-        max_t = (float)(gpatch->height + 2) / (float) smip->height;
     }
 
     // create the sprite billboard
