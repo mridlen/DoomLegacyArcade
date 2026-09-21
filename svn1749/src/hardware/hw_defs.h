@@ -263,6 +263,12 @@ typedef enum
     TF_TRANSPARENT      = 0x00000040,            // texture with some alpha=0
     TF_Opaquetrans      = 0x00000100,   // Some translucent pixels are opaque (fx1)
     TF_Fogsheet         = 0x00000200,   // Generate a fog sheet
+    // [Arcade] The world-sprite copy of a patch, kept in the colormap chain
+    // apart from the 2D one (HWR_GetSpritePatch).
+    TF_SpriteCopy       = 0x00000400,
+    // [Arcade] Set by HWR_MakePatch when the art really was drawn one texel
+    // in from the edge, with a transparent margin all round.
+    TF_SpriteMargin     = 0x00000800,
 }  TextureFlags_e;
 
 #ifdef TODO

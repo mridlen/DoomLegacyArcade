@@ -438,6 +438,33 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Verified on the real GPU: MAP01, fire once and wait 150 tics so the zombiemen come down the
     steps; the before/after differ in 854 pixels, all on the sprites, every one lighter.
 
+- **Sprite edges that touch the patch's bounding box stayed hard and flat after the rim was fixed**
+  — the top of the imp's and sergeant's heads, the marine's helmet. Sprites are cut tight to their
+  art and `HWR_MakePatch` puts the patch at texel (0,0), so a head that reaches the top row sits on
+  the texture's edge: `GL_CLAMP_TO_EDGE` samples the edge texel beyond it, and the padding fill
+  copies the last column and row outward on purpose. Either way the filter has nothing transparent
+  to fade into and the silhouette stops in a straight line where the quad ends, one texel thick —
+  several screen pixels once a sprite is close.
+  - **World sprites now get their own copy of the patch with one clear texel all round**
+    (`HWR_GetSpritePatch`, `TF_SpriteCopy`/`TF_SpriteMargin`), and `HWR_DrawSprite` widens the quad
+    by exactly one texel each way, so the art lands on the same pixels and the extra texel is the
+    fade. Clear *black* is right here because sprites draw premultiplied (above).
+  - **A copy, not a change to the patch.** One cache entry per lump serves every drawer, and the
+    same lump can be 2D art too (Heretic's inventory icons are sprites). 2D must keep hard edges:
+    a full-screen picture that faded at its border is the intermission's dark line all over again.
+    The copy lives in the colormap chain so it is purged and freed with the colormap copies;
+    `HWR_GetMappedPatch` skips it. `max_s`/`max_t` on the `MipPatch_t` stay the 2D layout;
+    the sprite copy's span is worked out from its block size in `HWR_DrawSprite`.
+  - No margin when `gr_rounddown` is on or the patch would pass 2048 texels — the art would be
+    scaled into the block — and `TF_SpriteMargin` records whether it was really applied.
+  - `HWR_DrawFuzzSprite` takes the quad's texel rows (patch height plus the margin) instead of the
+    patch, so the spectre's band offsets stay one texel.
+  - Seen at a distance it barely registers (147 pixels changed in the 90-degree MAP01 shot): a
+    shrunk sprite's texel is under a pixel. Verified close up by narrowing `gr_fov` to 40 on the same
+    frame, which magnifies the zombieman like walking up to him: the helmet's flat top becomes
+    rounded, nothing else moves. Console `+forward` does not move the player in an autoexec, so
+    `gr_fov` is the way to get a close-up headlessly.
+
 
 - **The demo header used to record the *previous* game's settings. Fixed — but the ordering that
   caused it is deliberate, so do not "simplify" it back.** Demos recorded before this fix (every
