@@ -2107,10 +2107,23 @@ VOLOG sounds asked=52 inaud=8 nochan=0 nodata=0 started=44 mixchan=1061 peakvol=
 | `started` | published to the mixer | end of `I_StartSound` (`sdl/i_sound.c`) |
 | `mixchan` | channel-passes the mixer read samples from | `I_UpdateSound_sdl`, per buffer |
 | `peakvol` | loudest left/right volume started since the last report, 0..127 | `I_StartSound` |
+| `sfxpeak` | loudest sound-effect **sample actually written**, 0..32767 | `I_UpdateSound_sdl` |
 | `mixcalls` | post-mix callback invocations | `I_UpdateSound_sdl` |
+
+A single `VOLOG audio` line is written alongside the first of these, naming what SDL_mixer actually
+opened — driver, rate, sample format and buffer — taken after `Mix_QuerySpec`, so it is what the
+device gave rather than what was asked for. The format matters: the mixer writes `Sint16`, and a
+device that came back as float would turn every sample into a denormal and play silence.
 
 Reading it:
 
+- **`sfxpeak` healthy** — real audio reached the buffer SDL sends to the device. Everything in the
+  engine worked and the silence is below it: the device, its volume, or which device was opened.
+  This is the field that ends the search; the rest describe intent, and intent is not output.
+- **`sfxpeak` at 0 while `started` and `mixchan` climb** — the channels are being read but the
+  samples in them are silent, which is a different bug entirely and points at the sfx lump data
+  (`S_FreeSfx` is called for every replaced `DS*` lump when a wad is added, and joining a game
+  adds the host's wads).
 - **`started` climbing, `mixchan` climbing, `peakvol` non-zero** — audible samples went into the
   buffer handed to SDL. The engine is done; the fault is the device or the OS.
 - **`started` climbing, `mixchan` flat** — the mixer never sees the channels.
@@ -2131,6 +2144,11 @@ Two traps this encodes:
 lands on whatever sound happened to be last and one genuinely distant shot reads `0/0` while the
 cabinet is perfectly audible. That false alarm appeared in the first version of the field and is
 why it is a maximum now.
+
+`sfxpeak` costs a subtract, an absolute value and a compare per sample in the mixer's inner loop.
+That loop runs about 21 times a second over 1024 samples, so this is roughly 44k integer operations
+per second — worth stating rather than waving away, but three orders of magnitude below anything
+that shows up, and unlike the renderer's drawers this loop is not on the frame path at all.
 
 Each column was shown to go red before being trusted: `-nosound` holds `started` at 0 while `asked`
 climbs to 89, and `soundvolume "0"` pins `peakvol` at `0/0` with everything else unchanged.
