@@ -1442,23 +1442,49 @@ void S_Update_Volumes(void)
     // says which cvar or which scaling made it 0 -- and if they are both
     // healthy while the cabinet is silent, the mixer or the audio device is
     // the place to look instead, not this code.
+    //
+    // **It writes its own file, and that is not a nicety.**  On Windows the
+    // program is a GUI binary with no console attached, so nothing printed
+    // reaches a command line -- and LOGMESSAGES, which would give the engine a
+    // log.txt, is commented out of a normal build (doomdef.h).  A diagnostic
+    // that only calls GenPrintf is therefore invisible on the one machine that
+    // shows the fault.  Flushed per line, so a cabinet switched off at the
+    // wall still leaves what it had.
     if( M_CheckParm("-volog") )
     {
         extern boolean M_Link_Music_Muted( void );
+        static FILE * volog = NULL;
+        static byte   volog_tried = 0;
         static int  last_sfx = -1, last_mus = -1, last_flags = -1;
+
+        if( ! volog_tried )
+        {
+            volog_tried = 1;
+            volog = fopen( "volog.txt", "w" );
+        }
         int flags = (D_Attract_Running() ? 1 : 0) | (D_Menu_Over_Attract() ? 2 : 0)
                   | (M_Link_Music_Muted() ? 4 : 0) | (netgame ? 8 : 0)
                   | (dedicated ? 16 : 0);
         if( want_sfx != last_sfx || want_mus != last_mus || flags != last_flags )
         {
             last_sfx = want_sfx;  last_mus = want_mus;  last_flags = flags;
-            GenPrintf( EMSG_warn,
+            const char * fmt =
               "VOLOG sfx=%d mus=%d  cv_sfx=%d cv_mus=%d cv_attract=%d "
-              "attract=%d menuover=%d musiccab_muted=%d netgame=%d gamestate=%d\n",
+              "attract=%d menuover=%d musiccab_muted=%d netgame=%d gamestate=%d\n";
+            GenPrintf( EMSG_warn, fmt,
               want_sfx, want_mus,
               cv_soundvolume.value, cv_musicvolume.value, cv_attractvolume.value,
               (flags & 1) ? 1 : 0, (flags & 2) ? 1 : 0, (flags & 4) ? 1 : 0,
               (flags & 8) ? 1 : 0, (int)gamestate );
+            if( volog )
+            {
+                fprintf( volog, fmt,
+                  want_sfx, want_mus,
+                  cv_soundvolume.value, cv_musicvolume.value, cv_attractvolume.value,
+                  (flags & 1) ? 1 : 0, (flags & 2) ? 1 : 0, (flags & 4) ? 1 : 0,
+                  (flags & 8) ? 1 : 0, (int)gamestate );
+                fflush( volog );
+            }
         }
     }
 
