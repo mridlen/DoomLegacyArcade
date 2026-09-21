@@ -2022,6 +2022,20 @@ every pinned peer.
 - **Applied in `S_Update_Volumes` (`s_sound.c`)**, the one place the mixer volumes are set, which
   D_DoomLoop already calls every pass. So it follows the attract scaling and the volume cvars without
   a second mechanism, and coming out of a linked game restores the music by itself.
+- **Only the master has the page, so the master broadcasts the pick.** Cabinet Link Options is a
+  master-only row (`M_Draw_ArcadeOptions`), so a member is never given this by hand — its own
+  `cv_link_musiccab` sits at the default forever. Reading the local cvar on every cabinet was the
+  first version's bug and it looked exactly like the feature not working: the operator set the
+  master to "laptop", and the desktop, a member, carried on playing its own music because as far as
+  it knew nothing had been chosen. `LKG_Ticker` on the master sends `LK_GM_MUSIC_CAB` (a cabinet
+  name) to every cabinet every four seconds, and `LKG_Music_Choice` returns that on a member and the
+  master's own cvar on the master.
+  - **Repeated rather than sent on change**, so a cabinet switched off while the setting was changed,
+    or paired later, is told without anyone opening the menu. A name every four seconds is nothing
+    beside the presence traffic already on the link.
+  - A member that has not heard yet falls back to its own cvar — "All" unless somebody set it in an
+    operator session — so the failure mode is every cabinet playing, which is the behaviour from
+    before the setting existed, rather than silence.
 - **The pick is a preference, with the host as the fallback** (`LKG_Music_Here`, `d_linkgame.c`).
   The chosen cabinet need not be in every game: two cabinets at one end can play each other while
   the middle one sits on its attract screen, and a rule of "only the pick plays" would leave that

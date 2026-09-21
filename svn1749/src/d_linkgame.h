@@ -63,6 +63,11 @@ boolean      LKG_Host_Idle_Settings( int * timeout_secs, int * warn_secs );
 void         LKG_Join_Abandoned( void );
 // One line for the join screen: who else is in, or whose game this is.
 const char * LKG_Join_Line( void );
+// [Arcade] Music Cabinet: the pick in force on this cabinet.  On the master
+// that is its own setting; on a member it is what the master last sent, since
+// only the master has the page.  See d_linkgame.c.
+const char * LKG_Music_Choice( void );
+
 // [Arcade] Music Cabinet: does *this* cabinet carry the music for the linked
 // game now running, given the operator's pick?  See d_linkgame.c.
 boolean      LKG_Music_Here( const char * chosen );
