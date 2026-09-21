@@ -412,6 +412,32 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     crops before and after. See `CLAUDE.md` for the offscreen recipe. **This is the class of bug
     that only a picture settles** — it is invisible to logs and to every non-graphical check.
 
+- **The grey rim round every world sprite, Bilinear and Trilinear only, was the blend mode, not the
+  texture.** Texels a sprite does not cover are `(0,0,0,0)` (`Make_Mip_Block`). At the silhouette
+  the filter returns `colour*a` with alpha `a`, and `gluBuild2DMipmaps` averages the same way at
+  every level — which is exactly a **premultiplied** texture, because every texel is either fully
+  opaque or clear black. `HWR_DrawSprite` drew it with `PF_Translucent` (`SRC_ALPHA,
+  ONE_MINUS_SRC_ALPHA`), multiplying by alpha a second time: `colour*a*a + dest*(1-a)`, a dark rim
+  that trilinear widens at distance. Ordinary sprites now draw with `PF_Environment` (`ONE,
+  ONE_MINUS_SRC_ALPHA`), which is what the weapons already used, and the rim is gone at every mip
+  level with no change to the texture at all.
+  - **Why the colour-bleed fix (#46, reverted in #47) put a white border on the weapons.** It
+    filled the clear texels with the neighbouring sprite colour — the right fix for straight alpha,
+    and the wrong one for anything drawn with `PF_Environment`, which does not multiply by alpha:
+    a half-covered edge became `colour + dest*(1-a)`, brighter than either. The weapons and the 2D
+    patches are `PF_Environment`. The revert blamed the 2-byte chromakey format, but OpenGL forces
+    `patchformat = GR_RGBA` (`hw_main.c`), so that path never ran. **Keep the textures as they are;
+    they are correct for the premultiplied blend.**
+  - **Not with a coloured fog.** GL fog mixes the fog colour into the fragment before blending,
+    unscaled by alpha, so a premultiplied edge would gain a fog-coloured rim — the reason upstream
+    left sprites on `PF_Translucent` ("we need to fix the issue with the fog before").
+    `sprite_premultiplied` is cleared by `HWR_FoggingOn` unless `gr_fogcolor` is black, since black
+    fog only scales the colour. The cabinet runs `gr_fog "Off"`.
+  - Translucent, shadow and smoke sprites keep `PF_Translucent`: they carry a partial vertex alpha
+    (and `fx1` sprites half-alpha texels), which the premultiplied blend would not scale.
+  - Verified on the real GPU: MAP01, fire once and wait 150 tics so the zombiemen come down the
+    steps; the before/after differ in 854 pixels, all on the sprites, every one lighter.
+
 
 - **The demo header used to record the *previous* game's settings. Fixed — but the ordering that
   caused it is deliberate, so do not "simplify" it back.** Demos recorded before this fix (every

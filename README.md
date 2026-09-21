@@ -316,6 +316,11 @@ to anyone else running this port. Each is written up in full in the commit that 
   transparent black, which filtering blended into the edge. It was plainest on the Ultimate Doom
   episode 2 and 3 intermission maps — the Tower of Babel looked drawn a pixel up and to the left —
   and it touched the HUD font too. The empty space is now filled with copies of the edge pixels.
+- **Monsters and items had a fuzzy grey outline** with Bilinear or Trilinear filtering, wider on
+  things further away. The filter was blending the sprite's edge with its transparent surround and
+  then the edge was darkened a second time as it was drawn. Sprites are now drawn the way the
+  weapon already was, so the soft edge blends into the scene instead of going dark. (The softness
+  itself is what Bilinear is; `Nearest` gives hard pixel edges.)
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and
