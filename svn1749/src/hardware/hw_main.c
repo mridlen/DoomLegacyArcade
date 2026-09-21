@@ -3497,6 +3497,11 @@ static void HWR_DrawFuzzSprite( FSurfaceInfo_t * pSurf, vxtx3d_t * vxtx,
 //                  : (monsters, bonuses, weapons, lights, ...)
 // Returns          :
 // -----------------+
+// [Arcade] Draw ordinary sprites with premultiplied alpha; false only while
+// a coloured fog is on.  Set per frame in HWR_RenderPlayerView and
+// HWR_FoggingOn.  See the opaque branch of HWR_DrawSprite.
+static boolean sprite_premultiplied = true;
+
 static void HWR_DrawSprite(gr_vissprite_t * spr)
 {
     byte lightlum;  // 0..255
@@ -3619,6 +3624,28 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
             //          the issue with the fog before
             Surf.FlatColor.s.alpha = 0xFF;
             blend = PF_Translucent | PF_Occlude;
+
+            // [Arcade] The grey outline round every sprite with Bilinear or
+            // Trilinear.  Texels a sprite does not cover are (0,0,0,0) --
+            // black as well as transparent (Make_Mip_Block) -- so a linear
+            // filter at the silhouette returns colour*a with alpha a, and
+            // mipmaps average the same way.  PF_Translucent then multiplies by
+            // alpha a second time: edge = colour*a*a + dest*(1-a), a dark rim.
+            // That texture is already premultiplied, exactly, at every mipmap
+            // level, because its texels are only ever fully opaque or clear
+            // black.  So draw it premultiplied, as the weapons already are
+            // (HWR_DrawPSprite): edge = colour*a + dest*(1-a), no rim.
+            //
+            // Do not "fix" it by bleeding colour into the clear texels instead:
+            // that was tried (#46) and put a white border on the weapons,
+            // because PF_Environment does not multiply by alpha at all.
+            //
+            // Not with a coloured fog.  GL fog mixes the fog colour in before
+            // blending, unscaled by alpha, which would give a fog-coloured rim
+            // instead -- the issue the note above is about.  A black fog only
+            // scales the colour, which premultiplied alpha survives.
+            if( sprite_premultiplied )
+                blend = PF_Environment | PF_Occlude;
         }
 
         HWD.pfnDrawPolygon(&Surf, vxtx, 4, blend | PF_Modulated | PF_Clip);
@@ -4700,6 +4727,7 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     //------------------------------------------------------------------------
     HWR_Clear_View();
 
+    sprite_premultiplied = true;  // [Arcade] HWR_FoggingOn may clear it
     if (cv_grfog.value)
         HWR_FoggingOn();
 
@@ -4881,6 +4909,9 @@ unsigned int hex_val(const char *str)
 
 void HWR_FoggingOn(void)
 {
+    // [Arcade] GL fog adds the fog colour unscaled by alpha, so a premultiplied
+    // sprite edge would pick up a fog-coloured rim.  Black fog only scales.
+    sprite_premultiplied = ( hex_val(cv_grfogcolor.string) == 0 );
     HWD.pfnSetSpecialState(HWD_SET_FOG_COLOR, hex_val(cv_grfogcolor.string));
     HWD.pfnSetSpecialState(HWD_SET_FOG_DENSITY, cv_grfogdensity.value);
     HWD.pfnSetSpecialState(HWD_SET_FOG_MODE, 1);
