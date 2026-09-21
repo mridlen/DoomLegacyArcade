@@ -300,6 +300,8 @@ static void stop_channel( mix_channel_t * chanp )
 //  vol : volume, 0..255
 //  sep : separation, +/- 127, SURROUND_SEP special operation
 // Return a channel handle.
+unsigned int  volog_mix_calls = 0;   // [Arcade] -volog
+
 int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
 {
     int handle;
@@ -583,6 +585,13 @@ void I_UpdateSound(void)
 
 static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
 {
+    // [Arcade] -volog: has the mixer stopped driving us?  Sound effects are
+    // mixed in SDL_mixer's post-mix callback (Mix_SetPostMix below), so if
+    // SDL_mixer stops calling it the cabinet goes silent however loud the
+    // engine thinks it is -- which is exactly the shape of the fault this was
+    // written for: full volume, sounds accepted, nothing heard.
+    { extern unsigned int volog_mix_calls;  volog_mix_calls++; }
+
     int chan;
     // [Arcade] The mixer works on a private copy of the channel table.
     //

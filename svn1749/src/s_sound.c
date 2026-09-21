@@ -1482,27 +1482,30 @@ void S_Update_Volumes(void)
         // asked for at all the silence is higher up than the sound code.
         {
             extern unsigned int volog_snd_req, volog_snd_inaudible;
+            extern unsigned int volog_mix_calls;
             extern tic_t I_GetTime( void );
             static uint32_t  next_ms = 0;
-            static unsigned int  last_req = 0, last_drop = 0;
+            static unsigned int  last_req = 0, last_drop = 0, last_mix = 0;
             uint32_t now = (uint32_t) I_GetTime();
             if( now >= next_ms )
             {
                 next_ms = now + (2*TICRATE);
-                if( volog_snd_req != last_req || volog_snd_inaudible != last_drop )
+                if( volog_snd_req != last_req || volog_snd_inaudible != last_drop
+                    || volog_mix_calls != last_mix )
                 {
                     const char * sfmt =
-                      "VOLOG sounds asked=%u dropped_inaudible=%u nosoundfx=%d "
-                      "consoleplayer=%d displayplayer=%d listener_mo=%s\n";
+                      "VOLOG sounds asked=%u dropped_inaudible=%u mixcalls=%u "
+                      "nosoundfx=%d consoleplayer=%d displayplayer=%d listener_mo=%s\n";
                     int dp = displayplayer_ptr ? (int)(displayplayer_ptr - players) : -1;
                     const char * lm = (displayplayer_ptr && displayplayer_ptr->mo) ? "yes" : "NULL";
                     last_req = volog_snd_req;  last_drop = volog_snd_inaudible;
+                    last_mix = volog_mix_calls;
                     GenPrintf( EMSG_warn, sfmt, volog_snd_req, volog_snd_inaudible,
-                               nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
+                               volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                     if( volog )
                     {
                         fprintf( volog, sfmt, volog_snd_req, volog_snd_inaudible,
-                                 nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
+                                 volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                         fflush( volog );
                     }
                 }
