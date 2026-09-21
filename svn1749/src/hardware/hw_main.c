@@ -3445,18 +3445,20 @@ static unsigned int  hwr_fuzzpos = 0;
 //                    : salt separates one spectre's pattern from another's
 // -----------------+
 static void HWR_DrawFuzzSprite( FSurfaceInfo_t * pSurf, vxtx3d_t * vxtx,
-                                MipPatch_t * gpatch, unsigned int salt )
+                                int texrows, unsigned int salt )
 {
     vxtx3d_t  bd[4];
     float  t_span = vxtx[0].tow;        // == gpatch->max_t
     float  texel;                       // one patch texel in texture coords
     int    numbands, bi;
 
-    if( gpatch->height < 1 )
+    // [Arcade] texrows is the rows the quad's texture span covers: the patch
+    // height, plus the transparent margin top and bottom when it has one.
+    if( texrows < 1 )
         return;
 
-    texel = t_span / (float) gpatch->height;
-    numbands = gpatch->height / HWR_FUZZ_BANDH;
+    texel = t_span / (float) texrows;
+    numbands = texrows / HWR_FUZZ_BANDH;
     if( numbands < 2 )
         numbands = 2;
     else if( numbands > HWR_FUZZ_MAXBANDS )
@@ -3528,6 +3530,36 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
     // dynamic lighting
     HWR_DL_AddLightSprite(spr, gpatch);
 
+    // cache the patch in the graphics card memory
+    //12/12/99: Hurdler: same comment as above (for md2)
+    //Hurdler: 25/04/2000: now support colormap in hardware mode
+    // [Arcade] The world-sprite copy, with a transparent texel all round when
+    // it fits (TF_SpriteMargin), so the silhouette can fade instead of
+    // stopping in a hard line where the art touches its box.  See
+    // HWR_GetSpritePatch.
+    Mipmap_t * smip = HWR_GetSpritePatch(gpatch, spr->colormap, Surf.texflags);
+    int   margin = (smip->tfflags & TF_SpriteMargin)? 1 : 0;
+    float max_s = gpatch->max_s;
+    float max_t = gpatch->max_t;
+    float x1 = spr->x1;
+    float x2 = spr->x2;
+    float topty = spr->ty - gpatch->height;
+    float ty = spr->ty;
+    if( margin && gpatch->width > 0 )
+    {
+        // One texel wider on every side, so the art maps to the same place
+        // on screen and the extra texel is the clear margin.  Vertically a
+        // texel is one unit (the quad is gpatch->height tall); across it is
+        // the quad's width over the patch's.
+        float xtexel = (spr->x2 - spr->x1) / (float) gpatch->width;
+        x1 -= xtexel;
+        x2 += xtexel;
+        topty -= 1.0f;
+        ty    += 1.0f;
+        max_s = (float)(gpatch->width  + 2) / (float) smip->width;
+        max_t = (float)(gpatch->height + 2) / (float) smip->height;
+    }
+
     // create the sprite billboard
     //
     //  3--2
@@ -3537,33 +3569,27 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
 
     // fastest, use transform terms in optimized shared code
     // Combined transforms for look up/down and scaling
-    float topty = spr->ty - gpatch->height;
-    vxtx[0].x = vxtx[3].x = (spr->x1 * sprite_trans_x_to_x);
-    vxtx[1].x = vxtx[2].x = (spr->x2 * sprite_trans_x_to_x);
+    vxtx[0].x = vxtx[3].x = (x1 * sprite_trans_x_to_x);
+    vxtx[1].x = vxtx[2].x = (x2 * sprite_trans_x_to_x);
     float tranzy = spr->tz * sprite_trans_z_to_y;
     vxtx[0].y = vxtx[1].y = (topty * sprite_trans_y_to_y) + tranzy;
-    vxtx[2].y = vxtx[3].y = (spr->ty * sprite_trans_y_to_y) + tranzy;
+    vxtx[2].y = vxtx[3].y = (ty * sprite_trans_y_to_y) + tranzy;
     float tranzz = spr->tz * sprite_trans_z_to_z;
     vxtx[0].z = vxtx[1].z = (topty * sprite_trans_y_to_z) + tranzz;
-    vxtx[2].z = vxtx[3].z = (spr->ty * sprite_trans_y_to_z) + tranzz;
+    vxtx[2].z = vxtx[3].z = (ty * sprite_trans_y_to_z) + tranzz;
 
     if (spr->flip)
     {
-        vxtx[0].sow = vxtx[3].sow = gpatch->max_s;
+        vxtx[0].sow = vxtx[3].sow = max_s;
         vxtx[2].sow = vxtx[1].sow = 0;
     }
     else
     {
         vxtx[0].sow = vxtx[3].sow = 0;
-        vxtx[2].sow = vxtx[1].sow = gpatch->max_s;
+        vxtx[2].sow = vxtx[1].sow = max_s;
     }
     vxtx[3].tow = vxtx[2].tow = 0;
-    vxtx[0].tow = vxtx[1].tow = gpatch->max_t;
-
-    // cache the patch in the graphics card memory
-    //12/12/99: Hurdler: same comment as above (for md2)
-    //Hurdler: 25/04/2000: now support colormap in hardware mode
-    HWR_GetMappedPatch(gpatch, spr->colormap);
+    vxtx[0].tow = vxtx[1].tow = max_t;
 
     // sprite (TODO: coloured-) lighting by modulating the RGB components
     // [WDJ] coloured seems to be done below
@@ -3609,7 +3635,7 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
                 // point: a spectre shows the background darkened, not itself.
                 Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = 0;
                 Surf.FlatColor.s.alpha = HWR_FUZZ_ALPHA;
-                HWR_DrawFuzzSprite( &Surf, vxtx, gpatch,
+                HWR_DrawFuzzSprite( &Surf, vxtx, gpatch->height + 2*margin,
                                     (unsigned int)(((size_t) spr->mobj) >> 4) );
                 goto sprite_drawn;
             }

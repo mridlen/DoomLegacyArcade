@@ -321,6 +321,11 @@ to anyone else running this port. Each is written up in full in the commit that 
   then the edge was darkened a second time as it was drawn. Sprites are now drawn the way the
   weapon already was, so the soft edge blends into the scene instead of going dark. (The softness
   itself is what Bilinear is; `Nearest` gives hard pixel edges.)
+- **Close-up sprites had flat, pixelated tops** — the imp's and sergeant's heads, the marine's
+  helmet — even with smoothing on. The art runs right up to the edge of its box there, so the
+  smoothing had nothing to fade into and the outline stopped in a hard straight line. Sprites in
+  the world now have a clear pixel of room around them to fade into, and look the same shape
+  everywhere else. Menus, the HUD and the intermission keep their sharp edges.
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and
