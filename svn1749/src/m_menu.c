@@ -735,14 +735,23 @@ void  M_Link_Music_Build_List( void )
 // with.
 boolean  M_Link_Music_Muted( void )
 {
-    if( cv_link_musiccab.value == 0 )  return false;   // "All"
-    if( ! LK_In_Linked_Game() )        return false;   // playing alone
-    if( ! cv_link_musiccab.string )    return false;
+    const char * choice;
+
+    if( ! LK_In_Linked_Game() )  return false;   // playing alone
+
+    // LKG_Music_Choice, not this cabinet's own cvar.  Cabinet Link Options is
+    // a master-only page, so a member is never given the pick by hand: its own
+    // copy stays at the default and reading it here is exactly what left a
+    // member playing its own music while the master thought it had chosen.
+    // The master broadcasts the pick and a member uses what it was told
+    // (d_linkgame.c).
+    choice = LKG_Music_Choice();
+    if( ! choice || ! choice[0] )  return false;
+    if( strcmp( choice, "All" ) == 0 )  return false;
 
     // Not simply "am I the pick": the pick may not be in this game at all, in
-    // which case the host carries the music instead of nobody doing.  See
-    // LKG_Music_Here (d_linkgame.c).
-    return ! LKG_Music_Here( cv_link_musiccab.string );
+    // which case the host carries the music rather than nobody doing.
+    return ! LKG_Music_Here( choice );
 }
 
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has

@@ -1434,6 +1434,9 @@ cabinet it has been paired with — so on a row of three you might see **All**, 
 **raspberrypi** and **DESKTOP-202K7KS**. **Pick the middle cabinet of the row**, so the music reaches
 both ends.
 
+- **Set it on the master; the other cabinets are told.** Cabinet Link Options only appears on the
+  master, and it sends its choice round the link every few seconds — so a cabinet that was switched
+  off when you changed it, or paired afterwards, picks it up on its own.
 - **If the cabinet you picked isn't in the game, the cabinet that started it plays instead.** Two
   cabinets at one end of the row can play each other while the middle one sits on its attract screen,
   and that game still gets music. The pick is a preference, not a requirement — there is always
