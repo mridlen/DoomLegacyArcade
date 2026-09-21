@@ -738,7 +738,11 @@ boolean  M_Link_Music_Muted( void )
     if( cv_link_musiccab.value == 0 )  return false;   // "All"
     if( ! LK_In_Linked_Game() )        return false;   // playing alone
     if( ! cv_link_musiccab.string )    return false;
-    return strcmp( cv_link_musiccab.string, LK_Name() ) != 0;
+
+    // Not simply "am I the pick": the pick may not be in this game at all, in
+    // which case the host carries the music instead of nobody doing.  See
+    // LKG_Music_Here (d_linkgame.c).
+    return ! LKG_Music_Here( cv_link_musiccab.string );
 }
 
 // [Arcade] Leave the Quit Game entry on the main menu.  An arcade cabinet has

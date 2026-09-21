@@ -2022,10 +2022,30 @@ every pinned peer.
 - **Applied in `S_Update_Volumes` (`s_sound.c`)**, the one place the mixer volumes are set, which
   D_DoomLoop already calls every pass. So it follows the attract scaling and the volume cvars without
   a second mechanism, and coming out of a linked game restores the music by itself.
+- **The pick is a preference, with the host as the fallback** (`LKG_Music_Here`, `d_linkgame.c`).
+  The chosen cabinet need not be in every game: two cabinets at one end can play each other while
+  the middle one sits on its attract screen, and a rule of "only the pick plays" would leave that
+  game silent — which is worse than the drift the setting exists to avoid. So: **the chosen cabinet
+  carries the music when it is in the game, otherwise the cabinet that started it does.**
+  - It needs nothing sent between cabinets. Any cabinet can tell whether it is itself the pick;
+    only the host knows who actually joined (`lkg_remotes[]`), so only the host takes the fallback —
+    and there is always exactly one host. A member that is not the pick simply stays quiet, and if
+    the pick is absent the host claims it.
+  - That leaves both cases whole: pick present (as host or member) → the pick carries it and the
+    host is quiet unless it is also the pick; pick absent → the host carries it. Exactly one
+    carrier, never none.
 - Sound effects are untouched: they belong on the cabinet they happen on.
 
-Verified by forcing the linked-game condition and reading the result: "All" and this cabinet's own
-name both play, another cabinet's name mutes, and with the force removed nothing mutes at all.
+Verified by forcing the linked-game and host conditions and reading the result on all six cases:
+
+| case | pick | result |
+| --- | --- | --- |
+| member | All | plays |
+| member | itself | plays |
+| member | another cabinet | **muted** |
+| host | a cabinet not in the game | **plays** (the fallback) |
+| host | itself | plays |
+| no linked game at all | another cabinet | plays |
 
 ### The page stopped explaining itself
 
