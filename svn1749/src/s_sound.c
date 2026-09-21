@@ -867,6 +867,12 @@ int S_get_channel(const xyz_t * origin, sfxinfo_t * sfxinfo,
 // Called by StartSound.
 // Called by hardware S_StartAmbientSound.
 static
+// [Arcade] -volog counters: how many sounds were asked for, and how many were
+// thrown away as inaudible.  A cabinet whose listener is wrong drops every
+// positional sound here while the mixer sits at full volume, which is silence
+// that no volume setting can explain -- see S_Update_Volumes.
+unsigned int  volog_snd_req = 0, volog_snd_inaudible = 0;
+
 void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
                           sfxid_t sfx_id, int volume,
                           channel_type_t ct_type )
@@ -875,6 +881,8 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
     int priority;  // Heretic style signed priority, nominally -10 .. 2560.
     sfxinfo_t * sfx;
     int cnum;
+
+    volog_snd_req++;   // [Arcade] -volog: every request, however it ends
 
     if (nosoundfx || (mo && mo->type == MT_SPIRIT))
         goto done;
@@ -988,7 +996,10 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
             }
         }
         else if (!audible1)
+        {
+            volog_snd_inaudible++;   // [Arcade] -volog
             goto done;
+        }
 
         if (origin->x == displayplayer_ptr->mo->x
             && origin->y == displayplayer_ptr->mo->y)
@@ -1465,6 +1476,39 @@ void S_Update_Volumes(void)
         int flags = (D_Attract_Running() ? 1 : 0) | (D_Menu_Over_Attract() ? 2 : 0)
                   | (M_Link_Music_Muted() ? 4 : 0) | (netgame ? 8 : 0)
                   | (dedicated ? 16 : 0);
+        // Sounds asked for and sounds thrown away, reported every two seconds
+        // whether or not the volumes moved.  If the counts climb together the
+        // listener is wrong and every sound is being discarded; if nothing is
+        // asked for at all the silence is higher up than the sound code.
+        {
+            extern unsigned int volog_snd_req, volog_snd_inaudible;
+            extern tic_t I_GetTime( void );
+            static uint32_t  next_ms = 0;
+            static unsigned int  last_req = 0, last_drop = 0;
+            uint32_t now = (uint32_t) I_GetTime();
+            if( now >= next_ms )
+            {
+                next_ms = now + (2*TICRATE);
+                if( volog_snd_req != last_req || volog_snd_inaudible != last_drop )
+                {
+                    const char * sfmt =
+                      "VOLOG sounds asked=%u dropped_inaudible=%u nosoundfx=%d "
+                      "consoleplayer=%d displayplayer=%d listener_mo=%s\n";
+                    int dp = displayplayer_ptr ? (int)(displayplayer_ptr - players) : -1;
+                    const char * lm = (displayplayer_ptr && displayplayer_ptr->mo) ? "yes" : "NULL";
+                    last_req = volog_snd_req;  last_drop = volog_snd_inaudible;
+                    GenPrintf( EMSG_warn, sfmt, volog_snd_req, volog_snd_inaudible,
+                               nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
+                    if( volog )
+                    {
+                        fprintf( volog, sfmt, volog_snd_req, volog_snd_inaudible,
+                                 nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
+                        fflush( volog );
+                    }
+                }
+            }
+        }
+
         if( want_sfx != last_sfx || want_mus != last_mus || flags != last_flags )
         {
             last_sfx = want_sfx;  last_mus = want_mus;  last_flags = flags;
