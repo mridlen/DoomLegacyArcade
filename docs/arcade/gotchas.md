@@ -718,6 +718,49 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     pixels between darker rows and score as slivers, which made the combined fix look *worse* than
     the broken one (529 vs 411) until the region was restricted to the wall.
 
+- **A black seam down the holes of see-through bars is a texture that was never marked
+  transparent, not a geometry gap.** Reported on E1M1 where linedefs 297 and 299 meet (vertex 248,
+  the bars round the nukage pool): a two-pixel near-black line through every hole, exactly on the
+  vertex, OpenGL only; plus a one-pixel sliver "sometimes" in software. Three separate bugs.
+  - **`HWR_GenerateTexture` scanned a quarter of the texture for holes.** `blocksize` counts pixels
+    and the loop steps `i` through bytes (`for (i=3; i<blocksize; i+=4)`), so it only ever saw the
+    top quarter. A texture whose holes all start lower was never given `TF_TRANSPARENT`: in the
+    stock IWADs `BRNBIGC/L/R`, `MIDBRONZ`, `SKINEDGE`, `SKINTEK1`, `ZZZFACE3`. Their siblings
+    `BRNSMAL*`, `MIDGRATE`, `MIDBARS*` were found, which is why only some bars misbehaved.
+  - **Why an unmarked texture goes black.** It is drawn in the front-to-back pass with `PF_Masked`,
+    whose blend is `(GL_SRC_ALPHA, GL_ZERO)`: any texel with 0 < alpha < 1 *erases what is behind
+    it* and leaves `alpha * colour`. Wall textures are `GL_REPEAT`, so linear filtering at u=0 of
+    `BRNBIGR` mixes its column 0 (a hole there) with its column 31 (solid) — half-alpha texels the
+    whole height of the hole, hence a black line exactly at the join. The same blend gives every
+    hole a dark rim. Marked `TF_TRANSPARENT`, the wall goes to the sorted pass with
+    `PF_Environment` `(ONE, ONE_MINUS_SRC_ALPHA)`, which blends the fringe with the scene already
+    drawn. Seam pixels 4/0 against 21–55 neighbours before, indistinguishable after.
+  - **How it was pinned down, since every obvious theory was wrong.** Nearest filtering removed it,
+    and so did forcing `GL_CLAMP_TO_EDGE` (which also smears every tiled wall, so it is not a fix):
+    so, filtering across the wrap. But a 50/50 of brown and a hole cannot come out black under the
+    `PF_Environment` blend, and drawing the late walls without depth writes changed nothing. Dumping
+    the RGBA the driver receives showed the texture was perfect and its flags `0x13` — no `0x40`.
+    **When the arithmetic says a pixel cannot be that colour, check which path drew it.**
+  - **`TF_TRANSPARENT` also switched off clipping to the opening (`clip_disable`), and that had to
+    go too.** The unclipped part lies in the plane of the upper or lower wall beside it and is drawn
+    over that wall. Already visible before this work — E4M3's start cage hung its bottom riveted
+    band over the wooden step — on **118 line sides** in DOOM.WAD and DOOM2.WAD, and fixing the scan
+    alone would have added E1M9's bars (ld 278–281, 32 units over the `BROWN96` strip) and MAP13
+    ld 879. Software clips every masked mid texture to the opening; GL now does too. Count candidate
+    lines from the WAD (two-sided, sectors differ, texture taller than the opening, then apply
+    `HWR_StoreWallRange`'s pegging) rather than hunting for them by eye.
+  - **The software sliver is the classic end-of-seg column.** The pixel at a seg's end can compute
+    texture column −1 (or one past the end), which the drawer masks round to the texture's far
+    edge — invisible on solid walls, a solid column in a hole on bars. `R_RenderSegLoop` now clamps
+    the stored `maskedtexturecol` to the columns the seg covers (`rw_maskcol_min/max`, `R_TLS` like
+    the rest of the per-seg state; seg length from `P_SegLength`, since `seg->length` exists only
+    under `HWRENDER`). Over eight viewpoints the only pixels that changed were five single columns,
+    each going from ~300 pixels unlike both neighbours to under 30; a same-binary control run showed
+    the other differences were view bob and flickering lights.
+  - Verified headlessly on the real GPU with `setpos` and `screenshot` (`SDL_VIDEODRIVER=offscreen`,
+    `-nomonsters`), E1M1 from three angles, E4M3 and E1M9 against software. Renderer only: 121
+    demos, 0 desynced, against a baseline recorded from the unmodified commit.
+
 - **A pointer must be cleared because its target is being freed, never because the subsystem still
   looks active.** `P_SetupLevel` cleared `camera.mo` only `if (camera.chase)`, so switching the
   chase camera off and then loading a level left `camera.mo` pointing at a freed mobj — and the next

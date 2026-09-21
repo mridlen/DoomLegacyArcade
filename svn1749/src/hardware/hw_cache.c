@@ -687,7 +687,17 @@ static void HWR_GenerateTexture (int texnum, MipTexture_t* grtex,
     if (bytepp==4)
     {
         // if any pixel is left unwritten (still init to 0), then TF_TRANSPARENT
-        for (i=3; i<blocksize; i+=4)
+        // [Arcade] blocksize counts pixels and i steps through bytes, so this
+        // used to stop a quarter of the way down and only ever look at the
+        // top quarter of the texture.  A texture whose holes all start lower
+        // (BRNBIGC/L/R, the bars round the E1M1 nukage pool; MIDBRONZ) was
+        // never marked, went through the front-to-back PF_Masked pass
+        // instead of the sorted transparent one, and that blend (SRC_ALPHA,
+        // ZERO) blacks out whatever is behind a part-transparent texel.  With
+        // linear filtering the wrap-around mixes an edge column into its
+        // opposite edge, so a line of such texels ran down the join between
+        // two of these textures: a black seam through the holes.
+        for (i=3; i<blocksize*4; i+=4)
         {
             if (block[i] == 0)
             {

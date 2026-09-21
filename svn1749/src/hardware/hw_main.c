@@ -1881,7 +1881,14 @@ static void HWR_StoreWallRange(float startfrac, float endfrac)
             if (miptex && (miptex->mipmap.tfflags & TF_TRANSPARENT))
             {
                 blendmode = PF_Environment;
-                clip_disable = 1;  // full height, no (h-l) clipping
+                // [Arcade] No longer clip_disable.  Having holes is no reason to
+                // draw past the opening: the software renderer clips every
+                // masked mid texture to it, and the unclipped part lies in the
+                // plane of the upper or lower wall beside it, so it was drawn
+                // straight over that wall -- E4M3's start cage hung its
+                // bottom band over the wooden step, 118 line sides like it in
+                // the stock IWADs.  Worth fixing before the TF_TRANSPARENT scan
+                // (hw_cache.c) was, which would have added E1M9's bars.
             }
 
 #if 1

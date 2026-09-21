@@ -348,6 +348,19 @@ to anyone else running this port. Each is written up in full in the commit that 
   counting gap-producing T-junctions rather than through screenshots: E1M1 4→0, E1M2 16→0,
   E1M3 10→0, E1M5 16→0, E1M7 13→0, MAP01 2→0, MAP15 8→0. Software rendering is unaffected, and
   neither change can touch gameplay or demos.
+- **A black seam through see-through bars, and black outlines round their holes.** Wherever two
+  pieces of the big brown bars met — all round the E1M1 nukage pool, for one — a two-pixel black
+  line ran down through the holes, and every hole had a dark stair-stepped rim. The renderer checks
+  each wall texture for holes so it can draw it in the see-through pass, but the check stopped a
+  quarter of the way down the texture, so bars whose holes start lower (`BRNBIGC/L/R`, Doom 2's
+  `MIDBRONZ`) were drawn as solid walls with the holes cut out, which blacks out anything half
+  transparent. The check now covers the whole texture. And see-through textures now stop at the
+  edge of the opening like every other middle texture: E4M3's start cage used to hang its bottom
+  band down over the wooden step, and the same thing happened on 118 line sides in the stock IWADs.
+- **The software renderer sometimes drew a one-pixel sliver at the end of see-through bars.** The
+  pixel column at the very end of a wall can work out one texture column past the end, which wraps
+  round to the texture's *other* edge — invisible on a solid wall, but on bars it put a solid
+  column where a hole belongs. Columns are now kept inside the wall they belong to.
 - **A level's palette tint outlived the level.** Finishing a level in a radiation suit left
   everything after it green, and taking a hit at the exit switch left it red, right through the
   intermission and into whatever came next — the tint is only ever reset when the *next* level
