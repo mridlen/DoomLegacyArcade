@@ -1805,11 +1805,12 @@ names inside the wad against the list above; a track named after the *file* rath
 simply never gets looked for. `-v` reports the wad being loaded at startup.
 
 **One cabinet in a linked game has no sound at all.**
-First check **Music Cabinet** (Options → Arcade Options → Cabinet Link Options) — but note it only
-ever silences *music*. If sound effects are gone too, that setting is not the cause. Run the quiet
-cabinet with `-volog`: it writes `volog.txt` next to the program, tracing every step from the game
-asking for a sound to samples reaching the audio device, and the numbers say which step is losing
-them. Send that file along with a note of which cabinet was hosting.
+This was a real bug on Windows and is fixed — **Music Cabinet** used to mute by turning the music
+volume down to zero, and on Windows that turned the whole program's output down with it, sound
+effects included. If you are on an older build, setting Music Cabinet to `All` restores the sound;
+otherwise update. If it still happens, run the quiet cabinet with `-volog`: it writes `volog.txt`
+next to the program, tracing every step from the game asking for a sound to the samples reaching the
+sound card, and the numbers say which step is losing them.
 
 **A game is missing from the Select Game menu.**
 Its IWAD wasn't found. Run with `-v` and check the search paths reported at startup.

@@ -1444,9 +1444,47 @@ void S_Update_Volumes(void)
     // effects are untouched -- they belong where they happen; it is music that
     // cannot be played on several machines at once without drifting.  A
     // cabinet playing on its own is never muted.
+    //
+    // **The mute pauses the music.  It must never set the music volume to 0.**
+    //
+    // It used to do exactly that, and on the Windows cabinet it took the sound
+    // effects with it: the machine went completely silent in every linked game
+    // it joined, and came back the moment the game ended.  Every engine number
+    // said the sound was fine -- effects volume at full, 52 sounds started,
+    // the mixer reading them every buffer, the post-mix callback never missing
+    // one -- because the engine *was* fine.  The loss was underneath it.
+    //
+    // SDL_mixer plays MIDI on Windows through the system synth (winmm), and
+    // Mix_VolumeMusic() reaches that backend as midiOutSetVolume(), which
+    // attenuates the program's whole audio output rather than the MIDI stream
+    // alone.  Zero there is zero for everything the process plays.  Linux
+    // mixes MIDI into the same buffer as the sound effects and never sees it,
+    // so this reproduces on no machine here: musicvolume "0" on Linux leaves
+    // sfxpeak at a healthy 12593.
+    //
+    // Pausing touches no volume control, on any platform.  If a backend ever
+    // ignores the pause the failure is music playing on two cabinets at once,
+    // which is the complaint this feature started from -- not a silent cabinet.
     {
         extern boolean M_Link_Music_Muted( void );
-        if( M_Link_Music_Muted() )  want_mus = 0;
+        static boolean  musiccab_paused = false;
+
+        if( M_Link_Music_Muted() )
+        {
+            // Re-asserted every tic rather than set once on the edge: a level
+            // change runs S_ChangeMusic, and I_PlaySong knows nothing about
+            // this mute, so a one-shot pause would be undone at every map.
+            I_PauseSong(0);
+            musiccab_paused = true;
+        }
+        else if( musiccab_paused )
+        {
+            musiccab_paused = false;
+            // Not while the game itself has the music paused (menu, pause key)
+            // -- S_ResumeSound will do it at the right moment.
+            if( ! mus_paused )
+                I_ResumeSong(0);
+        }
     }
 
     // [Arcade] -volog: say what the mixer was set to and what decided it.
