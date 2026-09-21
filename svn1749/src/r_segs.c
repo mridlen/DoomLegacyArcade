@@ -163,6 +163,8 @@ static R_TLS int             rw_stopx;
 static R_TLS angle_t         rw_centerangle;
 static R_TLS fixed_t         rw_offset;
 static R_TLS fixed_t         rw_offset2; // for splats
+// [Arcade] The texture columns this seg covers, for clamping masked columns.
+static R_TLS int             rw_maskcol_min, rw_maskcol_max;
 
 static R_TLS fixed_t         rw_scale;
 static R_TLS fixed_t         rw_scalestep;
@@ -2689,6 +2691,15 @@ void R_RenderSegLoop (void)
         {
           // save texturecol
           //  for backdrawing of masked mid texture
+          // [Arcade] Kept inside the seg's own columns.  The pixel at a seg's
+          // end can compute a column one past it, and the drawer wraps that
+          // to the far edge of the texture -- invisible on a solid wall, but
+          // on a grating it put a solid sliver where a hole belongs (E1M1,
+          // BRNBIGC meeting BRNBIGR: column -1 of BRNBIGR is its solid 31).
+          if( texturecolumn < rw_maskcol_min )
+              texturecolumn = rw_maskcol_min;
+          else if( texturecolumn > rw_maskcol_max )
+              texturecolumn = rw_maskcol_max;
           maskedtexturecol[rw_x] = texturecolumn;
         }
 
@@ -3339,6 +3350,17 @@ void R_StoreWallRange( int   start, int   stop)
         rw_offset2 = rw_offset + curline->offset;
         rw_offset += sidedef->textureoffset + curline->offset;
         rw_centerangle = ANG90 + viewangle - rw_normalangle;
+
+        if (maskedtexture || numthicksides)
+        {
+            // [Arcade] The texture columns from this seg's start to its end.
+            fixed_t colstart = sidedef->textureoffset + curline->offset;
+            fixed_t seglen = (fixed_t) P_SegLength( curline );
+            rw_maskcol_min = colstart >> FRACBITS;
+            rw_maskcol_max = (colstart + seglen - 1) >> FRACBITS;
+            if( rw_maskcol_max < rw_maskcol_min )
+                rw_maskcol_max = rw_maskcol_min;
+        }
 
         // calculate light table
         //  use different light tables
