@@ -332,6 +332,9 @@ to anyone else running this port. Each is written up in full in the commit that 
   treatment as the sprites and their outlines follow the letters. Pictures that fill their whole
   box — the title screen, the status bar, the intermission maps — are drawn exactly as before, so
   they still meet the screen edge cleanly.
+- **A few letters were still square after that** — `I`, `H`, `-`, `.`, `!` — because their art
+  fills their whole box, which is also how the full-screen pictures were being recognised. Font
+  letters are now always smoothed, whatever their shape.
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and

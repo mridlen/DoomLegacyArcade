@@ -478,6 +478,15 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     its box still has holes in the rest of its border, so it gets the margin. Verified: the title
     screen is byte-identical before and after, and on the Doom 2 intermission every changed pixel is
     on or beside text (the empty background blocks have none).
+  - **Font glyphs are exempt from that rule, by lump name** (`HWR_Is_Font_Glyph`). `I`, `-`, `.`,
+    `_`, `=`, `!`, `H` and `WIMINUS` are solid right out to their box, so the border test took them
+    for pictures and left them as hard squares among soft letters. Size cannot separate them from
+    the pieces that must stay hard: `.` is 4x3 and the view border's corner is 3x3, and the menu
+    slider and save-slot pieces and Ultimate Doom's 8x8 intermission frames are the same scale. The
+    prefixes are the engine's own font lumps (`STCFN`, `FONTA`/`FONTB`, `WINUM`/`WIMINUS`/`WIPCNT`/
+    `WICOLON`, `STTNUM`/`STTMINUS`/`STTPRCNT`, `STYSNUM`, `STGNUM`, `SMALLIN`), which a PWAD font
+    replaces under the same names. Every solid-bordered 2D lump in DOOM.WAD, DOOM2.WAD and
+    `legacy.wad` was listed to pick this.
   - **Each copy carries its own span now** (`Mipmap_t.max_s/max_t`). `MipPatch_t.max_s/max_t`
     describe the base copy, which the weapon and the splats still use; a margin copy's block can be
     a larger power of two than the base one, so computing its span from the patch was only right
