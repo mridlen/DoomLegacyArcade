@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|musiccab|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -169,6 +169,15 @@ expect_file() {   # <description> <file> <regex>
     FAILS="$FAILS
       expected: $1  /$3/ in $(basename "$2")"
     return 1
+}
+
+expect_file_not() {   # <description> <file> <regex>
+    if grep -aEq "$3" "$2" 2>/dev/null; then
+        FAILS="$FAILS
+      not expected: $1  /$3/ in $(basename "$2")"
+        return 1
+    fi
+    return 0
 }
 
 PASS='passcode correct horse battery staple'
@@ -377,6 +386,41 @@ same_trail() {
     j=$(out "$2" | grep -a "^LINKGAME gamestate=1 netgame=1 server=0 " | tail -1 | grep -o ' trail=[-0-9]*')
     [ -n "$h" ] && [ "$h" = "$j" ] || FAILS="$FAILS
       the two cabinets' smoke trail phase differs: host${h:- none} joiner${j:- none}"
+}
+
+# Music Cabinet mutes the cabinets that are not carrying the music -- and it
+# must do that WITHOUT setting the music volume to 0.
+#
+# It used to set the volume, and on the Windows cabinet that took the sound
+# effects with it: the machine was completely silent in every linked game it
+# joined and came back the moment the game ended.  Every engine number said
+# the sound was fine, because it was.  SDL_mixer plays MIDI on Windows through
+# the system synth, where Mix_VolumeMusic() lands on midiOutSetVolume() and
+# attenuates the program's whole output rather than the MIDI stream alone.
+#
+# The symptom cannot be reproduced here -- Linux mixes MIDI into the same
+# buffer as everything else, and musicvolume "0" leaves sfxpeak at a healthy
+# 12593 -- so this checks the *mechanism* instead: while the mute is active,
+# the music volume the engine asks for must not be 0.  That is the thing that
+# broke, it is platform independent, and a "simplification" back to
+# want_mus = 0 turns this red on any machine.
+case_musiccab() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    # The host carries the music, so the joiner is the cabinet that gets muted.
+    # The setting lives on the master and is broadcast to the members.
+    sed -i -e '/^link_musiccab /d' "$d/master/legacyhome/config.cfg"
+    echo 'link_musiccab "HOSTCAB"' >> "$d/master/legacyhome/config.cfg"
+    run "$d/master" 45 0 -linktest -linkautohost campaign -udpport $((p+100))
+    sleep 2
+    run "$d/member" 42 0 -linktest -linkautojoin -volog -clientport $((p+101))
+    wait
+    expect "the joiner is in the linked game" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect_file "Music Cabinet muted the joiner" "$d/member/volog.txt" "^VOLOG .*musiccab_muted=1"
+    expect_file_not "the mute never asks for music volume 0" "$d/member/volog.txt" "^VOLOG sfx=[0-9]+ mus=0 .*musiccab_muted=1"
 }
 
 case_linkgame() {

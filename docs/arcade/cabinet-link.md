@@ -2071,6 +2071,41 @@ manual gets better prose than the page could hold.
 The "THIS CABINET IS NOT THE MASTER" line stays. It is not an explanation of a setting — it is the
 reason none of them will do anything, which is worth saying where the settings are.
 
+### The mute pauses the music; it must never set the volume to 0
+
+The first version muted by setting the music volume to 0, and on the Windows cabinet that **took the
+sound effects with it**. That machine was completely silent in every linked game it joined --
+effects as well as music -- and came back the moment the game ended.
+
+Every engine number said the sound was working, because it was. `-volog` measured it: effects volume
+at full (`sfx=24`), 52 sounds started, nothing refused (`nochan=0 nodata=0`), the mixer reading those
+channels every buffer (`mixchan` climbing), and the post-mix callback never missing one (`mixcalls`
+climbing by ~43 in every report, right through the silence). The loss was underneath all of it.
+
+**SDL_mixer plays MIDI on Windows through the system synth (winmm), where `Mix_VolumeMusic()` lands
+on `midiOutSetVolume()` -- which attenuates the program's whole audio output, not the MIDI stream
+alone.** Zero there is zero for everything the process plays. Linux mixes MIDI into the same buffer
+as the sound effects and never goes near that call, which is why it reproduces on no machine here:
+`musicvolume "0"` on Linux leaves `sfxpeak` at a healthy 12593.
+
+Pausing touches no volume control on any platform. If a backend ever ignores the pause, the failure
+is music playing on two cabinets at once -- the complaint this feature started from -- rather than a
+cabinet with no sound. The pause is **re-asserted every tic** rather than set once on the edge:
+`S_ChangeMusic` runs at every level change and `I_PlaySong` knows nothing about this mute, so a
+one-shot pause would be undone at every map.
+
+`tools/linktest.sh musiccab` guards it. The symptom cannot be reproduced on Linux, so the case
+checks the **mechanism**: while the mute is active, the music volume the engine asks for must not be
+0. Shown to go red by reinstating `want_mus = 0`, which is the change it exists to catch.
+
+**The general lesson, and it is the expensive one here:** four rounds of diagnosis were spent below
+the engine because `sfx=24` was read as proof that the sound path was innocent. It was proof that
+the *engine* was innocent, which is not the same thing -- a volume the engine never touches can
+still be turned down underneath it, by a call that appears to be about something else entirely. And
+the search was steered for three of those rounds by a report that the cabinet had sound when all
+three were joined, which turned out to be a neighbouring machine's speakers. **Check which box the
+sound is coming out of before building a theory on it.**
+
 ### Tracing a silent cabinet: `-volog`
 
 A cabinet that joined a linked game hosted elsewhere went **completely** silent — sound effects as
@@ -2107,10 +2142,23 @@ VOLOG sounds asked=52 inaud=8 nochan=0 nodata=0 started=44 mixchan=1061 peakvol=
 | `started` | published to the mixer | end of `I_StartSound` (`sdl/i_sound.c`) |
 | `mixchan` | channel-passes the mixer read samples from | `I_UpdateSound_sdl`, per buffer |
 | `peakvol` | loudest left/right volume started since the last report, 0..127 | `I_StartSound` |
+| `sfxpeak` | loudest sound-effect **sample actually written**, 0..32767 | `I_UpdateSound_sdl` |
 | `mixcalls` | post-mix callback invocations | `I_UpdateSound_sdl` |
+
+A single `VOLOG audio` line is written alongside the first of these, naming what SDL_mixer actually
+opened — driver, rate, sample format and buffer — taken after `Mix_QuerySpec`, so it is what the
+device gave rather than what was asked for. The format matters: the mixer writes `Sint16`, and a
+device that came back as float would turn every sample into a denormal and play silence.
 
 Reading it:
 
+- **`sfxpeak` healthy** — real audio reached the buffer SDL sends to the device. Everything in the
+  engine worked and the silence is below it: the device, its volume, or which device was opened.
+  This is the field that ends the search; the rest describe intent, and intent is not output.
+- **`sfxpeak` at 0 while `started` and `mixchan` climb** — the channels are being read but the
+  samples in them are silent, which is a different bug entirely and points at the sfx lump data
+  (`S_FreeSfx` is called for every replaced `DS*` lump when a wad is added, and joining a game
+  adds the host's wads).
 - **`started` climbing, `mixchan` climbing, `peakvol` non-zero** — audible samples went into the
   buffer handed to SDL. The engine is done; the fault is the device or the OS.
 - **`started` climbing, `mixchan` flat** — the mixer never sees the channels.
@@ -2131,6 +2179,11 @@ Two traps this encodes:
 lands on whatever sound happened to be last and one genuinely distant shot reads `0/0` while the
 cabinet is perfectly audible. That false alarm appeared in the first version of the field and is
 why it is a maximum now.
+
+`sfxpeak` costs a subtract, an absolute value and a compare per sample in the mixer's inner loop.
+That loop runs about 21 times a second over 1024 samples, so this is roughly 44k integer operations
+per second — worth stating rather than waving away, but three orders of magnitude below anything
+that shows up, and unlike the renderer's drawers this loop is not on the frame path at all.
 
 Each column was shown to go red before being trusted: `-nosound` holds `started` at 0 while `asked`
 climbs to 89, and `soundvolume "0"` pins `peakvol` at `0/0` with everything else unchanged.

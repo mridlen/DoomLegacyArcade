@@ -1444,9 +1444,47 @@ void S_Update_Volumes(void)
     // effects are untouched -- they belong where they happen; it is music that
     // cannot be played on several machines at once without drifting.  A
     // cabinet playing on its own is never muted.
+    //
+    // **The mute pauses the music.  It must never set the music volume to 0.**
+    //
+    // It used to do exactly that, and on the Windows cabinet it took the sound
+    // effects with it: the machine went completely silent in every linked game
+    // it joined, and came back the moment the game ended.  Every engine number
+    // said the sound was fine -- effects volume at full, 52 sounds started,
+    // the mixer reading them every buffer, the post-mix callback never missing
+    // one -- because the engine *was* fine.  The loss was underneath it.
+    //
+    // SDL_mixer plays MIDI on Windows through the system synth (winmm), and
+    // Mix_VolumeMusic() reaches that backend as midiOutSetVolume(), which
+    // attenuates the program's whole audio output rather than the MIDI stream
+    // alone.  Zero there is zero for everything the process plays.  Linux
+    // mixes MIDI into the same buffer as the sound effects and never sees it,
+    // so this reproduces on no machine here: musicvolume "0" on Linux leaves
+    // sfxpeak at a healthy 12593.
+    //
+    // Pausing touches no volume control, on any platform.  If a backend ever
+    // ignores the pause the failure is music playing on two cabinets at once,
+    // which is the complaint this feature started from -- not a silent cabinet.
     {
         extern boolean M_Link_Music_Muted( void );
-        if( M_Link_Music_Muted() )  want_mus = 0;
+        static boolean  musiccab_paused = false;
+
+        if( M_Link_Music_Muted() )
+        {
+            // Re-asserted every tic rather than set once on the edge: a level
+            // change runs S_ChangeMusic, and I_PlaySong knows nothing about
+            // this mute, so a one-shot pause would be undone at every map.
+            I_PauseSong(0);
+            musiccab_paused = true;
+        }
+        else if( musiccab_paused )
+        {
+            musiccab_paused = false;
+            // Not while the game itself has the music paused (menu, pause key)
+            // -- S_ResumeSound will do it at the right moment.
+            if( ! mus_paused )
+                I_ResumeSong(0);
+        }
     }
 
     // [Arcade] -volog: say what the mixer was set to and what decided it.
@@ -1504,10 +1542,16 @@ void S_Update_Volumes(void)
         //   mixchan  channel-passes the mixer actually read samples from
         //   peakvol  loudest left/right volume started since the last
         //            report, 0..127
+        //   sfxpeak  loudest sound-effect SAMPLE actually written into the
+        //            buffer handed to SDL, 0..32767 -- every other number is
+        //            intent, this one is output
         //
-        // started climbing with mixchan and a non-zero peakvol means audible
-        // samples went into the buffer and the engine is done: the fault is
-        // the device or the OS.  started climbing with mixchan flat means the
+        // sfxpeak is the one that ends the search.  Healthy, and real audio
+        // reached the buffer SDL sends to the device: the engine is done and
+        // the fault is the device, its volume, or which device was opened --
+        // and "VOLOG audio", printed once, says what that device is.  Zero
+        // while started and mixchan climb, and the samples themselves are
+        // silent, which is a different bug entirely.  started climbing with mixchan flat means the
         // mixer never sees the channels.  A gap between asked and started
         // names which of the three rejections is eating them.
         {
@@ -1515,6 +1559,9 @@ void S_Update_Volumes(void)
             extern unsigned int volog_snd_nochan, volog_snd_nodata;
             extern unsigned int volog_mix_calls, volog_snd_started, volog_mix_chan;
             extern int volog_vol_peak_l, volog_vol_peak_r;
+            extern int volog_sfx_peak;
+            extern char volog_audio_info[128];
+            static byte  said_audio = 0;
             extern tic_t I_GetTime( void );
             static uint32_t  next_ms = 0;
             static unsigned int  last_req = 0, last_mix = 0, last_chan = 0;
@@ -1522,12 +1569,22 @@ void S_Update_Volumes(void)
             if( now >= next_ms )
             {
                 next_ms = now + (2*TICRATE);
+                if( ! said_audio )
+                {
+                    said_audio = 1;
+                    GenPrintf( EMSG_warn, "VOLOG audio %s\n", volog_audio_info );
+                    if( volog )
+                    {
+                        fprintf( volog, "VOLOG audio %s\n", volog_audio_info );
+                        fflush( volog );
+                    }
+                }
                 if( volog_snd_req != last_req || volog_mix_calls != last_mix
                     || volog_mix_chan != last_chan )
                 {
                     const char * sfmt =
                       "VOLOG sounds asked=%u inaud=%u nochan=%u nodata=%u started=%u "
-                      "mixchan=%u peakvol=%d/%d mixcalls=%u "
+                      "mixchan=%u peakvol=%d/%d sfxpeak=%d mixcalls=%u "
                       "nosoundfx=%d consoleplayer=%d displayplayer=%d listener_mo=%s\n";
                     int dp = displayplayer_ptr ? (int)(displayplayer_ptr - players) : -1;
                     const char * lm = (displayplayer_ptr && displayplayer_ptr->mo) ? "yes" : "NULL";
@@ -1535,18 +1592,19 @@ void S_Update_Volumes(void)
                     last_chan = volog_mix_chan;
                     GenPrintf( EMSG_warn, sfmt, volog_snd_req, volog_snd_inaudible,
                                volog_snd_nochan, volog_snd_nodata, volog_snd_started,
-                               volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r,
+                               volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r, volog_sfx_peak,
                                volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                     if( volog )
                     {
                         fprintf( volog, sfmt, volog_snd_req, volog_snd_inaudible,
                                  volog_snd_nochan, volog_snd_nodata, volog_snd_started,
-                                 volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r,
+                                 volog_mix_chan, volog_vol_peak_l, volog_vol_peak_r, volog_sfx_peak,
                                  volog_mix_calls, nosoundfx ? 1 : 0, (int)consoleplayer, dp, lm );
                         fflush( volog );
                     }
-                    // peak is per report window, so it can go back down
+                    // peaks are per report window, so they can go back down
                     volog_vol_peak_l = volog_vol_peak_r = -1;
+                    volog_sfx_peak = 0;
                 }
             }
         }

@@ -310,7 +310,16 @@ unsigned int  volog_mix_calls = 0;   // [Arcade] -volog
 // happened to be last, and one genuinely distant sound reads 0/0 while the
 // cabinet is perfectly audible.
 unsigned int  volog_snd_started = 0, volog_mix_chan = 0;
+// [Arcade] -volog: the samples themselves.  Every other counter describes what
+// the engine meant to do; this is the loudest sound-effect sample actually
+// written into the buffer handed to SDL, 0..32767, peaked over the reporting
+// window.  It is the sfx contribution alone -- the music already in the buffer
+// is subtracted out -- so it stays meaningful while Music Cabinet has the
+// music muted.  Healthy here means the engine is finished and the silence is
+// the device, its volume, or which device was opened.
+int  volog_sfx_peak = 0;
 int  volog_vol_peak_l = -1, volog_vol_peak_r = -1;
+char volog_audio_info[128] = "not opened";   // [Arcade] -volog
 
 int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
 {
@@ -664,6 +673,7 @@ static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
         // take the current audio output (incl. music) and mix (add) in our sfx
         register int dl = *leftout;
         register int dr = *rightout;
+        register int dl_music = dl;   // [Arcade] -volog: baseline before sfx
 
         // Love thy L2 chache - made this a loop.
         // Now more channels could be set at compile time
@@ -704,6 +714,13 @@ static void I_UpdateSound_sdl(void *unused, Uint8 *stream, int len)
                 chanp->data_ptr = chan_data_ptr;
             }
             chanp ++;  // next channel
+        }
+
+        // [Arcade] -volog: the sfx contribution to this sample, pre-clamp.
+        {
+            register int  d = dl - dl_music;
+            if( d < 0 )  d = -d;
+            if( d > volog_sfx_peak )  volog_sfx_peak = d;
         }
 
         // Clamp to range. Left hardware channel.
@@ -1153,6 +1170,19 @@ void I_StartupSound(void)
       CONS_Printf("Mix_QuerySpec: %s\n", Mix_GetError());
       nosoundfx = nomusic = true;
       return;
+  }
+
+  // [Arcade] -volog: what SDL_mixer actually opened, which is one of the three
+  // things left when the engine's own numbers come back healthy.  Mix_QuerySpec
+  // has just overwritten audspec with the format the device really gave us, so
+  // this is the truth and not what was asked for.
+  {
+      extern char volog_audio_info[128];
+      snprintf( volog_audio_info, sizeof(volog_audio_info),
+                "driver=%s freq=%d format=0x%04x channels=%d buffer=%d",
+                SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?",
+                audspec.freq, (unsigned)audspec.format, number_channels,
+                audspec.samples );
   }
 
   Mix_SetPostMix(audspec.callback, NULL);  // after mixing music, add sound fx
