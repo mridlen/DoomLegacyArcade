@@ -77,6 +77,15 @@ typedef struct {
 // grid and the scanlines come out uneven.  This caps its cost at 4K.
 #define CRT_MAX_FACTOR  10
 
+// Texture names.  The renderer does NOT use glGenTextures for its own: it
+// counts up from no_texture_id (next_texture_id in r_opengl.c) and binds
+// whatever number comes next, so a name glGenTextures hands out here is soon
+// reused for a patch or a flat, whose upload replaces the frame copy.  That
+// showed the title screen upside down and cropped.  These are far above
+// anything the counter reaches, and binding an unused name creates it.
+#define CRT_TEX_SRC  0x7FFFFF00u
+#define CRT_TEX_LOW  0x7FFFFF01u
+
 
 // Looked up at runtime: opengl32.dll exports GL 1.1 and nothing later.
 static GLuint (APIENTRY * p_CreateShader)( GLenum );
@@ -465,10 +474,9 @@ static GLuint crt_box_program( int factor )
 }
 
 
-static void crt_tex_alloc( GLuint * tex, int w, int h )
+static void crt_tex_alloc( GLuint * tex, GLuint name, int w, int h )
 {
-    if( ! *tex )
-        glGenTextures( 1, tex );
+    *tex = name;
     glBindTexture( GL_TEXTURE_2D, *tex );
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, CRT_CLAMP_TO_EDGE );
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, CRT_CLAMP_TO_EDGE );
@@ -555,7 +563,7 @@ void OGL_Shader_Present( void )
     // 1. The finished frame, unfiltered.
     if( src_w != w || src_h != h )
     {
-        crt_tex_alloc( &src_tex, w, h );
+        crt_tex_alloc( &src_tex, CRT_TEX_SRC, w, h );
         src_w = w;
         src_h = h;
     }
@@ -569,7 +577,7 @@ void OGL_Shader_Present( void )
     {
         if( low_w != in_w || low_h != in_h || ! low_fbo )
         {
-            crt_tex_alloc( &low_tex, in_w, in_h );
+            crt_tex_alloc( &low_tex, CRT_TEX_LOW, in_w, in_h );
             low_w = in_w;
             low_h = in_h;
             if( ! low_fbo )

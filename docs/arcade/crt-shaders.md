@@ -83,3 +83,19 @@ log as `CRT shader ...` lines.
 All four compile, link and run on the laptop's Radeon (Mesa, GLSL 4.60) under the offscreen driver,
 and the game exits cleanly with each. The look, the frame rate cost and the Pi's vc4 driver have
 not been checked; the Pi is normally run in software mode anyway, where there is no shader.
+
+## Texture names: never glGenTextures
+
+The first build called `glGenTextures` for its two textures and was unusable on the cabinet: the
+title screen came up upside down and cropped ("DOOW"), and starting a game froze. **The renderer
+does not allocate its texture names through GL.** `r_opengl.c` counts up from `no_texture_id`
+(`next_texture_id++`) and binds whatever number comes next, so a name GL handed out was soon
+bound by the renderer for a patch, and its upload replaced the frame copy with that patch. The
+shader then drew the patch over the whole screen. The names are now fixed constants far above
+anything the counter reaches (`CRT_TEX_SRC`, `CRT_TEX_LOW`); the compatibility profile creates a
+texture on first bind. The same applies to any future code that owns a GL texture here.
+
+It passed the first round of checks because those only confirmed the shaders compiled and the game
+exited. Nothing looked at the picture. It was reproduced and verified under Xvfb at 1366x768 with
+the cabinet's own config, grabbing the X screen with `import -window root`. The game's own
+screenshot is taken before the shader runs, so it cannot show this.
