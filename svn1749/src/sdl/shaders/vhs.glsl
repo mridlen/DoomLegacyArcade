@@ -77,13 +77,16 @@ void main()
                 + (hash(vec2(line, tic)) - 0.5) * 0.0010;
     shift *= wobble;
 
-    // Tracking band, drifting up and wrapping every 14 seconds.
+    // Tracking band.  Every 20 seconds it drifts up the screen once, taking
+    // about 6, and is gone the rest of the time.  Toned down after the first
+    // version (on screen most of the time, twice as tall, three times the
+    // tear) proved too much on the cabinet.
     float band = 0.0;
     if( tracking > 0.5 )
     {
-        float d = uv.y - fract(Time / 14.0) * 1.2 + 0.1;
-        band = smoothstep(0.035, 0.0, abs(d));
-        shift += band * (hash(vec2(line, tic + 7.0)) - 0.5) * 0.03;
+        float d = uv.y - fract(Time / 20.0) * 4.0 + 0.1;
+        band = smoothstep(0.018, 0.0, abs(d));
+        shift += band * (hash(vec2(line, tic + 7.0)) - 0.5) * 0.01;
     }
 
     // Head switching: the bottom lines tear to the right.
@@ -113,9 +116,9 @@ void main()
 
     // Snow, heavier in the tracking band and the torn lines.
     float n = hash(floor(uv * vec2(640.0, 480.0)) + vec2(tic * 1.3, tic * 0.7)) - 0.5;
-    rgb += n * (snow + band * 0.5 + head * 0.3);
+    rgb += n * (snow + band * 0.2 + head * 0.3);
     // A few bright streaks in the band.
-    rgb += band * step(0.985, hash(vec2(floor(uv.x * 160.0), line + tic))) * 0.6;
+    rgb += band * step(0.993, hash(vec2(floor(uv.x * 160.0), line + tic))) * 0.3;
 
     // Lifted blacks, softer whites.
     rgb = rgb * 0.9 + 0.04;
