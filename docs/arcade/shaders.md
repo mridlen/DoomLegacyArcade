@@ -92,6 +92,12 @@ blacked out the health and armour numbers in the corners. Red HUD digits are dim
 since red carries little brightness. Software Look is subtle in bright areas; the banding shows on
 flats and in the dark.
 
+VHS's tracking band was too much on the cabinet as first tuned. It was on screen most of the time
+(`fract(Time / 14) * 1.2`), 0.035 tall, tore lines by up to 1.5% of the width, and carried heavy
+snow and streaks. It now crosses once every 20 seconds, taking about 6, and is off screen the rest
+(`fract(Time / 20) * 4`). It is half as tall, tears a third as far, and has much less snow and
+fewer, dimmer streaks.
+
 ## Re-entry
 
 A shader build failure is reported with `GenPrintf`, and the console can redraw and call
