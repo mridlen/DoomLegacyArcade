@@ -13278,9 +13278,11 @@ menu_t  LightingDef =
 static void M_DrawOpenGLMenu(void);
 static void M_OGL_DrawFogMenu(void);
 static void M_OGL_DrawColorMenu(void);
+static void M_OGL_DrawShaderMenu(void);  // [Arcade]
 static void M_HandleFogColor (int choice);
 
 menu_t OGL_LightingDef, OGL_FogDef, OGL_ColorDef, OGL_DevDef;
+menu_t OGL_ShaderDef;  // [Arcade]
 
 #define QUALITY_ITEM   2
 menuitem_t OpenGLOptionsMenu[]=
@@ -13295,6 +13297,8 @@ menuitem_t OpenGLOptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Fog >>"            , &OGL_FogDef        , 75},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Gamma >>"          , &OGL_ColorDef      , 85},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Development >>"    , &OGL_DevDef        , 95},
+    // [Arcade] CRT post-process shaders, docs/arcade/crt-shaders.md
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Shaders >>"        , &OGL_ShaderDef     , 105},
 };
 
 menuitem_t OGL_LightingMenu[]=
@@ -13320,6 +13324,12 @@ menuitem_t OGL_ColorMenu[]=
     {IT_STRING | IT_CVAR | IT_CV_SLIDER | IT_YOFFSET, 0,"green", &cv_grgammagreen   , 20},
     {IT_STRING | IT_CVAR | IT_CV_SLIDER | IT_YOFFSET, 0,"blue" , &cv_grgammablue    , 30},
     //{IT_STRING | IT_CVAR | IT_CV_SLIDER, "Constrast", &cv_grcontrast , 50},
+};
+
+// [Arcade] The CRT shader runs over the finished frame at the buffer swap.
+menuitem_t OGL_ShaderMenu[]=
+{
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "CRT Shader"      , &cv_grshader           ,  0},
 };
 
 menuitem_t OGL_DevMenu[]=
@@ -13376,6 +13386,18 @@ menu_t  OGL_ColorDef =
     M_OGL_DrawColorMenu,
     NULL,
     sizeof(OGL_ColorMenu)/sizeof(menuitem_t),
+    60,40,
+    0,
+};
+
+menu_t  OGL_ShaderDef =
+{
+    "M_OPTTTL",
+    "OPTIONS",
+    OGL_ShaderMenu,
+    M_OGL_DrawShaderMenu,
+    NULL,
+    sizeof(OGL_ShaderMenu)/sizeof(menuitem_t),
     60,40,
     0,
 };
@@ -13446,6 +13468,26 @@ void M_OGL_DrawColorMenu(void)
     M_DrawGenericMenu(); // use generic drawer for cursor, items and title
     V_DrawString(mx, my+currentMenu->menuitems[0].alphaKey-10,
                  V_WHITEMAP,"Gamma correction");
+}
+
+
+//======================================================================
+// [Arcade] M_OGL_DrawShaderMenu()
+//======================================================================
+// Says so when the selected shader is not running, since the only other
+// sign is the picture looking unchanged.  The status is set at the swap.
+static
+void M_OGL_DrawShaderMenu(void)
+{
+    const char * msg = NULL;
+
+    M_DrawGenericMenu();
+    if( cv_grshader.value && gr_shader_status == 1 )
+        msg = "Driver has no shaders";
+    else if( cv_grshader.value && gr_shader_status == 2 )
+        msg = "Shader failed to build";
+    if( msg )
+        V_DrawString( OGL_ShaderDef.x, OGL_ShaderDef.y + 20, 0, msg );  // 0 is red
 }
 
 

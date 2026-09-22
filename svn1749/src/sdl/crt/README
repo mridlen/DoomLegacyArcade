@@ -1,0 +1,12 @@
+CRT post-process shaders for the OpenGL drawmode ([Arcade], see
+docs/arcade/crt-shaders.md).  Taken unmodified from libretro's glsl-shaders
+collection (crt/shaders/), apart from zfast_crt.glsl's line endings:
+
+  zfast_crt.glsl   Greg Hogan (SoltanGris42)   GPL v2 or later
+  crt-pi.glsl      davej                       GPL v2 or later
+  crt-lottes.glsl  Timothy Lottes              public domain
+  crt-geom.glsl    cgwg, Themaister, DOLLS     GPL v2 or later
+
+They are compiled into the program through ../ogl_crt_glsl.h, which
+tools/glsl2c.py regenerates.  Edit a .glsl here and re-run it; never edit the
+header by hand.

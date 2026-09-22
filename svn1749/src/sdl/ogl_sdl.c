@@ -53,6 +53,8 @@
 //#include "v_video.h"
 #include "i_video.h"
   // [Arcade] cv_vidwait, applied to the GL swap interval below.
+#include "ogl_shader.h"
+  // [Arcade] CRT post-process shader, run just before the swap.
 
 
 #ifdef MAC_SDL
@@ -388,6 +390,8 @@ boolean OglSdl_SetMode(int w, int h, byte req_fullscreen)
     // Create OpenGL drawing connection to the window.
     // Do not need renderer, nor texture.
     sdl_gl_context = SDL_GL_CreateContext( sdl_window );
+    // [Arcade] A new context: the CRT shader's GL objects went with the old one.
+    OGL_Shader_Context_Lost();
     if( sdl_gl_context == NULL)
         return false;
 
@@ -553,6 +557,8 @@ boolean OglSdl_SetMode(int w, int h, byte req_fullscreen)
 
 void OglSdl_FinishUpdate(void)
 {
+    OGL_Shader_Present();  // [Arcade] CRT shader, if one is selected
+
 #ifdef SDL2
     SDL_GL_SwapWindow( sdl_window );
 #else
@@ -564,6 +570,7 @@ void OglSdl_FinishUpdate(void)
 void OglSdl_Shutdown(void)
 {
     ogl_active = 0;
+    OGL_Shader_Context_Lost();  // [Arcade]
 
     // Release OpenGL specific.
 #ifdef SDL2

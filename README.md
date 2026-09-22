@@ -173,6 +173,13 @@ Discord is likely to get you banned.
   trade picture for speed: **Framerate Cap**, **Render Threads**, **8bpp Draw** and **Show
   Ticrate**. Render Threads is what lets a Pi run a four-way split at full speed; it applies to the
   software renderer only and is greyed out under OpenGL, where it would gain nothing.
+- **CRT shaders in OpenGL.** **Options → Video Options → OpenGL 3D Card Options → Shaders →
+  CRT Shader** makes the picture look like an old tube monitor: scanlines about the size of Doom's
+  own pixels, a phosphor mask, and with some choices a curved screen. Four are included, from
+  lightest to heaviest: **zfast CRT**, **CRT-Pi**, **CRT-Lottes** and **CRT-Geom** (curved, with
+  rounded corners). They cover the menus and HUD too, since the whole finished frame goes through
+  them. The default is Off. If the graphics driver cannot run shaders, or one fails to build, the
+  page says so in red. OpenGL only; the software renderer has no equivalent.
 - **A usable video mode list.** Every mode the display offers is now reachable — the list pages
   instead of stopping dead partway through, sorts by size, drops the duplicate entries a monitor
   advertises once per refresh rate, and can be filtered to one aspect ratio so a 32:9 panel isn't
@@ -1899,3 +1906,7 @@ Licensed under the **GNU General Public License**; see [`LICENSE`](LICENSE), and
 [`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt) for the copy that came with the port. Doom,
 Doom II, Final Doom and Heretic game data remain the property of their respective owners and are
 not distributed here.
+
+The CRT shaders in [`svn1749/src/sdl/crt/`](svn1749/src/sdl/crt/) come from libretro's
+`glsl-shaders` collection: zfast_crt by Greg Hogan (SoltanGris42), crt-pi by davej and crt-geom by
+cgwg, Themaister and DOLLS, all GPL v2 or later, and crt-lottes by Timothy Lottes, public domain.

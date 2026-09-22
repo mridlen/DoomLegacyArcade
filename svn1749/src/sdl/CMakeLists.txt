@@ -12,6 +12,7 @@ set(SRC_sdl
   i_sound.c
   i_system.c
   i_video.c
-  ogl_sdl.c)
+  ogl_sdl.c
+  ogl_shader.c)
 
 add_library(media_sdl ${SRC_sdl})

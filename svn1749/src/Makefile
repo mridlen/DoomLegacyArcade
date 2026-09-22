@@ -791,7 +791,7 @@ ifeq ($(SMIF), SDL)
   CDMUSOBJ:=i_cdmus.o
   SMIFOBJS:=i_system.o i_video.o i_sound.o i_net.o \
     hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o \
-    r_opengl.o ogl_sdl.o hwsym_sdl.o \
+    r_opengl.o ogl_sdl.o ogl_shader.o hwsym_sdl.o \
     filesrch.o dosstr.o endtxt.o
 
   DEP_HARD:=1
