@@ -32,7 +32,7 @@ those can go in a GPL program, so FXAA and VHS were written here instead.
 
 1. `glCopyTexSubImage2D` of the back buffer into `src_tex` (screen size, NPOT, which GL 2.0 allows).
 2. **CRT shaders and Game Boy only** (`downsample` in `glsl2c.py`; everything else gets the full
-   frame, factor 1): box filter down by a whole-number factor, `vid.height / 200` clamped to 1..10, into `low_tex`
+   frame, factor 1): box filter down by a whole-number factor, the smaller of `vid.height / 200` and `vid.width / 320`, clamped to 1..10 (see "Portrait" below), into `low_tex`
    through an FBO. The shaders treat **each input texel as one line of the tube**. Given the
    full-size frame they would draw one scanline per monitor row, which is invisible, so the
    downsample is what makes the lines game-sized. The factor is whole so every line covers the
@@ -139,3 +139,15 @@ It passed the first round of checks because those only confirmed the shaders com
 exited. Nothing looked at the picture. It was reproduced and verified under Xvfb at 1366x768 with
 the cabinet's own config, grabbing the X screen with `import -window root`. The game's own
 screenshot is taken before the shader runs, so it cannot show this.
+
+## Portrait
+
+The downsample factor was first taken from the height alone. On a portrait screen that left the
+image far narrower than Doom's 320: 192 pixels across at 1920x2160, and 120 at 1080x1920. The
+menus, HUD and every line of text are drawn for 320 across, so with any CRT shader they blurred
+sideways past reading. The factor is now the smaller of `h / 200` and `w / 320`, so neither
+direction drops below 320x200. Every landscape mode from 1024x768 up is unchanged, because there
+the height is the limit. 800x600 changes too (266 across before; now 400x300, with 300 scanlines
+instead of 200). Portrait screens get more, finer scanlines: 360 at 1920x2160, 640 at 1080x1920.
+Checked under Xvfb at 1080x1920 with CRT-Pi. The title page's credit line went from unreadable to
+clean.

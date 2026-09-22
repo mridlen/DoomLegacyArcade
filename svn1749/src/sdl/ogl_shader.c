@@ -629,7 +629,12 @@ void OGL_Shader_Present( void )
     factor = 1;
     if( shader_defs[which].downsample )
     {
+        // Never below Doom's own 320x200 in either direction.  Going by the
+        // height alone left a portrait screen (1920x2160: 192 across) too
+        // narrow for the 320-wide menus, and their text went unreadable.
+        // On landscape screens the height is always the limit, as before.
         factor = h / 200;
+        if( w / 320 < factor )  factor = w / 320;
         if( factor < 1 )  factor = 1;
         if( factor > CRT_MAX_FACTOR )  factor = CRT_MAX_FACTOR;
     }
