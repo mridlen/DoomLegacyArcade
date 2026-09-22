@@ -411,11 +411,15 @@ consvar_t cv_grgammared = { "gr_gammared", "127", CV_SAVE | CV_CALL, grgamma_con
 consvar_t cv_grgammagreen = { "gr_gammagreen", "127", CV_SAVE | CV_CALL, grgamma_cons_t, CV_Gammaxxx_ONChange };
 consvar_t cv_grgammablue = { "gr_gammablue", "127", CV_SAVE | CV_CALL, grgamma_cons_t, CV_Gammaxxx_ONChange };
 consvar_t cv_grfiltermode = { "gr_filtermode", "Bilinear", CV_SAVE | CV_CALL, grfiltermode_cons_t, CV_filtermode_ONChange };
-// [Arcade] CRT post-process shader, applied at the buffer swap (sdl/ogl_shader.c).
-// The order after Off is crt_shader_defs[] in sdl/ogl_crt_glsl.h (tools/glsl2c.py).
+// [Arcade] Post-process shader, applied at the buffer swap (sdl/ogl_shader.c).
+// The order after Off is SHADERS in tools/glsl2c.py, labels and all; the
+// shader module checks this at startup.  New ones go on the end, so the
+// numbers a config was saved with keep meaning the same shader.
 // Off by default: a new cvar's default is what every cabinet plays under.
 CV_PossibleValue_t grshader_cons_t[] = {
     {0, "Off"}, {1, "zfast CRT"}, {2, "CRT-Pi"}, {3, "CRT-Lottes"}, {4, "CRT-Geom"},
+    {5, "FXAA"}, {6, "Software Look"}, {7, "VHS"}, {8, "Greyscale"}, {9, "Sepia"},
+    {10, "Night Vision"}, {11, "Game Boy"},
     {0, NULL} };
 consvar_t cv_grshader = { "gr_shader", "Off", CV_SAVE, grshader_cons_t };
 // 0 working or off, 1 the driver cannot run shaders, 2 this one failed to build.

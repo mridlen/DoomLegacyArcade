@@ -1,5 +1,5 @@
-// [Arcade] CRT post-process shaders for the OpenGL drawmode.
-// See docs/arcade/crt-shaders.md.
+// [Arcade] Post-process shaders for the OpenGL drawmode.
+// See docs/arcade/shaders.md.
 
 #ifndef OGL_SHADER_H
 #define OGL_SHADER_H

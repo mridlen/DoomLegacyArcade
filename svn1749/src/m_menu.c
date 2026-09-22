@@ -13297,7 +13297,7 @@ menuitem_t OpenGLOptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Fog >>"            , &OGL_FogDef        , 75},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Gamma >>"          , &OGL_ColorDef      , 85},
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Development >>"    , &OGL_DevDef        , 95},
-    // [Arcade] CRT post-process shaders, docs/arcade/crt-shaders.md
+    // [Arcade] Post-process shaders, docs/arcade/shaders.md
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Shaders >>"        , &OGL_ShaderDef     , 105},
 };
 
@@ -13326,10 +13326,10 @@ menuitem_t OGL_ColorMenu[]=
     //{IT_STRING | IT_CVAR | IT_CV_SLIDER, "Constrast", &cv_grcontrast , 50},
 };
 
-// [Arcade] The CRT shader runs over the finished frame at the buffer swap.
+// [Arcade] The shader runs over the finished frame at the buffer swap.
 menuitem_t OGL_ShaderMenu[]=
 {
-    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "CRT Shader"      , &cv_grshader           ,  0},
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Shader"          , &cv_grshader           ,  0},
 };
 
 menuitem_t OGL_DevMenu[]=

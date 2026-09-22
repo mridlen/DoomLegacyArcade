@@ -152,7 +152,8 @@ extern consvar_t cv_grgammared;
 extern consvar_t cv_grgammagreen;
 extern consvar_t cv_grgammablue;
 extern consvar_t cv_grfiltermode;
-extern consvar_t cv_grshader;  // [Arcade] CRT shader, sdl/ogl_shader.c
+extern consvar_t cv_grshader;  // [Arcade] post-process shader, sdl/ogl_shader.c
+extern CV_PossibleValue_t grshader_cons_t[];
 extern byte  gr_shader_status;  // [Arcade] 0 ok, 1 no shaders, 2 build failed
 extern consvar_t cv_grcorrecttricks;
 extern consvar_t cv_grsolvetjoin;

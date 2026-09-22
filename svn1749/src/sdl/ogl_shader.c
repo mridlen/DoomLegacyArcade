@@ -14,18 +14,19 @@
 // GNU General Public License for more details.
 //
 //-----------------------------------------------------------------------------
-// [Arcade] CRT post-process shaders for the OpenGL drawmode.
+// [Arcade] Post-process shaders for the OpenGL drawmode: CRT, FXAA, the
+// software look, VHS and colour effects.
 //
 // Once a frame is finished, and before the swap, the back buffer is copied
-// into a texture, box filtered down to roughly Doom's own 200 lines, and
-// drawn back over the whole screen through one of the libretro CRT shaders
-// in sdl/crt/.  Those shaders treat each texel of their input as one line of
-// the tube, so the downsample is what makes the scanlines the size of the
-// game's pixels rather than of the monitor's.
+// into a texture and drawn back over the whole screen through the selected
+// shader from sdl/shaders/.  For the CRT shaders (and Game Boy) it is first
+// box filtered down to roughly Doom's own 200 lines: those treat each texel
+// of their input as one line of the tube, so the downsample is what makes
+// the scanlines the size of the game's pixels rather than of the monitor's.
 //
 // The renderer is fixed-function and caches its GL state (SetBlend's
 // cur_polyflags), so everything here is bracketed by glPushAttrib and
-// glPopAttrib and leaves no trace.  See docs/arcade/crt-shaders.md.
+// glPopAttrib and leaves no trace.  See docs/arcade/shaders.md.
 //-----------------------------------------------------------------------------
 
 #include "doomincl.h"
@@ -44,6 +45,10 @@
   // cv_grshader, gr_shader_status
 #include "screen.h"
   // vid
+#include "w_wad.h"
+#include "z_zone.h"
+  // PU_CACHE
+  // PLAYPAL, for the software look
 #include "ogl_shader.h"
 
 #ifndef APIENTRY
@@ -61,16 +66,21 @@
 #define CRT_COLOR_ATTACHMENT0      0x8CE0
 #define CRT_FRAMEBUFFER_COMPLETE   0x8CD5
 #define CRT_CLAMP_TO_EDGE          0x812F
+#define CRT_TEXTURE0               0x84C0
 
 typedef struct {
-    const char * name;
+    const char * label;    // as in grshader_cons_t
+    const char * name;     // file in sdl/shaders/
     const char * src;
-    byte  linear;   // sample the input with GL_LINEAR, as the RetroArch preset does
-} crt_shader_def_t;
+    const char * defines;  // compiled in ahead of the source
+    byte  linear;      // sample the input with GL_LINEAR (a RetroArch preset's filter_linear)
+    byte  downsample;  // feed it the frame at about 200 lines, not full size
+    byte  palette;     // needs the PLAYPAL lookup on texture unit 1
+} shader_def_t;
 
-#include "ogl_crt_glsl.h"
+#include "ogl_shader_glsl.h"
 
-#define NUM_CRT_SHADERS  ((int)(sizeof(crt_shader_defs)/sizeof(crt_shader_defs[0])))
+#define NUM_CRT_SHADERS  ((int)(sizeof(shader_defs)/sizeof(shader_defs[0])))
 
 // The downsample factor is a whole number, so every line of the tube covers
 // the same number of screen rows; a fractional one beats against the pixel
@@ -85,6 +95,7 @@ typedef struct {
 // anything the counter reaches, and binding an unused name creates it.
 #define CRT_TEX_SRC  0x7FFFFF00u
 #define CRT_TEX_LOW  0x7FFFFF01u
+#define CRT_TEX_LUT  0x7FFFFF02u
 
 
 // Looked up at runtime: opengl32.dll exports GL 1.1 and nothing later.
@@ -111,6 +122,7 @@ static void   (APIENTRY * p_VertexAttribPointer)( GLuint, GLint, GLenum, GLboole
 static void   (APIENTRY * p_EnableVertexAttribArray)( GLuint );
 static void   (APIENTRY * p_DisableVertexAttribArray)( GLuint );
 static void   (APIENTRY * p_VertexAttrib4f)( GLuint, GLfloat, GLfloat, GLfloat, GLfloat );
+static void   (APIENTRY * p_ActiveTexture)( GLenum );
 // Framebuffer objects, optional: without them the shader samples the full
 // size frame directly, which still gives the right number of scanlines.
 static void   (APIENTRY * p_GenFramebuffers)( GLsizei, GLuint * );
@@ -150,6 +162,7 @@ static const crt_proc_t crt_procs[] = {
     PROC( EnableVertexAttribArray, NULL, 0 ),
     PROC( DisableVertexAttribArray, NULL, 0 ),
     PROC( VertexAttrib4f, NULL, 0 ),
+    PROC( ActiveTexture, NULL, 0 ),
     PROC( GenFramebuffers, "glGenFramebuffersEXT", 1 ),
     PROC( BindFramebuffer, "glBindFramebufferEXT", 1 ),
     PROC( FramebufferTexture2D, "glFramebufferTexture2DEXT", 1 ),
@@ -160,8 +173,9 @@ static const crt_proc_t crt_procs[] = {
 // Everything below dies with the GL context; OGL_Shader_Context_Lost forgets it.
 static byte   crt_init_state;     // 0 not tried, 1 ready, 2 cannot run shaders
 static byte   crt_have_fbo;
-static GLuint crt_prog[16];
-static byte   crt_prog_state[16]; // 0 not tried, 1 built, 2 failed
+static GLuint crt_prog[NUM_CRT_SHADERS];
+static byte   crt_prog_state[NUM_CRT_SHADERS]; // 0 not tried, 1 built, 2 failed
+static byte   lut_state;          // 0 not built, 1 built, 2 no PLAYPAL
 static GLuint box_prog;
 static int    box_factor;         // box_prog is built for this factor
 static GLuint src_tex, low_tex, low_fbo;
@@ -180,6 +194,7 @@ void OGL_Shader_Context_Lost( void )
     box_prog = 0;
     box_factor = 0;
     src_tex = low_tex = low_fbo = 0;
+    lut_state = 0;
     src_w = src_h = low_w = low_h = 0;
     crt_frame_saved = 0;
 }
@@ -237,7 +252,7 @@ static boolean crt_init( void )
     glGetError();  // a GL 1.x driver flags the enum; do not leave that behind
     if( ! glsl )
     {
-        GenPrintf( EMSG_warn, "CRT shader: this OpenGL driver has no shaders (GL %s)\n",
+        GenPrintf( EMSG_warn, "Shader: this OpenGL driver has no shaders (GL %s)\n",
                    glGetString( GL_VERSION ) );
         return false;
     }
@@ -251,15 +266,24 @@ static boolean crt_init( void )
         *p->fp = f;
         if( ! f && ! p->optional )
         {
-            GenPrintf( EMSG_warn, "CRT shader: OpenGL driver lacks %s\n", p->name );
+            GenPrintf( EMSG_warn, "Shader: OpenGL driver lacks %s\n", p->name );
             return false;
         }
     }
     crt_have_fbo = p_GenFramebuffers && p_BindFramebuffer
                 && p_FramebufferTexture2D && p_CheckFramebufferStatus;
 
-    GenPrintf( EMSG_info, "CRT shader: GLSL %s%s\n", glsl,
+    GenPrintf( EMSG_info, "Shader: GLSL %s%s\n", glsl,
                crt_have_fbo ? "" : ", no framebuffer objects" );
+
+    // glsl2c.py's list and the menu's value list are kept by hand.
+    for( i = 0; i < NUM_CRT_SHADERS; i++ )
+    {
+        const char * s = grshader_cons_t[i+1].strvalue;
+        if( ! s || strcmp( s, shader_defs[i].label ) )
+            GenPrintf( EMSG_warn, "Shader list out of step at %d: menu \"%s\", shader \"%s\"\n",
+                       i + 1, s ? s : "(end)", shader_defs[i].label );
+    }
 
     ogl_read_front_hook = crt_read_front;
     crt_init_state = 1;
@@ -282,7 +306,7 @@ static GLuint crt_compile( GLenum type, const char * const * parts, int nparts,
         char log[1024];
         log[0] = 0;
         p_GetShaderInfoLog( sh, sizeof(log), NULL, log );
-        GenPrintf( EMSG_warn, "CRT shader %s: %s shader failed to compile:\n%s\n",
+        GenPrintf( EMSG_warn, "Shader %s: %s shader failed to compile:\n%s\n",
                    name, (type == CRT_VERTEX_SHADER) ? "vertex" : "fragment", log );
         p_DeleteShader( sh );
         return 0;
@@ -325,7 +349,7 @@ static GLuint crt_link( const char * const * vparts, int nv,
         char log[1024];
         log[0] = 0;
         p_GetProgramInfoLog( prog, sizeof(log), NULL, log );
-        GenPrintf( EMSG_warn, "CRT shader %s: failed to link:\n%s\n", name, log );
+        GenPrintf( EMSG_warn, "Shader %s: failed to link:\n%s\n", name, log );
         p_DeleteProgram( prog );
         return 0;
     }
@@ -375,9 +399,9 @@ static void crt_set_parameters( GLuint prog, const char * src )
 // shaders pick their old-style keywords for anything below 1.30.
 static GLuint crt_program( int which )
 {
-    const crt_shader_def_t * def = &crt_shader_defs[which];
-    const char * vparts[2];
-    const char * fparts[2];
+    const shader_def_t * def = &shader_defs[which];
+    const char * vparts[3];
+    const char * fparts[3];
     GLuint prog;
 
     if( crt_prog_state[which] )
@@ -388,10 +412,12 @@ static GLuint crt_program( int which )
     crt_prog_state[which] = 2;
 
     vparts[0] = "#version 120\n#define VERTEX\n#define PARAMETER_UNIFORM\n";
-    vparts[1] = def->src;
+    vparts[1] = def->defines;
+    vparts[2] = def->src;
     fparts[0] = "#version 120\n#define FRAGMENT\n#define PARAMETER_UNIFORM\n";
-    fparts[1] = def->src;
-    prog = crt_link( vparts, 2, fparts, 2, def->name );
+    fparts[1] = def->defines;
+    fparts[2] = def->src;
+    prog = crt_link( vparts, 3, fparts, 3, def->label );
     if( prog )
     {
         // Uniform values belong to the program, so this is done once.
@@ -400,7 +426,7 @@ static GLuint crt_program( int which )
         p_UseProgram( 0 );
         crt_prog[which] = prog;
         crt_prog_state[which] = 1;
-        GenPrintf( EMSG_info, "CRT shader %s: ready\n", def->name );
+        GenPrintf( EMSG_info, "Shader %s: ready\n", def->label );
     }
     return prog;
 }
@@ -509,6 +535,68 @@ static void crt_draw_quad( void )
 }
 
 
+// The software look's palette lookup: for each of 64x64x64 colours, the
+// nearest PLAYPAL entry.  Laid out as an 8x8 grid of 64x64 red/green tiles,
+// one per blue level, which is what software-look.glsl indexes.  Built once
+// per context, with PLAYPAL's first palette (the others are pain and pickup
+// flashes, which OpenGL draws as a tint instead).
+static boolean crt_build_lut( void )
+{
+    lumpnum_t lump;
+    const byte * pal;
+    byte * lut;
+    int r, g, b, i;
+
+    if( lut_state )
+        return ( lut_state == 1 );
+    lut_state = 2;
+
+    lump = W_CheckNumForName( "PLAYPAL" );
+    if( ! VALID_LUMP( lump ) )
+        return false;
+    lut = (byte *) malloc( 512 * 512 * 3 );
+    if( ! lut )
+        return false;
+    pal = (const byte *) W_CacheLumpNum( lump, PU_CACHE );  // only used in this loop
+
+    for( b = 0; b < 64; b++ )
+    for( g = 0; g < 64; g++ )
+    for( r = 0; r < 64; r++ )
+    {
+        // Channel levels 0..63 stand for 0..255.
+        int R = r * 255 / 63, G = g * 255 / 63, B = b * 255 / 63;
+        int best = 0, bestd = 0x7FFFFFFF;
+        byte * out;
+        for( i = 0; i < 256; i++ )
+        {
+            // Weighted towards green, where the eye is most sensitive.
+            int dr = R - pal[i*3], dg = G - pal[i*3+1], db = B - pal[i*3+2];
+            int d = 2*dr*dr + 4*dg*dg + 3*db*db;
+            if( d < bestd )
+            {
+                bestd = d;
+                best = i;
+            }
+        }
+        out = &lut[ (((b / 8) * 64 + g) * 512 + (b % 8) * 64 + r) * 3 ];
+        out[0] = pal[best*3];
+        out[1] = pal[best*3+1];
+        out[2] = pal[best*3+2];
+    }
+
+    glBindTexture( GL_TEXTURE_2D, CRT_TEX_LUT );
+    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, CRT_CLAMP_TO_EDGE );
+    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, CRT_CLAMP_TO_EDGE );
+    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+    glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );  // client state, pushed by the caller
+    glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB, 512, 512, 0, GL_RGB, GL_UNSIGNED_BYTE, lut );
+    free( lut );
+    lut_state = 1;
+    return true;
+}
+
+
 void OGL_Shader_Present( void )
 {
     static const GLfloat identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
@@ -538,9 +626,13 @@ void OGL_Shader_Present( void )
     if( ! prog )
         return;
 
-    factor = h / 200;
-    if( factor < 1 )  factor = 1;
-    if( factor > CRT_MAX_FACTOR )  factor = CRT_MAX_FACTOR;
+    factor = 1;
+    if( shader_defs[which].downsample )
+    {
+        factor = h / 200;
+        if( factor < 1 )  factor = 1;
+        if( factor > CRT_MAX_FACTOR )  factor = CRT_MAX_FACTOR;
+    }
     in_w = w / factor;
     in_h = h / factor;
 
@@ -587,7 +679,7 @@ void OGL_Shader_Present( void )
                                     GL_TEXTURE_2D, low_tex, 0 );
             if( p_CheckFramebufferStatus( CRT_FRAMEBUFFER ) != CRT_FRAMEBUFFER_COMPLETE )
             {
-                GenPrintf( EMSG_warn, "CRT shader: framebuffer object incomplete, not downsampling\n" );
+                GenPrintf( EMSG_warn, "Shader: framebuffer object incomplete, not downsampling\n" );
                 crt_have_fbo = 0;
             }
             p_BindFramebuffer( CRT_FRAMEBUFFER, 0 );
@@ -610,11 +702,21 @@ void OGL_Shader_Present( void )
         }
     }
 
-    // 3. The tube, over the whole screen.  Without the downsample the shader
-    // is still told the small size, so it draws as many lines either way.
+    // 3. The effect, over the whole screen.  Without the downsample a CRT
+    // shader is still told the small size, so it draws as many lines either way.
     glViewport( 0, 0, w, h );
     p_UseProgram( prog );
-    crt_tex_filter( in_tex, crt_shader_defs[which].linear );
+    if( shader_defs[which].palette )
+    {
+        if( ! crt_build_lut() )
+            GenPrintf( EMSG_warn, "Shader %s: no PLAYPAL\n", shader_defs[which].label );
+        p_ActiveTexture( CRT_TEXTURE0 + 1 );
+        glBindTexture( GL_TEXTURE_2D, CRT_TEX_LUT );
+        p_ActiveTexture( CRT_TEXTURE0 );
+        loc = p_GetUniformLocation( prog, "Palette" );
+        if( loc >= 0 )  p_Uniform1i( loc, 1 );
+    }
+    crt_tex_filter( in_tex, shader_defs[which].linear );
     loc = p_GetUniformLocation( prog, "Texture" );
     if( loc >= 0 )  p_Uniform1i( loc, 0 );
     loc = p_GetUniformLocation( prog, "MVPMatrix" );
@@ -629,7 +731,16 @@ void OGL_Shader_Present( void )
     if( loc >= 0 )  p_Uniform1i( loc, crt_frame_count );
     loc = p_GetUniformLocation( prog, "FrameDirection" );
     if( loc >= 0 )  p_Uniform1i( loc, 1 );
+    // Seconds, for the effects that move; wrapped so a float keeps its precision.
+    loc = p_GetUniformLocation( prog, "Time" );
+    if( loc >= 0 )  p_Uniform1f( loc, (GLfloat)( SDL_GetTicks() % 3600000u ) / 1000.0f );
     crt_draw_quad();
+    if( shader_defs[which].palette )
+    {
+        p_ActiveTexture( CRT_TEXTURE0 + 1 );
+        glBindTexture( GL_TEXTURE_2D, 0 );
+        p_ActiveTexture( CRT_TEXTURE0 );
+    }
 
     p_UseProgram( 0 );
     glPopClientAttrib();
