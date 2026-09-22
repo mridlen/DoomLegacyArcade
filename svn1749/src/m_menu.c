@@ -5745,11 +5745,12 @@ void M_Restart_Program_Ex( const char * game_idstr, boolean keep_packs, const ch
 // on says nothing about who is pressing it.  It defaults to Scroll Lock on
 // panel 1 (G_Controldefault) -- a key no panel can produce.
 //
-// Honoured only on the attract screen.  A restart throws away whatever is
+// Honoured only in the attract cycle.  A restart throws away whatever is
 // running, so a stray press during a game would take a paying player's run
 // away from them -- or, during initials entry, the record they have earned
-// but not yet committed.  GS_DEMOSCREEN is the title screen and the attract
-// cycle; every other state means a game, an intermission or a finale is up.
+// but not yet committed.  The attract cycle is the title pages
+// (GS_DEMOSCREEN) and its demos (demoplayback); anything else means a real
+// game, an intermission or a finale is up.
 // Being assignable, this key *can* be put on a panel button, so the gate is
 // what keeps that from being a way to lose a run.
 //
@@ -5778,7 +5779,14 @@ boolean  M_Devmode_Hotkey( event_t * ev )
          || key == gamecontrol_pl[pind][gc_devmode][1] )  break;
     }
 
-    if( gamestate != GS_DEMOSCREEN || M_Initials_Active() )
+    // The attract cycle is the title pages *and* its demos, which play in
+    // GS_LEVEL (and through their intermissions).  Testing GS_DEMOSCREEN
+    // alone turned the key down mid-demo, and G_Responder then opened the
+    // menu with it.  This is G_Responder's own "in demos" test, so the two
+    // agree on where the attract cycle is.  A -playdemo run (singledemo) is
+    // not the attract cycle.
+    if( ! ( ! singledemo && ( demoplayback || gamestate == GS_DEMOSCREEN ) )
+        || M_Initials_Active() )
     {
         GenPrintf( EMSG_dev, "devmode key: attract screen only.\n" );
         return false;   // let the key do its ordinary job
