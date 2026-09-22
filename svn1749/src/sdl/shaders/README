@@ -1,0 +1,27 @@
+Post-process shaders for the OpenGL drawmode ([Arcade], see
+docs/arcade/shaders.md).
+
+Taken unmodified from libretro's glsl-shaders collection (crt/shaders/),
+apart from zfast_crt.glsl's line endings:
+
+  zfast_crt.glsl      Greg Hogan (SoltanGris42)   GPL v2 or later
+  crt-pi.glsl         davej                       GPL v2 or later
+  crt-lottes.glsl     Timothy Lottes              public domain
+  crt-geom.glsl       cgwg, Themaister, DOLLS     GPL v2 or later
+
+Written for Doom Legacy Arcade, GPL v2 or later:
+
+  fxaa.glsl           FXAA, from Timothy Lottes' published method
+  software-look.glsl  snap to the game's palette
+  vhs.glsl            worn videotape
+  colour.glsl         greyscale, sepia, night vision (one file, LOOK 1..3)
+  game-boy.glsl       four greens, dithered
+
+libretro's own FXAA (NVIDIA, "all rights reserved") and VHS shaders
+(Shadertoy adaptations, whose default licence is non-commercial) were not
+used: neither licence allows them in a GPL program.
+
+They are compiled into the program through ../ogl_shader_glsl.h, which
+tools/glsl2c.py regenerates; that script's list also sets each one's menu
+label, sampling, and whether it gets the frame downsampled.  Edit a .glsl
+here and re-run it; never edit the header by hand.

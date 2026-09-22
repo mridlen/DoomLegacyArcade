@@ -1,25 +1,38 @@
-# CRT shaders (OpenGL)
+# Screen shaders (OpenGL)
 
-Read before touching `sdl/ogl_shader.c`, `sdl/crt/`, `sdl/ogl_crt_glsl.h`, `tools/glsl2c.py`,
+Read before touching `sdl/ogl_shader.c`, `sdl/shaders/`, `sdl/ogl_shader_glsl.h`, `tools/glsl2c.py`,
 `cv_grshader`, or `ogl_read_front_hook` in `r_opengl.c`.
 
 ## What it is
 
-`gr_shader` (**OpenGL 3D Card Options → Shaders → CRT Shader**) runs one of four libretro CRT
-shaders over the finished frame, just before the buffer swap in `OglSdl_FinishUpdate`. Everything
+`gr_shader` (**OpenGL 3D Card Options → Shaders → Shader**) runs one post-process shader over
+the finished frame, just before the buffer swap in `OglSdl_FinishUpdate`: four libretro CRT
+shaders, and FXAA, Software Look, VHS, Greyscale, Sepia, Night Vision and Game Boy, which were
+written here. Everything
 drawn that frame (3D view, HUD, menus, console, wipe) goes through it once. Default `Off`: a new
 cvar's default is what every cabinet runs until a `-devmode` session saves otherwise.
 
-The shaders are taken verbatim from libretro `glsl-shaders/crt/shaders/` and live in `sdl/crt/`,
-with a README naming author and licence. `tools/glsl2c.py` turns them into C strings in
-`sdl/ogl_crt_glsl.h`, so the binary needs no files beside it. Re-run it after editing a `.glsl`.
-Its list order is the cvar's value order and must match `grshader_cons_t` in `hw_main.c`.
-crt-easymode and crt-aperture were left out because their headers say "GPL" with no version.
+The CRT shaders are taken verbatim from libretro `glsl-shaders/crt/shaders/`. All of them live
+in `sdl/shaders/`, with a README naming author and licence. `tools/glsl2c.py` turns them into C
+strings in `sdl/ogl_shader_glsl.h`, so the binary needs no files beside it. Re-run it after editing
+a `.glsl`. Its `SHADERS` list sets, per shader: the menu label, extra `#define`s (the three colour
+looks are one file, `colour.glsl`, with `LOOK` 1..3), linear or nearest sampling, whether the
+frame is downsampled first, and whether it needs the palette lookup.
+
+The list order is the cvar's value order and must match `grshader_cons_t` in `hw_main.c`, labels
+included. `crt_init` compares them and logs `Shader list out of step` if they drift. **Add new
+shaders at the end**: a config saves the label, but the numbers should keep their meaning too.
+
+Licences decided what was borrowed. crt-easymode and crt-aperture say "GPL" with no version.
+libretro's `fxaa.glsl` is NVIDIA "all rights reserved" with no grant. Its VHS shaders are
+Shadertoy adaptations, and Shadertoy's default licence is non-commercial (CC BY-NC-SA). None of
+those can go in a GPL program, so FXAA and VHS were written here instead.
 
 ## The pass (`OGL_Shader_Present`)
 
 1. `glCopyTexSubImage2D` of the back buffer into `src_tex` (screen size, NPOT, which GL 2.0 allows).
-2. Box filter down by a whole-number factor, `vid.height / 200` clamped to 1..10, into `low_tex`
+2. **CRT shaders and Game Boy only** (`downsample` in `glsl2c.py`; everything else gets the full
+   frame, factor 1): box filter down by a whole-number factor, `vid.height / 200` clamped to 1..10, into `low_tex`
    through an FBO. The shaders treat **each input texel as one line of the tube**. Given the
    full-size frame they would draw one scanline per monitor row, which is invisible, so the
    downsample is what makes the lines game-sized. The factor is whole so every line covers the
@@ -57,6 +70,27 @@ the melt and jump at the end. `ogl_read_front_hook` (`r_opengl.c`) lets the shad
 `src_tex`, the unfiltered copy of the frame on screen, via `glGetTexImage`.
 `crt_frame_saved` is cleared on any frame the shader did not run, so the hook falls back to
 reading the front buffer.
+
+## Uniforms beyond libretro's
+
+- `Time`: seconds, from `SDL_GetTicks`, wrapped at an hour so a float keeps its precision. VHS
+  and Night Vision use it so their movement runs at the same speed at any frame rate;
+  `FrameCount` would not.
+- `Palette`: texture unit 1, for Software Look. `crt_build_lut` builds a 64x64x64 lookup of the
+  nearest PLAYPAL colour (weighted RGB distance, 2:4:3), laid out as an 8x8 grid of 64x64
+  red/green tiles, one per blue level, 512x512 in all. It is built once per context, from palette 0
+  only, since the others are pain and pickup flashes and OpenGL draws those as a tint.
+  `glActiveTexture` is looked up at runtime too (GL 1.3; Windows exports only 1.1), and unit 1 is
+  unbound again after the draw.
+
+## Looks, as tuned
+
+Checked by eye under Xvfb at 1366x768 on MAP01. Game Boy lifts brightness hard
+(`pow(l, 0.6) * 1.25`) because Doom is dark and the darkest green is nearly black. Without that,
+most of a level was one shade. Night Vision's eyepiece is `smoothstep(1.1, 0.7, r)`. At 0.75/0.45 it
+blacked out the health and armour numbers in the corners. Red HUD digits are dim through both,
+since red carries little brightness. Software Look is subtle in bright areas; the banding shows on
+flats and in the dark.
 
 ## Re-entry
 
