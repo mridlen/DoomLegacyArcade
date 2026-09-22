@@ -234,6 +234,8 @@ GLint   screen_width;               // used by Draw2DLine()
 GLint   screen_height;
 GLbyte  screen_depth;
 GLint   textureformatGL;
+// [Arcade] See r_opengl.h.
+int (*ogl_read_front_hook)( int x, int y, int width, int height, byte * image ) = NULL;
 
 GLint min_filter = GL_LINEAR;
 GLint mag_filter = GL_LINEAR;
@@ -741,7 +743,11 @@ EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height,
     // A row of 1366 pixels is 4098 bytes, which is not a multiple of 4, so
     // the default 4 byte row alignment would pad every row and skew the image.
     glPixelStorei( GL_PACK_ALIGNMENT, 1 );
-    glReadPixels( x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image );
+    // [Arcade] With a CRT shader on, the front buffer is the filtered picture,
+    // and the wipe would filter it twice; the shader kept the frame it started from.
+    if( ! ( from_front && ogl_read_front_hook
+            && ogl_read_front_hook( x, y, width, height, image ) ) )
+        glReadPixels( x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image );
 
     glPopClientAttrib();
     glPopAttrib();

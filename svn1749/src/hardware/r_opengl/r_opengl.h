@@ -140,6 +140,9 @@ extern GLint            screen_height;
 extern GLbyte           screen_depth;
 extern int              oglflags;
 extern GLint            textureformatGL;
+// [Arcade] Set by the CRT shader (sdl/ogl_shader.c): supplies what the front
+// buffer showed before the shader, bottom-up, and returns 1; 0 to read it.
+extern int (*ogl_read_front_hook)( int x, int y, int width, int height, byte * image );
 
 typedef enum {
     GLF_NOZBUFREAD = 0x01,

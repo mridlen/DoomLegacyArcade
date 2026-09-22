@@ -1,0 +1,14 @@
+// [Arcade] CRT post-process shaders for the OpenGL drawmode.
+// See docs/arcade/crt-shaders.md.
+
+#ifndef OGL_SHADER_H
+#define OGL_SHADER_H
+
+// Run the selected shader (cv_grshader) over the finished back buffer.
+// Call immediately before the buffer swap.
+void OGL_Shader_Present( void );
+
+// The GL context was replaced: every GL object this module held is gone.
+void OGL_Shader_Context_Lost( void );
+
+#endif
