@@ -1775,6 +1775,7 @@ Everything is in `legacyhome/` beside the binary:
 | `demos/` | Saved record demos, one per map/skill/category. |
 | `levels/` | Level packs you've added. |
 | `audit.dat` | Operator bookkeeping counters. Plain text. |
+| `crash.txt` | Only after a crash (Linux): the crash report, appended one per crash. Safe to delete. |
 | `autoexec.cfg` | Optional. Console commands run at startup — where the `addfile` lines for soundtrack wads go. |
 
 **Back up `highscores.dat`, `runs.dat` and `demos/`.** They are the only things here that can't be
@@ -1883,8 +1884,17 @@ it to `35` gives the exact old behaviour. It changes nothing about the simulatio
 **The game crashed, and I want to report it usefully.**
 The terminal log names the level. Every level load prints a line like
 `Level: E1M7  skill 4  play  chasecam off  views 1`, and during the attract cycle it also names the
-record being replayed — `demo E1M1  ITYTD  SPEED  1:11.05  AAA`. That line, plus the handful before
-it, usually says what was on screen without anyone having to reproduce it.
+record being replayed — `demo E1M1  ITYTD  SPEED  1:11.05  AAA`, followed by a `Demo file:` line
+with the demo's full path. That, plus the handful of lines before it, usually says what was on
+screen without anyone having to reproduce it.
+
+On Linux the game also writes its own **crash report** the moment it goes down: the backtrace, the
+tic, level, skill and demo, and the last things added to the monsters' "friends" list (the
+list a Raspberry Pi cabinet once crashed in). It is printed in the terminal and appended to
+**`legacyhome/crash.txt`**, so it survives the window being closed or a reboot. Send that file.
+Lines starting `CLASS-LIST ANOMALY` earlier in the terminal are the same black box catching
+something wrong *before* it crashes; they are worth sending even when nothing crashed. The game
+still crashes normally afterwards, so the core dump below is kept as well.
 
 For a backtrace as well, install the crash catcher once — `sudo apt install systemd-coredump gdb` on
 Raspberry Pi OS, `sudo dnf install systemd-coredump gdb` on Fedora — and then after a crash run:

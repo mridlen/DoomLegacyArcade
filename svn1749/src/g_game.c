@@ -205,6 +205,7 @@
 #include "r_fps.h"
 #include "d_linkgame.h"   // [Arcade] a joined linked game's idle settings
 #endif
+#include "d_crash.h"  // [Arcade] names the demo in a crash report
 
 
 
@@ -4909,6 +4910,7 @@ void G_DoPlayDemo (const char *defdemoname)
         // lump
         demobuffer = demo_p = W_CacheLumpNum (lmp, PU_STATIC);
         demo_size = W_LumpLength( lmp );
+        D_Crash_Set_Demo( defdemoname );  // [Arcade] names it in a crash report
     }
     else
     {
@@ -4922,6 +4924,7 @@ void G_DoPlayDemo (const char *defdemoname)
         FIL_DefaultExtension(demopath,".lmp");
         demo_size = FIL_ReadFile (demopath, &demobuffer);
         demo_p = demobuffer;
+        D_Crash_Set_Demo( demopath );  // [Arcade] full path, for a crash report
     }
 
     if ( demo_size <= 0 )
