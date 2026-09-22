@@ -1115,7 +1115,7 @@ sessions then start from that baseline every time.
 ### Unlocking the cabinet without a command line
 
 A built cabinet has no terminal to type that into, so there is a key for it instead. Plug a keyboard
-in and press **Scroll Lock** at the attract screen. The cabinet shows `ENTERING DEVMODE...` and
+in and press **Scroll Lock** anywhere in the attract cycle (title pages or a demo). The cabinet shows `ENTERING DEVMODE...` and
 relaunches itself unlocked — same as `-devmode`, because that is literally what it does: it restarts
 the program with the flag added.
 

@@ -159,9 +159,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   restarting out of devmode headlessly and watching `config.cfg`'s mtime move and
   `setcontrol "devmode" "scroll lock"` appear in it.
 
-  **Attract screen only** (`gamestate == GS_DEMOSCREEN` and `! M_Initials_Active()`). A restart
-  throws away whatever is running, so a stray press during a game would take a paying player's run —
-  or, during initials entry, a record earned but not yet committed.
+  **Attract cycle only**: the title pages *and* the attract demos, i.e. `! singledemo &&
+  (demoplayback || gamestate == GS_DEMOSCREEN)`, and `! M_Initials_Active()`. A restart throws
+  away whatever is running, so a stray press during a game would take a paying player's run — or,
+  during initials entry, a record earned but not yet committed. It used to test `GS_DEMOSCREEN`
+  alone, but a demo plays in `GS_LEVEL`, so mid-demo the key was refused. `G_Responder`'s "any key
+  in demos pops up the menu" then took it and opened the menu. The test is now `G_Responder`'s own
+  definition of "in demos", so the two cannot disagree.
 
   **A refused press is not consumed**, and that is not a detail. This runs ahead of every other
   responder, so returning true on the refusal path would have swallowed the key for the whole

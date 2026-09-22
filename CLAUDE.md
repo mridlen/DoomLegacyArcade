@@ -387,7 +387,7 @@ session is `./doomlegacyarcade -devmode`, change settings, quit; a player sessio
 On a cabinet with no command line, the **`gc_devmode` control (*Devmode Restart* on the Setup
 Controls page, default Scroll Lock on panel 1) restarts the program into `-devmode` and back out
 again** — the flag cannot be toggled live, because the menu lockdown is irreversible in place.
-Attract screen only, and its responder hook must stay *after* `M_Responder`/`CON_Responder` or the
+Attract cycle only (title pages and attract demos), and its responder hook must stay *after* `M_Responder`/`CON_Responder` or the
 key cannot be re-assigned. → `menus.md`, `input.md`
 
 **`-devmode` must be parsed before `M_Init()`** (`d_main.c`, just above the `M_Init()` call), because
