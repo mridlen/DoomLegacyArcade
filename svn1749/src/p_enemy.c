@@ -92,6 +92,7 @@
 
 
 #include "hardware/hw3sound.h"
+#include "d_crash.h"  // [Arcade] class-list black box
 
 
 void A_Fall(mobj_t* actor);
@@ -1713,6 +1714,12 @@ static
 boolean PIT_FindTarget(mobj_t* mo)
 {
     mobj_t* actor = ft_current_actor;
+
+    // [Arcade] Black box (d_crash.c): the class-lists and the blockmap hold
+    // objects only.  Anything else here is corruption, and the reads below
+    // are what fault on it -- so say so first.  Logged, not acted on.
+    if( D_Crash_Not_Object( &mo->thinker ) )
+        D_Crash_Class_Anomaly( "PIT_FindTarget", &mo->thinker, __builtin_return_address(0) );
 
     if( SAME_FRIEND(mo, actor)  // Invalid target
         || ! (mo->health > 0)

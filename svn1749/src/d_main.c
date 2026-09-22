@@ -229,6 +229,7 @@
 #include "g_game.h"
 #include "hs_stuff.h"
 #include "au_stuff.h"
+#include "d_crash.h"  // [Arcade] crash report
 #include "d_link.h"      // [Arcade] Cabinet Link
 #include "g_input.h"
 
@@ -4294,6 +4295,7 @@ restart_command:
 
     HS_Init();   // [Arcade] load persisted high scores, ensure demos/ dir exists
     AU_Init();   // [Arcade] load the operator audit counters, count this boot
+    D_Crash_Init();  // [Arcade] crash report to legacyhome/crash.txt (d_crash.c)
     LK_Init();   // [Arcade] Cabinet Link settings and identity; starts nothing
     // [Arcade] Music Cabinet's value list is cabinet names, and it has to exist
     // before M_LoadConfig below or a saved name is rejected into the default.

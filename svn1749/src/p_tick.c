@@ -45,6 +45,7 @@
 #include "p_local.h"
 #include "z_zone.h"
 #include "t_script.h"
+#include "d_crash.h"  // [Arcade] class-list black box
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
 #endif
@@ -218,6 +219,14 @@ void P_UpdateClassThink(thinker_t *thinker, int tclass )
         return;
     }
 
+    // [Arcade] Black box (d_crash.c).  Only objects belong in these lists; an
+    // explicit TH_friends/TH_enemies can bypass the classification above.
+    // Logged, not acted on, so nothing here can change the simulation.
+    if( D_Crash_Not_Object( thinker ) )
+        D_Crash_Class_Anomaly( "P_UpdateClassThink", thinker, __builtin_return_address(0) );
+    if( tclass == TH_friends )
+        D_Crash_Friend_Added( thinker, __builtin_return_address(0) );
+
     // Add to the appropriate class-list.
     th = &thinkerclasscap[tclass];
     thinker->cnext = th;
@@ -233,6 +242,8 @@ void P_UpdateClassThink(thinker_t *thinker, int tclass )
 void P_MoveClassThink(thinker_t *thinker, byte first)
 {
     register thinker_t * th;
+    // [Arcade] For the black box: was it in a list at all before this call?
+    boolean  was_listed = (thinker->cnext != NULL);
 
     // Remove from current thread, if in one.
     th = thinker->cnext;
@@ -251,9 +262,17 @@ void P_MoveClassThink(thinker_t *thinker, byte first)
         return;
     }
    
+    // [Arcade] Black box (d_crash.c).  This reads the thinker as an object
+    // unconditionally; handed anything else, garbage 'flags' pick the list.
+    // That is how a Pi cabinet got a door into the friends list.  Logged only.
+    if( D_Crash_Not_Object( thinker ) )
+        D_Crash_Class_Anomaly( "P_MoveClassThink", thinker, __builtin_return_address(0) );
+
     // Add to appropriate thread list.
     register mobj_t * mo = (mobj_t *) thinker;
     th = &thinkerclasscap[ (mo->flags & MF_FRIEND)? TH_friends : TH_enemies ];
+    if( !was_listed && th == &thinkerclasscap[TH_friends] )
+        D_Crash_Friend_Added( thinker, __builtin_return_address(0) );
     if( first )
     {
         thinker->cprev = th;
