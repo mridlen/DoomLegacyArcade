@@ -71,6 +71,20 @@ the melt and jump at the end. `ogl_read_front_hook` (`r_opengl.c`) lets the shad
 `crt_frame_saved` is cleared on any frame the shader did not run, so the hook falls back to
 reading the front buffer.
 
+**The hook is only as clean as the back buffer the shader last copied, and a frame nobody drew
+into is not clean.** Title page into a demo, `G_DoPlayDemo` puts the game in `GS_NULL` for three
+to five frames while the level loads. D_Display draws nothing in `GS_NULL` but used to present
+anyway, and after a swap the GL back buffer holds an earlier frame — the *filtered* one. So the
+shader ran over its own output once per empty frame (the corner pixel, measured per present, went
+from the page's colour to 0,0,0 as the curve pulled black in), `src_tex` ended up holding that, and
+the crossfade started from it and filtered it once more: CRT-Geom's curve "folding in" for the
+length of the wipe. The hook itself reported success the whole time; only dumping `wipe_scr_start`
+as a PPM showed the curve baked into it. D_Display now skips the present for a `GS_NULL` frame in
+hardware mode when nothing will be drawn over it (`CON_Is_Drawn`, `menuactive`, `paused`,
+`fs_fadealpha`), leaving the last real frame up. Software is unaffected: `screens[0]` still holds
+the page. **Any new path that presents without drawing reintroduces this**, and with any shader,
+not just the curved ones — those only make it visible.
+
 ## Uniforms beyond libretro's
 
 - `Time`: seconds, from `SDL_GetTicks`, wrapped at an hour so a float keeps its precision. VHS
