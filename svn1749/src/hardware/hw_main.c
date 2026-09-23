@@ -3981,6 +3981,12 @@ static void HWR_ProjectSprite(mobj_t * thing)
         ( (sprlump->topoffset > 0) && (sprlump->topoffset < sprlump->height) )? // not for psprite
            // perfect is patch.height but sometime it is too high
            min(sprlump->topoffset + (4<<FRACBITS), sprlump->height)
+        // [Arcade] A sprite drawn wholly below its origin is a floor decal: the
+        // blood smears legacy.wad gives BLUDA0/BLUDB0 (top offset -3), Doom 2's
+        // POB2A0 pool of blood (-2).  Software draws it over the floor, but here
+        // the z-buffer buries it and floor blood vanished on landing.  Stand it
+        // on its origin instead.
+         : ( sprlump->topoffset <= 0 )? sprlump->height
          : sprlump->topoffset;
 #endif
    {
