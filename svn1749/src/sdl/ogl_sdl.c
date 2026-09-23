@@ -565,6 +565,8 @@ void OglSdl_FinishUpdate(void)
     // SDL 1.2
     SDL_GL_SwapBuffers();
 #endif
+
+    OGL_Shader_After_Swap();  // [Arcade] back buffer = the unfiltered frame
 }
 
 void OglSdl_Shutdown(void)
