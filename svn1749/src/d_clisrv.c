@@ -3792,6 +3792,7 @@ static void CL_ConnectToServer( void )
             if( Filetx_file_cnt )  // File download in progress.
                 Filetx_Ticker();
 
+            boolean drew = false;  // [Arcade] see below
 #if 1
    if( cl_mode > CLM_searching )
    {
@@ -3800,10 +3801,25 @@ static void CL_ConnectToServer( void )
             // code, has marginal value.  Seems to cause more problems.
             D_WaitPlayer_Ticker();
             if( wait_tics > 0 || wait_netplayer > 0 )
+            {
                 D_WaitPlayer_Drawer();
+                drew = true;
+            }
    }
 #endif
             CON_Drawer ();
+#ifdef HWRENDER
+            // [Arcade] Same rule as the GS_NULL frames in D_Display: in
+            // OpenGL, do not present a frame nothing was drawn into.  Every
+            // game started from the menu (Single Level, New Game) passes
+            // through here via the map command, and in a local game there is
+            // no wait counter, so the frame is the stale back buffer -- already
+            // through the post-process shader.  Presenting it filtered it a
+            // second time, and the wipe into the level started from that:
+            // CRT-Geom's curve folded in for the length of the crossfade.
+            // → shaders.md
+            if( drew || CON_Is_Drawn() || rendermode == render_soft )
+#endif
             I_FinishUpdate ();              // page flip or blit buffer
         }
     } while ( cl_mode != CLM_connected );

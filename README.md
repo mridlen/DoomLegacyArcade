@@ -382,7 +382,9 @@ to anyone else running this port. Each is written up in full in the commit that 
   one was still shown — and what OpenGL had left in the buffer was an earlier, already-curved
   frame, so the shader curved it again, once per frame, and the wipe then started from that. Those
   empty frames are no longer shown; the last real picture simply stays up. Any shader was affected;
-  CRT-Geom's curve just made it obvious.
+  CRT-Geom's curve just made it obvious. Starting a game from the menu (Single Level, New Game)
+  still did it, through a separate empty frame shown while the game connects to itself; that one
+  is fixed too.
 - **Invulnerability barely showed under OpenGL.** The sphere is supposed to turn the view into a
   photographic negative — a mostly white screen — and instead it brightened slightly, like
   night-vision goggles. The effect is a colormap, and the hardware renderer has no colormap, so all
