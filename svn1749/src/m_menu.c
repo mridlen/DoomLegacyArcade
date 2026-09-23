@@ -6467,6 +6467,7 @@ menuitem_t EffectsOption2Menu[]=
     {IT_STRING | IT_CVAR,0, "Boom Colormap"   , &cv_boom_colormap , 0},
     {IT_STRING | IT_CVAR,0, "Sound oof 2s"    , &cv_oof_2s , 0},
     {IT_STRING | IT_CVAR,0, "Width Clip"      , &cv_corr_clip_width , 0},
+    {IT_STRING | IT_CVAR,0, "Weapon Flash Fix", &cv_weapon_flash_fix, 0},  // [Arcade]
 };
 
 
