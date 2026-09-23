@@ -105,6 +105,11 @@ void ST_Palette0( void );
 // Called from D_DoomLoop, after the config has settled.
 void ST_Check_Overlay_Elements( void );
 
+// [Arcade] The HUD Configuration page's view of the `overlay` elements;
+// c is the lowercase element letter.
+boolean  ST_Overlay_Has( char c );
+void     ST_Overlay_Set( char c, boolean on );
+
 // States for status bar code.
 typedef enum
 {

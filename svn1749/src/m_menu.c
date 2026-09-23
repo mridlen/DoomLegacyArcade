@@ -186,6 +186,7 @@
   // cv_uncapped, on the Video Options page
 #endif
 #include "hu_stuff.h"
+#include "st_stuff.h"   // [Arcade] ST_Overlay_Has/Set, HUD Configuration
 #include "g_game.h"
 #include "hs_stuff.h"
 #include "au_stuff.h"   // [Arcade] operator audit page
@@ -6311,6 +6312,80 @@ menu_t  MessagesBannersDef =
 };
 
 //===========================================================================
+//                        HUD CONFIGURATION MENU  [Arcade]
+//===========================================================================
+
+// [Arcade] One On/Off row per status overlay element (st_stuff.c,
+// ST_overlayDrawer), which were only reachable as the letters of the
+// `overlay` string ("kahmfeistb") from the console.  The rows edit that
+// string directly through ST_Overlay_Set rather than each owning a cvar, so
+// there is still exactly one place the setting lives and the console,
+// config.cfg and this page cannot disagree.
+//
+// The element letter for row i is hud_config_elem[i], so this array and
+// HudConfigMenu must stay in step.  Everything else finds the row through
+// itemOn; nothing indexes HudConfigMenu from outside.
+//
+// The overlay is only drawn at the largest view size (viewsize 11); smaller
+// sizes show the classic status bar and none of these rows affect it.
+static const char hud_config_elem[] = "kahmfeistb";
+
+static void M_HudConfig_Toggle( int choice );
+static void M_Draw_HudConfig( void );
+
+menuitem_t HudConfigMenu[]=
+{
+    {IT_STRING | IT_ARROWS,0, "Keys"          , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Ammo"          , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Health"        , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Armor"         , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Frags"         , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Kills"         , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Items"         , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Secrets"       , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Level Clock"   , M_HudConfig_Toggle, 0},
+    {IT_STRING | IT_ARROWS,0, "Ammo Breakdown", M_HudConfig_Toggle, 0},
+};
+
+menu_t  HudConfigDef =
+{
+    "M_OPTTTL",
+    "HUD Configuration",
+    HudConfigMenu,
+    M_Draw_HudConfig,
+    NULL,
+    sizeof(HudConfigMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+// Either arrow, or Enter, flips the row: two values, so stepping either way
+// is a toggle, the same as an On/Off cvar row.
+static void M_HudConfig_Toggle( int choice )
+{
+    char c;
+
+    if( itemOn >= sizeof(hud_config_elem) - 1 )  return;
+    c = hud_config_elem[itemOn];
+    ST_Overlay_Set( c, ! ST_Overlay_Has( c ) );
+}
+
+// The generic rows, then each row's value where M_DrawGenericMenu puts a
+// cvar's: right aligned on BASEVIDWIDTH - x, in white.  Reads only.
+static void M_Draw_HudConfig( void )
+{
+    int i;
+
+    M_DrawGenericMenu();
+    for( i = 0; i < HudConfigDef.numitems && i < (int)sizeof(hud_config_elem) - 1; i++ )
+    {
+        const char * v = ST_Overlay_Has( hud_config_elem[i] ) ? "On" : "Off";
+        V_DrawString( BASEVIDWIDTH - HudConfigDef.x - V_StringWidth( v ),
+                      HudConfigDef.y + i * STRINGHEIGHT, V_WHITEMAP, v );
+    }
+}
+
+//===========================================================================
 //                        ARCADE OPTIONS MENU  [Arcade]
 //===========================================================================
 
@@ -6333,6 +6408,8 @@ menuitem_t MenuOptionsMenu[]=
     {IT_STRING | IT_CVAR,0, "Chase Cam Demo"  , &cv_chasecamdemo  , 0},
     // [Arcade] Gameplay messages and the deathmatch WINNING banner.
     {IT_SUBMENU| IT_WHITESTRING,0, "Messages + Banners >>", &MessagesBannersDef, 0},
+    // [Arcade] One On/Off switch per status overlay element.
+    {IT_SUBMENU| IT_WHITESTRING,0, "HUD Configuration >>", &HudConfigDef, 0},
     {IT_SUBMENU| IT_WHITESTRING,0, "Audit >>"    , &AuditDef         , 0},
     // [Arcade] Networked cabinets: the settings and every other cabinet's
     // status.  Appended, and nothing indexes this array by position.

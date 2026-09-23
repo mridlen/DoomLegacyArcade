@@ -141,6 +141,10 @@ Discord is likely to get you banned.
   columns. Single Level games do not show it — one map, so it would only repeat the level clock.
 - **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive, and a
   breakdown of all four ammo types, stacked above the keys. Both are single player only.
+- **Choose what the HUD shows.** **Options → Arcade Options → HUD Configuration** has an On/Off
+  switch for each HUD item: Keys, Ammo, Health, Armor, Frags, Kills, Items, Secrets, Level Clock
+  and Ammo Breakdown. All are on by default. A change shows at once; like every operator setting it
+  is only kept if made in a `-devmode` session. The HUD items only appear at the largest view size.
 - **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself — 60 seconds
   by default, with a 15-second warning counting down first. Both are set under **Options → Arcade
   Options → Timeouts** (`Idle Timeout`, `Idle Warning`), and neither applies in a `-devmode`
@@ -1853,11 +1857,14 @@ The overlay only appears at the largest view size, with no status bar. Check `vi
 `config.cfg`. Which elements show is controlled by the `overlay` line, a string of one-letter
 codes — `k` keys, `a` ammo, `h` health, `m` armor, `f` frags, `e` kills, `i` items, `s` secrets,
 `t` the level clock (and, in Single Player, the `TT` run total above it), `b` the four ammo counts
-broken out, single player only. The default is `kahmfeistb`.
+broken out, single player only. The default is `kahmfeistb`. **Options → Arcade Options → HUD
+Configuration** switches each one on or off without typing letters; check there first, since an
+item may simply have been switched off.
 
 **A new HUD element still doesn't appear after rebuilding.**
 `config.cfg` overrides the compiled default, so an existing install keeps its old `overlay` line.
-Add the letter by hand, or re-save from a `-devmode` session.
+Switch it on under **Options → Arcade Options → HUD Configuration** in a `-devmode` session, or add
+the letter to the line by hand.
 
 **Scores aren't being recorded.**
 Check the HUD for `UNRANKED`. If it's there, either a gameplay setting differs from the standard
