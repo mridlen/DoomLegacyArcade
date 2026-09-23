@@ -1088,6 +1088,25 @@ the page at 157** against `STCFN`, so 60..217, clear of an `Off` value starting 
 link label "Messages + Banners >>" is 144. The page title is drawn from `M_OPTTTL` in Doom (no
 `FONTB` lumps); Heretic's `FONTB` has a `+`.
 
+## HUD Configuration
+
+**Arcade Options → HUD Configuration >>** (`HudConfigMenu`/`HudConfigDef`), between Messages +
+Banners and Audit, has one On/Off row per status overlay element: Keys, Ammo, Health, Armor,
+Frags, Kills, Items, Secrets, Level Clock, Ammo Breakdown — the letters of `kahmfeistb` in order.
+Behaviour, and why the rows edit the `overlay` string rather than owning cvars, in `hud.md`.
+
+- **The rows are `IT_ARROWS`, not `IT_CVAR`**, all calling `M_HudConfig_Toggle`, which finds its
+  element through `itemOn` in **`hud_config_elem[]`** — so that string and `HudConfigMenu` must
+  stay in step, row for row. Left, right and Enter all toggle, as on an On/Off cvar row.
+- **`M_Draw_HudConfig` draws the values**, since `M_DrawGenericMenu` draws none for `IT_ARROWS`:
+  it calls the generic drawer, then puts `On`/`Off` exactly where a cvar value goes —
+  `BASEVIDWIDTH - x - V_StringWidth`, `V_WHITEMAP`, `STRINGHEIGHT` apart — so the page reads like
+  every other. Read only, so it is idempotent. `menufit-test.py` still measures the page because
+  the drawer calls `M_DrawGenericMenu()`.
+- Widest label `Ammo Breakdown`, 111 against `STCFN`, runs 60..171; `Off` (24) starts at 236,
+  65 clear. Ten rows, `y 40..137`. Arcade Options goes to thirteen rows, `y 40..167, room for 3
+  more`; Cabinet Link Options is still last, as `M_Draw_ArcadeOptions` requires.
+
 ## The Video Modes page, and paging a list that used to be truncated
 
 `M_DrawVideoMode` lays the mode list out in three columns, filling down each column in turn, and it

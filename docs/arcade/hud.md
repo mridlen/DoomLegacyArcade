@@ -261,6 +261,34 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `leveltime` in at the exit — so the HUD adds the live `leveltime` to it. It is maintained during
     demo playback too, so a record demo's replay shows its own running total.
 
+- **Each element can be switched on and off from a menu** — **Arcade Options → HUD
+  Configuration** (`HudConfigMenu`, `m_menu.c`; layout in `menus.md`), one On/Off row per letter
+  of `kahmfeistb`.
+  - **The rows edit the `overlay` string itself**, through `ST_Overlay_Has`/`ST_Overlay_Set`
+    (`st_stuff.c`), rather than each owning a cvar. Ten cvars would have been a second copy of the
+    setting, and the console, `config.cfg` and the page could then disagree about which one wins.
+    The drawer re-reads the string every frame, so a switch shows at once.
+  - **Turning one on puts it back in the default's order** (`kahmfeistb`), so the saved line keeps
+    reading like the default. Letters the build does not know are kept, after it. The string is
+    folded to lower case as it is rewritten — the drawer ignores case anyway, and without folding a
+    hand-edited `K` was taken for an unknown letter and moved to the end, which the logic test
+    below caught.
+  - **`overlay_off` (`cv_stbaroverlay_off`, `CV_SAVE`, default `""`) records what was switched
+    off on purpose.** Without it, `ST_Check_Overlay_Elements` would report every element the
+    operator had switched off as "missing" on every boot, which is the same message it gives for a
+    config that predates the element. It now skips letters in `overlay_off`, and a config written
+    before this existed has no line for it and gets `""` — the old behaviour exactly, so an old
+    short `overlay` line still warns. The warning also points at the new page.
+  - Only a `-devmode` session saves, as for every Arcade Options setting. Not gameplay: drawing
+    only, no `PP_Random`, not a `NETVAR`, no demo header byte.
+  - Verified by lifting `ST_Overlay_Has`, `ST_Overlay_Strip`, `ST_Overlay_Set` and
+    `ST_Check_Overlay_Elements` out of the source into a throwaway harness (16 cases: each element
+    off and on, all off then all on in reverse, no duplicates, uppercase and unknown letters, and
+    the warning silent for a deliberate switch-off but still printed for an old config missing
+    `b`), and on the real binary: `overlay "kahmeistb"` with `overlay_off "f"` boots with no
+    warning and the line applies cleanly; the same config without `overlay_off` still warns.
+    Nothing drives menus headlessly, so the page itself is checked by `menufit-test.py` and by eye.
+
 ## The status digits overlapped in OpenGL, and only in OpenGL
 
 Reported as "in 1366x768 in OpenGL, the health bar digits overlap each other sometimes". They did,

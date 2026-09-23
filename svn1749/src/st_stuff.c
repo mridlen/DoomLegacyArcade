@@ -1631,6 +1631,14 @@ void ST_Change_DemoView (void)
 // 11, which is what sets st_overlay_on (r_main.c, R_SetViewSize).
 consvar_t cv_stbaroverlay = {"overlay","kahmfeistb",CV_SAVE,NULL};
 
+// [Arcade] The elements the operator has switched off on the HUD
+// Configuration page, so ST_Check_Overlay_Elements can tell a deliberate
+// absence from a config that predates the element.  Without it, every
+// element switched off there would be reported as missing on every boot.
+// Maintained by ST_Overlay_Set; a config with no line for it (every one
+// written before this existed) gets "", which is the old behaviour exactly.
+consvar_t cv_stbaroverlay_off = {"overlay_off","",CV_SAVE,NULL};
+
 
 // [Arcade] Warn when the saved config is missing overlay elements this build
 // provides.
@@ -1660,6 +1668,8 @@ void ST_Check_Overlay_Elements( void )
     for( ; *def && nm < (int)sizeof(missing) - 1; def++ )
     {
         if( strchr( have, *def ) )  continue;
+        // [Arcade] Switched off on purpose, from the HUD Configuration page.
+        if( cv_stbaroverlay_off.string && strchr( cv_stbaroverlay_off.string, *def ) )  continue;
         missing[nm++] = *def;
     }
 
@@ -1669,6 +1679,7 @@ void ST_Check_Overlay_Elements( void )
     GenPrintf( EMSG_warn,
        "Status overlay is missing element(s) \"%s\" that this build provides.\n"
        "  config.cfg overrides the compiled default; set overlay \"%s\"\n"
+       "  or switch them on in Arcade Options > HUD Configuration\n"
        "  (only a -devmode session saves it).\n",
        missing, cv_stbaroverlay.defaultvalue );
 }
@@ -1676,9 +1687,92 @@ void ST_Check_Overlay_Elements( void )
 boolean   st_overlay_on;  // status overlay for Doom and Heretic
 
 
+// [Arcade] Is overlay element c (lowercase) switched on?  The drawer folds
+// case, so an uppercase letter in a hand-edited config counts too.
+boolean  ST_Overlay_Has( char c )
+{
+    const char * s = cv_stbaroverlay.string;
+
+    if( ! s )  return false;
+    for( ; *s; s++ )
+    {
+        if( tolower( (unsigned char)*s ) == c )  return true;
+    }
+    return false;
+}
+
+// Copy src to dst without any occurrence of c, either case.  Folded to lower
+// case on the way, as the drawer reads it: ST_Overlay_Set matches the result
+// against the lowercase default, and an uppercase letter from a hand edit
+// would otherwise be taken for an unknown one and moved to the end.
+static void  ST_Overlay_Strip( char * dst, int dsize, const char * src, char c )
+{
+    int n = 0;
+
+    for( ; src && *src && n < dsize - 1; src++ )
+    {
+        char lc = tolower( (unsigned char)*src );
+        if( lc == c )  continue;
+        dst[n++] = lc;
+    }
+    dst[n] = 0;
+}
+
+// [Arcade] Switch overlay element c (lowercase) on or off, for the HUD
+// Configuration page.  Edits the `overlay` string itself, which stays the
+// one place the setting lives: the console, config.cfg and this page all
+// agree because they are all reading it.
+//
+// Turning an element on puts it back in the compiled default's order, so the
+// saved line keeps reading like the default; letters this build does not know
+// are kept, after it, rather than silently dropped.  The element is recorded
+// in overlay_off while it is off, so ST_Check_Overlay_Elements does not
+// report it as missing at the next boot.
+void  ST_Overlay_Set( char c, boolean on )
+{
+    char  kept[64], out[64], off[64];
+    const char * d;
+    const char * s;
+    int   n = 0;
+
+    ST_Overlay_Strip( kept, sizeof(kept), cv_stbaroverlay.string, c );
+
+    if( on )
+    {
+        // Known letters in default order, then anything else.
+        for( d = cv_stbaroverlay.defaultvalue; *d && n < (int)sizeof(out) - 1; d++ )
+        {
+            if( *d == c || strchr( kept, *d ) )
+                out[n++] = *d;
+        }
+        if( ! strchr( cv_stbaroverlay.defaultvalue, c ) && n < (int)sizeof(out) - 1 )
+            out[n++] = c;
+        for( s = kept; *s && n < (int)sizeof(out) - 1; s++ )
+        {
+            if( ! strchr( cv_stbaroverlay.defaultvalue, *s ) )
+                out[n++] = *s;
+        }
+        out[n] = 0;
+    }
+    else
+    {
+        strcpy( out, kept );
+    }
+    CV_Set( &cv_stbaroverlay, out );
+
+    ST_Overlay_Strip( off, sizeof(off) - 1, cv_stbaroverlay_off.string, c );
+    if( ! on )
+    {
+        n = strlen( off );
+        off[n] = c;  off[n+1] = 0;
+    }
+    CV_Set( &cv_stbaroverlay_off, off );
+}
+
 void ST_Register_Commands (void)
 {
     CV_RegisterVar (&cv_stbaroverlay);
+    CV_RegisterVar (&cv_stbaroverlay_off);  // [Arcade]
 }
 
 
