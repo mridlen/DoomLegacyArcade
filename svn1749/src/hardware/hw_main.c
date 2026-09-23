@@ -4290,7 +4290,34 @@ static void HWR_DrawPlayerSprites(void)
         // get light level
         sll = viewer_sector->lightlevel;
     }
-    lightlum = LightLevelToLum(sll);
+
+    if( fixedcolormap )
+    {
+        lightlum = 255;
+    }
+    else
+    {
+        // [Arcade] Light the weapon the way the software renderer does, not
+        // through the sector curve.  Software gives it the nearest entry of
+        // the distance light table (R_DrawPlayerSprites, scalelight[..]
+        // [MAXLIGHTSCALE-1]), much brighter than a wall of the same sector,
+        // and adds the gun flash's extralight to the level before the
+        // lookup.  LightLevelToLum's curve is flat and near zero at the dark
+        // end, so in a dark room the gun came out a third as bright as in
+        // software while the muzzle flash, which is fullbright and carries
+        // its own copy of the top of the gun, did not -- and where the
+        // flash art ends there was a hard horizontal line across the pistol.
+        // COLORMAP n is (32-n)/32 as bright to within 2%, so the level maps
+        // straight to a lum.
+        int vlight = sll + extralight;
+        int startmap, level;
+        if( vlight < 0 )  vlight = 0;
+        if( vlight > 255 )  vlight = 255;
+        startmap = ((LIGHTLEVELS-1 - (vlight >> LIGHTSEGSHIFT)) * 2) * NUMCOLORMAPS / LIGHTLEVELS;
+        level = startmap - (MAXLIGHTSCALE-1) / 2;  // 2 is DISTMAP, full view
+        if( level < 0 )  level = 0;
+        if( level > NUMCOLORMAPS-1 )  level = NUMCOLORMAPS-1;
+        lightlum = (255 * (NUMCOLORMAPS - level)) / NUMCOLORMAPS;    }
 
     // add all active psprites
     for (i = 0, psp = viewplayer->psprites; i < NUMPSPRITES; i++, psp++)

@@ -438,6 +438,41 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   - Verified on the real GPU: MAP01, fire once and wait 150 tics so the zombiemen come down the
     steps; the before/after differ in 854 pixels, all on the sprites, every one lighter.
 
+- **The horizontal line across the pistol while firing was lighting, not filtering.** Two
+  attempts at it (#46, and the premultiplied blend above) treated it as an edge-texel fringe; the
+  reporter's observation that it was far worse in a dark room was the clue. `PISFA0`, the muzzle
+  flash, carries its own copy of the top of the gun and is fullbright; its bottom row is a dead
+  straight 24-texel cut lying *across* the gun (lay `PISGB0` and `PISFA0` over each other by their
+  offsets to see it). Below that cut is the real gun, lit by the sector.
+  - **The OpenGL weapon was lit far darker than the software one.** Software gives a psprite the
+    *nearest* entry of the distance light table (`scalelight[..][MAXLIGHTSCALE-1]`,
+    `R_DrawPlayerSprites`) with the flash's `extralight` added to the level first. GL used
+    `LightLevelToLum`, the sector curve for walls, which is flat and near zero at the dark end.
+    E1M8's opening room is light 96 and firing adds 16: GL lit the gun at lum **84** (33%),
+    software at colormap 9, which is **183** (72%). The hand measured **37** in GL against **88** in
+    software, and the step at the flash's edge was **67 → 26** against software's **62 → 57**.
+  - `HWR_DrawPlayerSprites` now reproduces the software choice: the same `startmap - 47/DISTMAP`
+    level, turned into a lum as `(32 - level) / 32`. That is not a guess: measured over `PLAYPAL`,
+    COLORMAP *n* is `(32-n)/32` as bright to within 2% at every level. After: hand **82** (software
+    88), step **67 → 57** (software 62 → 57). A bright room is unchanged (level 0 either way); a
+    medium one gets a brighter weapon, which is what software always drew.
+  - **Why it looked filter-only.** Nearest has the same brightness step, measured. But in Nearest
+    every edge of the gun is a hard pixel edge, while with Bilinear/Trilinear the gun is smooth
+    everywhere *except* here — the flash quad ends on that row, so its bottom edge stays hard, and
+    one hard line in a soft picture is what the eye catches.
+  - **How it was captured headlessly**: a temporary block at the end of `P_MovePsprites` that, once
+    the pistol reaches `S_PISTOL`, sets the weapon to `S_PISTOL2` and the flash to `S_PISTOLFLASH`,
+    both with `tics = -1`, and `extralight = LIGHT_UNIT` (not 1 — `A_Light1` is in light units, and 1 gave a first set of
+    numbers that were wrong for software and GL alike).
+    Then `-warp 1 8 -nomonsters`, an autoexec `wait 140` / `screenshot`, under Xvfb at 1366x768 with
+    `localplayers "1"` in the scratch config. Compare row profiles through the gun, not the picture
+    alone.
+  - **That capture found a crash: an OpenGL screenshot at 1366 wide aborted the game.**
+    `ReadRect` (`r_opengl.c`) read with the default `GL_PACK_ALIGNMENT` of 4, so a width whose
+    3-byte row is not a multiple of 4 padded every row and overran the buffer (`free()` aborts).
+    The cabinet runs 1366x768. It now packs at 1, under `glPushClientAttrib` like
+    `ReadScreenRect`.
+
 - **Sprite edges that touch the patch's bounding box stayed hard and flat after the rim was fixed**
   — the top of the imp's and sergeant's heads, the marine's helmet. Sprites are cut tight to their
   art and `HWR_MakePatch` puts the patch at texel (0,0), so a head that reaches the top row sits on
