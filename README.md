@@ -372,6 +372,13 @@ to anyone else running this port. Each is written up in full in the commit that 
   existed and the menu row was there, but the whole wipe was gated on the software renderer. It
   works in both now. Two latent bugs fell out of that: a wipe that hit its two-second timeout left
   freed state behind for the next one, and the screen capture ran even when the wipe was off.
+- **CRT-Geom bent the picture further during a crossfade or melt.** Going from a title page into a
+  demo, the curved edges swung in towards the middle of the screen for the length of the wipe,
+  then snapped back. For the few frames while the demo loads there is nothing to draw, but each
+  one was still shown — and what OpenGL had left in the buffer was an earlier, already-curved
+  frame, so the shader curved it again, once per frame, and the wipe then started from that. Those
+  empty frames are no longer shown; the last real picture simply stays up. Any shader was affected;
+  CRT-Geom's curve just made it obvious.
 - **Invulnerability barely showed under OpenGL.** The sphere is supposed to turn the view into a
   photographic negative — a mostly white screen — and instead it brightened slightly, like
   night-vision goggles. The effect is a colormap, and the hardware renderer has no colormap, so all

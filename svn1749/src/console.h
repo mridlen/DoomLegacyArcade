@@ -69,6 +69,7 @@ void CON_Clear_HUD (void);       // clear heads up messages
 
 void CON_Ticker (void);
 void CON_Drawer (void);       // full feature
+boolean CON_Is_Drawn (void);  // [Arcade] would CON_Drawer paint the console
 void CON_Draw_Console (void);  // text to console
 void CONS_Error (char * msg);       // print out error msg, and wait a key
 

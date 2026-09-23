@@ -1758,6 +1758,22 @@ void D_Display(void)
 //
     if (!wipe)
     {
+#ifdef HWRENDER
+        // [Arcade] A GS_NULL frame with nothing over it is not presented in
+        // OpenGL.  GS_NULL draws nothing -- it is the few frames while a demo
+        // or level loads -- and after a swap the back buffer holds an old
+        // frame, which a post-process shader has already been through.
+        // Presenting it ran the shader over its own output once per such
+        // frame: CRT-Geom bent the picture further each time, and the wipe
+        // into the level then started from that and bent it once more.  Not
+        // presenting leaves the last real picture on screen, which is what
+        // those frames should show anyway.  Software keeps presenting:
+        // screens[0] still holds the last page there.  → shaders.md
+        if( gamestate == GS_NULL && rendermode != render_soft
+            && ! CON_Is_Drawn() && ! menuactive && ! paused
+            && fs_fadealpha == 0 )
+            return;
+#endif
         if (cv_netstat.value)
         {
             char s[50];

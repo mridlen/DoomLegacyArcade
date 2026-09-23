@@ -1795,3 +1795,11 @@ void CON_Drawer (void)
     hu_font['I'-HU_FONTSTART]->leftoffset = 0;
 #endif
 }
+
+// [Arcade] True when CON_Drawer would paint the console itself (not just the
+// HUD lines).  D_Display asks, to know whether a GS_NULL frame has anything
+// in it at all.
+boolean CON_Is_Drawn (void)
+{
+    return con_started && ! use_font1 && ( con_curlines > 0 );
+}
