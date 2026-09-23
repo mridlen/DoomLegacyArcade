@@ -139,6 +139,17 @@ belongs in its own change and has to keep demos in sync -- the candidates are tu
 `SET_TARGET_REF`), or not following a `target` whose object is already removed, which is
 behaviour-identical only while the removed object is still intact.
 
+## A backtrace that stops at libc means a jump to address 0
+
+If the backtrace is only the program's own `crash_handler` frame plus the libc signal-return frame
+(`libc.so.6(+0x1a070)`), the crash happened *at* an address that has no code: almost always a
+call through a NULL function pointer. `backtrace()` cannot unwind from PC 0, so it stops there. The
+report is no help then. **Go to the core**: `coredumpctl list`, then
+`coredumpctl debug <pid> --debugger=gdb --debugger-arguments="-batch -ex bt -ex 'frame 2' -ex 'p *ev'"`.
+gdb unwinds past the bad frame because the return address is still on the stack. That is how the
+Video Modes fire crash (`menus.md`) was found. Frame #1 was `M_VideoMode_key_handler` at the
+unchecked `key_handler2` call, and the event in frame #2 was the `ev_textchar` that caused it.
+
 ## Not covered
 
 - **Windows** gets the black box and the `Demo file:` line but no handler: MSYS2 has no

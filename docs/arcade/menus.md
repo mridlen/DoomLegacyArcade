@@ -1170,6 +1170,30 @@ a row on the Video Options menu (that page is full, and its rows are addressed b
 and it can leave the list **empty**, which nothing else here could — so `change_mode` returns early
 rather than indexing `modedescs[]`, and the page says "No modes of this shape".
 
+### Fire on "Video Modes >>" crashed the first time
+
+Opening Video Modes (or Drawing Options, which shares its key handler) with **fire** instead of
+Enter segfaulted, on the first visit of every session. `M_VideoMode_key_handler` began by calling
+`key_handler2(key)` unchecked, and the only thing that set `key_handler2` was the page's *drawer*
+— so a key that reached the page before its first frame jumped to address 0.
+
+Fire is how a key gets there that early. Panel 1's fire is a letter (`h`), and SDL2 sends a letter
+twice: an `ev_keydown`, then an `ev_textchar` for the same press. The keydown is translated to Enter
+on the Video Options row and opens the page; the text event is in the same batch of events, so
+`D_Process_Events` hands it to the page before anything is drawn. These pages are `IT_KEYHANDLER`
+items, which get raw keys (see the text-entry exclusion in `M_Responder`), and `ev_textchar` arrives
+as key 2 (STX). Enter never crashed because Enter sends no text event.
+
+The handler now sets `key_handler2` itself from `currentMenu` before calling it. **The general
+trap**: a letter-key control produces a second event after the one that acts on it, so anything
+opened by that control can receive a key before its first frame. Do not make a page's key handling
+depend on its drawer having run.
+
+Diagnosed from the core, not the crash report — see `crash-diagnostics.md` for why the report's
+backtrace was empty. It was reproduced headlessly by adding a temporary `-linkkeys` token that posts
+fire as SDL does (keydown, then `ev_textchar` with `data1 = 2`); the harness's own `f` sends only
+the keydown and so could not see it.
+
 ### Testing it without a screen
 
 Nothing drives this menu headlessly, and the failures here — a cursor outside the drawn page, a mode

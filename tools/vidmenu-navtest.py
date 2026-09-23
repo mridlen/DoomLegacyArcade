@@ -85,8 +85,15 @@ enum { KEY_DOWNARROW = 1, KEY_UPARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
        KEY_PGUP, KEY_PGDN, KEY_ESCAPE };
 static int menu_sfx_updown, menu_sfx_val, menu_sfx_esc;
 static void S_StartSound(int x) { (void)x; }
-static int  no_handler(int key) { (void)key; return 0; }
-static int  (*key_handler2)(int) = no_handler;
+/* NULL at the start, as in the game: the page's drawer used to be the only
+   thing that set it, so a key before the first frame jumped to 0.  The
+   handler has to choose its own now, and a harness starting at NULL is what
+   holds it to that. */
+static int  video_test_key_handler(int key) { (void)key; return 0; }
+static int  drawmode_test_key_handler(int key) { (void)key; return 0; }
+static int  (*key_handler2)(int) = NULL;
+static int  DrawmodeDef, VideoModeDef;
+static int *currentMenu = &VideoModeDef;
 static int  popped = 0;
 static void Pop_Menu(void) { popped = 1; }
 
@@ -503,6 +510,8 @@ MUTATIONS = [
     ('both divide-by-zero guards removed (SIGFPE on an empty list)',
      'return (cs > 0) ? cs : 1;', 'return cs;',
      'if( vidm_column_size < 1 )  vidm_column_size = 1;', ';'),
+    ('handler left to the drawer (fire before first frame, SIGSEGV)',
+     'key_handler2 = ( currentMenu == &DrawmodeDef ) ?', '( currentMenu == &DrawmodeDef ) ?'),
 ]
 
 
