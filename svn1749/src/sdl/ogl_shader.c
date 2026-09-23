@@ -754,3 +754,66 @@ void OGL_Shader_Present( void )
     crt_frame_count++;
     crt_frame_saved = 1;
 }
+
+
+// After the swap the back buffer holds an earlier frame, and with a shader on
+// that frame is the *filtered* one.  Anything that presents without drawing a
+// whole new frame first -- and the engine has several such paths: the GS_NULL
+// frames of a demo load, CL_ConnectToServer's loop, the last tics of an
+// intermission -- would then run the shader over its own output, and the wipe
+// that follows starts from the result.  With CRT-Geom that is the curve folding
+// in.  Rather than chase every such path, give the back buffer the frame it
+// would hold without a shader: the unfiltered copy in src_tex, pixel for pixel.
+// A frame nobody draws into then re-presents the last picture correctly.
+void OGL_Shader_After_Swap( void )
+{
+    const int w = vid.width, h = vid.height;
+
+    if( ! crt_frame_saved || ! src_tex || src_w != w || src_h != h )
+        return;
+
+    glPushAttrib( GL_ALL_ATTRIB_BITS );
+    glPushClientAttrib( GL_CLIENT_ALL_ATTRIB_BITS );
+    glDisable( GL_DEPTH_TEST );
+    glDisable( GL_BLEND );
+    glDisable( GL_ALPHA_TEST );
+    glDisable( GL_FOG );
+    glDisable( GL_SCISSOR_TEST );
+    glDisable( GL_CULL_FACE );
+    glDisable( GL_STENCIL_TEST );
+    glDisable( GL_LIGHTING );
+    glDepthMask( GL_FALSE );
+    glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+    glViewport( 0, 0, w, h );
+
+    glMatrixMode( GL_TEXTURE );
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode( GL_PROJECTION );
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode( GL_MODELVIEW );
+    glPushMatrix();
+    glLoadIdentity();
+
+    glEnable( GL_TEXTURE_2D );
+    crt_tex_filter( src_tex, 0 );  // nearest: one texel per pixel, exactly
+    glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+    glColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
+    glBegin( GL_TRIANGLE_STRIP );
+    glTexCoord2f( 0, 0 );  glVertex2f( -1, -1 );
+    glTexCoord2f( 1, 0 );  glVertex2f(  1, -1 );
+    glTexCoord2f( 0, 1 );  glVertex2f( -1,  1 );
+    glTexCoord2f( 1, 1 );  glVertex2f(  1,  1 );
+    glEnd();
+
+    glMatrixMode( GL_MODELVIEW );
+    glPopMatrix();
+    glMatrixMode( GL_PROJECTION );
+    glPopMatrix();
+    glMatrixMode( GL_TEXTURE );
+    glPopMatrix();
+
+    glPopClientAttrib();
+    glPopAttrib();   // matrix mode, texture binding and env, enables
+}

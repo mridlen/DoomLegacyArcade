@@ -97,6 +97,24 @@ black anyway; the baked-in *scanlines* in the dumped start frame were the tell. 
 start with that ring: the remaining direct `I_FinishUpdate` callers (`M_Draw_Restart_Splash`, the
 fatal-error console) all paint the whole screen first.
 
+**And a third: the last tics of the intermission, inside `D_Display` itself.** After
+`WI_Release_Data` the intermission counts down with nothing left to draw, and `GS_INTERMISSION`
+presented those three frames as it always had. Three routes in, one per bug report, so **the fix
+is now in the shader, not in the routes**: `OGL_Shader_After_Swap` (called from
+`OglSdl_FinishUpdate` right after the swap) draws `src_tex` back into the back buffer with
+`GL_NEAREST`, one texel per pixel, so the back buffer holds the frame it would hold with no shader
+at all. A present nobody drew into then re-filters the *clean* last frame and shows the right
+picture, whichever path it came from. Proved by switching the two route fixes above off (`if( 0
+&& ...` / `if( 1 || ...`): with the empty frames presented again, all three wipes still started
+clean. Those route fixes are kept anyway; they spare a pointless present, and the software path
+never needed them. Its cost is one full-screen textured quad per frame, and only with a shader
+on: 237 → 224–237 fps on the benchmark demo (inside run-to-run noise), Present 0.05 → 0.06 ms.
+It pushes and pops all GL state. Diffing the enables, texture binding, matrix mode, matrices,
+viewport, depth mask, texture env and current program around it over 1400 frames found nothing,
+and the same check with a planted `glViewport(0,0,1,1)` went red on 471 of 800. A planted
+`glEnable(GL_TEXTURE_2D)` did *not* go red, because that enable is already on at that point. A
+leak that changes nothing proves nothing about the check.
+
 ## Uniforms beyond libretro's
 
 - `Time`: seconds, from `SDL_GetTicks`, wrapped at an hour so a float keeps its precision. VHS
