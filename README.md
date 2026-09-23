@@ -210,6 +210,14 @@ Discord is likely to get you banned.
   (Options → Effects Options, operator-only) now ships as **Vanilla**: no green block, just the
   yellow screen tint the original game gives you when you pick something up. `Status` is still
   there if you want the old behaviour back, along with `Half` (a gentler tint) and `Off`.
+- **Weapon Flash Fix.** Most weapons' muzzle flash art — pistol, shotgun, super shotgun, chaingun,
+  rocket launcher, plasma rifle, BFG — includes a full-brightness copy of part of the gun, so in a
+  dark room the flash ends in a hard line across the dimmer gun beneath it. This is in the original
+  game and every port shows it. With **Weapon Flash Fix** on, the gun itself is drawn at full
+  brightness for as long as the flash is showing, so the two match and it reads as the shot
+  lighting up the gun. Both renderers. **Options → Effects Options → Next → Weapon Flash Fix**
+  (operator-only), and it ships **On**. Picture only: it has no effect on gameplay, demos, scores
+  or linked games. Invulnerability's colouring is left alone.
 - **Translucency is on again.** The cabinet had been running with **Translucency** set to `Off`,
   so the see-through things — plasma, the various DoomLegacy translucent sprites — were drawn
   solid. It now ships as **Auto**, which is what DoomLegacy intends: translucent wherever the game
@@ -350,8 +358,10 @@ to anyone else running this port. Each is written up in full in the commit that 
   darker than the software renderer does: software lights your weapon as though it were right in
   front of you, which it is, while OpenGL lit it like a wall. In E1M8's opening room the gun came out
   at a third of its software brightness, so the bright copy ended in a hard line. The weapon is now
-  lit exactly as software lights it, and the line is gone. In a medium-lit room the weapon is a
-  little brighter than it was in OpenGL; in a bright one it has not changed.
+  lit exactly as software lights it, which brings the line down to the faint one software (and every
+  other port) shows — it is in the original art. **Weapon Flash Fix**, above, removes the rest. In
+  a medium-lit room the weapon is a little brighter than it was in OpenGL; in a bright one it has not
+  changed.
 - **Taking a screenshot in OpenGL at 1366x768 crashed the game.** Any width whose rows do not come
   out to a multiple of four bytes overran the capture buffer. Found while capturing the pistol.
 - **Menu, HUD and intermission lettering looked blocky** with smoothing on — each word sat in a

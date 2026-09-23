@@ -1307,3 +1307,6 @@ stops applying because the code moved, the tool says so rather than quietly test
   - **Effects Options gained a row** — *Rocket Trails*, third, beside Translucency and Spectre Fuzz.
     Ordinary rows now run y=40..150 and `"Next"` keeps its `IT_YOFFSET` at 40+130=170, so the page
     ends at 177 with two rows to spare. → `gameplay-defaults.md`
+  - **Effects Options page 2 gained a row** — *Weapon Flash Fix*, fifth and last, appended so
+    nothing shifts (no handler or enum indexes that page). `menufit-test.py`: y 40..87, room for 11
+    more. → `gotchas.md`

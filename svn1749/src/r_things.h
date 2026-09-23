@@ -118,6 +118,8 @@ void R_Draw_Masked (void);
 void R_ClipVisSprite ( vissprite_t* vis, int xl, int xh );
 
 void R_DrawPlayerSprites (void);
+// [Arcade] Weapon Flash Fix: draw this psprite fullbright (both renderers).
+boolean R_Weapon_Flash_Lit( pspdef_t * psp );
 
 void R_Load_Corona( void );
 void R_Release_Corona( void );

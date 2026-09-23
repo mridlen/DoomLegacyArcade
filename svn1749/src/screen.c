@@ -159,6 +159,13 @@ consvar_t   cv_fullscreen = {"fullscreen",  "Yes",CV_SAVE | CV_CALL, CV_YesNo, S
 // software-fullscreen.md.
 consvar_t   cv_keepaspect = {"keepaspect", "Yes", CV_SAVE, CV_YesNo};
 
+// [Arcade] Draw the weapon fullbright while its muzzle flash is showing.
+// Several flash graphics carry a fullbright copy of part of the gun, so in a
+// dark room the flash ends in a hard line across the dimmer gun below it.
+// Both renderers, drawing only: no gameplay, demo or netgame effect.  See
+// gotchas.md.
+consvar_t   cv_weapon_flash_fix = {"weaponflashfix", "On", CV_SAVE, CV_OnOff};
+
 // [Arcade] Draw the world at 8bpp and expand through the palette when the
 // frame is handed to SDL, instead of drawing at the display's depth.
 //

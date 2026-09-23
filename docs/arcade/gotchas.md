@@ -472,6 +472,25 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     3-byte row is not a multiple of 4 padded every row and overran the buffer (`free()` aborts).
     The cabinet runs 1366x768. It now packs at 1, under `glPushClientAttrib` like
     `ReadScreenRect`.
+  - **The remaining step is in the original art, and Weapon Flash Fix removes it.** After the
+    lighting fix the reporter noticed the same faint line in software and in dsda-doom: any faithful
+    renderer draws a fullbright copy of the gun over a sector-lit one. `weaponflashfix`
+    (`cv_weapon_flash_fix`, `screen.c`; *Effects Options → Next*, default On) draws the gun
+    fullbright while the flash psprite is active, via `R_Weapon_Flash_Lit` (`r_things.c`), called
+    from `R_DrawPSprite` and `HWR_DrawPSprite`. Measured on the same frozen frame, the row just
+    below the flash's edge: software 61 → 55 off, 61 → 77 on; GL 67 → 57 off, 67 → 79 on — the gun
+    below is now as bright as the flash's copy of it, or brighter where its art is lighter.
+    - **Keyed on the flash psprite, not a weapon list.** Laying each flash over its gun frame in
+      DOOM2.WAD, `SHT2`, `CHGF`, `MISF`, `BFGF` overlap their guns as `PISF` does, and a DEHACKED
+      or MBF21 weapon gets it for free; the fist and chainsaw never raise a flash.
+    - **Invisibility differs by renderer, on purpose.** Software's `MF_SHADOW` branch runs first
+      and draws the gun as pure translucency with no light at all — like its flash — so there is
+      nothing to match. OpenGL draws an invisible gun translucent *and* lit, beside a translucent
+      fullbright flash, so the fix applies there. `fixedcolormap` (invulnerability) comes first in
+      software and forces 255 in GL anyway.
+    - Draw-only: not a netvar, not in the demo header, no `P_Random`. A 3D-floor sector's light
+      list (`viewer_sector->numlights`) overwrites the psprite colormap in software afterwards, so
+      there — as for the stock `FF_FULLBRIGHT` flash itself — it has no effect; pre-existing.
 
 - **Sprite edges that touch the patch's bounding box stayed hard and flat after the rim was fixed**
   — the top of the imp's and sergeant's heads, the marine's helmet. Sprites are cut tight to their

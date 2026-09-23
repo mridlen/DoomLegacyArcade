@@ -2166,6 +2166,22 @@ const int PSpriteSY[NUMWEAPONS] =
     15*FRACUNIT     // beak
 };
 
+// [Arcade] Weapon Flash Fix: is this the gun, with its muzzle flash showing?
+// Most flash graphics carry a fullbright copy of part of the gun, so the gun
+// is drawn fullbright too for as long as the flash is up, or in a dark room
+// the flash ends in a hard line across it.  Keyed on the flash psprite rather
+// than a list of weapons, so any weapon that flashes gets it (a DEHACKED or
+// MBF21 one included) and the fist and chainsaw, which never do, do not.
+// Software tests invisibility and fixedcolormap first: an invisible gun there
+// is pure translucency with no light at all, like its flash, so nothing to
+// match.  OpenGL lights a translucent gun, so it applies there too.
+boolean R_Weapon_Flash_Lit( pspdef_t * psp )
+{
+    return cv_weapon_flash_fix.EV
+        && ( psp == &viewplayer->psprites[PS_weapon] )
+        && viewplayer->psprites[PS_flash].state;
+}
+
 //
 // R_DrawPSprite, Draw one player sprite.
 //
@@ -2343,7 +2359,8 @@ void R_DrawPSprite (pspdef_t* psp)
         // fixed color
         vis->colormap = fixedcolormap;
     }
-    else if (psp->state->frame & FF_FULLBRIGHT)
+    else if ((psp->state->frame & FF_FULLBRIGHT)
+             || R_Weapon_Flash_Lit( psp ))  // [Arcade]
     {
         // full bright
         vis->colormap = & reg_colormaps[0]; // [0]

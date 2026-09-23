@@ -289,6 +289,7 @@ extern consvar_t cv_scr_height;
 extern consvar_t cv_scr_depth;
 extern consvar_t cv_fullscreen;
 extern consvar_t cv_keepaspect;  // [Arcade] letterbox rather than stretch
+extern consvar_t cv_weapon_flash_fix;  // [Arcade] fullbright gun under its flash
 
 extern consvar_t cv_fuzzymode;
 extern consvar_t cv_draw8bpp;   // [Arcade] 8bpp draw buffer

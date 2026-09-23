@@ -4229,7 +4229,10 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
     else
         Surf.FlatColor.s.alpha = 0xff;
 
-    if (psp->state->frame & FF_FULLBRIGHT)
+    if ((psp->state->frame & FF_FULLBRIGHT)
+        || R_Weapon_Flash_Lit( psp ))  // [Arcade] Weapon Flash Fix
+        // An invisible gun too: here it is translucent but still lit, and
+        // its flash is translucent fullbright, so the line shows fainter.
     {
         // TODO: remove fog for this sprite !
         Surf.FlatColor.s.red = Surf.FlatColor.s.green = Surf.FlatColor.s.blue = 0xff;
