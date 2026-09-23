@@ -6,6 +6,19 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 ---
 
+- **A sprite drawn wholly below its origin is a floor decal, and OpenGL buried it.** Floor blood
+  is not a floor splat — `FLOORSPLATS` is compiled out (`r_splats.h`). It is the `MT_BLOOD` mobj
+  itself: `S_BLOOD3` lasts `cv_bloodtime` (`p_fab.c`), and `legacy.wad` replaces `BLUDA0`/`BLUDB0`
+  with flat smears (9x2 and 5x2, **top offset -3**) so the last frames lie on the floor. Doom 2's
+  `POB2A0` pool of blood is the same shape (top offset -2). The software renderer never clips a
+  sprite against the floor it stands on, so the smear is painted over the floor 3-5 units low; the
+  GL z-buffer puts it under the floor polygon and it vanished on landing. `HWR_ProjectSprite`
+  already had a "feet in ground" lift for positive top offsets and now stands any sprite with a top
+  offset <= 0 on its origin. Only these lumps qualify in the stock IWADs and `legacy.wad` (the
+  weapon sprites also have negative offsets but go through `HWR_DrawPSprite`, not this path), and
+  `TNT1A0` is invisible anyway. Verified with `-warp 25 -nomonsters` in OpenGL: every changed pixel
+  between builds is a POB2 smear that was missing before. Render-only, no demo effect.
+
 - **`SDL_BITSPERPIXEL()` and `SDL_PixelFormat.BitsPerPixel` disagree, and the difference selects
   the wrong software drawer.** For the packed 32-bit formats that carry no alpha, the macro
   reports the bits that hold **colour** and the struct reports the bits a pixel **occupies**:

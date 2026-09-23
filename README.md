@@ -406,6 +406,11 @@ to anyone else running this port. Each is written up in full in the commit that 
 - **The spectre fuzz effect did not exist in OpenGL** — every partially invisible thing was drawn
   as flat translucency. The original boiling-outline effect is now reproduced on the hardware path,
   as far as a fixed-function backend can.
+- **Blood vanished when it hit the floor in OpenGL.** In software, blood lands and leaves a smear
+  on the floor for the *Blood time* setting; in OpenGL it disappeared on landing (blood on walls
+  was always fine). Doom 2's "pool of blood" decorations were missing too. The smear art is drawn
+  a few units *below* the spot the blood rests on: software paints it over the floor anyway, but
+  OpenGL hid it under the floor. It is now raised to sit on the floor, so it shows in both.
 - **Hairline seams where surfaces meet.** Thin bright lines along walls and across flats, in two
   separate families with two separate causes — the sky is drawn behind everything, so either hole
   shows as a one-pixel white line. The node builder rounds a split vertex to whole units, so the
