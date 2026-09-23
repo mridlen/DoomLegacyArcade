@@ -2374,6 +2374,7 @@ static void WI_Draw_Exit_Mark( int pnum, int row_y, int last_col_x )
     const char * name;
     patch_t *    pp;
     int          avail = BASEVIDWIDTH - 2 - last_col_x;
+    int          band_y, band_h;
 
     if( exit_player_num != pnum )  return;
 
@@ -2386,11 +2387,17 @@ static void WI_Draw_Exit_Mark( int pnum, int row_y, int last_col_x )
     pp = W_CachePatchName( name, PU_CACHE );
     if( pp->width > avail )  return;   // no honest way to fit it
 
+    // Centred on the row as a player sees it, which is not row_y: the row's
+    // colour bar and percentages are drawn 10 below it (y10 in the caller),
+    // and the percentages are the tallest thing on the line.  Topped at row_y,
+    // the 16-tall sign sat 8 units high, half in the gap above its own row.
+    band_y = row_y + 10;
+    band_h = V_patch(percent)->height;
     // V_DrawScaledPatch applies the patch's own offsets, and these two carry
     // large ones (EXIT1 is (15,11)), so they are added back to land the sign
     // where it is asked for rather than 15 left and 11 up of it.
     V_DrawScaledPatch( BASEVIDWIDTH - 2 - pp->width + pp->leftoffset,
-                       row_y + pp->topoffset, pp );
+                       band_y + ((band_h - pp->height) / 2) + pp->topoffset, pp );
 }
 
 static void WI_Draw_NetgameStats(void)

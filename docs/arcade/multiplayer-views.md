@@ -836,6 +836,13 @@ the campaign tally.
   `W_CachePatchName`; if even the narrow one will not fit, nothing is drawn.
 - Both patches carry large offsets (`EXIT1` is (15,11)) and `V_DrawScaledPatch` applies them, so
   they are added back or the sign lands 15 left and 11 up of where it was asked for.
+- **Centred on the row a player sees, not on the row's `y`.** The classic table draws each row's
+  colour bar and percentages 10 units *below* its `y` (`y10` in `WI_Draw_NetgameStats`), and the
+  percentages (`WIPCNT`, 12 tall) are the tallest thing on the line. The sign (16 tall) was first
+  topped at `y`, so it sat 8 units high, half in the gap above its own row and reading as belonging
+  to nobody. It is now centred on the percentage band: top at `y + 10 + (12 - 16) / 2`, heights
+  read from the patches. At the table's deepest row (8 rows, `y` 174) it ends at 198, still on
+  screen.
 
 **The classic table is now two tables of 160 units instead of four of 80**, at x 5 and 165, and
 `"deads"` is drawn as `"Deaths"`. The freed width goes to the names: `wi_name_chars` returns 14
