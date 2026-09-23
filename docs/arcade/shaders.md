@@ -85,6 +85,18 @@ hardware mode when nothing will be drawn over it (`CON_Is_Drawn`, `menuactive`, 
 the page. **Any new path that presents without drawing reintroduces this**, and with any shader,
 not just the curved ones — those only make it visible.
 
+**It did, straight away: `CL_ConnectToServer` has its own draw loop.** A game started from the
+menu (Single Level, New Game) runs the `map` command, and `SV_SpawnServer` → `CL_ConnectToServer`
+spins presenting once per tic until the local client connects. In a local game there is no wait
+counter to draw, so its one frame was the stale, filtered buffer, and the fix above never saw it —
+the attract demos, where it was tested, do not go through `map`. The loop now applies the same
+rule (present only if the wait counter or the console drew). Found with a `backtrace()` ring of
+the last eight presents, dumped at `wipe_StartScreen`: the last entry was the only one not from
+`D_Display`. The corner-pixel detector was useless here because the menu-over-attract backdrop is
+black anyway; the baked-in *scanlines* in the dumped start frame were the tell. If it comes back,
+start with that ring: the remaining direct `I_FinishUpdate` callers (`M_Draw_Restart_Splash`, the
+fatal-error console) all paint the whole screen first.
+
 ## Uniforms beyond libretro's
 
 - `Time`: seconds, from `SDL_GetTicks`, wrapped at an hour so a float keeps its precision. VHS
