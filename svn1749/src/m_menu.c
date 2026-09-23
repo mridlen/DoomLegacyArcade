@@ -9264,12 +9264,23 @@ void  draw_set_mode_instructions( byte vm_mode, const char * current_mode_name, 
 // because Left/Right off the edge of a page is what moves between pages and
 // Up/Down running off the end of a column would fight it.
 
+static byte  video_test_key_handler( int key );
+static byte  drawmode_test_key_handler( int key );
+
 //added:30-01-98: special menuitem key handler for video mode list
 void M_VideoMode_key_handler (int key)
 {
     int  loc, col, row, page;
 
-    // Test specific key handler
+    // Test specific key handler.
+    // [Arcade] Chosen here, not left to the page's drawer.  The drawer used
+    // to be the only thing that set it, so a key reaching the page before its
+    // first frame called a NULL pointer.  Fire does exactly that: it is a
+    // letter, the keydown opens the page as Enter, and SDL2's ev_textchar for
+    // the same press follows in the same batch of events -- a segfault on the
+    // first visit of every session.  Enter sends no text event.
+    key_handler2 = ( currentMenu == &DrawmodeDef ) ?
+        drawmode_test_key_handler : video_test_key_handler;
     if( key_handler2(key) )  return;
 
     // [Arcade] Everything below works in page-local coordinates: loc is the
@@ -9396,9 +9407,6 @@ done:
 //                        VIDEO MODE MENU
 //===========================================================================
 static void M_DrawVideoMode(void);             //added:30-01-98:
-
-static byte  video_test_key_handler( int key );
-static byte  drawmode_test_key_handler( int key );
 
 menuitem_t VideoModeMenu[]=
 {
