@@ -608,6 +608,62 @@ The fix takes width and height from the same height, per layout:
 Not changed, and visible in the same captures: in OpenGL two-player the Kills/Items/Secrets block's
 letters overlap their counts. It looks the same before and after this change.
 
+### Wall faces missing at the screen edges, OpenGL, portrait only
+
+Reported as triangles of background showing through at the left and right edges on the Windows
+cabinet (1920x2160). It first seemed to need the chase camera, and a whole investigation went into
+the camera. The clue that broke it came from the cabinet: **raising FOV above 90 in GL Options did
+the same with the camera off**, and neither did anything on the 1366x768 Linux cabinet.
+
+The GL clipper (`HWR_AddLine`, `HWR_CheckBBox`) only accepts what lies within `gr_clipangle` of
+straight ahead. `HWR_Init_TextureMapping` derives that angle from a 90 degree field over
+`vid.fit_width`, so it is the view's own half width at FOV 90 with no pitch: 45 degrees at
+1366x768, 29 at 960x1080 and 1920x2160. The view reaches further round than that in two cases:
+FOV above 90, and **any pitch**. The chase camera looks down at the player, and a pitched
+frustum's lower corners swing outwards. For both, `HWR_RenderPlayerView` re-ran the BSP walk with
+the clipper turned 90, 180 and 270 degrees. **That covers the circle only if each pass is at least
+90 degrees wide.** In landscape it happens to be exactly 90 (2 x 45), so there are no gaps. In
+portrait it is 58, which leaves a 32 degree gap between passes. The pitched corners and the wider
+FOV reach into that gap, and anything there was never drawn.
+
+The fix spaces the extra passes by the pass's real width (`gr_clipangle_x_2`) and runs only as
+many as the view needs. `HWR_View_Half_Yaw` works out how far round the view reaches from the same
+numbers `SetTransform` (`r_opengl.c`) builds its projection from. The world is pitched, then
+scaled, then put through `gluPerspective`, so in the pitched frame the frustum's half-width tangent
+is `tx = tan(fovy/2) * aspect / scalex` and its half-height tangent is
+`ty = tan(fovy/2) / scaley`. The corner reaches `atan(tx / (cos p - ty sin p))` about the vertical.
+Once that denominator reaches zero the view sees over the vertical, and the passes go all the way
+round. A one degree margin covers the clipper's angle rounding. Both split-screen perspectives
+are mirrored.
+
+- The formula agrees with the clipper where they have to agree. At FOV 90 with no pitch it gives
+  29.05 against the clipper's 29.09 at 960x1080, and exactly 55.00 at FOV 110 in landscape.
+- The pass count is never higher than before. Landscape with no pitch at FOV 90 is still a single
+  pass. The chase camera in landscape and in portrait is 3 passes where it was 3 or 4.
+- `gr_mlook` "On" and "Full" now behave the same. "On" used to skip the back pass. Now the back is
+  drawn only when the view actually reaches it, which is what "Full" was trying to approximate.
+
+**How it was checked**, under Xvfb at 960x1080 (the cabinet's shape):
+
+- Temporary instrumentation cleared the GL view to magenta and skipped the sky backdrop, so an
+  undrawn pixel is unambiguous. At pitch 0 every sky surface is above the horizon, so magenta
+  below the horizon is missing geometry. E4M1 start, FOV 110: 4929 such pixels before, 0 after.
+  FOV 140: 3911 before, 0 after. The chase-camera triangle at the right edge: 52 before, 0 after.
+  Landscape and FOV 90: unchanged.
+- **The reference was a forced full circle of passes**, which covers every direction by
+  construction. The record demo `doomu_E4M1_sk0_speed.lmp` was played under `-timedemo` with the
+  chase camera on, with 12 screenshots per run. Two runs of the fixed build were byte identical,
+  so the method is deterministic. The fixed build matched the full circle byte for byte in every
+  frame at FOV 90 and FOV 110. The old code was missing 750 and 262 pixels in two frames at FOV 90:
+  a sliver on the left wall and a wedge in the lower right corner, exactly the reported symptom.
+  At FOV 110 it was missing 75418 pixels, spread over 10 of 11 frames.
+- `make smoke` passes. `make demotest` has nothing to say about this change: the change is in the
+  renderer only, and the demo test runs `-nodraw`.
+
+The earlier investigation ruled out backface culling, the angle culling itself, and the sub-pixel
+rejection in `HWR_CheckBBox`. Those gates were all correct. What was wrong was the assumption,
+dating from Hurdler's FOV 120 work, that a pass is 90 degrees wide.
+
 ## Four players on an ultrawide: `cv_split4`
 
 `D_View_Grid` (`multiplayer-views.md`) offered 1x2 or 2x1 for two views and 2x2 for four, full stop.

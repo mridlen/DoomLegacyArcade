@@ -640,6 +640,13 @@ to anyone else running this port. Each is written up in full in the commit that 
   the fix above. The rows were being spaced by the new, smaller HUD scale while the letters were
   drawn at full-screen size. Text on full-screen pages — score boards, intermission, finale — is now
   placed by the full-screen scale again.
+- **Wall faces went missing at the screen edges on portrait screens** (OpenGL). Triangles of
+  background showed through at the left and right edges with the chase camera on, and whole wall
+  faces went missing with the field of view in GL Options set above 90. When the view reaches
+  further round than the renderer normally checks, it takes extra looks to the sides, and those
+  looks assumed a landscape screen's width. On a portrait screen they left gaps. They are now
+  spaced to the screen's real width, and only as many are taken as the view needs. Landscape
+  screens, including 1366x768, look exactly as before.
 - **The video mode list lost modes before the menu ever saw them**, at three separate stacked caps,
   none of which logged anything. It also never removed the duplicate entries a monitor advertises
   once per refresh rate, so the caps were being spent on repeats. The list now dedupes, sorts by

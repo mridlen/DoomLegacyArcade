@@ -4532,6 +4532,48 @@ void HWR_DrawSkyBackground(player_t * player, byte upper_lower)
 }
 
 
+// [Arcade] How far round from straight ahead the view reaches, in degrees
+// either side, measured about the vertical as the clipper measures angles.
+// Follows the projection SetTransform (r_opengl.c) builds from atransform:
+// the world is pitched, then scaled, then put through gluPerspective, so the
+// frustum's half-width and half-height tangents in the pitched frame are the
+// perspective's divided by the scale.  Pitch swings the corners toward the
+// ground or sky round sideways, reaching tx / (cos p - ty sin p); once that
+// denominator reaches zero the view sees over the vertical, and all the way
+// round.
+static double HWR_View_Half_Yaw( void )
+{
+    double fovy, aspect, tx, ty, p, fwd;
+
+    if( atransform.splitscreen == 2 )
+    {
+        fovy = atransform.fovxangle;
+        aspect = 1.0 / ((atransform.viewcols > 0) ? atransform.viewcols : 2);
+    }
+    else if( atransform.splitscreen && atransform.fovxangle == 90.0f )
+    {
+        fovy = 53.13;  // matches the stacked halves in SetTransform
+        aspect = 2.0;
+    }
+    else
+    {
+        fovy = atransform.fovxangle;
+        aspect = 1.0;
+    }
+    ty = tan( fovy * PI / 360.0 );
+    tx = ty * aspect / atransform.scalex;
+    ty = ty / atransform.scaley;
+
+    p = atransform.anglex;  // degrees, 0..360
+    if( p > 180.0 )
+        p -= 360.0;
+    p = fabs( p ) * PI / 180.0;
+    fwd = cos( p ) - ty * sin( p );
+    if( fwd <= 0.0 )
+        return 180.0;
+    return atan( tx / fwd ) * 180.0 / PI;
+}
+
 // -----------------+
 // HWR_Clear_View : clear the viewwindow, with maximum z value
 // -----------------+
@@ -4831,24 +4873,49 @@ void HWR_RenderPlayerView(byte pind, player_t * player)
     HWR_RenderBSPNode( top_node );
 
 #ifndef NO_MLOOK_EXTENDS_FOV
-    if (cv_grmlook_extends_fov.value && (aimingangle || cv_grfov.value > 90))
+    // [Arcade] The clipper passes only what lies within gr_clipangle of
+    // straight ahead, and the view can reach further round than that: past
+    // 90 fov, and when pitched, where the frustum's lower corners swing out.
+    // The extra passes turn the clipper to cover the rest.  They used to be
+    // 90 degrees apart, which covers the circle only when each pass is at
+    // least 90 wide -- exactly so at 1366x768, not in portrait (58 at
+    // 1920x2160), where the gaps between passes showed as undrawn wedges at
+    // the screen edges.  Now spaced by the pass's real width, and only as
+    // many as the view reaches.  See docs/arcade/ultrawide.md.
+    if( cv_grmlook_extends_fov.value )
     {
-        dup_viewangle += ANG90;
-        HWR_Clear_ClipSegs();
-        HWR_RenderBSPNode( top_node );        //left
-
-        dup_viewangle += ANG90;
-        if (cv_grmlook_extends_fov.value == 2 && ((int) aimingangle > ANG45 || (int) aimingangle < -ANG45))
+        double clip_deg = (double)gr_clipangle * (360.0 / 4294967296.0);
+        double reach = HWR_View_Half_Yaw();
+        if( clip_deg > 1.0 && reach > clip_deg + 0.5 )
         {
-            HWR_Clear_ClipSegs();
-            HWR_RenderBSPNode( top_node );    //back
+            double step_deg = 2.0 * clip_deg;
+            int k = (int) ceil( (reach + 1.0 - clip_deg) / step_deg );  // 1 degree to spare
+            int i;
+            if( reach >= 180.0 || (2 * k + 1) * step_deg >= 360.0 )
+            {
+                // Round the whole circle.
+                int n = (int) ceil( 360.0 / step_deg );
+                for( i = 1; i < n; i++ )
+                {
+                    dup_viewangle = viewangle + (angle_t)i * gr_clipangle_x_2;
+                    HWR_Clear_ClipSegs();
+                    HWR_RenderBSPNode( top_node );
+                }
+            }
+            else
+            {
+                for( i = 1; i <= k; i++ )
+                {
+                    dup_viewangle = viewangle + (angle_t)i * gr_clipangle_x_2;  // left
+                    HWR_Clear_ClipSegs();
+                    HWR_RenderBSPNode( top_node );
+                    dup_viewangle = viewangle - (angle_t)i * gr_clipangle_x_2;  // right
+                    HWR_Clear_ClipSegs();
+                    HWR_RenderBSPNode( top_node );
+                }
+            }
         }
-
-        dup_viewangle += ANG90;
-        HWR_Clear_ClipSegs();
-        HWR_RenderBSPNode( top_node );        //right
-
-        dup_viewangle += ANG90;
+        dup_viewangle = viewangle;
     }
 #endif
 
