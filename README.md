@@ -341,6 +341,15 @@ to anyone else running this port. Each is written up in full in the commit that 
   smoothing had nothing to fade into and the outline stopped in a hard straight line. Sprites in
   the world now have a clear pixel of room around them to fade into, and look the same shape
   everywhere else.
+- **A dark line across the pistol when it fired**, worst in a dark room. The muzzle flash art
+  includes its own full-bright copy of the top of the gun, and OpenGL lit the real gun under it far
+  darker than the software renderer does: software lights your weapon as though it were right in
+  front of you, which it is, while OpenGL lit it like a wall. In E1M8's opening room the gun came out
+  at a third of its software brightness, so the bright copy ended in a hard line. The weapon is now
+  lit exactly as software lights it, and the line is gone. In a medium-lit room the weapon is a
+  little brighter than it was in OpenGL; in a bright one it has not changed.
+- **Taking a screenshot in OpenGL at 1366x768 crashed the game.** Any width whose rows do not come
+  out to a multiple of four bytes overran the capture buffer. Found while capturing the pistol.
 - **Menu, HUD and intermission lettering looked blocky** with smoothing on — each word sat in a
   hard-edged dark box, because the letters' dark outline was cut off square where the art meets
   its box, and darkened a second time as it was drawn. Text and menu graphics now get the same

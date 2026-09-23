@@ -685,7 +685,13 @@ EXPORT void HWRAPI( ReadRect ) (int x, int y, int width, int height,
     int i, j;
 
     image = (GLubyte *) malloc(width*height*3*sizeof(GLubyte));
+    // [Arcade] Rows packed tight.  The default pack alignment is 4, so any
+    // width whose 3 byte row is not a multiple of 4 (1366 is one) padded
+    // every row and overran the buffer: the screenshot key crashed the game.
+    glPushClientAttrib( GL_CLIENT_PIXEL_STORE_BIT );  // see ReadScreenRect
+    glPixelStorei( GL_PACK_ALIGNMENT, 1 );
     glReadPixels(x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image);
+    glPopClientAttrib();
 
     // Flip vertically, reverse RGB.
     byte * bp = & buf[0];
