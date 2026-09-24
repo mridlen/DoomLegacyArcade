@@ -181,6 +181,9 @@ Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
 - Graphics that are not a power-of-two size had a dark line on their right and bottom edges.
 - Sprites, text and the weapon had grey fuzzy outlines or hard flat edges with filtering on. They now
   have room to fade into and blend correctly.
+- Bullet holes, imp-fireball and rocket scorches, and blood on walls had the same hard flat edges
+  (blood showed straight red streaks). They fade now too, and scorches are drawn at their real
+  size instead of shrunk and turned on their side.
 - The weapon was lit like a wall instead of like software. **Vanilla Weapon Lighting** (**Options →
   Video Options → OpenGL 3D Card Options → Lighting**) restores the software look. It ships Off.
 - A screenshot at 1366x768 crashed the game (row size not a multiple of four bytes).

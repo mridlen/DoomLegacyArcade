@@ -565,7 +565,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     replaces under the same names. Every solid-bordered 2D lump in DOOM.WAD, DOOM2.WAD and
     `legacy.wad` was listed to pick this.
   - **Each copy carries its own span now** (`Mipmap_t.max_s/max_t`). `MipPatch_t.max_s/max_t`
-    describe the base copy, which the splats still use; a margin copy's block can be
+    describe the base copy, which no world drawer uses any more; a margin copy's block can be
     a larger power of two than the base one, so computing its span from the patch was only right
     by luck. Changing `Mipmap_t` changes a header: `make clean`.
   - `HWR_DrawPic` (Heretic raw pics and the `pic_t` formats) is untouched: an intensity-alpha pic is
@@ -589,6 +589,32 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       the line along its bottom, the gun's left and right sides). With Weapon Flash Fix on, the
       flash's bottom edge changes only a few levels, because it now fades from the flash's copy of
       the gun into an equally lit gun; the visible gain is the flash's outline.
+  - **Wall splats were the last world drawer on the base copy, and they had two bugs, not one.**
+    `HWR_DrawSegsSplats` draws every wall decal: bullet marks (`A_DMG1`, from `P_LineAttack`),
+    missile scorches (`A_DMG3`, 52x42, left by every imp fireball, rocket or plasma ball that hits a
+    wall, from the `WALLSPLATS` block in `P_XYMovement`) and blood (`BLUDC0` -- the *IWAD's* own
+    smallest blood-puff frame, `BLODC0` in Heretic, which is why it is not in `legacy.wad`; from
+    `PTR_BloodTraverse`). `A_DMG2` is in `legacy.wad` but nothing references it. Floor splats
+    (`FLOORSPLATS`) are compiled out.
+    - The hard edge, as everywhere else: now it takes the world-sprite margin copy
+      (`HWR_GetMarginPatch(gpatch, NULL, 0)`, shared with the blood sprite itself) and the quad grows
+      one map unit along the wall at each end and one up and down -- `R_AddWallSplat` makes the quad
+      the patch's width by its height, so a texel is one unit. The clear texel is black with no
+      alpha, a no-op under both blends splats use (`PF_Subtractive` is `dst * (1 - src)`,
+      `PF_Translucent` is `src_alpha`). Before, the blood splat showed straight red streaks running
+      out of its box.
+    - **The texture coordinates were transposed and ran 0..1.** `sow` ran up the wall and `tow`
+      along it, so the art was mirrored across its diagonal; and 1.0 is the far edge of the
+      power-of-two *block*, not of the art, so a 52x42 scorch in a 64x64 block drew its art over
+      81% by 66% of the quad with the clamped edge texels smeared over the rest. Both are gone:
+      `sow` runs along the wall from `v1`, the way the software drawer walks columns, and the span
+      is the copy's `max_s`/`max_t`. **Scorches are visibly bigger now** -- they are at their
+      designed size. (The software renderer drew no wall splats at all in the same test scene, so
+      it could not serve as the reference; the quad's size in `R_AddWallSplat` is.)
+    - Verified with a throwaway hook firing three `P_LineAttack`s tagged `A_DMG3`/`A_DMG1`/`BLUDC0`
+      at the wall behind the DOOM II MAP01 start, all sectors at light 255, OpenGL + Trilinear via
+      `tools/shotsheet.py`, before and after binaries. The subtractive scorch is tinted green on a
+      brown wall; that is the blend (it removes the art's red from the wall), unchanged.
 
 
 - **The demo header used to record the *previous* game's settings. Fixed — but the ordering that
