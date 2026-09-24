@@ -119,8 +119,10 @@ A canvas that is not 80 columns is refused with a message saying so.
   differs from Python's `cp437` codec at `0x7C` (broken bar, not `|`), `0x7F` and
   `0xFF`, so do not "fix" it to match the codec. `|` is accepted on input as an
   alias for `0x7C`, which is what that byte actually draws.
-- **`legacy.wad` is tracked in git and the user edits their live copy**, so follow
-  the CLAUDE.md rule: verify only the expected lumps differ before committing.
+- **`legacy.wad` is tracked in git, and `common/legacy.wad` is the copy to edit** --
+  the build scripts stage it beside the binary, where the engine finds it before any
+  other (`building.md`). Follow the CLAUDE.md rule: verify only the expected lumps
+  differ before committing.
 
 ## How this was verified
 
