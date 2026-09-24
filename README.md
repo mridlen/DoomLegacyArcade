@@ -1,731 +1,271 @@
 # Doom Legacy Arcade
 
-A fork of [DoomLegacy](http://doomlegacy.sourceforge.net/) 1.48.18 customised to run unattended in
-an arcade cabinet: locked-down menus, joystick-and-buttons navigation, an attract cycle, and a
-persistent high-score table with saved record demos.
+A fork of [DoomLegacy](http://doomlegacy.sourceforge.net/) 1.48.18 built to run unattended in an
+arcade cabinet. It has locked-down menus, navigation with a stick and buttons, an attract cycle, and
+a high-score table that keeps the record demos.
 
 It plays Ultimate Doom, Doom II and Final Doom (Plutonia and TNT), plus level packs in `.wad` form.
-You supply the game data — no copyrighted content is included here.
+You supply the game data. No copyrighted content is included.
 
-The program calls itself **Doom Legacy Arcade**, the binary is `doomlegacyarcade`, and it prints
-what it is a fork of on every launch. That is deliberate in both directions: nobody should mistake
-this for stock DoomLegacy and take a bug here to that project, and upstream keeps every bit of the
-credit it is owed. **It is unaffiliated with the DoomLegacy team**, who have not asked for any of
-this and are not responsible for it.
+The program calls itself **Doom Legacy Arcade**, the binary is `doomlegacyarcade`, and every launch
+prints what it is a fork of. That way nobody takes a bug here to the upstream project, and upstream
+keeps its credit. **This project is not affiliated with the DoomLegacy team.**
 
-> Looking for internals, or hacking on the code? See [`CLAUDE.md`](CLAUDE.md), which documents the
-> engine architecture and the build, and [`docs/arcade/`](docs/arcade/), which has a write-up per
-> feature — what was tried, what broke, and how it was verified. This file is for people who want to
-> *run* the thing.
-
----
+> Working on the code? See [`CLAUDE.md`](CLAUDE.md) for the architecture and build, and
+> [`docs/arcade/`](docs/arcade/) for a write-up of each feature. This file is for people who want
+> to *run* it.
 
 ## Use of AI disclaimer
 
-The arcade customisations in this repository were almost entirely vibe-coded using Claude. The
-original DoomLegacy underneath them, of course, was not.
+The arcade customisations here were almost entirely vibe-coded using Claude. The original
+DoomLegacy underneath them was not.
 
-Be aware that promoting AI-assisted software in places such as the Doomworld forums or the ZDoom
-Discord is likely to get you banned.
+Promoting AI-assisted software in places such as the Doomworld forums or the ZDoom Discord is likely
+to get you banned.
+
+## Contents
+
+- [What's different from stock DoomLegacy](#whats-different-from-stock-doomlegacy)
+- [Fixes to the engine itself](#fixes-to-the-engine-itself)
+- [Requirements](#requirements) and [Performance](#performance)
+- [Building](#building)
+- [Installing the game data](#installing-the-game-data)
+- [Running](#running)
+- [Playing](#playing)
+- [Operator guide](#operator-guide)
+- [Where your data lives](#where-your-data-lives)
+- [Troubleshooting](#troubleshooting)
+- [Credits and licence](#credits-and-licence)
+
+---
 
 ## What's different from stock DoomLegacy
 
-**For the player**
+### For players
 
-- **Menus are locked down.** New Game, a handful of Options, and — while a game is running — End
-  Game. No save/load, no multiplayer setup, no video or sound settings to get lost in. Quit is
-  hidden as well, since a cabinet has nothing to quit *to*; the operator can put it back.
-- **The cabinet buttons drive the menus.** No keyboard needed — the stick moves the cursor, fire
-  selects, use backs out.
-- **Up to four players on one machine.** Two share the screen as the usual stacked halves — or side
-  by side, if the operator prefers — and three or four get a 2x2 grid, or four columns on a very
-  wide screen, each with their own HUD. A **join screen** after the skill select lets each panel
-  press fire to be counted in, so three players at panels 1, 3 and 4 is unambiguous. Four players
-  cost about the same as one: each view is drawn on its own core.
-- **The end-of-level scoreboards hold all 32 players.** A net game can have far more players than
-  the old intermission screens could show — the campaign table stopped at 8 and the deathmatch
-  rankings at 12, and the rest just weren't drawn. Past those counts the screens switch to a
-  smaller layout with a second column and fit everybody; below them they look exactly as they
-  always did.
-- **Campaign and Deathmatch start in one press.** New Game offers the two games people actually
-  ask for, already set up: **Campaign** plays the episode, solo or as co-op depending on how many
-  press fire on the join screen, and **Deathmatch** is a deathmatch with its ruleset chosen and one
-  question asked — **which map to fight on**. The full **Multiplayer** page, with every setting on
-  it, is still there for anyone who wants it.
-- **Team Deathmatch.** The same one-press deathmatch played in colour teams — **Red, Blue, Green
-  and Yellow** — with **no friendly fire**. The join screen's colour row becomes **TEAM** and
-  offers only those four; works across linked cabinets too.
-- **Smoother than 35 FPS.** Doom's simulation runs at 35 tics a second and the engine used to draw
-  exactly one frame per tic. It now draws as many as the display can take, with everything moving
-  interpolated between tics — so on a 60 or 144 Hz panel the motion is genuinely smoother, while the
-  game itself, and every recorded demo, is untouched. Capped at 60 by default.
-- **Ultrawide screens.** 21:9 and 32:9 panels are supported properly — the view is drawn at the
-  monitor's real shape with the field of view widened to match, rather than a 4:3 picture stretched
-  across it, and the menus, HUD and full-screen pages no longer stretch with it.
-- **Portrait and tall screens.** On a screen narrower than 4:3 — a monitor on its side, 1920x2160,
-  1080x1920 — the HUD, status bar, menus and weapon keep Doom's normal proportions instead of being
-  drawn tall and thin. The HUD still sits along the bottom edge. Menus are centred with the spare
-  height above and below.
-- **Full-screen menus and score pages.** The attract pages, the intermission and the finale fill the
-  screen at any resolution instead of sitting in a letterboxed 4:3 box with a tiled floor texture
-  around the edges.
-- **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
-  its own separate high score table and its own record demos.
-- **No Monsters, in Single Level.** A sixth difficulty on the Single Level page's Skill row, to the
-  left of *I'm too young to die*: the map with every monster taken out, played at Ultra-Violence —
-  the same rules dsda-doom scores its "NoMo" category under. It has its own records, shown with
-  its own title graphic, and its **Max** is called **100%S**, since with nothing to kill it only
-  means finding every secret. Some maps cannot be finished this way (E1M8's exit is behind the
-  Barons). Single Level only: a whole campaign mostly cannot be finished without killing anything,
-  and a campaign started with no monsters some other way scores nothing.
-- **A High Scores page on the main menu**, where Read This used to be. It shows the same score
-  pages the attract cycle does, and you flip through them yourself with left and right (fire steps
-  forward too). Every map with Single Level times gets its own page, where the attract cycle shows
-  one map at a time. Read This is gone entirely — its help and order-form screens were never any
-  use on a cabinet, and F1 no longer opens them.
-- **Single Player - Survival.** A campaign run is scored on **how far you got in the episode**,
-  with the faster run winning a tie — so dying on E1M7 beats dying on E1M3 however quick the latter
-  was, and finishing the episode tops the board because nothing outranks it on progress. One record
-  per episode, difficulty and category, shown at the intermission and in the attract cycle. Two categories: **speed** (just finish) and **max** (100%
-  kills and secrets on every level so far). Times are kept to hundredths of a second, because whole
-  seconds cannot separate two E1M1 runs.
-- **A run leaderboard, with your initials on it.** Separate from the per-map best times: a board of
-  whole runs, ranked by **how far you got first and how fast second**. That means a run ending in a
-  death partway through — which is how most runs end — still has somewhere to land, while finishing
-  the episode naturally tops the board. One place per episode, skill and category for the campaign
-  — "who got furthest, and fastest among those" has one answer — and three per map for Single Level.
-  Finish a run that makes the board and you are asked for three initials. The page opens on the
-  last player's initials, so a regular playing run after run confirms with one press; it goes back
-  to `AAA` once the cabinet has been left alone and the next person is a stranger. The page is on a
-  solid black screen, and a death's red damage flash is switched off while it is up, so it stays
-  readable when you are asked for your initials straight after dying.
-- **The attract cycle** shows the title page, the cabinet's splash (`CREDIT2`), the credits page
-  (`CREDIT`), then a demo, and the high-score pages once there are records. Both splash pages are
-  in `common/legacy.wad`.
-- **Record demos.** The run that set each record is saved and replayed in the attract cycle,
-  captioned with the span of levels it covered, its skill and its time — `E1M1-E1M5  UV  MAX
-  4:32.17` — under a blinking **PRESS FIRE TO START**, the arcade "insert coin" on a machine that
-  takes no coins.
-- **Setting a record in Single Level asks for your initials straight away.** The Single Level menu
-  used to reappear first, for a moment, before the initials prompt arrived on top of it. Now the
-  prompt comes up as you leave the intermission, and backing out of it still returns you to the
-  Single Level page.
-- **The attract screen gets itself moving again if a demo stops.** Very occasionally an attract
-  demo would freeze — the machine still responded, but the demo sat there and, because the idle
-  timeout is switched off while a demo plays, nothing moved it on until somebody came over. The
-  cabinet now notices within about five seconds and skips to the next attract screen by itself, and
-  writes a line to the log saying what state it was in when it happened.
-- **A chase camera on some record demos.** Every third record demo in the attract cycle is shown
-  from behind the player, captioned with a blinking **CHASE CAM**. Watching somebody's record run
-  over their shoulder reads as a *person playing*; a first-person demo can look to a passer-by like
-  the machine has frozen. Only record demos get it — the stock Doom demos are nobody's record.
-  (Chase cam demos used to drift out of step partway through and finish doing something other than
-  the run that was recorded — most visibly on a chainsaw run. Fixed: the camera no longer changes
-  what the player does, only where you watch it from.) The camera now slides in close when a wall
-  comes between it and the player instead of shoving against it, and if it does lose sight of them
-  for half a second it moves back behind them.
-- **Pacifist and Tyson runs are tracked too**, in Single Player and Single Level, each with its own
-  score pages. **Pacifist** means never damaging a monster — shooting past them, running by, and
-  letting them fight each other are all fine, but blowing up a barrel that hurts one is not.
-  **Tyson** means 100% kills with only the fist, chainsaw and pistol; you may carry other weapons,
-  you just may not fire them. Neither needs choosing in advance: every run is measured against all
-  four categories at once, so a quick run of the first map usually takes the pacifist board without
-  anyone trying. When a run is still holding one of them, **PACIFIST** or **TYSON** blinks at the top
-  of the intermission.
-- **Who is winning, on your own screen.** In Deathmatch the player in the lead gets **WINNING**
-  at the top of their view, in rainbow letters that ripple along the word — or, if you prefer,
-  in one colour at a time, the whole word turning red, then orange, yellow, green, blue and
-  magenta. In Team Deathmatch
-  every player on the leading team gets **BLUE TEAM WINNING** (or red, green, yellow), written in
-  the team's colour. Nobody gets it while the lead is tied, so it appears with the first frag and
-  moves the moment someone takes the lead. A dead player's view shows the rankings instead. It is
-  the same size as the level clock, so it shrinks with the views on a split screen.
-  **Options → Arcade Options → Messages + Banners → Winning Banner** sets it to **Rainbow** (the
-  rippling letters, the default), **Cycle** (the whole word one colour at a time) or **Off**. Team
-  Deathmatch always uses the team's colour whichever of the two is picked, since there the colour
-  is what tells you which team is ahead.
-- **No text messages over the game.** The lines Doom writes across the top of the screen —
-  "Picked up a shotgun", "You need a blue key", who fragged whom in Deathmatch — are off, because
-  nobody at a cabinet reads them and they only cover the view. They can be turned back on
-  separately for single player (Campaign and Single Level) and for multiplayer, under **Options →
-  Arcade Options → Messages + Banners** (both off by default). A split screen or an attract demo
-  never shows them either way.
-- **A level clock** on the HUD, counting elapsed time — or counting down in a timed deathmatch.
-  In Single Player a second line above it, **TT**, shows the total time for the whole run so far, so
-  you can see both how long this level is taking and how the run is going. The two line up in
-  columns. Single Level games do not show it — one map, so it would only repeat the level clock.
-- **Kills / items / secrets** on the HUD, so you can see whether a max run is still alive, and a
-  breakdown of all four ammo types, stacked above the keys. Both are single player only.
-- **Choose what the HUD shows.** **Options → Arcade Options → HUD Configuration** has an On/Off
-  switch for each HUD item: Keys, Ammo, Health, Armor, Frags, Kills, Items, Secrets, Level Clock
-  and Ammo Breakdown. All are on by default. A change shows at once; like every operator setting it
-  is only kept if made in a `-devmode` session. The HUD items only appear at the largest view size.
-- **Idle timeout.** Walk away and the cabinet returns to the attract screen by itself — 60 seconds
-  by default, with a 15-second warning counting down first. Both are set under **Options → Arcade
-  Options → Timeouts** (`Idle Timeout`, `Idle Warning`), and neither applies in a `-devmode`
-  session.
-- **A join screen that waits long enough.** When a multiplayer game starts, the join screen gives
-  the other panels **30 seconds** to press in — less frantic for someone new to the cabinet than
-  the old 20. **Options → Arcade Options → Timeouts → Join Screen Timeout** picks 20, 30, 45 or 60
-  seconds, or **Off**, which skips the join screen altogether and starts with panel 1 alone. A
-  panel that is already in can still press Use to start straight away. The same countdown is what
-  other cabinets get when Cabinet Link invites them.
-- **A game selector** listing whichever IWADs are actually installed, plus any level packs you drop
-  in, so the cabinet can offer several games from one menu.
+**Menus and game modes**
 
-**For the operator**
+- **Locked-down menus.** New Game, a few Options, and End Game while a game is running. No
+  save/load, no video or sound settings, and no Quit (the operator can put Quit back).
+- **Cabinet buttons drive the menus.** The stick moves the cursor, fire selects, use backs out.
+- **One-press games.** New Game offers **Campaign** (solo or co-op, decided by who presses in),
+  **Deathmatch** and **Team Deathmatch** (both ask only which map), **Single Level**, and the full
+  **Multiplayer** page for anyone who wants every setting.
+- **Team Deathmatch** in Red, Blue, Green and Yellow, with no friendly fire. Works across linked
+  cabinets.
+- **Single Level mode.** Play one map, come straight back to retry it. It has its own score table
+  and record demos.
+- **No Monsters**, a sixth skill on the Single Level page: the map empty of monsters, played at
+  Ultra-Violence, scored separately (the same rules as dsda-doom's "NoMo" category). Its Max
+  category is called **100%S**, since it only means finding every secret.
+- **A High Scores page** on the main menu, where Read This used to be. Flip through the pages with
+  left and right. Read This and its F1 shortcut are gone.
+- **A game selector** listing the installed IWADs and any level packs you add.
 
-- **Settings don't persist for players.** Anything changed during a session is forgotten at the next
-  launch. Only an operator session writes the config.
-- **One settings page per player.** Colour, crosshair and control scheme are together on a single
-  page — **Options → Player → `Player1 config`**, through `Player4 config` — instead of being spread
-  across two pages and three menu levels. Only the panels the cabinet has are listed. Operator-only
-  settings (autoaim, always run, mouse, weapon preference) are still there under *Player config* in
-  a `-devmode` session.
-- **A guided control setup** that asks for each control in turn and binds whatever you press —
-  stick, buttons, or anything else your panel is wired to. One per panel, up to four.
-- **A Players and Views page** (Options → Arcade Options → **Players & Views**) gathers everything
-  about how many people can play and how the screen is divided: how many control panels the cabinet
-  has, whether two players get stacked halves or side-by-side, whether three or four get a 2x2 grid
-  or four columns, and which quadrant each panel drives.
-- **A Performance page** (Options → Video Options → **Performance Options**) holds the settings that
-  trade picture for speed: **Framerate Cap**, **Render Threads**, **8bpp Draw** and **Show
-  Ticrate**. Render Threads is what lets a Pi run a four-way split at full speed; it applies to the
-  software renderer only and is greyed out under OpenGL, where it would gain nothing.
-- **Screen shaders in OpenGL.** **Options → Video Options → OpenGL 3D Card Options → Shaders →
-  Shader** runs the whole finished picture, menus and HUD included, through an effect:
-  - **CRT**: makes it look like an old tube monitor, with scanlines about the size of Doom's own
-    pixels and a phosphor mask. From lightest to heaviest: **zfast CRT**, **CRT-Pi**,
-    **CRT-Lottes** and **CRT-Geom** (curved, with rounded corners).
-  - **FXAA** smooths the jagged edges of walls and sprites. It's subtle, and cheap.
-  - **Software Look** snaps every colour to the game's own 256-colour palette, so lighting bands
-    the way the original software renderer's did, most visibly in dim areas and on flats.
-  - **VHS**: a worn videotape, with smeared colour, wobbling lines, snow, a tracking band drifting
-    up the screen and torn lines along the bottom.
-  - **Greyscale**, **Sepia**, **Night Vision** (green, grainy, through a round eyepiece) and
-    **Game Boy** (four shades of green, dithered, at Doom-sized pixels).
+**Multiplayer on one machine**
 
-  The default is Off. If the graphics driver cannot run shaders, or one fails to build, the page
-  says so in red. OpenGL only; the software renderer has no equivalent.
-- **A usable video mode list.** Every mode the display offers is now reachable — the list pages
-  instead of stopping dead partway through, sorts by size, drops the duplicate entries a monitor
-  advertises once per refresh rate, and can be filtered to one aspect ratio so a 32:9 panel isn't
-  buried in 4:3 modes it will never use.
-- **A switch for the rocket trails.** **Options → Effects Options → Rocket Trails** (in a
-  `-devmode` session — the Effects page is hidden on a locked cabinet) turns off the trail of smoke
-  behind a rocket, which vanilla Doom does not have — DoomLegacy added it. It ships **on**, the way
-  DoomLegacy has always drawn it, so nothing changes until you decide you want vanilla. The same
-  switch also covers the smoke behind a charging lost soul, because the engine draws both from one
-  routine; there is no way to keep one and not the other. Turning it on or off is safe for the
-  high-score board either way: each record demo remembers which way it was set and replays
-  correctly, so old records keep working after you change it.
-- **The pickup flash looks like Doom again.** Picking up health, armour, ammo or a key used to
-  paint a solid green block over that number on the status bar — a DoomLegacy extra that reads as a
-  graphics glitch rather than as a signal, since nothing on screen explains it. **Pickup Flash**
-  (Options → Effects Options, operator-only) now ships as **Vanilla**: no green block, just the
-  yellow screen tint the original game gives you when you pick something up. `Status` is still
-  there if you want the old behaviour back, along with `Half` (a gentler tint) and `Off`.
-- **Weapon Flash Fix.** Most weapons' muzzle flash art — pistol, shotgun, super shotgun, chaingun,
-  rocket launcher, plasma rifle, BFG — includes a full-brightness copy of part of the gun, so in a
-  dark room the flash ends in a hard line across the dimmer gun beneath it. This is in the original
-  game and every port shows it. With **Weapon Flash Fix** on, the gun itself is drawn at full
-  brightness for as long as the flash is showing, so the two match and it reads as the shot
-  lighting up the gun. Both renderers. **Options → Effects Options → Next → Weapon Flash Fix**
-  (operator-only), and it ships **On**. Picture only: it has no effect on gameplay, demos, scores
-  or linked games. Invulnerability's colouring is left alone.
-- **Translucency is on again.** The cabinet had been running with **Translucency** set to `Off`,
-  so the see-through things — plasma, the various DoomLegacy translucent sprites — were drawn
-  solid. It now ships as **Auto**, which is what DoomLegacy intends: translucent wherever the game
-  says a thing is translucent, and it leaves any DEH/BEX patch a wad brings with it in charge of
-  its own. Same page, also operator-only.
-  - Both of these are purely how the game *looks*. Neither affects the high-score board, and
-    neither changes how a recorded demo plays back.
-- **A cheats menu** — god mode, all weapons and keys, no clipping, exit level, and a position
-  readout. Operator-only by default, or leave it up for players. Using one voids that run's score,
-  except the position readout, which only shows information.
-- **A configurable initials timeout** (Options → Arcade Options → **Timeouts**, 60 seconds by default), for how long
-  the initials page waits before accepting what is on it. Nothing is waiting on it — the cabinet is
-  already back on the attract screen behind the page — so it can afford to be patient.
-- **A quieter attract screen.** The cabinet advertises itself with sound, but not at playing volume
-  all day. **Options → Arcade Options → Attract Volume** is a percentage of the normal volumes,
-  applied whenever the attract cycle is on screen and dropped the instant a game starts; `0` makes
-  the attract screen silent, `100` is the old behaviour. Defaults to 50. **Pressing anything brings
-  the sound straight back up to normal** — the menu you land on should not be quieter than the demo
-  that got your attention — and it drops back down again if you walk away without starting a game.
-  The attract screen comes up at this volume from the first note at boot; it used to spend the first
-  second and a half at full volume before settling.
-- **Quit is off the menu.** **Options → Arcade Options → Disable/Enable Menu Options → Quit Menu**
-  puts the Quit Game entry back for players; it ships off, because quitting drops whoever pressed it onto a desktop they should
-  never see. A `-devmode` session always keeps Quit whatever the setting says, so the operator is
-  never locked in.
-- **Switches for how much menu a player gets**, all on **Options → Arcade Options →
-  Disable/Enable Menu Options** alongside Cheats Menu and Quit Menu. **Multiplayer Menu** takes the **Multiplayer** row off New Game, leaving Campaign, Deathmatch and Single Level — the
-  three rows somebody standing at the cabinet actually presses. It takes away the settings page, not
-  the game: **Deathmatch is not affected**, and neither is anything a player can already start.
-  **Game Options** takes the **Game Options** page out of the Options menu, so the gameplay rules an operator has settled — weapon switching, jumping, monster
-  behaviour — are not there to be rewritten between runs. Both ship **On**, which is what the
-  cabinet did before they existed, and both are ignored in a `-devmode` session. **Enable No
-  Monsters** takes No Monsters off the Single Level page's Skill row, for an operator who would
-  rather not explain why E1M8 cannot be finished that way; it ships **On**, takes effect at once, and
-  a `-devmode` session always offers it.
-- **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
-  attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
-  there is then no record demo to show that way.
-- **An audit page**, the way an arcade board has one: games played and how many people were
-  playing, levels finished, deaths, how much of the cabinet's running time is actually being
-  played, which maps get played most, and how often a run stopped being scored and why. Under
-  **Options → Arcade Options → Audit**, or type `audit` at the console.
-- **Cabinet Link.** Two or more cabinets on the same home network pair with a passcode over an
-  encrypted connection. Start a Deathmatch or a Campaign on one and the others get a join screen for
-  it: whoever presses fire there plays in the same game, on their own screen, with the game's
-  network traffic encrypted too. Shared high scores are next and not in yet. Off unless you set it
-  up; see [Connecting cabinets together](#connecting-cabinets-together-cabinet-link).
-- **A boot game setting**, so the cabinet always starts in the game you chose rather than whichever
-  IWAD the search finds first.
-- **A key that unlocks the cabinet**, so operator settings can be reached on a built cabinet with no
-  command line. Plug a keyboard in, press Scroll Lock at the attract screen, and the cabinet
-  relaunches itself in operator mode; press it again and it saves your changes and comes back
-  locked. It is an assignable control like any other (**Devmode Restart**, on the Setup Controls
-  pages), and it is ignored during a game, so nobody can lose a run to it.
-- **Deathmatch that ends by itself.** A five-minute default time limit, configurable, and dropped
-  weapons — nobody can be left stuck in a stalemate on an unattended machine.
-- **Config safety.** Every save keeps a backup, and lines that fail to apply are reported at startup
-  instead of silently doing nothing.
+- **Up to four players.** Two share the screen stacked or side by side; three or four get a 2x2
+  grid, or four columns on a very wide screen. Each view gets its own CPU core, so four players cost
+  about the same as one.
+- **A join screen** after the game is chosen. Each panel presses fire to join and sets its colour,
+  crosshair and controls. It waits **30 seconds** by default.
+- **Scoreboards for up to 32 players.** Past 8 (campaign) or 12 (deathmatch) players, the
+  intermission switches to a compact two-column layout. Below that it looks as it always did.
+- **WINNING banner.** In Deathmatch the leader's view shows **WINNING** in rippling rainbow letters.
+  In Team Deathmatch everyone on the leading team sees **BLUE TEAM WINNING** (or red, green,
+  yellow) in the team's colour. Nobody gets it during a tie.
+
+**Scoring**
+
+- **Survival runs.** A campaign run is ranked by how far you got in the episode, then by time.
+  There are four categories, all measured at once: **speed**, **max** (100% kills and secrets on
+  every level so far), **pacifist** (never damage a monster) and **tyson** (100% kills with only
+  fist, chainsaw and pistol). Times are kept to hundredths of a second.
+- **A run leaderboard with initials.** Make the board and you enter three initials. The page
+  remembers the last player's initials until the cabinet has been idle, then resets to `AAA`.
+- **Record demos.** The run behind each record is saved and replayed in the attract cycle with a
+  caption like `E1M1-E1M5  UV  MAX  4:32.17` under a blinking **PRESS FIRE TO START**.
 - **A fixed competitive ruleset.** Gameplay settings are pinned to a vanilla baseline so scores are
-  comparable. A run played outside it still plays, but is marked `UNRANKED` and records nothing.
-- **Portable install.** The whole configuration lives next to the binary, so the cabinet is one
-  directory to copy or back up.
+  comparable. A run outside it is marked `UNRANKED` and records nothing.
+
+**Picture and HUD**
+
+- **Smoother than 35 FPS.** The engine draws extra frames between the 35 tics a second and
+  interpolates movement. The game and demos are unchanged. Capped at 60 by default.
+- **Ultrawide (21:9, 32:9) and portrait screens.** The view is drawn at the monitor's real shape with
+  a matching field of view, and the HUD, menus and weapon keep Doom's proportions.
+- **Full-screen pages.** The attract pages, intermission and finale fill the screen at any
+  resolution.
+- **HUD additions.** A level clock (plus a **TT** total run time in Single Player); kills, items and
+  secrets; and all four ammo types. Each HUD item can be switched off under **Options → Arcade
+  Options → HUD Configuration**.
+- **No text messages over the game** by default ("Picked up a shotgun" and so on). They can be
+  turned back on separately for single player and multiplayer under **Options → Arcade Options →
+  Messages + Banners**.
+
+**Attract cycle**
+
+- Shows the title page, the cabinet splash (`CREDIT2`), the credits page (`CREDIT`), a demo, and
+  the high-score pages once there are records.
+- **Chase camera.** Every third record demo is shown from behind the player, captioned **CHASE
+  CAM**, so passers-by see a person playing rather than a frozen screen.
+- **Quieter attract sound.** The attract cycle plays at a percentage of normal volume (50% by
+  default). Any button press restores full volume.
+- **Freeze recovery.** If an attract demo stalls, the cabinet notices within about five seconds,
+  moves on, and logs what happened.
+- **Idle timeout.** An abandoned game returns to the attract screen after 60 seconds, with a
+  15-second warning first.
+
+### For operators
+
+- **Players can't save settings.** Only an operator session (`-devmode`) writes the config.
+- **An unlock key.** Press Scroll Lock at the attract screen to restart into operator mode, and
+  again to save and lock. See [Unlocking the cabinet](#unlocking-the-cabinet-without-a-command-line).
+- **One settings page per player** (**Options → Player → `Player1 config`** to `Player4 config`)
+  with colour, crosshair and control scheme.
+- **Guided control setup** for each panel: it asks for each control in turn and binds whatever you
+  press.
+- **Players & Views page** for the panel count and how the screen is divided.
+- **Performance page** with Framerate Cap, Render Threads, 8bpp Draw, Row Padding and Show Ticrate.
+- **OpenGL screen shaders:** CRT (zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom), FXAA, Software Look
+  (snaps colours to Doom's palette), VHS, Greyscale, Sepia, Night Vision and Game Boy. Off by
+  default. Under **Options → Video Options → OpenGL 3D Card Options → Shaders**.
+- **A usable video mode list** that pages, sorts, removes duplicates and filters by aspect ratio.
+- **Menu switches** under **Options → Arcade Options → Disable/Enable Menu Options**: Cheats Menu,
+  Quit Menu, Multiplayer Menu, Game Options and Enable No Monsters.
+- **A cheats menu** (god mode, weapons and keys, no clipping, exit level, show coordinates). Using
+  one voids the run's score, except Show Coordinates.
+- **An audit page** like an arcade board's: games played, player counts, levels finished, deaths,
+  play time and the most-played maps. **Options → Arcade Options → Audit**, or `audit` at the
+  console.
+- **Cabinet Link.** Cabinets on the same network pair with a passcode over an encrypted connection,
+  invite each other into games, and share high scores. See
+  [Connecting cabinets together](#connecting-cabinets-together-cabinet-link).
+- **Boot game setting**, so the cabinet always starts in the game you chose.
+- **Deathmatch ends by itself** after five minutes by default, and dropped weapons prevent
+  stalemates.
+- **Config safety.** Every save keeps a backup, and lines that fail to apply are reported at startup.
+- **Portable install.** Everything lives next to the binary, so the cabinet is one directory to copy
+  or back up.
+- **Visual defaults closer to Doom.** Rocket trails can be switched off (**Options → Effects
+  Options → Rocket Trails**; this also covers the lost soul's smoke). **Pickup Flash** defaults to
+  `Vanilla` (a yellow tint instead of a green block on the status bar). **Weapon Flash Fix** (on)
+  lights the gun while its muzzle flash shows, hiding the hard line in the original art.
+  **Translucency** defaults to `Auto`. None of these affect scores or demos.
 
 ---
 
 ## Fixes to the engine itself
 
-Most of the work above sits on top of DoomLegacy. Some of it went *into* it — the list below is
-bugs and shortcomings in stock DoomLegacy 1.48.18 that the cabinet ran into and fixed, rather than
-anything the arcade build introduced. None of them are arcade-specific, so they may be of interest
-to anyone else running this port. Each is written up in full in the commit that made it and in
-[`docs/arcade/`](docs/arcade/).
+These are bugs in stock DoomLegacy 1.48.18 that the cabinet hit and fixed. None are arcade-specific.
+Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
 
 **Crashes and lockups**
 
-- **The software renderer crashed on every sprite at 24 or 32 bits per pixel.** `R_DrawColumn_24`
-  and `R_DrawColumn_32` declared their height mask unsigned where the 8-bit drawer declares it
-  signed, turning a no-op mask into a read four gigabytes past the texture. On a modern desktop
-  colour depth that meant a segfault a second or two into any software-mode game.
-- **Software rendering was garbled in fullscreen.** The top line of the screen correct and
-  everything below it sheared sideways. The engine hands its finished frame to SDL with the wrong
-  row stride — that of the window's own framebuffer, a different buffer that is never displayed,
-  rather than that of the buffer being sent. The two match exactly while the window is the size
-  being drawn, which is always true in a window and rarely true in fullscreen, so the bug hid until
-  you went fullscreen. It also read 1.6 MB out of a 1.0 MB buffer.
-- **Software mode would not start at all on a display that offers no small resolution.** The
-  fullscreen list is built from the modes the display advertises, with anything bigger than the
-  engine's own 1600x1200 drawing limit filtered out — so a panel offering only 1920x1080 leaves it
-  empty, and that is a fatal error at startup rather than a fallback: "setup drawmode failed, cannot
-  use native window". The software renderer now scales into whatever the desktop is, so it no longer
-  needs the display to offer a mode it can draw at.
-- **A colour depth left over from another drawmode stopped the game starting in software mode.**
-  Each drawmode has a fixed depth and the engine checks it, then immediately discards that check and
-  takes the depth from the config instead — so a `config.cfg` still saying 32 bits from an OpenGL
-  session asked a 24-bit display for a 32-bit mode, found none, and gave up. The engine keeps
-  running in its 800x600 startup window, which reads as the loading screen setting the resolution
-  rather than as a failure. The drawmode's own depth is now asserted at startup as well as on the
-  menu path.
-- **Selecting a software drawmode from the video menu killed the display.** Each drawmode's config
-  file carries its own colour depth, and nothing checked it against what that drawmode can actually
-  do — so a palette mode asked for a 32-bit screen, the mode change failed *after* the renderer had
-  already been torn down, and the engine carried on running with nothing on screen. It looks
-  exactly like a freeze.
-- **A menu on which nothing is selectable hung the game.** The cursor's up/down search is an
-  unbounded loop looking for a selectable row, so a page where every row is disabled spins inside
-  the event handler for ever — no tics, no redraw, no way out. Both loops are bounded now.
-- **The sound thread could kill the game at the start of a level.** Starting a sound published the
-  channel to the mixer before it had filled in the volume table the mixer reads a line later, so an
-  audio callback landing in that window dereferenced a null pointer and took the whole process down
-  from SDL's audio thread — with the game thread nowhere in the backtrace. Only ever on the first
-  use of each of the sixteen channels, which is the first burst of sound after a level loads, so it
-  read as a random crash on startup. It showed up once in about 110 headless demo replays.
-  Reordering those writes fixed it on a PC but **not on a Raspberry Pi**, which still crashed the
-  same way now and then. The sound code and the mixer now share the channel list through a proper
-  lock, and the mixer works from its own copy of it, so it can never see a sound half set up — on
-  any machine. Nothing sounds different and no sound starts later.
-- **A door or a rising staircase could be mistaken for a monster, and crash the game.** Every new
-  thinker is sorted into the MBF lists monsters search for targets, and the sort looked at what
-  kind of thinker it was *before* the door, floor, light or platform code had said — so it read
-  whatever the memory's previous owner had left there. When that was a monster, a door could land in
-  the list of monsters, and the next monster to look for a fight read the door as a monster and
-  crashed. It took a long unattended run for memory to be reused just so, which is why it showed up
-  only after half an hour to several hours of attract on a Raspberry Pi. New thinkers are no longer
-  sorted until they are known to be objects. Record demos play exactly as before.
+- The software renderer crashed on every sprite at 24 or 32 bits per pixel (an unsigned height mask
+  read 4 GB past the texture).
+- Software fullscreen was sheared sideways: the frame was handed to SDL with the wrong row stride.
+- Software mode would not start on a display with no mode at or below 1600x1200. It now scales to
+  the desktop.
+- A colour depth left over from OpenGL in `config.cfg` stopped software mode starting, or killed the
+  display when switching drawmode from the menu.
+- A menu page with nothing selectable hung the game in an endless loop.
+- The sound thread could crash at level start by reading a channel before it was set up. The mixer
+  now works from its own locked copy of the channel list.
+- A door or staircase thinker could be sorted into the monsters' target list, crashing the game
+  after long unattended runs on a Raspberry Pi.
 
 **OpenGL**
 
-- **Every patch had a black outline** — sprites, the HUD, menu graphics, the intermission
-  animations. Textures were clamped with OpenGL 1.0's `GL_CLAMP`, which samples the *border*
-  colour, so filtering blended a transparent-black fringe into all four edges. Worst on the
-  intermission animations, where magnification turns that fringe into a visible 2–3 pixel line.
-- **Graphics that are not a power-of-two size had a dark line on their right and bottom edges.**
-  Such a graphic is stored in the corner of a larger texture, and the empty space around it is
-  transparent black, which filtering blended into the edge. It was plainest on the Ultimate Doom
-  episode 2 and 3 intermission maps — the Tower of Babel looked drawn a pixel up and to the left —
-  and it touched the HUD font too. The empty space is now filled with copies of the edge pixels.
-- **Monsters and items had a fuzzy grey outline** with Bilinear or Trilinear filtering, wider on
-  things further away. The filter was blending the sprite's edge with its transparent surround and
-  then the edge was darkened a second time as it was drawn. Sprites are now drawn the way the
-  weapon already was, so the soft edge blends into the scene instead of going dark. (The softness
-  itself is what Bilinear is; `Nearest` gives hard pixel edges.)
-- **Close-up sprites had flat, pixelated tops** — the imp's and sergeant's heads, the marine's
-  helmet — even with smoothing on. The art runs right up to the edge of its box there, so the
-  smoothing had nothing to fade into and the outline stopped in a hard straight line. Sprites in
-  the world now have a clear pixel of room around them to fade into, and look the same shape
-  everywhere else.
-- **A dark line across the pistol when it fired**, worst in a dark room. The muzzle flash art
-  includes its own full-bright copy of the top of the gun, and OpenGL lit the real gun under it far
-  darker than the software renderer does: software lights your weapon as though it were right in
-  front of you, which it is, while OpenGL lit it like a wall. In E1M8's opening room the gun came out
-  at a third of its software brightness, so the bright copy ended in a hard line. The weapon is now
-  lit exactly as software lights it, which brings the line down to the faint one software (and every
-  other port) shows — it is in the original art. **Weapon Flash Fix**, above, removes the rest. In
-  a medium-lit room the weapon is a little brighter than it was in OpenGL; in a bright one it has not
-  changed. Now that Weapon Flash Fix handles the line on its own, this brighter lighting is
-  optional: see **Vanilla Weapon Lighting**, below. It ships Off, so OpenGL is back to Doom
-  Legacy's original, darker weapon.
-- **Vanilla Weapon Lighting** (OpenGL only). **On** lights your weapon the way the software
-  renderer and the original game do: roughly as bright as the room right in front of you. **Off**
-  lights it the way Doom Legacy's OpenGL renderer always has, like a wall of the room, so in a dim
-  room it is about half as bright. In a bright room the two look the same. **Options → Video
-  Options → OpenGL 3D Card Options → Lighting → Vanilla Weapon Lighting** (operator-only), and it ships
-  **Off**. Picture only: it has no effect on gameplay, demos, scores or linked games.
-- **Taking a screenshot in OpenGL at 1366x768 crashed the game.** Any width whose rows do not come
-  out to a multiple of four bytes overran the capture buffer. Found while capturing the pistol.
-- **Menu, HUD and intermission lettering looked blocky** with smoothing on — each word sat in a
-  hard-edged dark box, because the letters' dark outline was cut off square where the art meets
-  its box, and darkened a second time as it was drawn. Text and menu graphics now get the same
-  treatment as the sprites and their outlines follow the letters. Pictures that fill their whole
-  box — the title screen, the status bar, the intermission maps — are drawn exactly as before, so
-  they still meet the screen edge cleanly.
-- **A few letters were still square after that** — `I`, `H`, `-`, `.`, `!` — because their art
-  fills their whole box, which is also how the full-screen pictures were being recognised. Font
-  letters are now always smoothed, whatever their shape.
-- **Your weapon and its muzzle flashes still had flat, hard edges** with smoothing on — the tip and
-  sides of the flash, and the line where the flash ends across the pistol — because the weapon was
-  the one thing left without the clear pixel of room to fade into. It has it now. The bottom of a
-  gun that reaches the bottom of the screen is left solid, so it still meets the screen edge
-  cleanly.
-- **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
-  `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
-  config is executed long before the renderer is set up, so the handler silently did nothing and
-  nothing re-applied it afterwards. A config asking for `Nearest` filtering rendered `Bilinear` for
-  the life of the build, while displaying `Nearest` in the menu.
-- **The screen strobed on every level load.** The BSP walk drew a "Loading... N%" box about fifty
-  times, each one forcing a page flip with no frame behind it, so it alternated between two stale
-  buffers as fast as the GPU allowed. Three startup-only status messages were forcing full repaints
-  on top of that.
-- **The screen melt and crossfade never ran under OpenGL.** Both were implemented, the setting
-  existed and the menu row was there, but the whole wipe was gated on the software renderer. It
-  works in both now. Two latent bugs fell out of that: a wipe that hit its two-second timeout left
-  freed state behind for the next one, and the screen capture ran even when the wipe was off.
-- **CRT-Geom bent the picture further during a crossfade or melt.** Going from a title page into a
-  demo, the curved edges swung in towards the middle of the screen for the length of the wipe,
-  then snapped back. For the few frames while the demo loads there is nothing to draw, but each
-  one was still shown — and what OpenGL had left in the buffer was an earlier, already-curved
-  frame, so the shader curved it again, once per frame, and the wipe then started from that. Those
-  empty frames are no longer shown; the last real picture simply stays up. Any shader was affected;
-  CRT-Geom's curve just made it obvious. Starting a game from the menu (Single Level, New Game)
-  still did it, through a separate empty frame shown while the game connects to itself, and so did
-  the end of the intermission going into the next level. Rather than keep chasing each place an
-  empty frame could come from, the shader now puts the clean, unshaded picture back after every
-  frame, so an empty frame always shows the right picture whatever produced it.
-- **Invulnerability barely showed under OpenGL.** The sphere is supposed to turn the view into a
-  photographic negative — a mostly white screen — and instead it brightened slightly, like
-  night-vision goggles. The effect is a colormap, and the hardware renderer has no colormap, so all
-  it ever did with it was draw everything full bright. The view is now inverted with a blend pass
-  over the finished frame. Greyscale is the one part a fixed-function blend cannot do, so a red
-  wall comes out cyan where software makes it grey — right brightness, wrong hue.
-- **The spectre fuzz effect did not exist in OpenGL** — every partially invisible thing was drawn
-  as flat translucency. The original boiling-outline effect is now reproduced on the hardware path,
-  as far as a fixed-function backend can.
-- **Blood vanished when it hit the floor in OpenGL.** In software, blood lands and leaves a smear
-  on the floor for the *Blood time* setting; in OpenGL it disappeared on landing (blood on walls
-  was always fine). Doom 2's "pool of blood" decorations were missing too. The smear art is drawn
-  a few units *below* the spot the blood rests on: software paints it over the floor anyway, but
-  OpenGL hid it under the floor. It is now raised to sit on the floor, so it shows in both.
-- **Hairline seams where surfaces meet.** Thin bright lines along walls and across flats, in two
-  separate families with two separate causes — the sky is drawn behind everything, so either hole
-  shows as a one-pixel white line. The node builder rounds a split vertex to whole units, so the
-  wall (built from segs) and the flat (built from subsector polygons) disagree by up to ~0.9 map
-  units. Wall against flat is now closed by pulling the *polygon* corner onto the wall, which is
-  anchored to real map data; flat against flat by `SolveTProblem`, which was pruning nearly every
-  candidate away on a bbox test comparing an x edge against a y bound. Checked over whole maps by
-  counting gap-producing T-junctions rather than through screenshots: E1M1 4→0, E1M2 16→0,
-  E1M3 10→0, E1M5 16→0, E1M7 13→0, MAP01 2→0, MAP15 8→0. Software rendering is unaffected, and
-  neither change can touch gameplay or demos.
-- **A black seam through see-through bars, and black outlines round their holes.** Wherever two
-  pieces of the big brown bars met — all round the E1M1 nukage pool, for one — a two-pixel black
-  line ran down through the holes, and every hole had a dark stair-stepped rim. The renderer checks
-  each wall texture for holes so it can draw it in the see-through pass, but the check stopped a
-  quarter of the way down the texture, so bars whose holes start lower (`BRNBIGC/L/R`, Doom 2's
-  `MIDBRONZ`) were drawn as solid walls with the holes cut out, which blacks out anything half
-  transparent. The check now covers the whole texture. And see-through textures now stop at the
-  edge of the opening like every other middle texture: E4M3's start cage used to hang its bottom
-  band down over the wooden step, and the same thing happened on 118 line sides in the stock IWADs.
-- **The software renderer sometimes drew a one-pixel sliver at the end of see-through bars.** The
-  pixel column at the very end of a wall can work out one texture column past the end, which wraps
-  round to the texture's *other* edge — invisible on a solid wall, but on bars it put a solid
-  column where a hole belongs. Columns are now kept inside the wall they belong to.
-- **A level's palette tint outlived the level.** Finishing a level in a radiation suit left
-  everything after it green, and taking a hit at the exit switch left it red, right through the
-  intermission and into whatever came next — the tint is only ever reset when the *next* level
-  starts.
-- **Changing resolution in OpenGL did nothing.** Three separate things stopped it: the mode change
-  required a texture that belongs to the software path alone and so always took the failure branch;
-  the code then asked SDL what mode it had got and was told the mode SDL *intended*; and a
-  fullscreen window created moments after its predecessor was destroyed does not reliably get input
-  focus, without which SDL never applies its mode at all. The result was that OpenGL always rendered
-  at the desktop resolution, whatever the menu said — and there is no scaling step in the hardware
-  renderer, so nothing else could correct it.
+- Every patch had a black outline (textures were clamped with `GL_CLAMP`).
+- Graphics that are not a power-of-two size had a dark line on their right and bottom edges.
+- Sprites, text and the weapon had grey fuzzy outlines or hard flat edges with filtering on. They now
+  have room to fade into and blend correctly.
+- The weapon was lit like a wall instead of like software. **Vanilla Weapon Lighting** (**Options →
+  Video Options → OpenGL 3D Card Options → Lighting**) restores the software look. It ships Off.
+- A screenshot at 1366x768 crashed the game (row size not a multiple of four bytes).
+- GL settings in the config (`gr_filtermode`, `gr_fogdensity`, `gr_polygonsmooth`) never reached
+  the driver.
+- The screen strobed on every level load.
+- The screen melt and crossfade never ran under OpenGL.
+- Shaders such as CRT-Geom bent the picture further during a wipe.
+- Invulnerability barely showed. It now inverts the view (in cyan tones rather than greyscale).
+- The spectre fuzz effect did not exist. It is now reproduced as closely as fixed-function GL allows.
+- Blood vanished when it hit the floor.
+- Hairline seams where walls meet floors, and where flats meet each other. Gap-producing T-junctions
+  on stock maps are now zero.
+- Black seams and outlines through see-through bars (such as round E1M1's nukage pool), and bars
+  hanging below their openings on 118 line sides in the stock IWADs.
+- A palette tint (radiation suit green, damage red) carried over past the end of a level.
+- Changing resolution did nothing. Three separate bugs kept OpenGL at the desktop resolution.
 
 **Demos**
 
-- **Demos desynced whenever `tiredrun` was on, which is DoomLegacy's own default.** Playback
-  force-disables the Legacy gameplay extras, recording does not, and none of them were written into
-  the demo — so a demo recorded with tired-run replayed without it and drifted apart over a few
-  thousand tics.
-- **Rocket smoke trails desynced any demo with a rocket in it.** `A_SmokeTrailer` timed itself off
-  the raw tic counter, which is zeroed once per process and never per game, so its phase at the
-  start of a run was however long the machine had been sitting idle. Upstream had already fixed the
-  identical bug in the other copy of it (`A_Tracer`) and missed this one.
-- **The demo header described the *previous* game** — skill, episode, map, deathmatch, respawn and
-  fast monsters were all written before the new game's settings had been applied. Those were only
-  misleading to anything that reads a header. One field was worse: the multiplayer byte. Playback
-  restores it from the header and sets the level up with it, so a solo run recorded in a session
-  that had earlier been multiplayer replayed with *multiplayer rules* for the whole level — weapons
-  and keys persisting on pickup, different kill accounting, a different damage path. The E1M3 run
-  that found this matched its recording for 901 tics, then took damage the replay didn't, drifted
-  off route and spent its last 600 tics stuck on a lift.
-- **Every DoomLegacy demo replayed under different rules than it was recorded with.** Playback
-  decided which Boom-era behaviours to switch off by comparing the demo's version number against
-  Boom's numbering — but Legacy demos are numbered 111–148 and Boom demos 200–214, two separate
-  schemes that are not comparable, so the test was never true and the whole Boom behaviour set was
-  switched off on playback while recording left it on. Eight engine behaviours differed between
-  recording and replay, the movement model among them.
+- Demos desynced when `tiredrun` was on, which is DoomLegacy's default.
+- Rocket smoke trails desynced any demo with a rocket in it.
+- The demo header described the *previous* game, so a solo run could replay under multiplayer rules.
+- Every DoomLegacy demo replayed with Boom behaviours switched off that were on during recording (a
+  version-number comparison across two incompatible numbering schemes).
 
 **Gameplay**
 
-- **Nightmare's fast monsters never sped up demons or spectres.** Fast fireballs worked; the other
-  half of the setting halves the sarge frame durations, and with MBF21 compiled in it only touches
-  frames carrying a flag that nothing ever set on the vanilla frames. The restore path was broken
-  as well — a bitwise `and` between `1` and `2` — so the timings would never have been put back.
-- **You could climb on top of monsters and get stuck.** Vanilla Doom things are infinitely tall;
-  Legacy applied Heretic's over-under passing to the Doom player unconditionally, with no setting
-  for it, which is how a player ends up wedged somewhere vanilla cannot reach — the lift by the
-  E1M2 exit being the cabinet's own example. There is now a **Monster Height** setting, defaulting
-  to vanilla, with Heretic exempt.
-- **The HUD overlapped itself in splitscreen below 640x480.** Where the elements *sit* scales
-  smoothly with the screen, but the size they are *drawn* at is a whole-number multiple that cannot
-  go below 1:1 — so in a four-way split at 320x200 the ammo and armour counts ran into each other,
-  the health count ran off the left edge of its quarter, and the three key icons were drawn on top
-  of one another. A view too small for the big status numbers now uses the small ones (the same
-  digits the classic status bar uses for ammo) and drops the icons beside them, and the key icons
-  never step by less than they are wide. Full screen play is unchanged at every resolution, and so
-  is a four-way split at 640x480 and above.
-- **The weapon floated in mid-air in side-by-side two-player.** The weapon sprite is scaled from
-  the width of the view, which is only correct while the view is as tall as it is wide in
-  proportion — true full screen and in a four-way split, false for the side-by-side halves, which
-  are half width and full height. So it was drawn at half size but still anchored to the middle of
-  the screen, leaving it hanging a quarter of the view above the floor at every resolution. It is
-  anchored to the bottom of the view now.
-- **The rankings you see when you die drew every line on top of the first**, so the scores
-  turned into one unreadable smear. This affected Deathmatch too, not just Team Deathmatch; each
-  player or team has its own line again.
-- **Deathmatch rankings covered the whole screen when anybody died**, replacing both views in an
-  ordinary two-player game rather than just the dead player's. They are drawn per view now.
-- **Time Limit in Net Options did nothing.** The row edited the engine's own limit, which is
-  rewritten at every game start — forced to five minutes for deathmatch and to zero otherwise — so
-  a typed value was overwritten before anything could read it, and the row displayed whatever the
-  last game had left behind.
+- Nightmare's fast monsters never sped up demons or spectres.
+- Players could climb on top of monsters and get stuck. A **Monster Height** setting now defaults to
+  vanilla (Heretic is exempt).
+- The HUD overlapped itself in a split screen below 640x480.
+- The weapon floated in mid-air in side-by-side two-player.
+- Death-screen rankings drew every line on top of each other, and covered every player's view instead
+  of just the dead player's.
+- **Time Limit** in Net Options was overwritten before anything read it.
 
 **Input**
 
-- **Analog sticks produced no input at all.** The only axis handling was for triggers, gated on the
-  joystick's *name* matching one of two literal strings, and compiled out by default besides. A
-  stick worked on its d-pad setting and was completely dead in analog mode. Both sticks and the
-  triggers are read generically now, on any pad.
-- **The right stick was read nowhere**, on any controller.
-- **The LT/RT triggers** were behind that same name test, and posted a keypress on every event while
-  held rather than once on the transition.
-- **A reconnected gamepad landed on top of another player.** SDL2 event ids are per-device instance
-  numbers, not slots, and the code clamped them into the four-slot array — so a pad that slept and
-  woke came back as instance 4, 5, … and folded onto the last slot, silently sharing an identity
-  with whoever was already there. Joysticks were also enumerated only at startup, so anything
-  plugged in later was invisible for the life of the process, and all four pads shared one d-pad
-  state between them.
-- **The control-name table was one entry out of step with the control enum**, and had been for as
-  long as the feature that shifted it has been compiled in. It round-trips, so bindings worked —
-  but `config.cfg` recorded them under the wrong names, which matters the moment anyone reads or
-  hand-edits that file.
+- Analog sticks produced no input, the right stick was never read, and the triggers only worked on
+  two named pads. All are now read on any pad.
+- A reconnected gamepad could take over another player's slot, and pads plugged in after startup were
+  ignored.
+- The control-name table was one entry out of step, so `config.cfg` saved bindings under the wrong
+  names.
 
-**Configuration**
+**Configuration and display**
 
-- **`config.cfg` was being silently truncated at 8 KB.** `exec` pushes a whole file into the command
-  buffer in one go, and the buffer was capped at 8192 bytes; the cabinet's config is 8195. The only
-  sign was one line scrolling past in the console. Every setting past the cut kept its compiled
-  default and was then written back over the file — 28 of 188 settings lost at every load. That is
-  the whole mechanism behind "my config blew itself away".
-- **Settings that fail to apply are now reported at startup**, by line number, rather than leaving
-  the cvar at its default with no indication. `cfgcheck` repeats the check on demand, and every
-  save keeps a `config.cfg.bak`.
-
-- **A 4:3 resolution was stretched across a widescreen monitor instead of getting black bars.**
-  In software fullscreen the finished picture was scaled to fill the whole panel whatever shape it
-  was, so 640x480, 800x600 or 1024x768 on a 16:9 screen came out **33% too wide** — and the
-  renderer had drawn that picture *for* a 4:3 frame, so the distortion was real and not a matter
-  of taste. It looked like OpenGL was doing it right, but OpenGL only changes the display mode and
-  lets the monitor's own scaler add the bars; on a monitor set to stretch, it would have looked
-  just as wrong.
-
-  There is a **Keep aspect** setting on Video Options now, on by default. The picture is fitted to
-  the screen at its own shape with black bars filling the rest — down the sides normally, along the
-  top and bottom on a monitor turned on its side. Set it to **No** for the old behaviour if you
-  would rather fill the screen than keep the proportions. It does nothing at a resolution that
-  already matches the monitor's shape, so it changes nothing on a cabinet running at native
-  resolution, and it is greyed out in OpenGL, where the monitor is doing the scaling.
-
-  Note this is **not** what *View fit* does, which is easy to assume. View fit decides how much of
-  the world goes into the picture the engine draws; Keep aspect decides how that finished picture
-  is placed on the screen. No View fit setting can add black bars.
-
-- **At 800x600 the HUD was drawn a third narrower than it should be.** Only at 800x600 — every
-  other 4:3 resolution was fine, which is what made it odd. The status numbers and icons were the
-  same width as at 640x480 but half again as tall; the health cross, which is square, came out a
-  tall rectangle. The 2D art is drawn at whole-number scales, and 800x600 is the one resolution
-  where the width could not take the scale the height had picked, so it kept a mismatched pair
-  instead of bringing them back together. It now uses the same scale on both axes, as its
-  neighbours do. Nothing else moves — 800x600 is the only resolution affected.
+- `config.cfg` was silently cut off at 8 KB, losing 28 of 188 settings at every load.
+- Settings that fail to apply are now reported at startup by line number.
+- 4:3 resolutions were stretched across widescreen monitors. **Keep aspect** (on by default) adds
+  black bars instead.
+- At 800x600 the HUD was drawn a third too narrow.
+- Full-screen pages were letterboxed in software mode.
+- Ultrawide modes were silently dropped. The size cap is now 5120x2160.
+- On portrait screens the HUD and weapon were too narrow, split-screen views too tall, the best-times
+  table ran together, and wall faces went missing at the screen edges.
+- The video mode list lost modes to three stacked limits and never removed duplicates.
 
 **Software renderer speed**
 
-- **Wasted work on every damage and pickup flash, with 8bpp Draw on.** Every step of the red damage
-  flash and the gold pickup flash rebuilt a 4,096-entry colour table from scratch: about a million
-  colour comparisons, 3.6 ms on a laptop. The table depends only on the normal palette, never on the
-  flash, so every rebuild produced exactly the table that was already there. It is now rebuilt only
-  when the normal colours really change (a gamma change, a different palette): once per game
-  instead of 85 times in a three-level run. Nobody noticed it in play, even on the Pi, but it was a
-  spike on exactly the frames where the most is happening. Software renderer with 8bpp Draw on
-  only, which is how a Pi runs.
-- **Walls, floors and ceilings draw about 12% faster with 8bpp Draw on.** The drawing loops re-read
-  their settings from memory on every pixel instead of once per line, because the compiler could
-  not prove that writing a pixel had not changed them. Measured at 1024x768 on a laptop, the time
-  spent drawing the 3D view went from 3.38 ms to 2.97 ms a frame; the picture is identical, checked
-  frame by frame. The same change at 32 bits per pixel measured slightly *slower*, so the higher
-  colour depths were left as they were.
-- **Getting the picture onto the screen is faster in the software renderer.** On a Pi 3 that last
-  step was more than half of every frame, bigger than drawing the 3D view. Two changes. The screen
-  is now cleared before the picture is drawn onto it even when the picture fills the screen: the
-  Pi's graphics chip works in tiles, and a frame that does not start with a clear makes it read the
-  previous frame back before drawing over it. That is what made 640x360, 864x486 and 960x540 —
-  the sizes that fill a 16:9 panel exactly, and so were never cleared — slow for their size: with
-  the clear, 640x360 went from 59 fps to 72 on the Pi, level with 640x350. And with **Render
-  Threads** above 1 the 8bpp palette expansion is shared across the cores instead of being done by
-  one. On the laptop that halved its cost; on the Pi it made no visible difference, because at that
-  point the Pi is waiting for its graphics chip rather than its processor. The picture itself is
-  unchanged.
-- **Clearing HUD messages erased the wrong part of the screen at 16 and 32 bits per pixel**, and
-  would have at any depth with a padded screen buffer; **screenshots** would have come out
-  scrambled with a padded buffer at 16 and 32 bits. Both stepped through the screen by the width in
-  pixels where the engine's own rule is the row length in bytes. Nobody saw either: nothing padded
-  the buffer, and the message clearing only runs with a reduced view size. Found while adding
-  **Row Padding**, and fixed.
+- The 8bpp colour table was rebuilt on every damage and pickup flash step. It is now built once.
+- Walls, floors and ceilings draw about 12% faster with 8bpp Draw on.
+- Getting the picture to the screen is faster, especially on a Pi (640x360 went from 59 to 72 fps).
+- Clearing HUD messages and taking screenshots now handle padded screen rows correctly.
 
 **Smaller things**
 
-- **Gamma settings have their own page.** *Gamma Function*, *Gamma*, *Black level* and
-  *Brightness* moved off Video Options to **Video Options → Gamma Options**, which is also where
-  F11 now takes you. Video Options had run out of room; this made space for Keep aspect and leaves
-  some over.
-- **Low resolutions can be chosen in fullscreen**, not just in a window. 320x200, 400x300, 512x384,
-  640x480 and 800x600 are offered fullscreen for the software renderer and scaled up by the GPU with
-  nearest-neighbour filtering, so they stay sharp. Previously the fullscreen list held only the modes
-  the display advertised and a request for anything else was silently snapped to the nearest one — a
-  Raspberry Pi asked for 320x200 came up rendering 1024x768 in software. Software fullscreen also no
-  longer changes the display mode at all, so switching to it is instant and does not make the monitor
-  re-sync.
-- **No loading window at startup.** The engine used to open a fixed 800x600 window before it had
-  even read the wads, paint the startup messages into it, and then throw it away when the configured
-  video mode was set — so launching flashed a wrong-sized window before the game appeared. The
-  startup messages go to the terminal and the log as they always did, and nothing is put on screen
-  until the real video mode is up. A startup *failure* still shows itself: the error console and the
-  Launcher bring the window up when they draw.
-- **The Launcher screen** no longer appears on every launch, only after an actual startup error.
-- **Screenshots are on F12** rather than the stock SysRq (Alt+PrtSc), which a GNOME desktop
-  intercepts before the game ever sees it.
-- **Menu letter shortcuts** no longer jump the cursor onto hidden rows.
-- **Splitscreen is cleared on the way back to the title screen**, so what follows isn't drawn in a
-  split view.
-- **Episode-ending maps show the intermission.** Vanilla skips it on E1M8 and friends and goes
-  straight to the finale, which also skips everything hanging off the intermission — the cabinet's
-  per-level scoring among it. Doom II already did it the other way round for MAP30.
-- **Two latent draw-layer inconsistencies**: `V_DrawString` ignores horizontal centring in hardware
-  mode where fills and patches apply it, and text positions by a float scale factor where
-  everything around it uses the rounded integer. Neither showed at full screen size; both throw
-  anything drawn at half scale off its background.
-- **The player preview on the colour page was a garbled mess in software mode.** The box that clips
-  the little marine was sized by the sprite's scale rather than the page's, so shrinking him to
-  half size shrank the box too — and that ran into a stock bug where the bottom edge of the clip
-  was computed backwards, dropping part of him and drawing the rest as streaks down the screen.
-  OpenGL never clips to that box, so it was always fine there. He is also now stood in the middle
-  of the box at the size software really draws him; before, his head was cut off by the top of it
-  at 1366x768 and most other resolutions, and at 800x600 he was stretched to twice his proper height.
-- **Slime trails.** The thin ragged strips of floor showing through a wall, most famously on the
-  E1M1 stairs — an artefact of the node data id's own builder wrote in 1993, baked into every IWAD.
-  The engine now rebuilds the BSP nodes at level load with a modern builder (ZDBSP, vendored here)
-  and uses the result **for rendering only**, so the simulation still walks the map's original tree
-  and nothing about gameplay or demo playback changes. `-nonodebuild` turns it off.
-- **Full-screen pages were letterboxed in software.** The software renderer scales the 320x200 art
-  by a whole number, so a 1366x768 screen got a 1280x600 page with a tiled floor texture filling the
-  rest. Whole-screen pages — the attract slides, the intermission, the finale — now scale by the
-  exact ratio and fill the screen. Menus, HUD and status bar deliberately keep the whole-number
-  scale, which is what keeps them sharp.
-- **Ultrawide monitors were unusable.** The engine capped what it could draw at 1600x1200 and
-  filtered the display's modes against that in three places without logging a thing — so on a
-  3440x1440 or 5120x1440 panel every native mode was silently discarded and the list came back
-  holding only the legacy 4:3 and 16:9 sizes the monitor also happens to advertise. It reads as "not
-  supported" rather than "a constant ate it". The cap is now 5120x2160, and the view, field of view,
-  weapon and 2D layer all follow the real aspect instead of stretching.
-- **HUD and weapon were skinny on portrait screens.** At 1920x2160 the 3D view looked right, but
-  the status numbers, HUD icons, menus and gun were drawn about a third too narrow. The wide-screen
-  fix had no counterpart for tall screens, so the art's height followed the screen. It is now held
-  to Doom's 4:3 proportions in both renderers. Nothing changes on a screen 4:3 or wider. On 5:4
-  (1280x1024) the gun and the OpenGL HUD are about 6% wider, which is their correct shape.
-- **Split-screen views were tall and skinny on portrait screens.** With two players stacked (both
-  renderers), and with four players in OpenGL, everything in the 3D view was drawn twice as tall as
-  it should be. The HUD and weapon were fine. The width and height of each view were being worked
-  out from two different heights. Each view now keeps its proper shape. Two stacked players on a
-  portrait screen each get the same up-and-down view as a single player; four players each get a
-  half-size copy of the single-player view, as software already drew them. The same fix applies to
-  stacked players on a 21:9 or 32:9 screen. Nothing changes on a normal 4:3, 16:10 or 16:9 screen,
-  or for side-by-side players.
-- **The attract screen's best-times table ran together on portrait screens** (OpenGL), right after
-  the fix above. The rows were being spaced by the new, smaller HUD scale while the letters were
-  drawn at full-screen size. Text on full-screen pages — score boards, intermission, finale — is now
-  placed by the full-screen scale again.
-- **Wall faces went missing at the screen edges on portrait screens** (OpenGL). Triangles of
-  background showed through at the left and right edges with the chase camera on, and whole wall
-  faces went missing with the field of view in GL Options set above 90. When the view reaches
-  further round than the renderer normally checks, it takes extra looks to the sides, and those
-  looks assumed a landscape screen's width. On a portrait screen they left gaps. They are now
-  spaced to the screen's real width, and only as many are taken as the view needs. Landscape
-  screens, including 1366x768, look exactly as before.
-- **The video mode list lost modes before the menu ever saw them**, at three separate stacked caps,
-  none of which logged anything. It also never removed the duplicate entries a monitor advertises
-  once per refresh rate, so the caps were being spent on repeats. The list now dedupes, sorts by
-  size, pages rather than truncating, and can be filtered by aspect ratio.
+- Gamma settings have their own page, **Video Options → Gamma Options** (F11 opens it).
+- Low resolutions (320x200 up to 800x600) can be used fullscreen, scaled up sharply by the GPU.
+- No 800x600 loading window flashes up at startup, and the Launcher only appears after a startup
+  error.
+- Screenshots are on **F12** (GNOME intercepts the stock SysRq).
+- Menu letter shortcuts no longer jump onto hidden rows.
+- Splitscreen is cleared on the way back to the title screen.
+- Episode-ending maps (E1M8 and so on) show the intermission, so their scores count.
+- The player preview on the colour page was garbled in software mode.
+- **Slime trails** (as on the E1M1 stairs) are gone. Nodes are rebuilt at level load with ZDBSP and
+  used for rendering only, so gameplay and demos are unchanged. `-nonodebuild` turns it off.
 
 ---
 
 ## Requirements
 
-A Linux machine with a C compiler and these development packages:
+A Linux machine with `gcc`, `make` and these development packages:
 
 | Need | Debian/Ubuntu | Fedora |
 | --- | --- | --- |
@@ -734,26 +274,19 @@ A Linux machine with a C compiler and these development packages:
 | OpenGL | `libgl1-mesa-dev libglu1-mesa-dev` | `mesa-libGL-devel mesa-libGLU-devel` |
 | libzip | `libzip-dev` | `libzip-devel` |
 | zlib | `zlib1g-dev` | `zlib-devel` |
+| OpenSSL (optional, for Cabinet Link) | `libssl-dev` | `openssl-devel` |
 
-Plus `gcc` and `make`.
-
-Hardware-wise almost anything modern is enough — the renderer is from 1993. What matters is
-**single-core speed first, then cores**: the software renderer now spreads a frame across as many
-cores as you give it (see [Performance](#performance) below), but everything else — the simulation,
-the sound, the game logic — is still one thread. The main loop yields between frames once a
-framerate cap is set, so a capped cabinet no longer sits at 100% of a core permanently the way it
-used to; leave the cap off and it will. Budget for sustained load rather than average, and make sure
-a fanless machine in a sealed cabinet won't thermally throttle.
+Almost any modern machine is enough. What matters is **single-core speed first, then core count**:
+the software renderer spreads a frame across cores, but the simulation and sound run on one thread.
+With a framerate cap set, the main loop rests between frames instead of pinning a core. For a
+fanless machine in a sealed cabinet, plan for sustained load and check it won't thermally throttle.
 
 ### Performance
 
-**A Raspberry Pi 3 is enough**, and that is the point of the threaded renderer. Measured on a Pi 3
-Model B — quad-core Cortex-A53 at 1.2 GHz — set up the way this section recommends: the **software**
-renderer, **Render Threads** `Auto`, **8bpp Draw** on, **Row Padding** on, and the Pi's desktop at
-**1280x720**. Measured by `tools/perfchart.py`: the UV speed demo of E1M1 played flat out at each
-size, vsync off, so the numbers are what the board can draw rather than what the screen shows.
-Smallest first (September 2026). To make the same table for your own machine, see
-[Choosing a resolution, and tuning performance](#choosing-a-resolution-and-tuning-performance):
+**A Raspberry Pi 3 is enough.** These figures are from a Pi 3 Model B (quad-core Cortex-A53,
+1.2 GHz) with the **software** renderer, **Render Threads** `Auto`, **8bpp Draw** on, **Row
+Padding** on and a **1280x720** desktop. They come from `tools/perfchart.py`: the UV speed demo of
+E1M1, played flat out with vsync off (September 2026).
 
 | Resolution | Shape | FPS |
 | --- | --- | --- |
@@ -778,61 +311,38 @@ Smallest first (September 2026). To make the same table for your own machine, se
 | 1024x768 | 4:3 | 35 |
 | 1152x720 | 16:10 | 34 |
 | 1280x720 | 16:9 | 33 |
-| 1152x864 | 4:3 | 32 — taller than the desktop, see below |
-| 1280x800 | 16:10 | 31 — taller than the desktop |
-| 1280x960 | 4:3 | 27 — taller than the desktop |
+| 1152x864 | 4:3 | 32 (taller than the desktop) |
+| 1280x800 | 16:10 | 31 (taller than the desktop) |
+| 1280x960 | 4:3 | 27 (taller than the desktop) |
 
-**On a Pi, set the desktop to 1280x720.** The game draws at whatever size you pick, then the Pi's
-graphics chip scales that picture up to the full desktop every frame — and with the desktop at
-1920x1080 the chip was filling, and sending to the monitor, 2.25 times as many pixels. Worse, the
-graphics chip and the processor share one memory bus, so all that traffic slowed the processor's own
-drawing as well. Dropping the desktop from 1920x1080 to 1280x720 made every size faster, by 14% at
-1024x768 up to 46% at 320x200: 640x480 went from 62 fps to 77, 640x350 from 75 to 93. There is no
-point drawing more lines than the desktop has, so on a 720p desktop leave the three sizes taller than
-720 lines alone; they are drawn big and then shrunk.
+Tips for a Pi:
 
-**These are benchmark numbers; play runs slower.** The demo is the opening of E1M1, and in play the
-same Pi read about 15% lower: with the desktop at 1920x1080, 640x350 gave 61–64 in play against 72–75
-in the benchmark. **On a 60 Hz panel, aim for about 75 here to hold 60 in play** — 640x480 or smaller
-on a 1280x720 desktop, and 512x384 if you want room to spare in the busiest fights — and check it with
-**Show Ticrate** on in the busiest level you have. Anything above the panel's refresh rate is
-never shown, so for play set **Framerate Cap** to the panel's rate (60) rather than leaving it
-uncapped. Uncapped is for measuring, and on a Pi it only adds heat.
+- **Set the desktop to 1280x720.** The GPU scales every frame up to the desktop, and it shares a
+  memory bus with the CPU. Going from a 1920x1080 desktop to 1280x720 made every size 14% to 46%
+  faster. Don't pick a size taller than the desktop.
+- **Aim for about 75 in this table to hold 60 in play.** Real play runs roughly 15% slower than the
+  benchmark. That means 640x480 or smaller, or 512x384 for headroom in big fights. Check with
+  **Show Ticrate** on your busiest level.
+- **Set Framerate Cap to the panel's refresh rate** (usually 60). Uncapped only adds heat.
+- **Turn Row Padding on.** It roughly halves the draw time of the 1024-wide sizes.
+- **Use the software renderer.** The Pi's GPU runs this engine's OpenGL through a slow compatibility
+  layer. On a desktop GPU the opposite is true and OpenGL is nearly free.
 
-**On a Pi, turn Row Padding on** (Performance Options). Without it the two 1024-wide sizes take
-about twice as long to draw as their neighbours: with the desktop at 1920x1080, 1024x768 went from
-21 fps to 31 with it on, and 1024x576 from 33 to 38. At every other size it made no difference
-beyond the run-to-run noise. (640x360 and 864x486 used to be slow for their size as well. That was
-the engine, and is fixed.)
+**Four players cost about the same as one**, within a couple of FPS. One view is split into vertical
+bands, one per core; four views get a core each.
 
-**Four players cost about the same as one** — within a couple of FPS at every size it was checked
-at. With one player the renderer cuts the single view into vertical bands, one per core; with four
-it gives each player's view its own core. Either way the work is spread over all four, so the numbers above
-are what the cabinet does *full*, not what it does empty. That was not true before: the old figures
-here were 35 FPS at 640x480 and ~30 at 800x600 for a four-way split, single-threaded.
+Below 35 FPS the game does not slow down; it just skips frames. Above 35, Framerate Cap draws
+interpolated frames between tics, so motion gets smoother.
 
-35 FPS is worth knowing as a landmark. The simulation runs at exactly 35 tics a second and always
-has, and until recently the engine drew exactly one frame per tic, so 35 was a hard ceiling. It
-isn't any more — **Framerate Cap** draws extra frames between tics with everything interpolated, so
-above 35 the motion genuinely gets smoother. Below 35 the game is not slowing down; it is simply
-skipping frames, and it stays playable well under it.
-
-On a Pi, prefer the **software** renderer. The Pi's VideoCore IV has no fast path for this engine's
-fixed-function OpenGL, so the hardware renderer runs through Mesa's slow compatibility layer and is
-the *worse* of the two there. On a desktop GPU the reverse is true and OpenGL is nearly free.
-
-If a heavier level or a bigger screen falls short, the low resolutions can be selected fullscreen
-and are scaled up by the GPU with nearest-neighbour filtering, so dropping the render resolution
-costs sharpness rather than screen size.
+---
 
 ## Building
 
-**You may not need to.** Every push to `main` is built for Linux and Windows on GitHub Actions and
-the packages are attached to the run, and tagged releases carry the same two builds. Grab one from
-the repository's Releases page if you just want to run the thing. Those are built for a generic
-x86-64 baseline so they run anywhere; building it yourself gets you a binary tuned for your own CPU.
+**You may not need to.** Every push to `main` is built for Linux and Windows on GitHub Actions, and
+tagged releases carry the same builds on the Releases page. Those target a generic x86-64 CPU so
+they run anywhere. Building yourself gets a binary tuned for your CPU.
 
-**The easy way — one command, and it tells you what to install if anything is missing.**
+### The easy way
 
 On Linux, macOS or FreeBSD:
 
@@ -842,10 +352,9 @@ On Linux, macOS or FreeBSD:
 
 On Windows, double-click `build.bat` (or run it from a command prompt).
 
-The script works out which system and CPU it is on, checks that the compiler and libraries are
-present, writes a build configuration for this machine, and builds. If something is missing it says
-exactly what and gives you the install command for *your* distribution, rather than failing halfway
-through a compile:
+The script detects the system and CPU, checks for the compiler and libraries, writes a build
+configuration and builds. If anything is missing, it names it and prints the install command for
+your distribution:
 
 ```
 == Checking what is installed
@@ -857,47 +366,44 @@ Install with:
     sudo dnf install -y gcc make SDL2-devel SDL2_mixer-devel libzip-devel ...
 ```
 
-Add `--install-deps` (or `-InstallDeps` on Windows) and it will install them for you. Other useful
-switches: `--deps` to only check, `--clean` to start fresh, `--jobs N` to limit parallel compiles.
+| Option (Linux) | Option (Windows) | Effect |
+| --- | --- | --- |
+| `--install-deps` | `-InstallDeps` | Install missing packages for you |
+| `--deps` | | Only check dependencies |
+| `--clean` | | Start fresh |
+| `--jobs N` | | Limit parallel compiles |
+| `--reconfigure` | | Rewrite an existing build configuration |
+| `--arch '...'` | `-Arch '...'` | Set the CPU target (implies `--reconfigure`) |
 
-It knows the Debian, Fedora, Arch and SUSE families and their derivatives — Ubuntu, Mint, Manjaro,
-Rocky and so on are all recognised through the same mechanism. It will **not** overwrite a build
-configuration you have already tuned; pass `--reconfigure` if you want it rewritten.
+It recognises the Debian, Fedora, Arch and SUSE families and their derivatives. It never overwrites a
+build configuration you have tuned unless you pass `--reconfigure`.
 
-**Building for another machine?** The default is `-march=native`, which bakes in whatever the
-*builder's* CPU supports. That is right for a machine building for itself and wrong for anything you
-hand to somebody else: it links and packages without a murmur and then dies on the target with a
-bare `Illegal instruction`. Pass `--arch '-march=x86-64 -mtune=generic'` (`-Arch` on Windows) for a
-binary anyone else will run — and note it implies `--reconfigure`, or an existing configuration is
-reused and the flag is silently ignored.
+**Building for another machine?** The default `-march=native` targets the builder's own CPU and can
+fail on another machine with `Illegal instruction`. For a binary anyone else will run, pass
+`--arch '-march=x86-64 -mtune=generic'`.
 
-Windows builds through MSYS2/MinGW (this project is a GNU Make tree, so Visual Studio cannot build
-it as it stands). If MSYS2 is not installed the script tells you how to get it; if MSYS2 is there but
-empty — which is how it arrives — it lists the packages to install and can install them for you.
-Confirmed on Windows 11: the script builds `doomlegacyarcade.exe` end to end and stages the runtime
-DLLs beside it — SDL2, SDL2_mixer and the codec libraries SDL2_mixer pulls in, which is a longer list
-than anyone guesses (sixteen, with Cabinet Link's OpenSSL). **The resulting binary has not been played**, only started, so
-treat the first real session as the shakedown.
+**Windows** builds through MSYS2/MinGW (Visual Studio cannot build this GNU Make tree). The script
+tells you how to install MSYS2 and its packages if they are missing. On Windows 11 it builds
+`doomlegacyarcade.exe` and copies its sixteen runtime DLLs beside it. **The Windows binary has been
+started but not played**, so treat the first real session as a shakedown.
 
-There is no unit test suite. The two checks that exist are `make smoke`, which starts the built
-binary headlessly and exercises startup, level setup, a level exit and the OpenGL path, and
-`make demotest`, which replays all of the cabinet's record demos and verifies the simulation is
-unchanged tic by tic. Run the second after **anything that could affect how the game plays** — the
-demos on the cabinet are people's high scores, and a gameplay change does not just alter them, it
-invalidates them. Record the reference once with `make demotest_baseline` while the code is known
-good; after that `make demotest` answers in three lines, in about forty seconds. See
-`docs/arcade/demo-desync.md`.
+**Checks.** There is no unit test suite. `make smoke` starts the binary headlessly and tests
+startup, level setup, a level exit and the OpenGL path. `make demotest` replays every record demo
+and checks the simulation is unchanged, tic by tic, in about 40 seconds. Run it after **anything
+that could affect gameplay**, because a gameplay change invalidates the cabinet's record demos.
+Record the reference once with `make demotest_baseline` on known-good code. See
+[`docs/arcade/demo-desync.md`](docs/arcade/demo-desync.md).
 
 ### The manual way
 
-Build from `svn1749/src`. First time only, copy the platform options file and make three edits:
+Build from `svn1749/src`. The first time, copy the platform options file:
 
 ```sh
 cd svn1749/src
 cp ../make_options_nix ../make_options
 ```
 
-Then edit `svn1749/make_options`:
+Then edit `svn1749/make_options`. Each of these is a hard build failure if skipped:
 
 ```make
 SDL2=1                      # uncomment; the stock file targets SDL 1.2
@@ -905,207 +411,141 @@ ARCH=-march=native          # replace ARCH=-march=i686, which is 32-bit only
 ENV_CFLAGS=-std=gnu17 -g    # add; GCC 15 defaults to gnu23, which breaks this code
 ```
 
-Each of the three is a hard build failure if skipped, not a warning. The `-g` is optional, but
-worth keeping on a cabinet that runs unattended: without it a crash backtrace is bare function
-names, and it costs nothing at runtime. Then:
+The `-g` is optional but worth keeping: it makes crash backtraces readable and costs nothing at
+runtime. On a Raspberry Pi or other ARM board, use a flag such as `-mcpu=cortex-a53` instead of
+`-march=native`.
 
 ```sh
 cd ..           # svn1749
-make dirs       # create bin/, objs/ and dep/ -- they are build output, not in the repo
+make dirs       # create bin/, objs/ and dep/
 cd src
-make depend     # run this serially, before any parallel build
+make depend     # always serially, before any parallel build
 make -j8
 ```
 
-`make depend` first is not optional if you want `-j`: every dependency rule pipes through the same
-temporary file, so parallel dep generation clobbers itself and fails with
-`mv: cannot stat '../dep/sed.dep'`, which points nowhere near the cause. The compile phase
-parallelises fine. Plain `make` on its own also works.
+Run `make depend` on its own first: parallel dependency generation clobbers a shared temporary file
+and fails with `mv: cannot stat '../dep/sed.dep'`. The compile itself parallelises fine.
 
-The binary lands in `svn1749/bin/doomlegacyarcade`, together with a `legacyhome/` folder holding the
+The binary lands in `svn1749/bin/doomlegacyarcade`, beside a `legacyhome/` folder holding the
 cabinet's configuration.
 
-On a different CPU — a Raspberry Pi or other ARM board — replace `-march=native` with the
-appropriate flag, e.g. `-mcpu=cortex-a53`. No x86 assembly is involved, so nothing else changes.
+---
 
 ## Installing the game data
 
-`tools/build.sh` and `tools/build.ps1` copy `common/legacy.wad` beside the binary for you, so all
-that is left is an IWAD:
+The build scripts copy `common/legacy.wad` beside the binary. You only need to add an IWAD:
 
 ```sh
-cp /path/to/DOOM2.WAD ../bin/
+cp /path/to/DOOM2.WAD svn1749/bin/
 ```
 
-`legacy.wad` is required — it ships with this repository and holds the engine's own menu graphics,
-including the cabinet's own artwork (the Single Level, join, cheats and game-over screens, the
-High Scores menu entry and the No Monsters title) and the
-`ENDOOM` text screen printed on exit, so use the copy from `common/` rather than one from an
-upstream DoomLegacy release. `tools/endoom.py` edits that exit screen; SLADE will not, which is why
-the tool exists. (Building with plain `make` instead of the scripts does not copy it:
-`cp ../../common/legacy.wad ../bin/`.)
+**IWADs** are the commercial game data and are not included. Select Game offers four:
 
-**To change the cabinet's art, edit `common/legacy.wad` and rebuild.** The engine takes the
-`legacy.wad` beside the binary ahead of every other copy on the machine, so a copy in
-`~/games/doom` or anywhere else is ignored once the build has put one in `bin/`. The build only
-replaces the staged copy when it differs from the one in `common/`; if the staged copy was edited in
-place (it is the newer of the two), the build keeps it as `legacy.wad.bak` and says so, rather than
-losing the edit.
+| Game | File |
+| --- | --- |
+| Ultimate Doom | `DOOM.WAD` (or `DOOMU.WAD`, `DOOM_SE.WAD`) |
+| Doom II | `DOOM2.WAD` |
+| Plutonia | `PLUTONIA.WAD` |
+| TNT | `TNT.WAD` |
 
-`dogs.wad` is optional, is **not** copied by the build, and nothing loads it automatically — it is
-only read when given with `-file dogs.wad`. It carries the
-sprites and sounds for MBF helper dogs, which the engine has none of its own for. It does nothing
-unless the **Dogs** setting is raised (Options → Game Options → Adv Options, second page), and that
-is an operator-only `-devmode` affair: the competitive ruleset pins helper dogs to none, like bots,
-so a scored run never has them.
+Names are case-insensitive. Only installed games are listed, and Select Game is hidden when there
+is only one game or pack to choose from. Besides the binary's own folder, the game searches
+`<bindir>/wads/`, `~/games/doom`, `~/games/doomwads`, `~/games/doomlegacy/wads` and the usual system
+locations. (The engine also supports Heretic, but the selector does not list it. That would need an
+entry in `gameselect_arg[]` in `m_menu.c`.)
 
-IWADs are the commercial game data and are **not** included; supply your own from a purchased copy.
+**`legacy.wad` is required.** It holds the engine's menu graphics, the cabinet's own art and the
+`ENDOOM` exit screen, so use the copy in `common/`, not one from upstream DoomLegacy. If you build
+with plain `make`, copy it yourself: `cp common/legacy.wad svn1749/bin/`.
 
-The Select Game menu offers four: **Ultimate Doom** (`DOOM.WAD`, also accepted as `DOOMU.WAD` or
-`DOOM_SE.WAD`), **Doom II** (`DOOM2.WAD`), **Plutonia** (`PLUTONIA.WAD`) and **TNT** (`TNT.WAD`).
-Names are case-insensitive. Only games whose IWAD is actually found are listed, and the Select Game
-entry disappears altogether when there are fewer than two things to switch between — installed
-games and level packs both count.
+**To change the cabinet's art, edit `common/legacy.wad` and rebuild.** The copy beside the binary
+takes priority over any other on the machine. If the staged copy was edited in place, the build
+keeps it as `legacy.wad.bak` rather than losing the edit. Use `tools/endoom.py` to edit the exit
+screen (SLADE cannot).
 
-As well as beside the binary, the game searches `<bindir>/wads/`, `~/games/doom`,
-`~/games/doomwads`, `~/games/doomlegacy/wads` and the usual system locations, so an existing
-install is usually found without moving anything.
+**`dogs.wad`** is optional and only loaded with `-file dogs.wad`. It holds sprites and sounds for
+MBF helper dogs, which only appear if an operator raises **Dogs** (Options → Game Options → Adv
+Options, page 2). The ranked ruleset forbids them.
 
-The underlying engine also supports Heretic, but the cabinet's game selector does not list it —
-that would need an entry adding to `gameselect_arg[]` in `m_menu.c`.
+---
 
 ## Running
 
 ```sh
-cd ../bin
+cd svn1749/bin
 ./doomlegacyarcade
 ```
 
-No arguments needed. The game finds its configuration in the `legacyhome/` folder beside the
-binary, so the whole directory can be copied anywhere — a USB stick, another machine — and it will
-behave identically. You can launch it by absolute path from anywhere; it locates its own files.
+No arguments are needed. The game finds its configuration in `legacyhome/` beside the binary, so
+the whole directory can be copied to another machine or a USB stick and behave the same. You can
+launch it by absolute path from anywhere.
 
-To move the cabinet to another machine, copy that one directory.
-
-Building a dedicated machine? See [Keeping the cabinet running](#keeping-the-cabinet-running) in the
-operator guide for the restart-loop wrapper you'll want.
+For a dedicated machine, see [Keeping the cabinet running](#keeping-the-cabinet-running).
 
 ---
 
 ## Playing
 
-**New Game** offers five rows:
+**New Game** offers:
 
 | | |
 | --- | --- |
-| **Campaign** | The normal game — episode, skill, play it through. One player or several: everyone who presses fire on the join screen plays it together in **co-op**, with monsters on. |
-| **Deathmatch** | Players against each other, set up already: weapons and items respawning, no monsters, no bots, five minutes on the clock. Asks which map to play on, and nothing else. |
-| **Team Deathmatch** | The same deathmatch, played in teams: Red, Blue, Green and Yellow. You can't hurt your own team. Asks which map, like Deathmatch. |
-| **Single Level** | One chosen map, straight back to the menu afterwards, on its own score table. |
-| **Multiplayer** | The page with every setting on it — map, skill, which co-op or deathmatch variant, monsters, bots. |
+| **Campaign** | The normal game: episode, skill, play. Everyone who presses fire on the join screen plays together in co-op. |
+| **Deathmatch** | Ready to go: respawning weapons and items, no monsters, no bots, five minutes. Asks only which map. |
+| **Team Deathmatch** | Deathmatch in Red, Blue, Green and Yellow teams. You can't hurt your own team. |
+| **Single Level** | One map, straight back to the menu afterwards, on its own score table. |
+| **Multiplayer** | Every setting: map, skill, co-op or deathmatch variant, monsters, bots. |
 
-Campaign and Deathmatch are the two games somebody standing at the cabinet actually asks for, so
-they take no setting-up: pick one, everyone presses fire, play. **Multiplayer** is still there
-unchanged for anyone who wants to pick the exact map, run co-op with bots, or play a deathmatch
-variant — nothing was taken away, it just isn't in the way any more.
+"Multiplayer" here means players sharing *this* cabinet's screen. Deathmatch, Team Deathmatch and
+Multiplayer are hidden on a single-panel cabinet.
 
-**Deathmatch asks which map**, on a page of its own that works the way Single Level's does: one row
-listing every map in the game (`map01` … `map32`, or `e1m1` … `e4m9` on the Doom 1 games), then
-**Start**. Everyone has an arena they want, and picking it is one press away instead of impossible —
-a Doom 2 deathmatch used to always start on MAP01, because the page it had before could only ask
-which *episode*, and Doom 2 has one. It starts back at the first map each time the cabinet boots,
-and the choice is the deathmatch's own: it does not disturb the map Single Level or Multiplayer are
-pointing at.
+**The Deathmatch map page** lists every map in the game, then **Start**. It resets to the first map
+at each boot, and it is separate from Single Level's choice. Team Deathmatch shares it.
 
-Multiplayer here, in all of these, means everyone playing on *this* cabinet, sharing the screen.
-Deathmatch and Team Deathmatch are hidden on a single-panel cabinet, alongside Multiplayer — one
-person can't have one.
+**End Game** appears at the bottom of the main menu only while a game is running.
 
-**Team Deathmatch** is Deathmatch with the players split into colour teams: kills count for your
-team, and your own team's shots don't hurt you. On the join screen the **COLOR** row is called
-**TEAM** and only offers **RED, BLUE, GREEN and YELLOW**. A panel that is already one of those
-colours keeps it; any other panel is put on whichever team has the fewest players so far when it
-presses in, so a cabinet where nobody touches anything still splits evenly. Change team with
-left/right as usual. A cabinet that is invited to a linked Team Deathmatch gets the same TEAM row.
-The map page is the Deathmatch one, shared — picking an arena for one picks it for the other.
+**Under Options** a player can change the crosshair, colour and control scheme, and pick a game or
+level pack. Nothing a player changes survives the next launch.
 
-**End Game** is on the main menu, at the bottom, and appears **only while a game is actually being
-played** — any kind: Campaign, Single Level or Multiplayer. On the attract screen there is
-nothing to end, so it isn't there.
-
-DoomLegacy's **networked** play between separate machines is still in there, under
-**Networked Multiplayer** in a `-devmode` session, but it is hidden from players because it hasn't
-been tested in this build — cabinet-to-cabinet play needs two cabinets. Treat it as untested rather
-than unsupported: nothing was removed, and it may well work.
-
-Under **Options** a player can change the crosshair, their colour, their control scheme, and pick a
-game or level pack. Everything else is hidden, and nothing a player changes survives to the next
-launch.
-
-**If a linked game shows PAUSE when nobody pressed it**, a cabinet has fallen out of step with the
-host and the host is stopping everyone for a moment while it fixes that cabinet. First make sure every cabinet
-runs the **same build**: the Cabinet Link page says **SCORES: DIFFERENT BUILD** when they don't.
-Mismatched builds were the whole cause the first time this happened. Update every cabinet with
-`git checkout main`, `git pull --ff-only` and a rebuild, and check that `git rev-parse --short HEAD`
-prints the same code on each. If the pauses continue with matching builds, trace them: start each cabinet with `-logfile <file>`, play until it happens, and run
-`tools/nettrace-diff.py` on the three log files.
+DoomLegacy's own **networked** play is still available under **Networked Multiplayer** in a
+`-devmode` session. It is untested in this build, not removed. For linking cabinets, use
+[Cabinet Link](#connecting-cabinets-together-cabinet-link) instead.
 
 ### Joining a game
 
-On a cabinet with more than one control panel, a **join screen** appears once the game has been
-chosen — after the skill on a Campaign, after the map on a Deathmatch. Each panel presses
-**fire** to be counted in, and the screen is laid out as the game is about to be: press fire and
-watch your own square claim itself. Each square is headed with that panel's **player name** (set on
-its `PlayerN config` page), not a number — with two cabinets in one game, "PLAYER 1" is at both of
-them. A name too long for its square, which only happens with four side by side, is cut short; a
-panel with no name set shows `PLAYER N`.
+On a cabinet with more than one panel, a **join screen** appears once the game is chosen. It is laid
+out as the game will be, and each square is headed with that panel's player name (or `PLAYER N`).
 
-**Pressing in opens your own setup in your square**: **COLOR**, **CROSSHAIR** and **CONTROLS**
-(Tank or WASD) — the same settings as your panel's `PlayerN config` page, so what you pick there
-is what you pick here. Stick up/down moves between them, left/right changes one, and **fire** steps
-down to the next; the last row is **LOCK IN**, so a player who just presses fire four times keeps
-what the panel already had. **Use** steps back up, or unlocks. The row you are on is red, and
-everything turns grey once you are locked in. The color's name is always shown **in that color** —
-BROWN in brown, BLUE in blue — using the exact shades your player will be drawn in, so you can tell
-at a glance without reading it.
+1. **Press fire** to join. Your square opens your setup: **COLOR**, **CROSSHAIR** and **CONTROLS**
+   (Tank or WASD), the same settings as your `PlayerN config` page.
+2. Stick up/down moves between rows, left/right changes one, **fire** steps down. **Use** steps back
+   up or unlocks.
+3. The last row is **LOCK IN**, so pressing fire four times keeps your current settings.
 
-The game starts **as soon as everyone who pressed in has locked in**, or when the countdown runs
-out, whichever comes first. A panel that never pressed in is not waited for.
+The game starts **when everyone who joined has locked in**, or when the countdown ends. Panels that
+never pressed in are not waited for.
 
-**This is what decides whether a Campaign is co-op.** One panel in and it is the solo run it has
-always been, scored and recorded as usual; two or more and the same game starts as co-op instead.
-Nobody has to choose the mode in advance — the people at the cabinet answer it by pressing fire.
-A co-op game isn't scored, the same as any other game with more than one person in it.
+**This decides whether a Campaign is co-op.** One player is a normal scored solo run; two or more
+is co-op, which is not scored.
 
-Whoever joins plays at the panel they pressed at, so a lone player can use panel 3 and still get the
-whole screen. One player gets the whole screen; two share it as **stacked halves**, or **side by
-side** if the operator has set it that way; three or four get a **2x2 grid**, one quadrant each with
-the fourth left empty for three players, or **four columns** on a very wide screen. Which quadrant
-each panel drives is an operator setting too, so each player's view can be on the side of the screen
-they are actually standing at. All of that is under
+Each player plays at the panel they pressed in at, so a lone player at panel 3 still gets the whole
+screen. How the screen splits is set by the operator; see
 [Players, panels, and how the screen is divided](#players-panels-and-how-the-screen-is-divided).
 
-The page is skipped entirely on a single-panel cabinet. It used to start the moment one person
-pressed fire on a single player game, which is exactly what made co-op impossible to ask for — the
-first hand on a button ended the question. It now always waits, and locking in is the way to skip
-the rest of the countdown.
+**Team Deathmatch** renames COLOR to **TEAM** and offers only the four team colours. A panel already
+on one of those colours keeps it; others go to the smallest team.
 
 ### Controls
 
-**What to build the panel from.** A leverless controller — a hitbox, or "all button" pad — is the
-better choice, because an arcade stick can't switch from left to right, or forward to back, fast
-enough for Doom. You might consider getting a drop in WASD controller to replace the joysticks,
-such as the Mixbox or T-Spin. This is probably the most ideal for responsive control, but take care that
-children don't run off with your keycaps!
+**What to build the panel from.** A leverless ("all button" or hitbox) controller is best, since an
+arcade stick can't reverse direction fast enough for Doom. A drop-in WASD controller such as the
+Mixbox or T-Spin is probably the most responsive, though children may run off with the keycaps. A
+normal arcade stick works, just not as well.
 
-That said, most people are realistically going to use an arcade joystick, and it works, just not
-as well.
+**How many buttons.** Six is the minimum. With eight, consider a run button with autorun off. Sticks
+with an analog / d-pad switch work either way.
 
-**How many buttons.** Six is the minimum for full control. If your panel has eight, consider
-binding a run button on one of the spares and turning autorun off. Sticks that offer a mode switch
-(analog / d-pad, often marked LS / DP) work either way — both are read as directions.
-
-**The default layout**, on a stick and six buttons:
+**Default layout**, on a stick and six buttons:
 
 ```
           [1]  [2]  [3]          1  Fire
@@ -1116,93 +556,65 @@ binding a run button on one of the spares and turning autorun off. Sticks that o
                                  6  Weapon up
 ```
 
-The stick both moves and turns. Binding all of this is an operator job — see
-[Setting up a control panel](#setting-up-a-control-panel), which needs `-devmode`.
+The stick moves and turns. Binding is an operator job; see
+[Setting up a control panel](#setting-up-a-control-panel).
 
-**Two schemes** are offered per player under Options → Player → `Player1 config` (through
-`Player4 config`), and on the join screen: **Tank** (called *Look and Move* in older builds) and
-**WASD**. They swap which pair of controls turns and which strafes, and both work on the same
-wiring, so it's purely a player preference. Tank matches how most joysticks and digital gamepads are normally set up, and is the better default.
+**Two schemes** are offered per player: **Tank** (the default, called *Look and Move* in older
+builds) and **WASD**. They swap which controls turn and which strafe, on the same wiring. Tank suits
+most joysticks and digital pads.
 
-**In the menus**, the same buttons navigate: stick up/down moves the cursor, left/right changes a
-setting, **fire** selects, **use** backs out. No keyboard is needed.
+**In menus**, stick up/down moves, left/right changes a setting, **fire** selects and **use** backs
+out.
 
 ### Single Level
 
-**Single Level**, under **New Game** beside Campaign, plays one map and comes straight back to
-the same page, so you can retry immediately. Pick the map and skill and the best speed and max times for that exact map are
-shown right there. If a record demo exists you can watch it with **Watch speed run** or **Watch max
-run**; those are greyed out when nothing has been recorded yet.
+Under **New Game**, Single Level plays one map and returns to the same page so you can retry at once.
+Pick the map and skill to see the best times for that map. **Watch speed run** and **Watch max run**
+replay the record demos when they exist.
 
-**No Monsters** is the leftmost skill: the map with no monsters in it, at Ultra-Violence, scored on
-its own. Speed is just reaching the exit, and Max is shown as **100%S** — every secret, the only
-thing left to be thorough about. There are no Pacifist or Tyson records for it, since with nothing
-to fight both would be free. The operator can take the option away (see *Switches for how much menu
-a player gets*).
+Single Level has its **own high score table**, since a one-map time isn't comparable to a run that
+reached the same map from level one. The first level of a campaign run also counts here, since it is
+the same pistol start.
 
-Single Level keeps its **own high score table**, separate from campaign runs — a one-map time isn't
-comparable to a run that reached the same map from level one. Those times get their own pages in
-the attract cycle: a best-times page per difficulty, and a rotating page showing one map's top
-three at a time.
-
-**A campaign run's first level competes here too.** Finishing E1M1 on a Single Player run is the
-same thing as a Single Level run of E1M1 — a pistol start, one map — so it goes on the same board.
-Only the first level: a campaign E1M2 begins with whatever you carried out of E1M1, so it stays out
-of it.
+**No Monsters** is the leftmost skill: no monsters, Ultra-Violence, scored separately. Max is shown
+as **100%S** (every secret). There are no Pacifist or Tyson records for it. Some maps cannot be
+finished this way (E1M8's exit is behind the Barons).
 
 ### High scores
 
-The table tracks the best **cumulative** time from the first level of a run to the exit of each
-map, per skill and per category:
+Records are the best **cumulative** time from the start of a run to each map's exit, per skill and
+category:
 
-- **SPEED** — just reach the exit.
-- **MAX** — reach the exit having taken 100% kills *and* 100% secrets on every level of the run so
-  far. Items are not required. Miss either on any level and the run drops to speed-only for the
-  rest of that game.
+| Category | Rule |
+| --- | --- |
+| **SPEED** | Reach the exit. |
+| **MAX** | 100% kills and 100% secrets on every level so far. Items don't count. |
+| **PACIFIST** | Never damage a monster, directly or with a barrel. Monsters fighting each other is fine. |
+| **TYSON** | 100% kills using only fist, chainsaw and pistol. You may carry other weapons but not fire them. |
 
-**Monsters you cannot reach do not count against you.** Some levels put monsters inside the sector
-that ends the level by killing you — E1M8 is the example, with 15 of its 41 monsters in there.
-Walking in to fight them ends the run, so Max and Tyson were impossible on that map through no
-fault of yours. Those monsters are now left out of the kill requirement. **The kill percentage on
-the tally still shows the real number and will read under 100%**, but the run is judged on what was
-actually killable, so **MAX** and **TYSON** can still be awarded.
+Every run is measured against all four at once. If a run still qualifies for Pacifist or Tyson,
+it blinks at the top of the intermission.
 
-A run is scored only under the standard ruleset. Change a gameplay setting and the HUD shows
-`UNRANKED` — you can play on, but nothing is recorded. **Dying also ends scoring** for the rest of
-the run: levels already finished keep their records, but nothing after counts. That one is not
-called out on the HUD — death ending the run is how the cabinet works, and the death itself already
-says so. Start a new game to try again.
+- **Unreachable monsters don't count.** Monsters inside a sector that kills you on entry (15 of
+  E1M8's 41) are left out of the kill requirement. The tally still shows the real percentage.
+- **Only the standard ruleset scores.** Change a gameplay setting and the HUD shows `UNRANKED`.
+- **Dying ends scoring** for the rest of the run. Finished levels keep their records.
+- **Scores are per game and level pack**, so Doom II MAP01 and Plutonia MAP01 are separate.
 
-Scores are per game *and* level pack — Doom II's `MAP01` and Plutonia's `MAP01` are different
-levels and keep separate records.
-
-**To look at them, choose High Scores on the main menu.** Left and right flip through the pages —
-Survival for each episode, Single Level best times for each difficulty (No Monsters first), then a
-page for every map that has Single Level times — and wrap round at either end. Backing out returns
-to the main menu, and the page opens at the first page every time.
+**To browse them, choose High Scores on the main menu.** Left and right flip through Survival for
+each episode, Single Level best times per difficulty, and a page per map with Single Level times.
 
 ### Level packs and IWADs
 
-Drop any `.wad` level pack into `legacyhome/levels/` and it appears under **Options → Select Game**
-as `<game> wad: <name>`, alongside the installed games. Packs are loaded on demand rather than at
-startup: selecting one loads it, its maps replace the IWAD's, and the normal Single Player or
-Multiplayer flow then plays it. Selecting it again unloads it. One pack at a time.
+Drop a `.wad` level pack into `legacyhome/levels/` and it appears under **Options → Select Game** as
+`<game> wad: <name>`. Packs are filtered by game (`MAPxx` under Doom II, `ExMy` under Ultimate
+Doom). Selecting a pack loads it; selecting it again unloads it. One pack at a time.
 
-Packs are filtered by the game they suit — a `MAPxx` pack shows under Doom II, an `ExMy` pack under
-Ultimate Doom — so a mismatched pack can't be loaded by accident.
+**Switching IWAD restarts the program**, showing `SWITCHING GAME...` for a second or two. Loading a
+pack does not restart, but unloading one does.
 
-**Switching IWAD restarts the program.** The engine can only pick its game data at startup, so
-choosing a different game from the menu relaunches the cabinet. It shows `SWITCHING GAME...` and
-then goes black for the startup sequence, which takes a second or two. Level packs are different: they load
-into the running session with no restart, and only unloading one restarts, since the engine has no
-way to remove a wad it has already read.
-
-With linked cabinets and **Select Game Sync** on, a game or pack picked here is picked on the other
-cabinets too — see "Connecting cabinets together".
-
-**What works:** ordinary level wads, including Boom-format maps, and DeHackEd/BEX patches
-(including MBF21). **What doesn't:** GZDoom mods. There is no DECORATE or ZScript in this engine,
-so Brutal Doom and similar cannot run, and `.pk3` files are not supported at all.
+**Works:** ordinary level wads, Boom-format maps, DeHackEd/BEX patches (including MBF21).
+**Doesn't:** GZDoom mods (no DECORATE or ZScript, so no Brutal Doom) and `.pk3` files.
 
 ---
 
@@ -1214,531 +626,351 @@ Run with `-devmode` to unlock everything:
 ./doomlegacyarcade -devmode
 ```
 
-That gives you the full stock menus, disables the competitive ruleset, and is the **only** mode
-that saves settings. The workflow is: launch with `-devmode`, change what you want, quit. Player
-sessions then start from that baseline every time.
+This gives you the full stock menus, disables the competitive ruleset, and is the **only** mode
+that saves settings. Launch with `-devmode`, change what you want, quit. Player sessions then start
+from that baseline.
 
 ### Unlocking the cabinet without a command line
 
-A built cabinet has no terminal to type that into, so there is a key for it instead. Plug a keyboard
-in and press **Scroll Lock** anywhere in the attract cycle (title pages or a demo). The cabinet shows `ENTERING DEVMODE...` and
-relaunches itself unlocked — same as `-devmode`, because that is literally what it does: it restarts
-the program with the flag added.
+Plug in a keyboard and press **Scroll Lock** at the attract screen (a title page or demo). The
+cabinet shows `ENTERING DEVMODE...` and restarts with `-devmode`. Press it again when done: it shows
+`LEAVING DEVMODE...`, **saves the config**, and restarts locked.
 
-Change what you want, then press **Scroll Lock** again. It shows `LEAVING DEVMODE...`, **writes the
-config on the way out**, and comes back up locked. There is no separate save step and no quitting to
-a desktop; the settings are saved by the same code that saves them when a `-devmode` session quits
-normally.
-
-**The relaunched program comes back in front.** A restart starts a fresh copy of the program, and on
-Windows a fresh copy does not get the screen and the keyboard just for asking — if something else
-has the foreground, Windows refuses and flashes the taskbar button instead. That is why Devmode
-Restart used to come back hidden behind a browser some of the time and work fine the rest. It now
-takes the foreground for itself, on every launch, not only a restart: this is a cabinet, so the
-game is meant to be the thing in front of you. If you are running it windowed on a desktop, expect
-it to steal focus when it starts.
-
-**The key only works at the attract screen.** During a game, an intermission, a finale or an
-initials entry it does nothing at all. That is deliberate — the restart throws away whatever is
-running, so without the rule a stray press could take a player's run, or a record they had earned
-but not yet put their initials on. If you want to unlock mid-game, end the game first.
-
-**Changing the key.** It is an ordinary assignable control, not a special setting.
-**Options → Setup Controls → `Player1 Controls >>`**, then **next** twice to reach the third page.
-It is there as **Devmode Restart**, just under Screenshot and above the "Joystick and Mouse Only"
-heading. Select it and press the key you want, the same as rebinding anything else.
-
-There is one per panel — `Player1 Controls` through `Player4 Controls` — and **any of the four
-works**, since which page you set it on doesn't decide who gets to press it. Only Player 1 has a
-default (Scroll Lock); panels 2 to 4 start unbound, which is how you leave them unless you have a
-reason not to.
-
-**Think before binding it to a panel button.** Because it is a normal control, nothing stops you —
-but a cabinet button is a button players press, and at the attract screen this key restarts the
-machine. The attract-screen rule is the only thing standing between that and a player pressing it
-mid-game, so keep it on the keyboard unless you have a good reason. Scroll Lock and Pause are the
-obvious choices; F12 and Print Screen are already the screenshot bindings, and the screenshot
-handler sees the key first, so those two will take a picture instead of unlocking.
-
-To clear it entirely, bind it to nothing — then `-devmode` on the command line is the only way in.
-
-Because controls are only saved from an operator session, changing it is a two-step job the first
-time: unlock, rebind, lock again — the lock step is what writes it to `config.cfg`, as
-`setcontrol "devmode" "scroll lock"`.
+- **It only works at the attract screen**, never during a game, intermission, finale or initials
+  entry, so nobody loses a run. End the game first.
+- **The restarted program takes the foreground.** If you run it windowed on a desktop, expect it to
+  steal focus at launch.
+- **To change the key**, go to **Options → Setup Controls → `Player1 Controls >>`**, press **next**
+  twice, and rebind **Devmode Restart**. Any panel's binding works. Only Player 1 has a default.
+- **Keep it on the keyboard.** On a panel button, players could restart the machine from the
+  attract screen. F12 and Print Screen are taken by screenshots.
+- **To disable it**, bind it to nothing. `-devmode` is then the only way in.
+- A new binding is saved on the way out of devmode, as `setcontrol "devmode" "scroll lock"`.
 
 ### Setting up a control panel
 
-**Options → Setup Controls → Guided setup P1** (devmode only). It shows the recommended layout,
-then asks for each control in turn — stick directions first, then the six buttons by number —
-binding whatever you press. Works with keyboards, joysticks, encoders, anything that reports as a
-button. Press ESC to abandon and keep the previous layout.
+**Options → Setup Controls → Guided setup P1** (devmode only) shows the recommended layout, then asks
+for each control in turn: stick directions, then the six buttons. It binds whatever you press
+(keyboard, joystick, encoder). Press ESC to abandon and keep the old layout.
 
-There is a guided setup per panel, P1 to P4, and a **Player n Controls** page beside each one for
-panels with more than six buttons — the guided setup only teaches the ten controls a standard panel
-needs, so anything beyond that gets bound on the full page.
+There is a guided setup for each panel, P1 to P4. Use the **Player n Controls** page beside each
+one to bind anything past the ten standard controls.
 
 ### Players, panels, and how the screen is divided
 
-Everything about this is on one page: **Options → Arcade Options → Players & Views** (devmode only).
+All on **Options → Arcade Options → Players & Views** (devmode only):
 
-**Control Panels** is how many sets of controls the cabinet has, 1 to 4. It ships at 1, and until
-you raise it the join screen never appears and panels 3 and 4 have no configuration pages — which
-reads as those features being broken, when the cabinet simply hasn't been told they exist.
-
-**2 Player Split** is `Top/Bottom` (the classic stacked halves) or `Side by Side`. On a wide screen
-side-by-side gives each player a more natural shape than a letterbox slit.
-
-**3-4 Player Split** is `Grid` (the 2x2 quadrants) or `Columns` (four full-height strips). Grid is
-right up to and including 21:9. At 32:9 it is wrong — a quadrant of a 32:9 screen is itself 32:9, a
-letterbox slit — where a column comes out close to the shape of a portrait arcade monitor. Three
-players use four cells with one empty either way, so this covers "three columns" as well.
-
-**Screen Order** is which quadrant of the 2x2 grid each panel drives, `1 3 / 2 4` or `1 2 / 3 4`.
-The panels stand in a row across the front of a cabinet, so filling the grid in reading order puts
-panel 2's view on the far side of the screen from where panel 2 is standing; the default fills it by
-columns instead, and every player watches their own side. Reading order is kept for four people on
-gamepads sitting wherever they like, which is what they will expect.
-
-How long the join screen waits is on the Timeouts page, below.
+| Setting | Values | Notes |
+| --- | --- | --- |
+| **Control Panels** | 1 to 4 | Ships at 1. Until raised, there is no join screen and no config pages for panels 3 and 4. |
+| **2 Player Split** | `Top/Bottom`, `Side by Side` | Side by side suits wide screens. |
+| **3-4 Player Split** | `Grid`, `Columns` | Grid suits screens up to 21:9. Use Columns at 32:9. |
+| **Screen Order** | `1 3 / 2 4`, `1 2 / 3 4` | The default fills the grid by columns, so each view is on its player's side. |
 
 Set the panel count first, then run the guided setup for each panel. Panels 3 and 4 have no preset
-bindings on purpose — the two built-in schemes are chosen so one keyboard can drive two players, and
-there is no third set that wouldn't collide.
+bindings.
 
-**Big net games.** The cabinet itself has at most four panels, but a networked game can hold up to
-32 players, and the end-of-level scoreboards were built for far fewer than that — the campaign table
-showed the first 8 and the deathmatch rankings the top 12, with everyone else simply missing and
-nothing on screen to say so. Past those counts both screens now switch to a smaller layout that
-fits everybody: smaller type, tighter rows, and a second column when one won't hold them all. Below
-those counts the screens are exactly what they always were.
+**End-of-level screens in multiplayer:**
 
-The deathmatch scoreboard now shows **Frags and Deaths**, each across half the screen, with room for
-real names. In a multiplayer campaign the end-of-level tally now **stays up for 25
-seconds before anybody can skip it** — it is the only time the room sees how everyone did, and one
-player reaching for fire used to take that away from the other three. Set it with
-**Options → Arcade Options → Timeouts → Tally Hold** (0 to 60 seconds, 0 turns it off). Whoever
-worked the exit switch gets a small **EXIT** sign beside their name on that tally. It used to show four tables — the two extra ones were *Buchholz* and *indiv.*, chess
-tie-break scores that almost nobody can interpret, and they were taking half the board while names
-were cut to six characters.
+- The deathmatch scoreboard shows **Frags** and **Deaths** with room for full names.
+- A multiplayer campaign tally **stays up for 25 seconds** before anyone can skip it. Set it with
+  **Options → Arcade Options → Timeouts → Tally Hold** (0 to 60, 0 is off). The player who hit the
+  exit gets an **EXIT** sign.
+
+### Timeouts and banners
+
+Under **Options → Arcade Options → Timeouts**:
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| **Idle Timeout** | 60 s | Returns an abandoned game to the attract screen. Not applied in `-devmode`. |
+| **Idle Warning** | 15 s | Countdown shown before the idle timeout. |
+| **Join Screen Timeout** | 30 s | 20, 30, 45, 60, or **Off** (skip the join screen, start with panel 1). |
+| **Initials timeout** | 60 s | How long the initials page waits before accepting what's entered. |
+| **Tally Hold** | 25 s | Minimum time the multiplayer campaign tally stays up. |
+
+Other Arcade Options:
+
+- **Messages + Banners → Winning Banner**: **Rainbow** (default), **Cycle** (whole word, one colour
+  at a time) or **Off**. Team Deathmatch always uses team colours.
+- **Messages + Banners**: turn pickup and frag messages back on for single player and multiplayer
+  separately. Both off by default.
+- **Attract Volume**: a percentage of normal volume during the attract cycle. `0` is silent, `100`
+  is full. Default 50.
+- **Chase Cam Demo**: third-person attract demos on or off. On by default.
+
+### Menu switches
+
+Under **Options → Arcade Options → Disable/Enable Menu Options**. All are ignored in `-devmode`.
+
+| Switch | Default | Effect |
+| --- | --- | --- |
+| **Cheats Menu** | Off | Puts Cheats on the main menu for players. |
+| **Quit Menu** | Off | Puts Quit Game back for players. |
+| **Multiplayer Menu** | On | Off removes the **Multiplayer** row from New Game. Deathmatch is not affected. |
+| **Game Options** | On | Off removes the **Game Options** page from Options. |
+| **Enable No Monsters** | On | Off removes No Monsters from Single Level. |
 
 ### Choosing a resolution, and tuning performance
 
-Both pages are under **Options → Video Options** (devmode only — Video Options is hidden from
-players).
+Both are under **Options → Video Options** (devmode only).
 
-**Video Modes** lists what the display can do. It sorts largest first, hides the duplicate entries a
-monitor advertises once per refresh rate, and **pages** rather than stopping partway through —
-*Left/Right for more*, and the page number is shown, so look for that before concluding a mode is
-missing.
+**Video Modes** lists what the display offers, largest first, without duplicates. It **pages**
+(Left/Right for more), so check the page number before deciding a mode is missing. The
+**`Aspect:`** line above it filters the list; press **`A`** to cycle `AUTO` (default), `All`,
+`4:3`, `16:10`, `16:9`, `21:9` and `32:9`. It says how many modes are hidden.
 
-The line above it reads **`Aspect: <shape>`**, and **pressing `A` cycles it**: `AUTO` (the default)
-shows the shapes that suit the display, `All` shows everything, then `4:3`, `16:10`, `16:9`, `21:9`
-and `32:9`. When the filter is hiding anything the line says how many, so a mode you cannot find is
-never silently gone. On an ultrawide panel `AUTO` is what stops the list being buried in 4:3 modes
-it will never use.
+**Keep aspect** decides what happens when the resolution is a different shape from the monitor.
+**Yes** (default) adds black bars; **No** stretches to fill. It does nothing when the shapes already
+match, and is greyed out in OpenGL, where the monitor does the scaling. This is different from
+**View fit**, which decides how much of the world goes into the picture, not where the picture sits.
 
-**Keep aspect**, just under *View fit*, decides what happens when the resolution you picked is not
-the same shape as the monitor. **Yes** (the default) fits the picture to the screen at its own shape
-and fills the rest with black bars — down the sides normally, along the top and bottom on a monitor
-turned on its side. **No** stretches it to fill, which is what the cabinet used to do always: a 4:3
-mode on a 16:9 screen came out a third too wide. It does nothing at a resolution that already
-matches the monitor's shape, and it is greyed out in OpenGL, where the monitor's own scaler places
-the picture rather than the engine.
+**Gamma Options** holds Gamma Function, Gamma, Black level and Brightness. **F11** opens it directly.
 
-It is **not** the same thing as *View fit* above it, which is easy to assume. View fit decides how
-much of the world goes into the picture the engine draws; Keep aspect decides how that finished
-picture is placed on the screen. No View fit setting can produce black bars.
+**Performance Options**:
 
-**Gamma Options**, higher up the same page, holds *Gamma Function*, *Gamma*, *Black level* and
-*Brightness*. **F11** opens that page directly from anywhere.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Framerate Cap** | 60 | `Uncapped`, or 35 / 60 / 75 / 100 / 120 / 144 / 165 / 240 frames a second. |
+| **Render Threads** | 1 | `Auto` or 1 to 4. Software renderer only. |
+| **8bpp Draw** | Off | Draw at 8 bits and expand through the palette at the end. |
+| **Row Padding** | Off | Pad each row in memory. Software renderer only. |
+| **Show Ticrate** | | Show the frame rate (averaged over half a second). |
 
-**Performance Options**, near the bottom of Video Options, holds the settings that trade picture —
-or memory — for speed:
+- **Framerate Cap** never affects the simulation or demos. Set it to your panel's refresh rate.
+  `35` is the original one-frame-per-tic behaviour, and the setting to fall back to if anything
+  looks wrong. `Uncapped` is for benchmarking only.
+- **Render Threads** gives each player's view its own core, or splits a single view into bands.
+  That's close to 4x on four cores. It ships at 1 because a threaded frame can differ from a serial
+  one by a few scattered pixels. Scores, demos and gameplay are identical either way. On a Pi, turn
+  it on. Greyed out under OpenGL.
+- **8bpp Draw** helps when memory bandwidth is the limit: a lot on a Pi, usually nothing on a
+  desktop.
+- **Row Padding** fixes sizes that are oddly slow because rows line up badly in the CPU cache. On a
+  Pi 3 it took 1024x768 from 21 to 31 fps; on a laptop it made no difference.
 
-| Setting | What it does |
-| --- | --- |
-| **Framerate Cap** | `Uncapped`, or 35 / 60 / 75 / 100 / 120 / 144 / 165 / 240. Default **60**. |
-| **Render Threads** | `Auto`, or 1 to 4. Default **1**. Software renderer only. |
-| **8bpp Draw** | Draw the world at 8 bits and expand it through the palette at the last moment. Default **Off**. |
-| **Row Padding** | Lay the picture out in memory with a little spare space at the end of each row. Default **Off**. Software renderer only. |
-| **Show Ticrate** | Put the frame rate on screen — how you read the effect of the others. The number is an average over the last half second. |
-
-**Framerate Cap** is how many frames a second are drawn. The simulation is not affected by it in any
-way: it still runs at exactly 35 tics a second, and every recorded demo plays back identically at
-any setting. Above 35 the extra frames are drawn *between* tics with everything moving interpolated,
-which is real added smoothness rather than repeated pictures. Set it to your panel's refresh rate.
-`35` is the old behaviour, one frame per tic with interpolation off entirely, and is the setting to
-fall back to if anything looks wrong. `Uncapped` measured about 600 fps on a 60 Hz panel — ten times
-the work for frames the display cannot show, which on a machine left switched on is heat and
-electricity and nothing else. It is there for measuring what the hardware can do.
-
-**Render Threads** spreads the software renderer over several cores. With more than one player each
-view gets its own thread; with one player the single view is cut into vertical bands, one per core.
-Either way it is close to a 4x gain on four cores, which is what makes a Pi 3 run a four-way split
-at full speed. `Auto` picks a count from the machine. It is greyed out under OpenGL, where it would
-gain nothing — the hardware renderer issues its GL calls from inside the walk of the level and a GL
-context belongs to one thread.
-
-**It ships at 1, deliberately.** Threading is still opt-in. Nothing crashes, it has run clean under
-a thread sanitiser, and **nothing about the simulation changes** — scores, demos and gameplay are
-identical either way, because only the drawing is threaded. What is not yet perfect is the picture:
-splitting one view into bands makes about 1–2% of pixels sample the neighbouring texel, which is
-inherent to slicing the drawing up and is what GZDoom's banded renderer does too; and on a few maps
-with sky and open space a threaded frame still differs slightly from a serial one, and from itself
-run to run. It is a handful of scattered pixels, not something you would notice playing. Turn it on
-if you need the speed — which on a Pi you will — and set it to 1 if you ever want to rule it out.
-
-**8bpp Draw** helps exactly when memory bandwidth is the limit and not otherwise. There are no 8-bit
-display modes any more, so even in the software drawmode the renderer normally writes four bytes per
-pixel; this makes it write one and expand at the end. Worth a lot on a Pi, usually nothing on a
-desktop. Try it with **Show Ticrate** on.
-
-**Row Padding** is for the sizes that run oddly slowly for their size. On a Pi 3 the two 1024-wide
-sizes took about twice as long to draw as their neighbours: at exactly 1024 pixels a row, a column
-of the picture lands in the same few slots of the processor's cache, so drawing a wall keeps
-throwing its own data out. Padding each row by a little breaks that pattern. It changes nothing
-you can see — the picture is identical, checked frame by frame — only where it sits in memory, and
-whether that helps depends on the processor. On a Pi 3 it took 1024x768 from 21 fps to 31; on the
-development laptop it made no measurable difference at all. So it is off unless you turn it on, and
-on a Pi you should. Measure it on your own machine, with
-`tools/perfchart.py --compare` against a run with it off (see below), rather than taking it on
-trust; it takes effect straight away, with a moment's blank screen while the video mode is set
-again.
-
-**On a Pi, use the software renderer** — see [Performance](#performance) for the measured numbers.
-The Pi's GPU has no fast path for this engine's fixed-function OpenGL, so the hardware renderer goes
-through a slow compatibility layer and is the worse of the two there.
-
-**To measure your own machine, run `tools/perfchart.py`** from the top of the source tree. It plays
-a short fixed demo (UV speed on E1M1) once at each resolution in the table under
-[Performance](#performance) and prints the same table for your machine, frame rates and all. It
-uses a copy of the cabinet's settings folder, so it never touches the real config, scores or demos.
-The whole list takes about seven minutes on a Pi 3.
+**To benchmark your own machine**, run `tools/perfchart.py` from the top of the source tree. It
+plays a fixed demo at each resolution in the [Performance](#performance) table, using a copy of the
+settings folder so it never touches the real config, scores or demos. A full run takes about seven
+minutes on a Pi 3.
 
 ```
 tools/perfchart.py                   # every size in the Performance table
 tools/perfchart.py --quick           # four sizes, a minute or two
-tools/perfchart.py --runs 3          # each size three times, shown as a range like 61–64
+tools/perfchart.py --runs 3          # each size three times, shown as a range
 tools/perfchart.py --compare perfchart-<host>-<date>.csv   # add a "before" column
 ```
 
-Each run leaves a `.md` file, which is the table ready to paste, and a `.csv` that `--compare` reads
-back, so measuring before and after a change is two commands. Beside each frame rate it shows where
-the time went: **Views** (drawing the 3D view), **Present** (getting the finished picture onto the
-screen) and **Other** (game logic and HUD), in milliseconds per frame. When one resolution is
-oddly slow, those columns say whether the drawing or the display is to blame. On a Pi it also shows the board's
-temperature after each size and warns if the Pi slowed itself down during the run. A Pi that runs
-hot or on a weak power supply throttles its CPU, which looks exactly like the game being slow.
-The windows it opens go fullscreen one after another; from SSH, set `DISPLAY=:0` first to use the
-Pi's real screen, or pass `--headless` to measure without one.
+Each run writes a `.md` table and a `.csv` for `--compare`. Next to each frame rate it shows
+milliseconds per frame spent on **Views** (the 3D view), **Present** (getting it on screen) and
+**Other** (game logic and HUD). On a Pi it also reports temperature and warns about throttling,
+which looks exactly like the game being slow. Over SSH, set `DISPLAY=:0` to use the Pi's screen, or
+pass `--headless`.
 
 ### Cheats
 
-**Options → Arcade Options → Disable/Enable Menu Options → Cheats Menu** (devmode only) puts a **Cheats** entry on the main menu for
-players: god mode, all weapons and keys, no clipping, exit level, and **Show Coordinates**. It ships
-off, in which case the entry is operator-only and reachable just in a `-devmode` session.
+With **Cheats Menu** on, the main menu gets a **Cheats** entry: god mode, all weapons and keys, no
+clipping, exit level, and **Show Coordinates**. With it off, the menu is only in `-devmode`.
 
-Cheats are single-player only, and using any of them — from the menu, the console, or a typed
-IDDQD/IDKFA/IDCLIP — voids that run's score. The HUD then shows `PLAYER CHEATED - UNRANKED` for the
-rest of the run.
-
-**Show Coordinates** is the exception. It draws position, angle, the sector you are in and the
-linedef you are looking at, changes nothing in the simulation, and so does not void the run — the
-same rule the typed IDDT/IDMYPOS/IDMUS already follow. It is there to report where a bug is on a
-cabinet with no keyboard to read a console line from.
+Cheats are single-player only. Any cheat, from the menu, the console or typed (IDDQD, IDKFA,
+IDCLIP), voids the run and shows `PLAYER CHEATED - UNRANKED`. **Show Coordinates** is the exception:
+it only displays position, angle, sector and the linedef in view, like IDDT and IDMYPOS. It is there
+to locate bugs on a cabinet with no console.
 
 ### Keeping the cabinet running
 
-On a dedicated machine, launch the game from a wrapper script that restarts it in a loop, with an
-escape hatch on a key that is **not** wired to any cabinet button. Players can then quit the game —
-or it can crash — and the cabinet comes straight back up on the attract screen instead of dropping
-someone to a desktop.
+On a dedicated machine, launch the game from a wrapper that restarts it in a loop, with an escape
+key that no cabinet button is bound to. A quit or crash then goes straight back to the attract
+screen.
 
 ```bash
 #!/bin/bash
 cd /path/to/bin || exit 1
 while :; do
     ./doomlegacyarcade
-    # Escape hatch. Press this key during the pause to stop the loop.
+    # Press this key during the pause to stop the loop.
     # Choose something no cabinet button is bound to.
     read -r -t 3 -n 1 key && [ "$key" = "q" ] && break
 done
 ```
 
-Because player sessions never write the config, every relaunch starts from the operator's baseline
-regardless of what the last player changed.
+Player sessions never write the config, so every relaunch starts from the operator's settings.
 
 ### Choosing which game the cabinet boots into
 
-**Options → Arcade Options → Boot Game** (devmode only). By default the cabinet starts in whichever
-IWAD the search happens to find first, which is rarely the one you want. Set this to `doomu`,
-`doom2`, `plutonia` or `tnt` and it boots there every time; `None` restores the default behaviour.
-
-The names are the same ones `-game` takes. A `-game` or `-iwad` on the command line overrides the
-setting, and if the chosen game is ever uninstalled the cabinet warns and falls back to the normal
-search rather than refusing to start.
-
-Like every operator setting, it is only saved from a `-devmode` session.
+**Options → Arcade Options → Boot Game** (devmode only). Set it to `doomu`, `doom2`, `plutonia` or
+`tnt` to always boot that game. `None` boots whichever IWAD the search finds first. `-game` or
+`-iwad` on the command line overrides it. If the chosen game is uninstalled, the cabinet warns and
+falls back to the search.
 
 ### Connecting cabinets together (Cabinet Link)
 
-**What works:** cabinets pair and show each other on **Options → Arcade Options → Cabinet Link** —
-each cabinet's name, a short ID, whether it is online, and what it is doing. And **starting a
-Deathmatch or a Campaign on one cabinet invites the others**:
+Two or more cabinets on the same network pair with a passcode over an encrypted connection. They
+show each other on **Options → Arcade Options → Cabinet Link** with name, short ID, online status
+and activity. Cabinet Link is off until you set it up.
 
-- Any other cabinet on its attract screen, or with someone in its menus, running the **same game**
-  (same IWAD and level pack), switches to a join screen for that game: `DEATHMATCH ON LAPTOP, 1 IN
-  THERE`, the same colour, crosshair and controls choices as a local join, and the host's countdown.
-  A cabinet in the middle of a game, or with someone signing the high score board, is left alone.
-- Press fire there to join, as you would locally. Each cabinet keeps its own screen — nobody from
-  the other cabinet takes a quarter of yours. The host's join screen shows who is coming
-  (`RASPBERRYPI: 1 IN`).
-- If nobody on a cabinet presses in, its join screen closes when the host's game starts and it goes
-  back to its attract screen, as if the invite had never come.
-- The game starts when everyone who pressed in, on every cabinet, has locked in — or when the
-  countdown runs out. If a cabinet that joined never turns up, the host waits 15 seconds and starts
-  without it.
-- A Campaign with a player on each cabinet is a coop game. A Campaign nobody else joins is the
-  normal scored solo run.
-- If both cabinets start the same kind of game at the same moment, one of them turns into a join of
-  the other: you get one game, not two.
-- On a one-panel cabinet the join screen now appears whenever there is another cabinet to invite;
-  keep pressing fire through the settings to lock in, and the game starts as soon as everyone is locked in.
-- The cabinet that joined plays as smoothly as the one that started the game, turning included. (It
-  used to judder whenever the frame rate was above 35.)
-- The cabinet that started the game no longer stops for a moment just after play begins. (When the
-  other cabinet's screen melt took longer than its own — a Raspberry Pi joining a laptop, say — the
-  host's game froze for about half a second waiting for it to finish.)
-- **Eight player games work** — four at each cabinet. (Earlier builds could leave the joining cabinet
-  with none of its own players, showing other players' views and turning but not moving; could kick
-  it out of the game within seconds on a less than perfect Wi-Fi link; and could crash the host in
-  OpenGL when a second four-player game started.)
-- A player who joins from another cabinet gets the whole screen. (On a four panel cabinet the first
-  game after starting the program used to put them in a quarter of it.)
-- **The idle timeout counts everyone in the game.** A linked game keeps going as long as anybody on
-  any cabinet is playing, even if the other cabinet has been left with nobody at it; when nobody at
-  all has touched the controls for the idle timeout, every cabinet goes back to its attract screen
-  together.
-- **The cabinet that starts a linked game sets its timeouts.** The idle timeout, the idle warning and
-  the join screen countdown all come from the cabinet that started the game, so every screen counts
-  down the same numbers and nobody gets dropped early because the other cabinet is set shorter. Your
-  own settings are untouched and apply again to the next game you start. A cabinet with **Join
-  Screen Timeout** set to **Off** has no join screen, so it never invites the other cabinets.
-- If the other cabinet ends the game or drops out, the message that says so ("Server has Shutdown")
-  goes away with **fire**, back to the attract screen. It used to need Escape.
-- Either cabinet can start the game, master or member. (Earlier builds could send the joining
-  cabinet back to attract while the host played alone: when the host had a soundtrack pack loaded
-  that the other cabinet lacked, now and then on a slow Raspberry Pi, and whenever the invited
-  cabinet had sat untouched for longer than the idle timeout.)
-- Both cabinets need this version of the game. A cabinet with Cabinet Link switched on also ignores
-  game traffic from anything that is not a linked cabinet.
-- The cabinets must have the **same IWAD**, but not the same file name: Ultimate Doom as `DOOM.WAD` on
-  one and `doomu.wad` on the other is fine. A *different version* under the same name (Doom 2 v1.666
-  against v1.9) is refused with "different version of DOOM2.WAD", because the two would play different
-  games.
-- **Music and sound packs don't have to match.** A wad that holds only music or sound effects (a
-  soundtrack pack such as `IDKFAv2.wad`) is not required of the other cabinet; each cabinet plays its
-  own music. Any other extra wad the host has loaded — maps, patches, textures — the joining cabinet
-  must have too, or it is turned away and goes back to its attract screen.
+**It needs OpenSSL at build time.** `tools/build.sh` enables it when OpenSSL is found. If the page
+says **NOT BUILT INTO THIS BINARY**, install `libssl-dev` (Debian, Raspberry Pi OS) or
+`openssl-devel` (Fedora) and rebuild. On Windows, `build.bat -InstallDeps` installs it.
 
-**Select Game Sync: one cabinet picks the game, the others follow.** Invites only reach cabinets
-running the same game, so a linked game of anything but the cabinets' boot game used to mean walking
-to each cabinet and picking it there first. With **Options → Arcade Options → Cabinet Link Options →
-Select Game Sync** set to **On** (it is **Off** until you turn it on):
+#### Setting up
 
-- A game picked on **Options → Select Game** on *any* linked cabinet — Ultimate Doom, Doom II,
-  Plutonia, TNT, or a level pack — is picked on every other cabinet too. Each one shows `SWITCHING
-  GAME...` and restarts, exactly as if someone had picked it there (a level pack loads without a
-  restart, as it does by hand). The other cabinets start switching the moment the game is picked,
-  without waiting for the first cabinet to restart.
-- A cabinet in the middle of a game, signing the high score board, on a join screen or in an
-  operator session is **not** interrupted: it switches once it is back on its attract screen. Someone
-  browsing its menus *is* interrupted, as an invite would.
-- **A cabinet that doesn't have that game installed stays on the game it has.** Nothing breaks; the
-  master's Cabinet Link page shows why in red under that cabinet — **GAME SYNC: TNT NOT INSTALLED**,
-  or **GAME SYNC: NO LEVEL PACK DWANGO5** for a pack that is not in its `legacyhome/levels/`. A pack
-  counts as the same if its file has the same name, whatever the capitals.
-- **A cabinet on its attract screen always runs the master's choice.** Whatever it was doing — a
-  Single Level while the game was changed on the other cabinet, or just booting into its own Boot
-  Game — once it is back on its attract screen with nobody in its menus, it switches to the game the
-  master is running (or the latest pick, if the master has not caught up with it yet). So with Select
-  Game Sync on, the master's game is also every member's boot game. A cabinet without that game, and
-  with Copy Missing Wads off, is asked again every five minutes.
-- **A level pack is dropped everywhere too.** When a game on a cabinet with a pack loaded ends back to
-  the attract screen — **End Game**, or the idle timeout — that cabinet unloads the pack and restarts,
-  as it always has, and the other cabinets drop it as well when the pack was the shared choice. If a
-  different game was picked while that cabinet was playing, that pick stands: the cabinet switches to
-  it instead.
-- Only the master has the setting, and only the master shows **Cabinet Link Options** — its setting
-  decides for every cabinet. Like every operator setting, it is saved from a `-devmode` session.
-- Picking a game on a cabinet in an operator session passes it on too, but a cabinet in an operator
-  session is never switched by someone else's pick.
+One cabinet is the **master**; the others are **members** and connect to it. Configure each in an
+operator session on **Options → Arcade Options → Cabinet Link**:
 
-**Music Cabinet: one cabinet carries the music while you play together.**
+| Row | Use |
+| --- | --- |
+| **Role** | Fire, or left/right, cycles *off*, *master*, *member*. |
+| **Name**, **Passcode**, **Master**, **Port** | Fire opens an on-screen keyboard. Fire types, *use* deletes, **DONE** saves. The bottom-left key switches case and symbols (lower case shows red). A real keyboard also works. |
+| **Allowed** | Master only. A member that tried to connect shows as **ALLOW 192.168.1.68**; press fire to allow it. **ADD AN ADDRESS** types one in. Fire twice on an entry removes it. |
+| **Forget paired cabinets** | Fire twice. |
 
-Sound effects belong on the cabinet they happen on, and they stay there. Music is different: playing
-the same track on three machines at once does not stay in step — nothing keeps them aligned, they
-drift apart within a few bars, and the result is worse than one cabinet playing it alone. Real linked
-arcade hardware doesn't try to sync audio either; it just decides whose speakers carry it.
+1. On the master: role *master*, a name, a passcode.
+2. On each member: role *member*, a name, the **same passcode**, and the master's address.
+3. On the master's **Allowed** page, allow each member. It connects within a minute.
 
-Set **Options → Arcade Options → Cabinet Link Options → Music Cabinet** to the cabinet whose speakers
-should carry the music. The list is the cabinets this one knows — its own name first, then every
-cabinet it has been paired with — so on a row of three you might see **All**, **laptop**,
-**raspberrypi** and **DESKTOP-202K7KS**. **Pick the middle cabinet of the row**, so the music reaches
-both ends.
+Every change saves at once and restarts the link. The console has the same controls:
+`link_set name|passcode|master|port|role|allow|unallow <value>`, `link_forget`, and `link` for status.
 
-- **Set it on the master; the other cabinets are told.** Cabinet Link Options only appears on the
-  master, and it sends its choice round the link every few seconds — so a cabinet that was switched
-  off when you changed it, or paired afterwards, picks it up on its own.
-- **If the cabinet you picked isn't in the game, the cabinet that started it plays instead.** Two
-  cabinets at one end of the row can play each other while the middle one sits on its attract screen,
-  and that game still gets music. The pick is a preference, not a requirement — there is always
-  exactly one cabinet carrying the music and never none.
-- **It only applies while cabinets are playing a linked game together.** A cabinet playing on its
-  own — Single Level, a solo campaign, or just sitting on the attract screen — always plays its own
-  music, whatever this is set to. It is not a "mute this cabinet" switch.
-- **All** is the default and means every cabinet plays its own music, which is what they did before
-  this setting existed.
-- Only music is affected. Sound effects are untouched everywhere.
-- Like every operator setting, it is saved from a `-devmode` session, and it remembers the cabinet by
-  *name* — so it survives a restart even before the other cabinets are back online.
+**Verify the first connection.** Compare the **ID** each cabinet shows for the other with the ID the
+other shows for itself (beside RUNNING). If they match, nothing is in between. From then on the
+member refuses anything else claiming to be that master.
 
-**Copy Missing Wads: the master hands over the game a member doesn't have.** With **Options → Arcade
-Options → Cabinet Link Options → Copy Missing Wads** set to **On** on the master (it is **Off** until you
-turn it on), a cabinet that can't follow a pick because it lacks the IWAD or the level pack gets the
-master's copy, then switches:
+- **Wrong passcode:** after three tries the master ignores that address for a minute.
+- **"MASTER IDENTITY CHANGED"** means something new answers at the master's address. If you really
+  replaced the master, use **Forget paired cabinets** on the member.
+- **Changing the master's passcode** disconnects every member until they have the new one.
+- Settings and the private key are in `legacyhome/link/`. **Never copy that folder** to another
+  cabinet; each needs its own identity.
+- The master listens on port **5030**. Give the cabinets fixed addresses, and on untrusted Wi-Fi
+  use wired Ethernet and allow only those addresses.
 
-- An IWAD lands in a **`wads`** folder beside the game program (created if needed) — the game looks
-  there for IWADs on every operating system, before its other wad folders. A level pack lands in
-  **`legacyhome/levels/`**, where Select Game lists packs.
-- The master's Cabinet Link page shows it under that cabinet: **GAME SYNC: COPYING TNT.WAD 45%**, then
-  **COPIED TNT.WAD**. On the laptop an 18 MB IWAD took about 20 seconds; expect longer on a Pi over
-  Wi-Fi. It only happens once — after that the cabinet has the file.
-- Only the file the pick needs is sent, and only a file Select Game could offer (the four IWADs and the
-  packs in `levels/`) — never the soundtrack wads or anything else. It is checked against the master's
-  copy when it arrives; a file that arrives damaged is thrown away and the cabinet stays on its game
-  (**GAME SYNC: NO TNT - IT ARRIVED DAMAGED**). A file already there is never overwritten.
-- A cabinet that starts a game while a copy is under way pauses the copy until the game is over, so
-  nobody playing is slowed down by it.
-- With it off, a cabinet that lacks the game says **COPY MISSING WADS IS OFF** instead.
+**Windows** (built but not yet tried on a real Windows cabinet):
 
-**Linked cabinets share their high scores.** A record set on one cabinet — a single level time, a
-Survival run, with its record demo — shows up on the other cabinet's attract screen, boards and
-intermission, and the other way round:
-
-- It happens by itself, a few seconds after the cabinets see each other and whenever a board changes.
-  A cabinet that was switched off catches up when it comes back.
-- Nothing changes while someone is playing, signing initials, or in an operator session: a record
-  arriving then waits until the cabinet is back on its attract screen, so the target a player is
-  chasing never moves under them.
-- Only the game both cabinets are **running** is shared (same IWAD and level pack). Records for other
-  games stay on their cabinet until both run that game.
-- Scores are only shared between cabinets on the **same build** of the game, with the **same wads**,
-  and the same **rocket trails**, **view height** and **invulnerability sky** settings — the settings a
-  record demo carries that the ranked ruleset does not fix. Otherwise the two would not be the same
-  competition, and the Cabinet Link page says so in red under that cabinet (**SCORES: DIFFERENT
-  BUILD**, **DIFFERENT WADS**, **DIFFERENT SETTINGS**, or **SCORES: PLAYING** another game).
-- **`clearhighscores` on the master clears every cabinet**, including one switched off at the time,
-  when it next connects — but a record played on that cabinet *after* the clear is kept. On a member
-  it is refused ("clear them on the master"). The master needs its clock set to clear. To undo a
-  clear, use `-restorehighscores` on the master (see "Resetting the high scores") — copying old score
-  files back by hand gets cleared again at the next sync.
-- A demo that does not arrive whole is refused, and its record with it.
-
-The score files gained two columns — when a record was set and on which cabinet — and are now kept in
-a fixed order. Older files load as they are. The first time a board is saved, entries that had
-slipped below the bottom of a board (never shown anywhere) are dropped.
-
-It needs OpenSSL when the game is built. `tools/build.sh` finds it and turns the link on by itself;
-if the Cabinet Link page says **NOT BUILT INTO THIS BINARY**, install the OpenSSL development package
-(`libssl-dev` on Debian and Raspberry Pi OS, `openssl-devel` on Fedora) and build again.
-
-On Windows, `build.bat` checks for OpenSSL the same way, and `build.bat -InstallDeps` installs it.
-**The Windows link is built but has not been tried on a real Windows cabinet yet.** Two things to
-know there:
-
-- Windows Firewall asks the first time a master cabinet listens, and on a fullscreen cabinet that
-  question is hidden behind the game, so the link just never connects. Allow it once from an
-  administrator command prompt:
+- Windows Firewall's prompt is hidden behind a fullscreen game, so the link never connects. Allow it
+  once from an administrator prompt:
   `netsh advfirewall firewall add rule name="Doom Legacy Arcade" dir=in action=allow program="C:\path\to\doomlegacyarcade.exe"`
 - Switching games restarts the program as a new process. Start the cabinet from a shortcut or the
-  Startup folder, not from a script that relaunches it whenever it exits, or you will get two
-  copies.
-- The Windows program has no console window, so nothing it prints is visible. To see its side of
-  a link problem, start it with **`-logfile cabinet.log`** (add it to the shortcut's target). Every
-  message goes into that file, with the time on each line, and it keeps writing after a game
-  switch restarts the program. The option works on Linux too, and a log from each cabinet can be
-  lined up by time.
+  Startup folder, not a relaunching script, or you will get two copies.
+- The program has no console window. Add **`-logfile cabinet.log`** to the shortcut to capture its
+  messages, with timestamps. This also works on Linux.
 
-One cabinet is the **master**; the others are **members** and connect to it. Set them up in an
-operator session (*Devmode Restart*, or `./doomlegacyarcade -devmode`) from **Options → Arcade
-Options → Cabinet Link**, with the cabinet's own stick and buttons. The page lists the settings
-above the other cabinets it can see:
+#### Linked games
 
-- **Role** — fire, or left and right, steps through *off*, *master* and *member*.
-- **Name**, **Passcode**, **Master** (a member's master's address) and **Port** — fire opens an
-  on-screen keyboard. Move with the stick, fire types the letter under the cursor, *use* deletes, and
-  **DONE** saves. The bottom-left key switches between capitals, lower case and symbols; letters you
-  have typed in lower case show **red**, since the menu font only has capitals. A passcode is always
-  typed fresh — the page never shows the old one, only how long it is. A keyboard works too, for any
-  key that is not one of a panel's buttons.
-- **Allowed** (on a master) opens the list of addresses allowed to connect. A member that tries to
-  connect before it is on the list appears there as **ALLOW 192.168.1.68** — press fire on it and it
-  is allowed; it connects within a minute. **ADD AN ADDRESS** types one in instead; fire twice on an
-  allowed address removes it.
-- **Forget paired cabinets** — fire twice. See "MASTER IDENTITY CHANGED" below.
+Starting a **Deathmatch**, **Team Deathmatch** or **Campaign** on one cabinet invites the others.
 
-Every change is saved at once and restarts the link. So on the master: role *master*, a name, a
-passcode. On each member: role *member*, a name, the **same passcode**, and the master's address.
-Then allow each member on the master's **Allowed** page.
+- A cabinet on its attract screen or in its menus, running the **same game** (IWAD and level pack),
+  shows a join screen such as `DEATHMATCH ON LAPTOP, 1 IN THERE`. Cabinets mid-game or entering
+  initials are left alone.
+- Press fire to join. Each cabinet keeps its own screen. The host shows who is coming
+  (`RASPBERRYPI: 1 IN`).
+- If nobody joins on a cabinet, its join screen closes when the game starts.
+- The game starts when everyone who joined, on every cabinet, has locked in, or when the countdown
+  ends. A cabinet that joined but never arrives is dropped after 15 seconds.
+- A Campaign with players on several cabinets is co-op. One nobody else joins is a normal scored
+  solo run.
+- If two cabinets start the same kind of game at once, one becomes a join of the other.
+- Up to eight players: four per cabinet.
+- **The host's timeouts apply to everyone**: idle timeout, idle warning and join countdown. A host
+  with **Join Screen Timeout** Off never invites.
+- **The idle timeout counts everyone.** The game continues while anyone on any cabinet is playing.
+- If the other cabinet leaves, press **fire** to dismiss "Server has Shutdown".
+- Both cabinets need the same build. A linked cabinet ignores game traffic from unlinked machines.
+- **The IWAD must match, not the file name.** `DOOM.WAD` and `doomu.wad` are fine together; Doom 2
+  v1.666 and v1.9 are refused as "different version of DOOM2.WAD".
+- **Music and sound packs don't need to match.** Any other extra wad the host loaded (maps, patches,
+  textures) must be on the joining cabinet too.
 
-The console still works (`link_set name|passcode|master|port|role|allow|unallow <value>`,
-`link_forget`, and `link` for the status) — the page and the commands change the same settings.
+**If a linked game shows PAUSE when nobody pressed it**, a cabinet has fallen out of step and the
+host is resyncing it. First check every cabinet runs the **same build**: the Cabinet Link page shows
+**SCORES: DIFFERENT BUILD** if not. Update each with `git checkout main`, `git pull --ff-only` and a
+rebuild, and check `git rev-parse --short HEAD` matches. If pauses continue, start each cabinet with
+`-logfile <file>`, play until it happens, and run `tools/nettrace-diff.py` on the logs.
 
-The first time a member connects, compare the **ID** each cabinet
-shows for the other with the ID the other shows for itself (on its Cabinet Link page, beside RUNNING) —
-if they match, nothing is sitting in between, and from then on the member remembers that master's
-identity and refuses anything else claiming to be it.
+#### Shared high scores
 
-- **Wrong passcode:** the master refuses and, after three tries, ignores that address for a minute.
-  The member's page says the passcodes probably differ.
-- **"MASTER IDENTITY CHANGED"** on a member means something new is answering at the master's
-  address. If you really did reinstall or replace the master, use **Forget paired cabinets** on the
-  member.
-- **Changing the passcode on the master** cuts off every member until they are given the new one.
-- Settings and the cabinet's private key are kept in `legacyhome/link/`, readable only by the user
-  running the game. Never copy that folder to another cabinet — each one needs its own identity.
-- The master listens on port **5030** (the **Port** row changes it). Use fixed addresses for the
-  cabinets — on an untrusted Wi-Fi network, put them on wired Ethernet and list only those addresses.
+A record set on one linked cabinet (with its record demo) appears on the others' attract screens,
+boards and intermissions.
+
+- Syncing happens automatically, a few seconds after cabinets see each other and whenever a board
+  changes. A cabinet that was off catches up later.
+- Nothing changes during a game, initials entry or an operator session. New records wait for the
+  attract screen, so a player's target never moves mid-run.
+- Only the game both cabinets are **running** is shared.
+- Scores are only shared between cabinets with the **same build**, the **same wads**, and the same
+  **rocket trails**, **view height** and **invulnerability sky** settings. Otherwise the Cabinet Link
+  page explains in red (**SCORES: DIFFERENT BUILD**, **DIFFERENT WADS**, **DIFFERENT SETTINGS**, or
+  **SCORES: PLAYING** another game).
+- **`clearhighscores` on the master clears every cabinet**, including ones that were off, but keeps
+  records set there after the clear. Members refuse it. The master needs its clock set. To undo a
+  clear, use `-restorehighscores` on the master (see
+  [Resetting the high scores](#resetting-the-high-scores)).
+- A demo that arrives incomplete is refused, with its record.
+
+The score files now carry when and where each record was set. Older files still load.
+
+#### Cabinet Link Options (master only)
+
+These appear under **Options → Arcade Options → Cabinet Link Options** on the master only, and apply
+to every cabinet. All are saved from a `-devmode` session.
+
+**Select Game Sync** (default Off). A game or level pack picked on **Options → Select Game** on any
+linked cabinet is picked on all of them.
+
+- Each cabinet shows `SWITCHING GAME...` and restarts (a level pack loads without a restart).
+- A cabinet mid-game, entering initials, on a join screen or in an operator session switches once
+  it is back on its attract screen. Someone browsing menus *is* interrupted.
+- A cabinet without the game keeps its own. The master shows why in red, such as **GAME SYNC: TNT
+  NOT INSTALLED** or **GAME SYNC: NO LEVEL PACK DWANGO5**. Packs match by file name, ignoring case.
+- **A cabinet on its attract screen always runs the master's game**, so the master's game is
+  effectively every member's boot game. A cabinet without it is asked again every five minutes.
+- When a game with a level pack ends, the pack is dropped on every cabinet that shared it.
+- A pick made in an operator session is passed on, but an operator session is never switched by
+  someone else's pick.
+
+**Copy Missing Wads** (default Off). A cabinet that lacks the IWAD or level pack for a pick gets the
+master's copy, then switches.
+
+- IWADs go into a **`wads`** folder beside the program; level packs into **`legacyhome/levels/`**.
+- The master's page shows progress, such as **GAME SYNC: COPYING TNT.WAD 45%**, then **COPIED
+  TNT.WAD**. An 18 MB IWAD took about 20 seconds on a laptop; a Pi on Wi-Fi is slower.
+- Only files Select Game could offer are sent (the four IWADs and packs in `levels/`). Each is
+  checked on arrival; a damaged copy is discarded (**GAME SYNC: NO TNT - IT ARRIVED DAMAGED**).
+  Existing files are never overwritten.
+- A copy pauses while that cabinet is playing.
+- With it off, the page says **COPY MISSING WADS IS OFF**.
+
+**Music Cabinet** (default **All**). Music on several machines drifts out of step within a few bars,
+so pick one cabinet to carry it during linked games. The list shows this cabinet first, then every
+paired cabinet. **Pick the middle cabinet of the row.**
+
+- The master sends the choice round the link every few seconds, so late or offline cabinets catch up.
+- If the chosen cabinet isn't in the game, the host plays the music instead. There is always
+  exactly one.
+- It only applies to linked games. A cabinet playing alone always plays its own music.
+- **All** means every cabinet plays its own music. Sound effects are never affected.
+- The cabinet is remembered by name, so the setting survives restarts.
 
 ### Replacement music (OGG soundtracks)
 
-There is **no music folder** — the engine only ever reads music from wad lumps, so replacement
-tracks have to be packed into a `.wad`. That is the whole trick; everything below follows from it.
+The engine only reads music from wad lumps; there is **no music folder**. Replacement tracks must be
+packed into a `.wad`.
 
-Two ready-made wads cover the two games, both of them Andrew Hulshult rerecordings of the original
-soundtracks, so they map track-for-track onto the maps:
+Two ready-made wads, both Andrew Hulshult recordings that map track for track:
 
 | Game | Wad | Where |
 | --- | --- | --- |
 | Ultimate Doom | `IDKFAv2.wad` | https://www.moddb.com/mods/brutal-doom/addons/idkfa-doom-soundtrack |
 | Doom II | `Doom2OST.wad` | https://www.reddit.com/r/Doom/comments/1enyv5f/for_anyone_that_wants_to_use_the_new_doom_2_music/ |
 
-Neither ships with this repository. **With a ready-made wad, skip to step 3** — steps 1 and 2 are
-for packaging a soundtrack yourself. Both games can be set up at once: they use different lump
-names, so `addfile` both wads and each game finds its own.
+Neither ships here. **With a ready-made wad, skip to step 3.** Both can be loaded at once; they use
+different lump names.
 
-**1. Name each track after its music lump.** The engine looks for two names, in this order:
+**1. Name each track after its music lump.** The engine tries `O_<name>` first (only when OGG music
+is enabled), then `D_<name>` (whose contents are sniffed, so an OGG works there too). Use the `O_`
+names so the originals stay as a fallback.
 
-| Prefix | Meaning |
-| --- | --- |
-| `O_<name>` | The replacement slot — tried first, and only when OGG music is enabled |
-| `D_<name>` | The normal lump; its contents are sniffed, so an OGG works here too |
-
-Use the `O_` names. The original `D_` lumps then stay in place as a fallback, and you can drop the
-wad at any time without having overwritten anything.
-
-For Ultimate Doom, which is what IDKFA covers:
+Ultimate Doom:
 
 ```
 O_E1M1 … O_E1M9      episode 1        O_INTRO    title screen
@@ -1748,64 +980,50 @@ O_E3M1 … O_E3M9      episode 3        O_INTER    intermission
                                       O_BUNNY    end credits
 ```
 
-Episode 4 has no music of its own — its maps reuse episode 1–3 tracks, so they're covered
-automatically once the rest are in place.
+Episode 4 reuses episode 1 to 3 tracks, so it is covered automatically.
 
-Doom II uses a different set of names, which is what a Doom II soundtrack wad carries:
+Doom II:
 `O_RUNNIN`, `O_STALKS`, `O_COUNTD`, `O_BETWEE`, `O_DOOM`, `O_THE_DA`, `O_SHAWN`, `O_DDTBLU`,
 `O_IN_CIT`, `O_DEAD`, `O_STLKS2`, `O_THEDA2`, `O_DOOM2`, `O_DDTBL2`, `O_RUNNI2`, `O_DEAD2`,
 `O_STLKS3`, `O_ROMERO`, `O_SHAWN2`, `O_MESSAG`, `O_COUNT2`, `O_DDTBL3`, `O_AMPIE`, `O_THEDA3`,
 `O_ADRIAN`, `O_MESSG2`, `O_ROMER2`, `O_TENSE`, `O_SHAWN3`, `O_OPENIN`, `O_EVIL`, `O_ULTIMA`,
 `O_READ_M`, `O_DM2TTL`, `O_DM2INT`.
 
-**2. Build the wad.** [SLADE](https://slade.mancubus.net/) is the easy route: *New → Wad Archive*,
-drag the `.ogg` files in, rename each entry to its lump name, save it as a `.wad`. Lump names are
-limited to 8 characters, which every name above already fits.
+**2. Build the wad.** In [SLADE](https://slade.mancubus.net/): *New → Wad Archive*, drag in the
+`.ogg` files, rename each to its lump name (8 characters max), and save as `.wad`.
 
-**3. Check OGG music is enabled.** **Options → Sound Volume → Music src** must be `Auto`, which is
-what the shipped configuration uses. If yours says `MUS` — an older config, or somebody changed it —
-replacement music is ignored entirely, and this is the step people miss. Set it in a `-devmode`
-session and quit to save it.
+**3. Check OGG music is enabled.** **Options → Sound Volume → Music src** must be `Auto` (the
+shipped default). `MUS` ignores replacement music entirely. Avoid `MP3` and `OGG` too: they play
+silence for any track the wad doesn't replace. Set it in a `-devmode` session.
 
-Avoid the `MP3` and `OGG` settings: those play *silence* for any track the wad doesn't replace,
-rather than falling back to the original. `Auto` prefers the replacement and falls back.
-
-**4. Load it at startup.** Put a line per wad in `legacyhome/autoexec.cfg`, creating the file if it
-isn't there:
+**4. Load it at startup.** Add a line per wad to `legacyhome/autoexec.cfg` (create it if needed):
 
 ```
 addfile "IDKFAv2.wad"
 addfile "Doom2OST.wad"
 ```
 
-The bare filename is enough as long as the wad sits in one of the usual wad directories, such as
-`~/games/doom` — the engine searches them by name. An absolute path works too. `legacyhome/levels/`
-is *not* the place for these: packs there are filtered by their maps, and a music wad has none, so
-it will never be listed. If you'd rather not use an autoexec, `-file IDKFAv2.wad` on the command
-line does the same thing.
+A bare filename works if the wad is in a usual wad directory such as `~/games/doom`; an absolute path
+also works. Don't put music wads in `legacyhome/levels/`, which only lists wads with maps.
+`-file IDKFAv2.wad` on the command line also works.
 
-Two things to expect: recorded music is far louder than the original MIDI, so **turn the music
-volume down** — 3 or 4 rather than the default — and tracks loop from the beginning rather than at
-a composed loop point, which is only noticeable on long levels.
+Recorded music is much louder than MIDI, so **turn music volume down** to 3 or 4. Tracks loop from
+the start rather than at a composed loop point.
 
 ### Resetting the high scores
-
-From the console, or at launch:
 
 ```sh
 ./doomlegacyarcade -clearhighscores
 ```
 
-This clears both tables — `highscores.dat` and the `runs.dat` leaderboard with its initials — *and*
-deletes the saved record demos. Deleting the files by hand is not enough: the tables are held in
-memory while the game runs and get written back out. **Take `-clearhighscores` off again afterwards**:
-it clears on every start it is given.
+(or `clearhighscores` at the console). This clears `highscores.dat`, the `runs.dat` leaderboard and
+the record demos. Deleting the files by hand doesn't work, because the game writes its in-memory
+copy back. **Remove `-clearhighscores` afterwards**, or it clears on every start.
 
-**Every clear keeps a copy first**, in `legacyhome/scores-backup/<date>-<time>/` (the scores and all
-the record demos, about a megabyte). The newest ten are kept. If the copy cannot be made, nothing is
-cleared.
+**Every clear keeps a backup first**, in `legacyhome/scores-backup/<date>-<time>/`. The newest ten
+are kept. If the backup fails, nothing is cleared.
 
-**To undo a clear, restore instead of copying files back:**
+**To undo a clear, restore rather than copying files back:**
 
 ```sh
 ./doomlegacyarcade -restorehighscores                     # the newest backup
@@ -1813,58 +1031,45 @@ cleared.
 ./doomlegacyarcade -restorehighscores /path/to/old/legacyhome   # any folder with score files
 ```
 
-(or `restorehighscores [folder]` at the console). The backup is **merged** with the scores the cabinet
-has now, so a record set since the clear is not lost, and each restored record gets its demo back.
-**With linked cabinets, restore on the master.** Copying old score files back by hand does not work
-there: every cabinet remembers when the scores were cleared and drops older records again at the next
-sync. A restore marks the restored records as belonging after the clear, so they reach the other
-cabinets like new ones. A member refuses to restore, and nobody can restore during a game. Take
-`-restorehighscores` off afterwards too.
+(or `restorehighscores [folder]` at the console). The backup is **merged** with current scores, so
+newer records survive, and restored records get their demos back. With linked cabinets, restore on
+the master; hand-copied files would be cleared again at the next sync. You can't restore during a
+game. Remove `-restorehighscores` afterwards too.
 
 ### Taking a screenshot
 
-Press **F12**. The image is written to the directory you launched from, named `DOOM0000.tga` and
-counting up — `DOOM0001.tga`, and so on — so nothing is ever overwritten.
-
-Files are **Targa** (`.tga`), because the cabinet uses the OpenGL renderer, and uncompressed: about
-3 MB each at 1366x768. Convert before sending them anywhere:
+Press **F12**. Images are written to the launch directory as `DOOM0000.tga`, `DOOM0001.tga` and so
+on, never overwriting. They are uncompressed Targa (about 3 MB at 1366x768), so convert before
+sharing:
 
 ```sh
 convert DOOM0000.tga shot.png
 ```
 
-PrtSc is bound as a fallback, but on a GNOME desktop it never reaches the game — the desktop's own
-screenshot tool takes it first. That is why F12 is the default here rather than the stock SysRq
-(Alt+PrtSc), which has the same problem and is a two-key combination besides.
-
-To use a different key, rebind **Screenshot** on the player's controls page, or from the console:
-
-```
-setcontrol "screenshot" "f11"
-```
-
-Set the `screenshotdir` cvar to write somewhere other than the working directory. Both are settings
-like any other, so they only stick from a `-devmode` session.
+PrtSc is a fallback binding, but GNOME's screenshot tool takes it first. To rebind, change
+**Screenshot** on the controls page, or use `setcontrol "screenshot" "f11"` at the console. The
+`screenshotdir` cvar changes where files go. Both only stick from a `-devmode` session.
 
 ### Other useful flags
 
 | Flag | Effect |
 | --- | --- |
 | `-devmode` | Unlock menus, save settings, disable the ruleset (or press Scroll Lock at the attract screen) |
-| `-clearhighscores` | Wipe scores and record demos at startup (a backup is kept first) |
-| `-restorehighscores [folder]` | Put backed-up scores back, merged with the current ones (newest backup if no folder) |
+| `-clearhighscores` | Wipe scores and record demos at startup (after a backup) |
+| `-restorehighscores [folder]` | Merge backed-up scores back in (newest backup if no folder) |
 | `-clearaudit` | Reset the operator audit counters at startup |
 | `-game <name>` | Start a specific game (`doomu`, `doom2`, `plutonia`, `tnt`) |
 | `-warp <map>` | Jump straight to a map |
-| `-file <wad>` | Load a wad at startup — a level pack, a soundtrack, a DEH/BEX patch |
+| `-file <wad>` | Load a wad at startup: a level pack, soundtrack or DEH/BEX patch |
 | `-config <file>` | Use a different configuration file |
+| `-logfile <file>` | Write every message to a file, with timestamps |
 | `-v` | Verbose startup, showing which files were found |
-| `-nonodebuild` | Don't rebuild the level's BSP nodes at load — the slime-trail fix, off |
-| `-frameprofile` | Print a breakdown of where each frame's time actually goes |
+| `-nonodebuild` | Don't rebuild BSP nodes at level load (turns off the slime-trail fix) |
+| `-frameprofile` | Print where each frame's time goes |
 | `-playdemo <file>` | Replay a record demo from `legacyhome/demos`, then quit |
-| `-synclog` | While recording or replaying a demo, write one line of simulation state per tic to `synclog_rec.txt` / `synclog_play.txt`. Diff the two and the first differing line is where a demo went out of sync |
+| `-synclog` | Write one line of simulation state per tic to `synclog_rec.txt` / `synclog_play.txt`; the first differing line is where a demo desynced |
 | `-noendtext` | Skip the exit text screen |
-| `--version` | Print the version and what it is a fork of, and exit |
+| `--version` | Print the version and what it is a fork of, then exit |
 
 ---
 
@@ -1875,29 +1080,25 @@ Everything is in `legacyhome/` beside the binary:
 | | |
 | --- | --- |
 | `config.cfg` | All settings. Written only by a `-devmode` session. |
-| `config8p.cfg`, `configgl.cfg`, `confign.cfg` | Video settings for each drawmode, applied after `config.cfg`. |
-| `highscores.dat` | Best cumulative times per map, skill and category. Plain text, one record per line. |
-| `runs.dat` | The run leaderboard — whole runs with their initials. Plain text. |
-| `demos/` | Saved record demos, one per map/skill/category. |
+| `config8p.cfg`, `configgl.cfg`, `confign.cfg` | Video settings per drawmode, applied after `config.cfg`. |
+| `highscores.dat` | Best cumulative times per map, skill and category. Plain text. |
+| `runs.dat` | The run leaderboard with initials. Plain text. |
+| `demos/` | Record demos, one per map, skill and category. |
 | `levels/` | Level packs you've added. |
-| `audit.dat` | Operator bookkeeping counters. Plain text. |
-| `crash.txt` | Only after a crash (Linux): the crash report, appended one per crash. Safe to delete. |
-| `autoexec.cfg` | Optional. Console commands run at startup — where the `addfile` lines for soundtrack wads go. |
+| `audit.dat` | Operator audit counters. Plain text. |
+| `crash.txt` | Crash reports (Linux), one appended per crash. Safe to delete. |
+| `autoexec.cfg` | Optional console commands run at startup, such as `addfile` lines. |
+| `link/` | Cabinet Link settings and this cabinet's private key. Never copy between cabinets. |
 
-**Back up `highscores.dat`, `runs.dat` and `demos/`.** They are the only things here that can't be
-recreated — your players' scores and the runs that set them. Everything else can be rebuilt from this
-repository or reinstalled.
+**Back up `highscores.dat`, `runs.dat` and `demos/`.** They are the only things that can't be
+recreated.
 
-If no `legacyhome/` folder exists beside the binary, the game falls back to `~/.doomlegacy/`
-instead, which is the traditional location.
+If there is no `legacyhome/` beside the binary, the game uses `~/.doomlegacy/` instead.
 
 ### Keeping configuration in version control
 
-The tracked copy of the cabinet configuration lives at `cabinet/legacyhome/config.cfg`. A build
-stages it next to the binary but never overwrites a config already there, so rebuilding won't reset
-a running cabinet.
-
-After changing settings in a `-devmode` session, bring them back into the repository with:
+The tracked cabinet config is `cabinet/legacyhome/config.cfg`. A build stages it next to the binary
+but never overwrites an existing config. After changing settings in `-devmode`, bring them back with:
 
 ```sh
 cd svn1749/src
@@ -1905,108 +1106,77 @@ make cabinet_save
 git diff cabinet/legacyhome/config.cfg
 ```
 
-Check the diff before committing — a devmode session saves *everything* in memory on quit, not just
-what you meant to change. (`botrandom` is a random seed and always differs; that one is noise.) See
-[`cabinet/README.md`](cabinet/README.md).
+Check the diff before committing: devmode saves *every* setting, not just the ones you changed.
+(`botrandom` is a random seed and always differs.) See [`cabinet/README.md`](cabinet/README.md).
 
 ### If the configuration goes wrong
 
-Every save first copies the old file to **`config.cfg.bak`**, so a bad write is one `cp` away from
-being undone. A config written from defaults is easy to spot: `name` will be your Unix login rather
-than the player name you set.
+Every save first copies the old file to **`config.cfg.bak`**. A config rebuilt from defaults is easy
+to spot: `name` is your Unix login rather than the player name you set.
 
-Settings that fail to load are **reported at startup** rather than silently ignored, naming the line
-number — an unrecognised setting, or a value the engine rejects, otherwise just leaves that setting
-at its compiled default and looks like the config was half-read. Run **`cfgcheck`** from the console
-to repeat the check at any time.
-
-Expect exactly four reports on a healthy cabinet: `botrandom`, plus `monstergravity`,
-`monsterfriction` and `voodoo_mode`. Those three are DoomLegacy defaults that the competitive
-ruleset deliberately overrides in a player session. Anything else is worth a look.
+Settings that fail to load are **reported at startup** by line number. Run **`cfgcheck`** at the
+console to repeat the check. A healthy cabinet reports exactly four: `botrandom`, plus
+`monstergravity`, `monsterfriction` and `voodoo_mode`, which the ruleset deliberately overrides.
+Anything else is worth a look.
 
 ---
 
 ## Troubleshooting
 
-**A setting I changed on the HUD or in the menus isn't showing up.**
-Player sessions don't save settings — that's deliberate. Use `-devmode` to make a change stick.
+**A setting I changed isn't sticking.**
+Player sessions don't save settings. Use `-devmode`.
 
-**The HUD elements aren't drawing at all.**
-The overlay only appears at the largest view size, with no status bar. Check `viewsize` is `11` in
-`config.cfg`. Which elements show is controlled by the `overlay` line, a string of one-letter
-codes — `k` keys, `a` ammo, `h` health, `m` armor, `f` frags, `e` kills, `i` items, `s` secrets,
-`t` the level clock (and, in Single Player, the `TT` run total above it), `b` the four ammo counts
-broken out, single player only. The default is `kahmfeistb`. **Options → Arcade Options → HUD
-Configuration** switches each one on or off without typing letters; check there first, since an
-item may simply have been switched off.
+**HUD elements aren't drawing.**
+They only appear at the largest view size (`viewsize` `11`). Check **Options → Arcade Options → HUD
+Configuration** first. The `overlay` line in `config.cfg` lists them as letters: `k` keys, `a` ammo,
+`h` health, `m` armor, `f` frags, `e` kills, `i` items, `s` secrets, `t` level clock, `b` ammo
+breakdown. The default is `kahmfeistb`.
 
-**A new HUD element still doesn't appear after rebuilding.**
-`config.cfg` overrides the compiled default, so an existing install keeps its old `overlay` line.
-Switch it on under **Options → Arcade Options → HUD Configuration** in a `-devmode` session, or add
-the letter to the line by hand.
+**A new HUD element doesn't appear after rebuilding.**
+`config.cfg` overrides compiled defaults, so an existing `overlay` line is kept. Switch the item on
+in HUD Configuration in a `-devmode` session, or add its letter by hand.
 
 **Scores aren't being recorded.**
-Check the HUD for `UNRANKED`. If it's there, either a gameplay setting differs from the standard
-ruleset — the console log names which one — or somebody died. Returning to the attract screen
-resets the ruleset automatically, so starting a fresh game normally clears it.
+Look for `UNRANKED` on the HUD. Either a gameplay setting differs from the ruleset (the console log
+names it) or the player died. Returning to the attract screen resets the ruleset.
 
 **The join screen never appears, or panels 3 and 4 have no settings pages.**
-`Control Panels`, on the Options → Arcade Options → **Players & Views** page, is still at 1. Nothing
-about the extra panels shows up until the cabinet is told how many it has. Check `Join Screen Timeout` (Arcade Options → Timeouts) isn't Off
-while you're there.
+**Control Panels** on **Players & Views** is still 1. Also check **Join Screen Timeout** isn't Off.
 
 **Replacement music isn't playing.**
-Check `music_source` is `Auto` rather than `MUS` — that alone disables it, and an older config may
-still carry `MUS`. Then check the lump
-names inside the wad against the list above; a track named after the *file* rather than the lump
-simply never gets looked for. `-v` reports the wad being loaded at startup.
+Check `music_source` is `Auto`, not `MUS`. Then check the lump names inside the wad against the list
+above. `-v` shows whether the wad loaded.
 
-**One cabinet in a linked game has no sound at all.**
-This was a real bug on Windows and is fixed — **Music Cabinet** used to mute by turning the music
-volume down to zero, and on Windows that turned the whole program's output down with it, sound
-effects included. If you are on an older build, setting Music Cabinet to `All` restores the sound;
-otherwise update. If it still happens, run the quiet cabinet with `-volog`: it writes `volog.txt`
-next to the program, tracing every step from the game asking for a sound to the samples reaching the
-sound card, and the numbers say which step is losing them.
+**One cabinet in a linked game has no sound.**
+An older Windows build muted everything when **Music Cabinet** muted the music. Update, or set Music
+Cabinet to `All`. If it still happens, run that cabinet with `-volog`, which traces each sound to
+`volog.txt` next to the program.
 
-**A game is missing from the Select Game menu.**
-Its IWAD wasn't found. Run with `-v` and check the search paths reported at startup.
+**A game is missing from Select Game.**
+Its IWAD wasn't found. Run with `-v` to see the search paths.
 
-**The game runs slowly, or the frame rate is choppy.**
-Options → Video Options → **Performance Options**, with **Show Ticrate** on so you can see what each
-change does. On a Pi or another low-power board: use the **software** drawmode, turn **Render
-Threads** to `Auto`, turn **8bpp Draw** and **Row Padding** on, set the Pi's desktop to 1280x720,
-and drop the resolution — on a Pi 3 Model B with a 1280x720 desktop, 640x480 or smaller should hold
-60 FPS in play and 512x384 has room to spare. See [Performance](#performance) for measured numbers. On a desktop, use OpenGL and check
-**Framerate Cap** matches the panel's refresh rate.
+**The game is slow or choppy.**
+Open **Options → Video Options → Performance Options** and turn on **Show Ticrate**. On a Pi, follow
+the tips under [Performance](#performance). On a desktop, use OpenGL and set **Framerate Cap** to the
+panel's refresh rate.
 
-**My monitor's resolution isn't in the Video Modes list.**
-Two things hide modes, and the page tells you about both. The `Aspect:` line at the top says how
-many are filtered out — press **`A`** until it reads `All`. And the list **pages**: if it says
-*Page 1 of 3*, press Left/Right. Only if it is still missing with `All` on every page is the mode
-genuinely unavailable.
+**My monitor's resolution isn't in Video Modes.**
+Press **`A`** until the `Aspect:` line reads `All`, and check every page with Left/Right.
 
-**The picture is fine but the motion looks different from what I remember.**
-That will be **Framerate Cap**, which now draws frames between tics and interpolates them. Setting
-it to `35` gives the exact old behaviour. It changes nothing about the simulation either way.
+**Motion looks different from what I remember.**
+That's **Framerate Cap** interpolating between tics. Set it to `35` for the original behaviour.
 
-**The game crashed, and I want to report it usefully.**
-The terminal log names the level. Every level load prints a line like
-`Level: E1M7  skill 4  play  chasecam off  views 1`, and during the attract cycle it also names the
-record being replayed — `demo E1M1  ITYTD  SPEED  1:11.05  AAA`, followed by a `Demo file:` line
-with the demo's full path. That, plus the handful of lines before it, usually says what was on
-screen without anyone having to reproduce it.
+**The game crashed.**
+The terminal log names what was on screen. Each level load prints a line like
+`Level: E1M7  skill 4  play  chasecam off  views 1`, and attract demos add
+`demo E1M1  ITYTD  SPEED  1:11.05  AAA` and a `Demo file:` line.
 
-On Linux the game also writes its own **crash report** the moment it goes down: the backtrace, the
-tic, level, skill and demo, and the last things added to the monsters' "friends" list (the
-list a Raspberry Pi cabinet once crashed in). It is printed in the terminal and appended to
-**`legacyhome/crash.txt`**, so it survives the window being closed or a reboot. Send that file.
-Lines starting `CLASS-LIST ANOMALY` earlier in the terminal are the same black box catching
-something wrong *before* it crashes; they are worth sending even when nothing crashed. The game
-still crashes normally afterwards, so the core dump below is kept as well.
+On Linux the game also writes a **crash report** (backtrace, tic, level, skill, demo and recent
+monster-list activity) to the terminal and to **`legacyhome/crash.txt`**. Send that file. Earlier
+`CLASS-LIST ANOMALY` lines in the terminal are worth sending even without a crash.
 
-For a backtrace as well, install the crash catcher once — `sudo apt install systemd-coredump gdb` on
-Raspberry Pi OS, `sudo dnf install systemd-coredump gdb` on Fedora — and then after a crash run:
+For a full backtrace, install `systemd-coredump` and `gdb` (`apt` on Raspberry Pi OS, `dnf` on
+Fedora), then after a crash:
 
 ```
 coredumpctl list
@@ -2015,27 +1185,26 @@ coredumpctl debug doomlegacyarcade --debugger=gdb \
 ```
 
 On a Pi, also run `sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald`, or
-the next reboot erases the logs.
+the logs are lost at the next reboot.
 
 **The game won't build.**
-Almost always one of the three `make_options` edits above. `-march=i686` and the default `gnu23`
-standard both produce errors that don't obviously point at the cause.
+Usually one of the three `make_options` edits under [The manual way](#the-manual-way). `-march=i686`
+and the default `gnu23` standard both give errors that don't point at the cause.
 
 ---
 
 ## Credits and licence
 
-DoomLegacy is by Fabrice Denis, Boris Pereira and the DoomLegacy team, based on the original Doom
-source released by id Software. This build tracks DoomLegacy 1.48.18 (SVN r1749) with local arcade
-customisations.
+DoomLegacy is by Fabrice Denis, Boris Pereira and the DoomLegacy team, based on the Doom source
+released by id Software. This build tracks DoomLegacy 1.48.18 (SVN r1749) with local arcade changes.
 
 Licensed under the **GNU General Public License**; see [`LICENSE`](LICENSE), and
 [`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt) for the copy that came with the port. Doom,
-Doom II, Final Doom and Heretic game data remain the property of their respective owners and are
-not distributed here.
+Doom II, Final Doom and Heretic game data belong to their respective owners and are not distributed
+here.
 
 The CRT shaders in [`svn1749/src/sdl/shaders/`](svn1749/src/sdl/shaders/) come from libretro's
 `glsl-shaders` collection: zfast_crt by Greg Hogan (SoltanGris42), crt-pi by davej and crt-geom by
 cgwg, Themaister and DOLLS, all GPL v2 or later, and crt-lottes by Timothy Lottes, public domain.
-The other shaders there were written for this project; the FXAA one follows Timothy Lottes'
-published method.
+The other shaders were written for this project; the FXAA one follows Timothy Lottes' published
+method.
