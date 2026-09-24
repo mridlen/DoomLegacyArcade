@@ -422,6 +422,12 @@ CV_PossibleValue_t grshader_cons_t[] = {
     {10, "Night Vision"}, {11, "Game Boy"},
     {0, NULL} };
 consvar_t cv_grshader = { "gr_shader", "Off", CV_SAVE, grshader_cons_t };
+// [Arcade] Vanilla Weapon Lighting (OpenGL Options, Lighting).  On lights the
+// weapon the way the software renderer does; Off the way Doom Legacy's OpenGL
+// renderer always did, through the sector curve, which is darker in a dim
+// room.  Off by default by request: Weapon Flash Fix now cures the line across
+// the firing pistol that the software match was first made for.
+consvar_t cv_grvanilla_weapon_light = { "gr_vanilla_weapon_light", "Off", CV_SAVE, CV_OnOff };
 // 0 working or off, 1 the driver cannot run shaders, 2 this one failed to build.
 byte gr_shader_status = 0;
 consvar_t cv_grzbuffer = { "gr_zbuffer", "On", 0, CV_OnOff };
@@ -4321,9 +4327,12 @@ static void HWR_DrawPlayerSprites(void)
         sll = viewer_sector->lightlevel;
     }
 
-    if( fixedcolormap )
+    if( fixedcolormap || ! cv_grvanilla_weapon_light.EV )
     {
-        lightlum = 255;
+        // [Arcade] Vanilla Weapon Lighting Off: Doom Legacy's own OpenGL
+        // weapon light, the sector curve plus extralight (255 under a fixed
+        // colormap).
+        lightlum = LightLevelToLum(sll);
     }
     else
     {
@@ -5139,6 +5148,7 @@ void HWR_Register_Gr1Commands(void)
     CV_RegisterVar(&cv_grmlook_extends_fov);
     CV_RegisterVar(&cv_grfiltermode);
     CV_RegisterVar(&cv_grshader);  // [Arcade]
+    CV_RegisterVar(&cv_grvanilla_weapon_light);  // [Arcade]
     CV_RegisterVar(&cv_grcorrecttricks);
     CV_RegisterVar(&cv_grsolvetjoin);
     CV_RegisterVar(&cv_grpolytile);

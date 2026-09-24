@@ -372,7 +372,15 @@ to anyone else running this port. Each is written up in full in the commit that 
   lit exactly as software lights it, which brings the line down to the faint one software (and every
   other port) shows — it is in the original art. **Weapon Flash Fix**, above, removes the rest. In
   a medium-lit room the weapon is a little brighter than it was in OpenGL; in a bright one it has not
-  changed.
+  changed. Now that Weapon Flash Fix handles the line on its own, this brighter lighting is
+  optional: see **Vanilla Weapon Lighting**, below. It ships Off, so OpenGL is back to Doom
+  Legacy's original, darker weapon.
+- **Vanilla Weapon Lighting** (OpenGL only). **On** lights your weapon the way the software
+  renderer and the original game do: roughly as bright as the room right in front of you. **Off**
+  lights it the way Doom Legacy's OpenGL renderer always has, like a wall of the room, so in a dim
+  room it is about half as bright. In a bright room the two look the same. **Options → Video
+  Options → OpenGL 3D Card Options → Lighting → Vanilla Weapon Lighting** (operator-only), and it ships
+  **Off**. Picture only: it has no effect on gameplay, demos, scores or linked games.
 - **Taking a screenshot in OpenGL at 1366x768 crashed the game.** Any width whose rows do not come
   out to a multiple of four bytes overran the capture buffer. Found while capturing the pistol.
 - **Menu, HUD and intermission lettering looked blocky** with smoothing on — each word sat in a
