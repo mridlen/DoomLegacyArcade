@@ -4108,6 +4108,8 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
 //    float x1, x2;
 
     MipPatch_t * gpatch;       //sprite patch converted to hardware
+    Mipmap_t * wmip;           // [Arcade] the weapon's margin copy
+    int   margin, mbottom;
 
     FSurfaceInfo_t Surf;
 
@@ -4161,7 +4163,26 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
 
     // cache sprite graphics
     gpatch = W_CachePatchNum(sprfrot->pat_lumpnum, PU_CACHE);
-    HWR_GetPatch(gpatch);
+    // [Arcade] A margin copy, with a clear texel round the art
+    // (TF_SpriteMargin), so where the art touches its box the filter fades
+    // it instead of stopping in a straight line one texel thick -- which the
+    // 320x200 upscale makes several pixels wide.  The worst of it was the
+    // bottom of the pistol's flash, a hard line across the gun.  But nearly
+    // every gun's art ends on the frame's bottom line and must meet the
+    // screen edge solid, so art that reaches it (bobbing only lowers it) gets
+    // the weapon copy, with no clear row below (TF_PSpriteCopy).  Everything
+    // else, the flashes, gets the world-sprite copy, clear all round.  The
+    // quad grows by the same texels, so the art lands where it did.
+    if( FIXED_TO_FLOAT( psp->sy - sprlump->topoffset ) + gpatch->height
+        >= (float) BASEVIDHEIGHT )
+        wmip = HWR_GetMarginPatch(gpatch, NULL, TF_PSpriteCopy);
+    else
+        wmip = HWR_GetMarginPatch(gpatch, NULL, 0);
+    margin = (wmip->tfflags & TF_SpriteMargin)? 1 : 0;
+    mbottom = (wmip->tfflags & TF_PSpriteCopy)? 0 : margin;
+    // A texel is one unit of the 320x200 frame either way.
+    vxtx[3].x = vxtx[0].x -= margin;
+    vxtx[2].x = vxtx[1].x += margin;
 
     // set top/bottom coords
     ty = FIXED_TO_FLOAT( psp->sy - sprlump->topoffset );
@@ -4177,23 +4198,23 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
             ty += FIXED_TO_FLOAT( PSpriteSY[viewplayer->readyweapon] );
     }
 
-    vxtx[3].y = vxtx[2].y = (float) BASECENTER_Y - ty;
+    vxtx[3].y = vxtx[2].y = (float) BASECENTER_Y - ty + margin;
 
     ty += gpatch->height;
-    vxtx[0].y = vxtx[1].y = (float) BASECENTER_Y - ty;
+    vxtx[0].y = vxtx[1].y = (float) BASECENTER_Y - ty - mbottom;
 
     if( sprfrot->flip )
     {
-        vxtx[0].sow = vxtx[3].sow = gpatch->max_s;
+        vxtx[0].sow = vxtx[3].sow = wmip->max_s;
         vxtx[2].sow = vxtx[1].sow = 0.0f;
     }
     else
     {
         vxtx[0].sow = vxtx[3].sow = 0.0f;
-        vxtx[2].sow = vxtx[1].sow = gpatch->max_s;
+        vxtx[2].sow = vxtx[1].sow = wmip->max_s;
     }
     vxtx[3].tow = vxtx[2].tow = 0.0f;
-    vxtx[0].tow = vxtx[1].tow = gpatch->max_t;
+    vxtx[0].tow = vxtx[1].tow = wmip->max_t;
 
     // [Arcade] The weapon is a 320x200 frame mapped onto the viewport, so
     // like the software one its width to height works out as

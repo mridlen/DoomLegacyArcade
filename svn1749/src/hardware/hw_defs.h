@@ -274,7 +274,15 @@ typedef enum
     // art's whole border is solid -- a picture meant to meet the screen edge
     // or the piece beside it.  HWR_GetMarginPatch.
     TF_2DCopy           = 0x00001000,
+    // [Arcade] The weapon copy (HWR_DrawPSprite), for art that reaches the
+    // bottom line of the 320x200 frame, as nearly every gun does: a margin on
+    // the top, left and right, but the bottom row carried on down so it
+    // meets the screen edge solid.  HWR_GetMarginPatch.
+    TF_PSpriteCopy      = 0x00002000,
 }  TextureFlags_e;
+
+// [Arcade] Any of the margin copies, which live in the colormap chain.
+#define TF_MarginCopies  (TF_SpriteCopy|TF_2DCopy|TF_PSpriteCopy)
 
 #ifdef TODO
 struct FTextureInfo_s

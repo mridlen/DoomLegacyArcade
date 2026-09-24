@@ -384,6 +384,11 @@ to anyone else running this port. Each is written up in full in the commit that 
 - **A few letters were still square after that** — `I`, `H`, `-`, `.`, `!` — because their art
   fills their whole box, which is also how the full-screen pictures were being recognised. Font
   letters are now always smoothed, whatever their shape.
+- **Your weapon and its muzzle flashes still had flat, hard edges** with smoothing on — the tip and
+  sides of the flash, and the line where the flash ends across the pistol — because the weapon was
+  the one thing left without the clear pixel of room to fade into. It has it now. The bottom of a
+  gun that reaches the bottom of the screen is left solid, so it still meets the screen edge
+  cleanly.
 - **OpenGL settings in the config never reached the driver.** `gr_filtermode`, `gr_fogdensity` and
   `gr_polygonsmooth` all have change handlers guarded on the GL function table existing — and the
   config is executed long before the renderer is set up, so the handler silently did nothing and

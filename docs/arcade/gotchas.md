@@ -555,11 +555,30 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     replaces under the same names. Every solid-bordered 2D lump in DOOM.WAD, DOOM2.WAD and
     `legacy.wad` was listed to pick this.
   - **Each copy carries its own span now** (`Mipmap_t.max_s/max_t`). `MipPatch_t.max_s/max_t`
-    describe the base copy, which the weapon and the splats still use; a margin copy's block can be
+    describe the base copy, which the splats still use; a margin copy's block can be
     a larger power of two than the base one, so computing its span from the patch was only right
     by luck. Changing `Mipmap_t` changes a header: `make clean`.
   - `HWR_DrawPic` (Heretic raw pics and the `pic_t` formats) is untouched: an intensity-alpha pic is
     not premultiplied, so the old blend is right for it.
+  - **The weapon was the last drawer left on the base copy, and it now has a margin too — but not
+    always below.** `HWR_DrawPSprite` bound the plain patch, so the flashes and the guns kept the
+    hard one-texel box edge, magnified about four times by the 320x200 frame: the top and sides of
+    the muzzle flash, and the flash's *bottom* edge, which is the line across the pistol. The catch
+    is the bottom of the screen: measured from the patch headers in DOOM2.WAD, almost every gun
+    frame's art ends exactly on line 200 at rest (`PISG`, `SHTG`, `SHT2`, `PLSG`, `PUNG`, `SAWG`;
+    bobbing, raising and lowering only move it down), so a clear row below would fade the gun's
+    base into the scene along the screen's bottom edge. So the drawer chooses per draw: art whose
+    bottom reaches line 200 (`psp->sy - topoffset + height`, before the stacked-view and Heretic
+    nudges) takes the **weapon copy** (`TF_PSpriteCopy`), clear texel on top, left and right with
+    the last row carried on down by the padding fill; everything else — the flashes, and the
+    chaingun/rocket/BFG frames that hang lower — takes the world-sprite copy, clear all round. The
+    quad grows by the same texels (one 320x200 unit each way), so the art lands where it did.
+    - Verified on the frozen pistol-firing frame (recipe above) at 1366x768 under Xvfb, before and
+      after: the art is on identical pixels, the gun's bottom row against the screen edge is
+      unchanged, and every changed pixel is on a flash or gun edge (the flash's tip, its two sides,
+      the line along its bottom, the gun's left and right sides). With Weapon Flash Fix on, the
+      flash's bottom edge changes only a few levels, because it now fades from the flash's copy of
+      the gun into an equally lit gun; the visible gain is the flash's outline.
 
 
 - **The demo header used to record the *previous* game's settings. Fixed — but the ordering that
