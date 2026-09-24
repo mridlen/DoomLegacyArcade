@@ -2673,6 +2673,8 @@ void P_UnArchiveThinkers(void)
                 mobj->ceilingz = mobj->subsector->sector->ceilingheight;
                 mobj->thinker.function = TFI_MobjThinker;
                 P_AddThinker(&mobj->thinker);
+                // [Arcade] Classify now that the function is set (see P_AddThinker).
+                P_UpdateClassThink(&mobj->thinker, TH_unknown);
                 break;
 
             case tc_ceiling:

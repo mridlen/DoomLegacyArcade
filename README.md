@@ -334,6 +334,14 @@ to anyone else running this port. Each is written up in full in the commit that 
   same way now and then. The sound code and the mixer now share the channel list through a proper
   lock, and the mixer works from its own copy of it, so it can never see a sound half set up — on
   any machine. Nothing sounds different and no sound starts later.
+- **A door or a rising staircase could be mistaken for a monster, and crash the game.** Every new
+  thinker is sorted into the MBF lists monsters search for targets, and the sort looked at what
+  kind of thinker it was *before* the door, floor, light or platform code had said — so it read
+  whatever the memory's previous owner had left there. When that was a monster, a door could land in
+  the list of monsters, and the next monster to look for a fight read the door as a monster and
+  crashed. It took a long unattended run for memory to be reused just so, which is why it showed up
+  only after half an hour to several hours of attract on a Raspberry Pi. New thinkers are no longer
+  sorted until they are known to be objects. Record demos play exactly as before.
 
 **OpenGL**
 

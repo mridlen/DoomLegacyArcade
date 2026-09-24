@@ -112,7 +112,17 @@ void P_AddThinker (thinker_t* thinker)
 #endif
     // killough 8/29/98: init pointers, and then add to appropriate list
     thinker->cnext = thinker->cprev = NULL;  // init
-    P_UpdateClassThink(thinker, TH_unknown);
+    // [Arcade] Always TH_misc (no class-list) here; never classify.  Nearly
+    // every caller (doors, floors, lights, plats, the savegame loader) sets
+    // thinker->function *after* this call, so at this point it still holds
+    // whatever the memory's previous owner left there.  Classifying read that
+    // stale function, and when the block had been a monster it filed a door or
+    // a stair step into the friends/enemies lists from the monster's leftover
+    // health and flags, and PIT_FindTarget then read it as a monster: the Pi's
+    // segfaults of 2026-09-22 and 2026-09-24.  Callers adding an object, which
+    // set function first, classify it themselves with
+    // P_UpdateClassThink(..., TH_unknown).  See crash-diagnostics.md.
+    P_UpdateClassThink(thinker, TH_misc);
 
 #ifdef THINKER_INTERPOLATIONS
     newthinkerpresent = true;
