@@ -6,6 +6,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 ---
 
+- **The cycle is `TITLEPIC` → `CREDIT2` → `CREDIT` → one demo** (then the score pages, when there
+  are records), set by the `attract_*` enum in `d_main.c`. `CREDIT2` is the cabinet's own splash
+  (6 s, `CREDIT2_SECS`) and comes first; `CREDIT` is the stock Legacy credits page, whose art the
+  cabinet also replaces in `common/legacy.wad` (200 tics). A `legacy.wad` without `CREDIT2` skips
+  straight to `CREDIT`. The order lives only in the enum — `D_PageDrawer` tests the step by name,
+  never by number — so reordering is the enum plus the skip target.
+
 - **A menu over the attract screen gets a black backdrop, and the cycle holds while it is open**
   (`d_main.c`, `D_AdvanceDemo` and `D_Display`).
   - Upstream refuses to advance the sequence while `menuactive` (*"do not start a demo when a menu
