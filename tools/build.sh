@@ -599,12 +599,45 @@ if ! ( cd "$src_dir" && $MAKE -j"$jobs" $build_args ); then
        If it mentions a missing header, re-run this script with --deps."
 fi
 
-# --------------------------------------------------------------------------
-# Done
-# --------------------------------------------------------------------------
 binary="$build_root/bin/doomlegacyarcade"
 [ "$do_debug" = 0 ] || binary="$build_root/debug/bin/doomlegacyarcade"
 [ "$do_tsan" = 0 ]  || binary="$build_root/tsan/bin/doomlegacyarcade"
+
+# --------------------------------------------------------------------------
+# legacy.wad beside the binary
+#
+# The engine looks for legacy.wad in the program's own directory *before* any
+# doomwaddir (DOOMWADDIR, ~/games/doom, ...), so the copy staged here wins over
+# every other one on the machine.  That makes common/legacy.wad the single
+# source of the cabinet's menu art and ENDOOM: edit it, rebuild, done.  It also
+# means an edit made anywhere else -- ~/games/doom/legacy.wad included -- is
+# shadowed from now on.
+#
+# Copied only when it differs, so a rebuild does not touch the file.  If the
+# staged copy differs *and* is newer than common's, someone edited it in place;
+# keep it as legacy.wad.bak rather than silently overwriting their work.
+# --------------------------------------------------------------------------
+src_wad="$top_dir/common/legacy.wad"
+dst_wad="$(dirname -- "$binary")/legacy.wad"
+step "Staging legacy.wad"
+if [ ! -f "$src_wad" ]; then
+    warn "$src_wad is missing -- legacy.wad not staged beside the binary."
+elif [ -f "$dst_wad" ] && cmp -s "$src_wad" "$dst_wad"; then
+    say "  legacy.wad beside the binary is up to date"
+else
+    if [ -f "$dst_wad" ] && [ "$dst_wad" -nt "$src_wad" ]; then
+        cp -p "$dst_wad" "$dst_wad.bak"
+        warn "the legacy.wad beside the binary was newer than common/legacy.wad
+         and has been kept as $dst_wad.bak.
+         Edit common/legacy.wad instead -- the build replaces the staged copy."
+    fi
+    cp "$src_wad" "$dst_wad"
+    say "  staged common/legacy.wad beside the binary"
+fi
+
+# --------------------------------------------------------------------------
+# Done
+# --------------------------------------------------------------------------
 
 step "Done"
 if [ -x "$binary" ]; then
@@ -630,9 +663,9 @@ if [ -x "$binary" ]; then
         say ""
         say "  or put the binary into an install directory of your own:"
         say ""
-        say "      cp -a $build_root/bin/doomlegacyarcade <install-dir>/"
+        say "      cp -a $build_root/bin/doomlegacyarcade $build_root/bin/legacy.wad <install-dir>/"
         say ""
-        say "  Copy the binary by name, as above.  'cp -a bin/*' would drag"
+        say "  Copy the files by name, as above.  'cp -a bin/*' would drag"
         say "  legacyhome along with it and overwrite the config, high scores"
         say "  and record demos already in the destination."
     fi

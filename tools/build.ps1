@@ -642,6 +642,39 @@ rm -f "$work" "$found"
 }
 
 # ---------------------------------------------------------------------------
+# legacy.wad beside the binary
+# ---------------------------------------------------------------------------
+# [Arcade] The engine looks for legacy.wad in the program's own directory
+# *before* any doomwaddir, so the copy staged here wins over every other one on
+# the machine.  That makes common\legacy.wad the single source of the cabinet's
+# menu art and ENDOOM: edit it, rebuild, done.  Mirrors tools/build.sh.
+#
+# Copied only when it differs, so a rebuild does not touch the file.  If the
+# staged copy differs *and* is newer than common's, someone edited it in place;
+# keep it as legacy.wad.bak rather than silently overwriting their work.
+$srcWad = Join-Path $TopDir 'common\legacy.wad'
+$dstWad = Join-Path $BuildRoot 'bin\legacy.wad'
+if (Test-Path $binary) {
+    Step "Staging legacy.wad"
+    if (-not (Test-Path $srcWad)) {
+        Warn "$srcWad is missing -- legacy.wad not staged beside the binary."
+    } elseif ((Test-Path $dstWad) -and
+              ((Get-FileHash $srcWad).Hash -eq (Get-FileHash $dstWad).Hash)) {
+        Say "  legacy.wad beside the binary is up to date"
+    } else {
+        if ((Test-Path $dstWad) -and
+            ((Get-Item $dstWad).LastWriteTimeUtc -gt (Get-Item $srcWad).LastWriteTimeUtc)) {
+            Copy-Item -Path $dstWad -Destination "$dstWad.bak" -Force
+            Warn "the legacy.wad beside the binary was newer than common\legacy.wad
+         and has been kept as $dstWad.bak.
+         Edit common\legacy.wad instead -- the build replaces the staged copy."
+        }
+        Copy-Item -Path $srcWad -Destination $dstWad -Force
+        Say "  staged common\legacy.wad beside the binary"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 Step "Done"
@@ -649,8 +682,8 @@ if (Test-Path $binary) {
     Say "  built: $binary"
     Say ""
     Say "  Do not run it from the build tree -- it looks for its data next to"
-    Say "  the binary. Copy everything from svn1749\bin (the DLLs included)"
-    Say "  into a run directory alongside legacy.wad and an IWAD."
+    Say "  the binary. Copy everything from svn1749\bin (the DLLs and"
+    Say "  legacy.wad included) into a run directory alongside an IWAD."
     Say ""
     Say "  An operator session that can change settings is:  doomlegacyarcade.exe -devmode"
     if (Select-String -Path $opts -Pattern '^HAVE_LINK=1' -Quiet) {

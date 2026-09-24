@@ -894,10 +894,10 @@ appropriate flag, e.g. `-mcpu=cortex-a53`. No x86 assembly is involved, so nothi
 
 ## Installing the game data
 
-Copy `common/legacy.wad`, `common/dogs.wad` and your IWADs into the same directory as the binary:
+`tools/build.sh` and `tools/build.ps1` copy `common/legacy.wad` beside the binary for you, so all
+that is left is an IWAD:
 
 ```sh
-cp ../../common/legacy.wad ../../common/dogs.wad ../bin/
 cp /path/to/DOOM2.WAD ../bin/
 ```
 
@@ -905,9 +905,18 @@ cp /path/to/DOOM2.WAD ../bin/
 including the cabinet's own artwork (the Single Level, join, cheats and game-over screens) and the
 `ENDOOM` text screen printed on exit, so use the copy from `common/` rather than one from an
 upstream DoomLegacy release. `tools/endoom.py` edits that exit screen; SLADE will not, which is why
-the tool exists.
+the tool exists. (Building with plain `make` instead of the scripts does not copy it:
+`cp ../../common/legacy.wad ../bin/`.)
 
-`dogs.wad` is optional and lives in exactly the same place, beside the binary. It carries the
+**To change the cabinet's art, edit `common/legacy.wad` and rebuild.** The engine takes the
+`legacy.wad` beside the binary ahead of every other copy on the machine, so a copy in
+`~/games/doom` or anywhere else is ignored once the build has put one in `bin/`. The build only
+replaces the staged copy when it differs from the one in `common/`; if the staged copy was edited in
+place (it is the newer of the two), the build keeps it as `legacy.wad.bak` and says so, rather than
+losing the edit.
+
+`dogs.wad` is optional, is **not** copied by the build, and nothing loads it automatically — it is
+only read when given with `-file dogs.wad`. It carries the
 sprites and sounds for MBF helper dogs, which the engine has none of its own for. It does nothing
 unless the **Dogs** setting is raised (Options → Game Options → Adv Options, second page), and that
 is an operator-only `-devmode` affair: the competitive ruleset pins helper dogs to none, like bots,
