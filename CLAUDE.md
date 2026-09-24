@@ -20,7 +20,7 @@ and the `srcdir` symlink are leftover build-output scaffolding from the original
 usable as-is. Always work under `svn1749/`. The top-level `common/` holds the runtime asset package
 (`legacy.wad`, `dogs.wad`) — `legacy.wad` has been **locally modified**: the `M_STSERV` menu
 graphic now reads "Start Game" instead of "Start Server", and the cabinet's own art has been added
-(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`, `SBOARMBL`, `M_GAMOVR`), and `CREDIT` has been
+(`M_SINLVL`, `M_JOIN`, `M_CHEATS`, `CREDIT2`, `SBOARMBL`, `M_GAMOVR`, `M_HISCOR`, `M_NOMON`), and `CREDIT` has been
 replaced. `common/legacy.wad` is the copy to edit: `tools/build.sh`/`build.ps1` stage it beside the
 binary, and the engine takes the `legacy.wad` in the program directory ahead of every doomwaddir —
 so the old live copy in `~/games/doom/` is shadowed once a build has staged one. Verify only the

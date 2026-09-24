@@ -631,13 +631,31 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this, and
     both routes back to the attract screen (the idle timeout in `G_Ticker`, and
     `M_EndGameResponse`) restart the program instead of returning to title.
-- **"Read This!" is hidden on the Doom 1 gamemodes** (`m_menu.c`, `M_Configure`). Doom 2 already
-  overwrites that slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]`), which is why the
-  entry only appeared under Ultimate Doom, where it is the help/order-form screens. This lives in
-  `M_Configure` rather than the `M_Init` lockdown because **`gamemode` is not yet known at
-  `M_Init`** — `IdentifyVersion()` runs later, as does the doomwaddir setup. Anything menu-related
-  that depends on the game or on locating wads must go in `M_Configure`; the game selector's
-  availability check is there for the same reason.
+- **"Read This!" is gone, and High Scores has its row** (`MM_hiscores`, index 6, `M_HISCOR`).
+  Read This used to be hidden on the Doom 1 gamemodes from `M_Configure`, while Doom 2 overwrote
+  its slot with Quit (`MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; numitems--; y += 8`). It was
+  the help and order-form screens, useless on a cabinet, so it was removed outright — from devmode
+  too, along with `ReadDef1`/`ReadDef2`, their drawers, the **F1** help key, and the order-form page
+  the shareware episode prompt pushed behind its message.
+  - **Removing the Doom 2 fixup is what made the room.** Every game now has the same eight rows and
+    Quit is always `MM_quitdoom`; `tools/menufit-test.py` measures `MainMenu` at 8 rows, y 64..196,
+    room for 0 more — so a ninth row needs something else to go first. Doom 2's menu lost the fixup's
+    `y += 8` with it and now sits at 64 like Doom 1's.
+  - The general rule the old bullet made still holds: anything menu-related that depends on the
+    game or on locating wads goes in `M_Configure`, not `M_Init`, because **`gamemode` is not yet
+    known at `M_Init`** — `IdentifyVersion()` runs later, as does the doomwaddir setup.
+- **The High Scores page** (`HighScoresMenu`/`HighScoresDef`) shows the attract cycle's score pages
+  and lets the player flip through them. The drawing is `HS_Draw_Browse` in `hs_stuff.c`; see
+  `high-scores.md` for what the pages are.
+  - **One `IT_ARROWS | IT_EXTERNAL` item, not an `IT_KEYHANDLER`.** A key handler item is exempted
+    from `M_Cabinet_Menu_Key`, deliberately, so text entry sees raw letters — which would leave a
+    panel's stick and buttons unable to turn a page, on a machine with no keyboard. `IT_ARROWS` gets
+    the translated keys: left calls the routine with 0, right *and fire* with 1, Escape and use back
+    out as on any page. Up/down move a one-item cursor onto itself.
+  - **Opened by an `IT_CALL` (`M_HighScores_Open`), not `IT_SUBMENU`**, so it can reset the page
+    cursor to the first page first. The drawer cannot: drawers run every frame.
+  - No skull and no title: a custom `drawroutine` is all `M_Drawer` calls, and `HS_Draw_Browse`
+    clears the whole screen, exactly as the attract version does.
 - **Chase Cam Demo** — **`cv_chasecamdemo`** ("chasecamdemo", default **On**, `CV_SAVE`), under
   **Options → Arcade Options**. Shows every third attract *record* demo from the chase camera with
   a blinking `CHASE CAM` caption. Appended to `MenuOptionsMenu` before the Audit link; that menu is
@@ -660,13 +678,12 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   the player onto a desktop they should never see, and on an unattended machine nothing brings the
   game back. Off by default, so a stock player session cannot reach it; a `-devmode` session always
   keeps the row whatever this says, so the operator is never locked in.
-  - **The hiding must run *after* the gamemode `switch` in `M_Configure`, not with the rest of the
-    lockdown.** Under Doom 2 that switch does
-    `MainMenu[MM_readthis] = MainMenu[MM_quitdoom]; MainDef.numitems--` — a whole-struct copy,
-    `status` included — so before it runs the Quit row is index `MM_quitdoom` and after it is index
-    `MM_readthis`. Hiding the wrong one leaves Quit on the menu with nothing to show for the
-    setting, and under Doom 1 hides Read This instead. The code picks the index off `gamemode` for
-    exactly this reason.
+  - **The hiding used to have to run *after* the gamemode `switch` in `M_Configure`**, because
+    under Doom 2 that switch did `MainMenu[MM_readthis] = MainMenu[MM_quitdoom];
+    MainDef.numitems--` — a whole-struct copy, `status` included — which moved Quit's index. That
+    fixup went with Read This (above), so Quit is `MM_quitdoom` in every game now and the index is
+    no longer picked off `gamemode`. The call is still after the switch; there is no reason to move
+    it.
   - Verified headless by reading `MainMenu[quitrow].status` back through a temporary console
     command: `144` (`IT_HIDDEN` = `IT_SPACE | IT_NODRAW`) with the default Off, `18`
     (`IT_PATCH | IT_CALL`) with `quitmenu "On"` in the config.
@@ -1015,7 +1032,11 @@ for one more — so seven rows moved to two new pages hung off it, to leave room
 
 - **Disable/Enable Menu Options >>** (`MenuDisableMenu`/`MenuDisableDef`, titled "Menu Options"):
   Cheats Menu, Multiplayer Menu, Quit Menu, Game Options — every switch for how much menu a player
-  is given.
+  is given — and **Enable No Monsters** (`cv_nomonstersmenu`, "nomonstersmenu", default **On**,
+  `CV_SAVE`), which offers No Monsters on the Single Level Skill row (`single-level.md`). Unlike the
+  others it is read **live** by the Single Level drawer rather than applied in `M_Configure`, so it
+  needs no restart; devmode always offers the row, as it does every other one here. 135px against
+  `STCFN`, 60..195.
 - **Cabinet Link Options** (`LinkOptionsMenu`/`LinkOptionsDef`) is three rows now: Select Game Sync,
   Copy Missing Wads and **Music Cabinet** (`cv_link_musiccab`). Its values are cabinet *names*, filled
   in at startup rather than compiled in — see `cabinet-link.md` for why that has to happen before the

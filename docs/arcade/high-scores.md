@@ -1204,3 +1204,72 @@ cabinets. What that changed here, for anyone touching `hs_stuff.c`:
 - `HS_MAX_MAPS` is 256 and `HS_MAX_RUNS` 1024, since a merged table is the union of the cabinets'.
 - `tools/hsmerge-test.py` also fails if `G_BeginRecording` gains a setting the ranked ruleset does not
   pin and `lks_rules_hash` (`d_linkscore.c`) does not hash.
+
+---
+
+### No Monsters is a sixth score slot (2026-09-24)
+
+Single Level's No Monsters (`single-level.md`) is scored in **score slot 5, `HS_SK_NOMON`** —
+`HS_NUMSKILLS` and `HSM_NUMSKILLS` are 6 now. It is a *score* key, never a `skill_e` the engine
+runs: the game is at `sk_hard` with `nomonsters` set, and `HS_LevelExit` maps it onto the slot.
+
+- **Slot 5, not a shift of the others**, so every record already in `highscores.dat`, `runs.dat`
+  and every `_sk<N>_` demo name keeps its number. Files gain `5` lines; older builds' parsers
+  skip them (`skillnum >= HS_NUMSKILLS`), and so do the Cabinet Link parsers, which check against
+  `HSM_NUMSKILLS`. Linked cabinets must be on the same build to swap scores anyway.
+- **Shown first.** `hs_skill_order[]` lists `HS_SK_NOMON` ahead of ITYTD, and anything that lists
+  skills for a player walks it — the Single Level best-times pages (`HS_Build_Pages`) and the rows
+  of the per-map page. Loops that only look things up (`HS_SL_Map_Has_Entries`, the seed, the demo
+  slots) still walk 0..N, since order does not matter there.
+- **The Survival page stops at five rows** (`HS_NUM_CAMPAIGN_SKILLS`). No Monsters is never on a
+  Survival board, and a sixth row would be a permanently empty `NOMO`.
+- **The per-map page grew a row**, so its max block moved from `ROW0 + 68` to **`+ 70`**
+  (`HS_SLM_MAX_Y0`): the speed block's sixth row is 110..117, the max heading at 120 clears it by 3,
+  and the max block ends at 187, clear of the footer at 190.
+- **Max is "100%S" under No Monsters, on screen only.** `HS_Cat_Label(skill, cat)` is the one place
+  it is decided — the intermission table's row label, the best-times heading, the board and demo
+  captions, the Single Level page. The files still say `max`. In the per-map page's max block the
+  No Monsters row is labelled `100%S` rather than `NOMO`, because that pair *is* the category of
+  that name. 37px against STCFN (`MAX` is 26), which fits every one of those places.
+  - **Except the intermission's blinking MAX beside the percentages**, which is simply not drawn
+    under No Monsters. At 287 `100%S` runs to 324 of 320, and moved left far enough to fit it
+    touches the `%` patch. The Secrets row already reads 100% and the record table beneath names
+    the category.
+- **Pacifist and tyson do not exist under No Monsters.** With nothing to fight, pacifist is free
+  and tyson is only "do not fire a shotgun", so `HS_LevelExit` clears both from `hs_cat_alive` when
+  `nomonsters` is set (above the `demoplayback` guard, with the other display state). Max needs no
+  change: `all_kills` is vacuously true on a map with no monsters, which leaves exactly 100% secrets.
+- **Any other No Monsters game is unranked** (`HS_NoMonsters_Unranked`): a campaign started with
+  `-nomonsters`, or No Monsters at a skill other than UV. Before this such a run scored as an
+  ordinary run of its skill with every monster missing — a headless `-warp 1 -skill 4 -nomonsters`
+  would have taken the cabinet's UV MAP01 record (the control run without `-nomonsters` did: 106
+  tics against 401). Its HUD mark is `UNRANKED - NO MONSTERS` (161px).
+  - **Not in `HS_Unranked_Reason`**, deliberately. `HS_NewGame` asks that *before* the new game's
+    map command has set `nomonsters`, so it would judge the previous game. It is tested in
+    `HS_Void_If_Ruleset_Changed`, which only runs inside a level.
+- Verified: `make demotest` 123/123 with 0 desynced against a baseline built from `origin/main`.
+  Six demos "ended at a different tic" — **the baseline binary does exactly the same against its
+  own baseline**, so that is run-to-run variation in how those demos end, not this change.
+
+### The High Scores page (2026-09-24)
+
+The main menu's **High Scores** row (`menus.md`) shows the attract cycle's pages, flipped with left
+and right — `HS_Browse_Reset` / `HS_Browse_Step` / `HS_Draw_Browse`.
+
+- **The same pages by the same code**: `HS_Draw_Page` is the switch `HS_Draw_AttractTable` used to
+  hold inline, and both call it.
+- **Every map gets its own page here.** The attract cycle deliberately has one *rotating* per-map
+  slot so it does not spend ten near-identical pages between demos; a player who has walked up to
+  read the scores wants them all. `HS_Build_Browse_Pages` drops the rotating slot and appends an
+  `HSPG_slmap` page per map with entries, in play order, with the map's `HS_Map_List` index in
+  `.ep`. `HS_Draw_SL_Map_Page_For(map)` draws a named one; the attract version resolves its cursor
+  and calls it.
+- **Its own cursor, `hs_browse_page`**, so browsing never moves the attract cycle's place (which
+  keeps running behind the menu). Wraps both ways — a cabinet has no Home key. The drawer clamps a
+  cursor left past the end by a shrinking table (a clear, a Cabinet Link import) rather than
+  correcting it: drawers must not change state.
+- Footer `<  3 of 8  >`, 82px at its widest, says how to reach the rest.
+- Verified by screenshots under the offscreen driver on the real GPU: Survival pages keep five
+  rows; the Single Level pages open with the `M_NOMON` graphic; the MAP01 per-map page lists
+  `NOMO` first; 30 steps from page 1 of 8 landed on 7, the wrap; and the No Monsters intermission
+  table reads `SPEED` / `100%S` / `YOU`.

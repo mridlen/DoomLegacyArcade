@@ -3753,6 +3753,16 @@ void G_DoSaveGame (int   savegameslot, const char* savedescription)
 // Called by cht_Responder on clev, CheatWarpFunc
 void G_DeferedInitNew (skill_e skill, const char* mapname, boolean StartSplitScreenGame)
 {
+    G_DeferedInitNew_Monsters( skill, mapname, StartSplitScreenGame, true );
+}
+
+// [Arcade] G_DeferedInitNew with the monsters chosen.  Every menu start used
+// to hardcode "-monsters 1", which is right for all of them but Single Level's
+// No Monsters.  The map command sets nomonsters from this each game, so a No
+// Monsters run cannot leak into the next game started from a menu.
+void G_DeferedInitNew_Monsters (skill_e skill, const char* mapname,
+                                boolean StartSplitScreenGame, boolean monsters)
+{
     paused = 0;
     
     if( demoplayback )
@@ -3782,7 +3792,8 @@ void G_DeferedInitNew (skill_e skill, const char* mapname, boolean StartSplitScr
                        cv_fastmonsters_menu.EV,
                        cv_respawnmonsters_menu.EV));
 
-    COM_BufAddText (va("map \"%s\" -skill %d -monsters 1\n",mapname,skill+1));
+    COM_BufAddText (va("map \"%s\" -skill %d -monsters %d\n",mapname,skill+1,
+                       monsters ? 1 : 0));
 }
 
 //

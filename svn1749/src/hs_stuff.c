@@ -68,6 +68,23 @@ enum { HS_CAT_speed = 0, HS_CAT_max = 1, HS_CAT_pacifist = 2, HS_CAT_tyson = 3 }
 static const char * hs_catname[HS_NUMCAT] =
     { "speed", "max", "pacifist", "tyson" };
 
+// Row labels for the table.  hs_catname[] is the on-disk spelling and is
+// lower case; these are what the player reads.
+static const char * hs_cat_label[HS_NUMCAT] =
+    { "SPEED", "MAX", "PACIFIST", "TYSON" };
+
+// [Arcade] What a category is *called* at a given skill.  Max under No
+// Monsters is 100% secrets and nothing else -- there is nothing to kill --
+// so it is shown as dsda-doom names that category, "100%S".  Display only:
+// the files still say "max", which is what keeps the format unchanged.
+// Measured against STCFN, "100%S" is 37px against "MAX" at 26.
+const char *  HS_Cat_Label( int skill, int cat )
+{
+    if( cat < 0 || cat >= HS_NUMCAT )  return "";
+    if( skill == HS_SK_NOMON && cat == HS_CAT_max )  return "100%S";
+    return hs_cat_label[cat];
+}
+
 #if HS_NUMCAT != HSM_NUMCAT || HS_NUMSKILLS != HSM_NUMSKILLS || HS_GAMEID_LEN != HSM_GAME_LEN
 #error "hs_merge.h's sizes must match hs_stuff's: they describe the same records"
 #endif
@@ -513,6 +530,25 @@ static void  HS_Latch_Unranked_Mark( boolean bots )
 }
 
 
+// [Arcade] A No Monsters game with no category to score in.
+//
+// No Monsters is scored in exactly one place: a Single Level run at
+// Ultra-Violence, which is how dsda-doom defines the category and the only
+// way the menu starts one.  Anything else -- a -nomonsters campaign from the
+// command line, or No Monsters at another skill -- would otherwise have
+// scored as an ordinary run of that skill with every monster missing, which
+// is the loophole this closes.
+//
+// Deliberately *not* part of HS_Unranked_Reason: that is asked by HS_NewGame,
+// which runs before the game's own map command has set nomonsters, so it
+// would be judging the previous game.  HS_Void_If_Ruleset_Changed only runs
+// inside a level, where nomonsters is this game's.
+static boolean  HS_NoMonsters_Unranked( void )
+{
+    return nomonsters && ! ( single_level_mode && gameskill == sk_hard );
+}
+
+
 // [Arcade] Void the run the moment the ruleset stops matching, and say which
 // cvar did it.
 //
@@ -544,8 +580,23 @@ static void  HS_Void_If_Ruleset_Changed( void )
     // the game rather than by cv_bots -- see HS_Bots_In_Game.
     boolean      bots = HS_Bots_In_Game();
     const char * why  = HS_Unranked_Reason();
+    boolean      nomo = ( ! bots && ! why && HS_NoMonsters_Unranked() );
 
-    if( ! bots && ! why )  return;
+    if( ! bots && ! why && ! nomo )  return;
+
+    if( nomo )
+    {
+        if( hs_run_ranked )
+        {
+            GenPrintf( EMSG_info, "Run is unranked: No Monsters is only"
+                       " scored as a Single Level run at Ultra-Violence.\n" );
+            AU_Unranked( AU_UR_ruleset );
+            hs_unranked_mark = "UNRANKED - NO MONSTERS";   // 161px of 320
+        }
+        hs_run_ranked   = false;
+        hs_run_board_ok = false;
+        return;
+    }
 
     // Name the reason.  A run silently scoring nothing is very hard to
     // diagnose from the outside -- this is exactly how the Nightmare
@@ -693,7 +744,22 @@ static boolean hs_new_record[HS_NUMCAT];
 static char    hs_scorefile[MAX_WADPATH];
 static char    hs_demodir[MAX_WADPATH];
 
-static const char * hs_skillnames[HS_NUMSKILLS] = { "ITYTD", "HNTR", "HMP", "UV", "NM" };
+// [Arcade] "NOMO" is dsda-doom's own short name for the category, and no
+// wider than the "ITYTD" every layout here already reserves room for.
+static const char * hs_skillnames[HS_NUMSKILLS] =
+  { "ITYTD", "HNTR", "HMP", "UV", "NM", "NOMO" };
+
+// [Arcade] The order the skills are *shown* in, easiest first.  No Monsters
+// is score slot HS_SK_NOMON (5) so that every existing record keeps its
+// number, but on screen it belongs to the left of I'm Too Young To Die.
+// Anything that lists skills for a player to read walks this, never 0..N.
+static const int  hs_skill_order[HS_NUMSKILLS] =
+  { HS_SK_NOMON, sk_baby, sk_easy, sk_medium, sk_hard, sk_nightmare };
+
+// [Arcade] Survival (the campaign) is played at the five engine skills only:
+// No Monsters is a Single Level category, and HS_LevelExit leaves any other
+// No Monsters game unranked.  The Survival page's rows stop here.
+#define HS_NUM_CAMPAIGN_SKILLS  5
 
 
 // The key identifying what is being played, used in the score file and in
@@ -1882,12 +1948,14 @@ static void  HS_Format_Board( const hs_placement_t * p,
         char range[24];
         HS_Format_Range( p->startmap, p->endmap, true, range, sizeof(range) );
         snprintf( out, outsize, "%s  %s  %s",
-                  range, hs_skillnames[p->skill], hs_catname[p->cat] );
+                  range, hs_skillnames[p->skill],
+                  HS_Cat_Label( p->skill, p->cat ) );
     }
     else
     {
         snprintf( out, outsize, "Survival  %s  %s  %s",
-                  hs_skillnames[p->skill], hs_catname[p->cat], p->endmap );
+                  hs_skillnames[p->skill], HS_Cat_Label( p->skill, p->cat ),
+                  p->endmap );
     }
     strupr( out );
 }
@@ -2898,6 +2966,17 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
     if( ! HS_Scored_Game() )  return;
     if( skill < 0 || skill >= HS_NUMSKILLS )  return;
 
+    // [Arcade] A No Monsters game scores in its own slot, not as the UV run
+    // the engine is actually playing.  Only a UV Single Level run gets this far
+    // ranked (HS_NoMonsters_Unranked voids the rest below); an unranked one is
+    // still mapped, so its intermission holds it up against No Monsters
+    // records rather than the UV ones it could not fairly be compared with.
+    //
+    // Mapped from nomonsters itself, which the demo header carries, so a
+    // replayed No Monsters record takes the same branch as the live run did.
+    if( nomonsters )
+        skill = HS_SK_NOMON;
+
     // [Arcade] Everything the intermission draws is derived here, and it must
     // be updated for demo playback too.  A record demo spans several levels,
     // so replaying one passes through these same level exits -- and when this
@@ -2933,6 +3012,17 @@ void HS_LevelExit( int episode, int map, skill_e skill, tic_t leveltime,
         hs_cat_alive[HS_CAT_max] = false;
     if( ! all_kills )
         hs_cat_alive[HS_CAT_tyson] = false;   // tyson is a 100% kills run
+
+    // [Arcade] With nothing to kill, pacifist is free and tyson is only "do
+    // not fire a shotgun" -- neither means anything, so No Monsters has
+    // neither.  Max stays, and with no kills to make it is 100% secrets alone
+    // (all_kills is vacuously true on a map with no monsters), which is why it
+    // is shown as "100%S" there.
+    if( nomonsters )
+    {
+        hs_cat_alive[HS_CAT_pacifist] = false;
+        hs_cat_alive[HS_CAT_tyson]    = false;
+    }
 
     // Never score a replay.  Everything below this writes to the table.
     if( demoplayback )  return;
@@ -3110,10 +3200,8 @@ boolean  HS_Demo_Path_For( const char * mapname, skill_e skill, int cat,
 #define HS_IM_TIME_R  166
 #define HS_IM_INI_X   174
 
-// Row labels for the table.  hs_catname[] is the on-disk spelling and is
-// lower case; these are what the player reads.
-static const char * hs_cat_label[HS_NUMCAT] =
-    { "SPEED", "MAX", "PACIFIST", "TYSON" };
+// Row labels are HS_Cat_Label, at the top of the file.  "100%S", the widest
+// (No Monsters max), is 37px -- inside the 48 the RECORD column reserves.
 
 // [Arcade] How many category rows the *intermission* table shows.
 //
@@ -3181,7 +3269,8 @@ void HS_Draw_IntermissionTable( int x, int y )
     {
         boolean have = HS_Intermission_Record( cat, mapname, ini, &tics );
 
-        V_DrawString( x, row_y, 0, (char*) hs_cat_label[cat] );
+        V_DrawString( x, row_y, 0,
+                      (char*) HS_Cat_Label( hs_last_exit_skill, cat ) );
 
         if( ! have )
         {
@@ -3339,8 +3428,9 @@ boolean  HS_Have_Records( void )
 
 // The New Game menu's skill graphics, indexed by skill.  Doom names; Heretic
 // differs, hence the VALID_LUMP check at the draw site.
+// [Arcade] M_NOMON is the cabinet's own, in legacy.wad (152x17).
 static const char * hs_skillpatch[HS_NUMSKILLS] =
-  { "M_JKILL", "M_ROUGH", "M_HURT", "M_ULTRA", "M_NMARE" };
+  { "M_JKILL", "M_ROUGH", "M_HURT", "M_ULTRA", "M_NMARE", "M_NOMON" };
 
 // Bottom edge of the skill graphic.  The patches vary in height (15..19), so
 // they are bottom aligned on this rather than top aligned, or the baseline
@@ -3556,7 +3646,7 @@ static int  HS_SL_Current_Map( char maps[][9], int nm );
 
 static int  HS_Build_Pages( hs_page_t * out, int out_max )
 {
-    int  sk, cat, n = 0;
+    int  i, sk, cat, n = 0;
 
     {
         int ep, c0, neps = HS_Num_Episodes();
@@ -3570,8 +3660,9 @@ static int  HS_Build_Pages( hs_page_t * out, int out_max )
             }
     }
 
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
-      for( cat=0; cat<HS_NUMCAT; cat++ )
+    // [Arcade] Easiest first, so No Monsters leads the single level pages.
+    for( i=0; i<HS_NUMSKILLS; i++ )
+      for( sk=hs_skill_order[i], cat=0; cat<HS_NUMCAT; cat++ )
         if( n < out_max && HS_Have_Times(true, sk, cat) )
         {
             out[n].kind = HSPG_single;  out[n].skill = sk;
@@ -3776,8 +3867,9 @@ static void  HS_Draw_BestTimes( boolean single, int sk, int cat )
     {
         int x = col ? HS_BT_COL1 : HS_BT_COL0;
         V_DrawString( x, 36, V_WHITEMAP, "MAP" );
-        snprintf( buf, sizeof(buf), "%s", hs_catname[cat] );
-        strupr( buf );
+        // "100%S" (37px) under No Monsters; right-justified at +110 it
+        // starts at +73, well clear of "MAP" (+0..+29).
+        snprintf( buf, sizeof(buf), "%s", HS_Cat_Label( sk, cat ) );
         V_DrawString( x + HS_BT_TIME_R - V_StringWidth(buf), 36,
                       V_WHITEMAP, buf );
         // Only the single level page can name a holder; see below.
@@ -3847,7 +3939,7 @@ static void  HS_Draw_SL_Map_Block( const char * mapname, int cat, int y0 )
 {
     char buf[64], timebuf[16], ini[HS_INITIALS_LEN];
     tic_t t;
-    int  sk, place;
+    int  i, sk, place;
 
     snprintf( buf, sizeof(buf), "%s", hs_catname[cat] );
     strupr( buf );
@@ -3860,11 +3952,18 @@ static void  HS_Draw_SL_Map_Block( const char * mapname, int cat, int y0 )
                       V_WHITEMAP, (char*) ord[place] );
     }
 
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    for( i=0; i<HS_NUMSKILLS; i++ )
     {
-        int y = y0 + 10 + (sk * HS_SLM_ROWSTEP);
+        int y = y0 + 10 + (i * HS_SLM_ROWSTEP);
 
-        V_DrawString( HS_SLM_SKILL_X, y, 0, (char*) hs_skillnames[sk] );
+        // [Arcade] Easiest first: No Monsters heads the list.  In the max
+        // block its row is labelled "100%S" -- that pair, No Monsters max, is
+        // exactly the category dsda-doom calls by that name, and at 37px it
+        // still clears the first cell at 52 by 5.
+        sk = hs_skill_order[i];
+        V_DrawString( HS_SLM_SKILL_X, y, 0,
+                      (char*) ( (sk == HS_SK_NOMON && cat == HS_CAT_max)
+                                ? HS_Cat_Label( sk, cat ) : hs_skillnames[sk] ) );
 
         for( place=0; place<HS_BOARD_DEPTH_SL; place++ )
         {
@@ -3905,11 +4004,41 @@ static int  HS_SL_Current_Map( char maps[][9], int nm )
 }
 
 
+// [Arcade] Where the max block starts, below the speed block.  70, not the
+// old 68: the sixth row (No Monsters) puts the speed block's last row at
+// 50+10+5*10 = 110, ending at 117, so the max heading at 120 clears it by 3;
+// the max block's own last row is then 180..187, clear of the "n of m"
+// footer at 190.
+#define HS_SLM_MAX_Y0   (HS_SLM_ROW0 + 70)
+
+// One map's page.  The attract cycle picks the map from its rotating cursor;
+// the High Scores menu page names it directly.
+static void  HS_Draw_SL_Map_Page_For( const char * mapname )
+{
+    char  buf[64];
+    int   has_max = 0, sk;
+
+    snprintf( buf, sizeof(buf), "SINGLE LEVEL: %s", mapname );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 12, V_WHITEMAP, buf );
+
+    HS_Draw_SL_Map_Block( mapname, HS_CAT_speed, HS_SLM_ROW0 );
+
+    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    {
+        if( HS_Board_Entry(true, mapname, (skill_e)sk, HS_CAT_max, 0,
+                           NULL, NULL, NULL) )
+            has_max = 1;
+    }
+    // Only drawn when there is something in it; otherwise the page would be
+    // half a screen of empty rows.
+    if( has_max )
+        HS_Draw_SL_Map_Block( mapname, HS_CAT_max, HS_SLM_MAX_Y0 );
+}
+
 static void  HS_Draw_SL_Map_Page( void )
 {
     char  maps[HS_MAX_PAGE_MAPS][9];
-    char  buf[64];
-    int   nm, i, has_max = 0, sk;
+    int   nm, i;
 
     nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
     if( nm == 0 )  return;
@@ -3917,21 +4046,7 @@ static void  HS_Draw_SL_Map_Page( void )
     i = HS_SL_Current_Map( maps, nm );
     if( i < 0 )  return;
 
-    snprintf( buf, sizeof(buf), "SINGLE LEVEL: %s", maps[i] );
-    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 12, V_WHITEMAP, buf );
-
-    HS_Draw_SL_Map_Block( maps[i], HS_CAT_speed, HS_SLM_ROW0 );
-
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
-    {
-        if( HS_Board_Entry(true, maps[i], (skill_e)sk, HS_CAT_max, 0,
-                           NULL, NULL, NULL) )
-            has_max = 1;
-    }
-    // Only drawn when there is something in it; otherwise the page would be
-    // half a screen of empty rows.
-    if( has_max )
-        HS_Draw_SL_Map_Block( maps[i], HS_CAT_max, HS_SLM_ROW0 + 68 );
+    HS_Draw_SL_Map_Page_For( maps[i] );
 }
 
 
@@ -3983,7 +4098,7 @@ static void  HS_Draw_SurvivalPage( int ep, int cat0 )
         V_DrawString( x, 46, V_WHITEMAP, buf );
     }
 
-    for( sk=0; sk<HS_NUMSKILLS; sk++ )
+    for( sk=0; sk<HS_NUM_CAMPAIGN_SKILLS; sk++ )
     {
         int y = HS_SV_ROW0 + (sk * HS_SV_ROWSTEP);
 
@@ -4009,6 +4124,31 @@ static void  HS_Draw_SurvivalPage( int ep, int cat0 )
                           timebuf );
             V_DrawString( x + HS_SV_INI_X, y, 0, ini );
         }
+    }
+}
+
+
+// [Arcade] One score page's content.  slmap names the map for an HSPG_slmap
+// page; NULL means the attract cycle's rotating one.  Shared by the attract
+// cycle and the High Scores menu page.
+static void  HS_Draw_Page( const hs_page_t * pg, const char * slmap )
+{
+    switch( pg->kind )
+    {
+     case HSPG_survival:
+        HS_Draw_SurvivalPage( pg->ep, pg->cat );
+        break;
+     case HSPG_single:
+        HS_Draw_BestTimes( true, pg->skill, pg->cat );
+        break;
+     case HSPG_slmap:
+        if( slmap )
+            HS_Draw_SL_Map_Page_For( slmap );
+        else
+            HS_Draw_SL_Map_Page();
+        break;
+     default:
+        break;
     }
 }
 
@@ -4044,22 +4184,7 @@ void HS_Draw_AttractTable( void )
 
     if( hs_attract_page >= total )  hs_attract_page = 0;
 
-    switch( pages[hs_attract_page].kind )
-    {
-     case HSPG_survival:
-        HS_Draw_SurvivalPage( pages[hs_attract_page].ep,
-                              pages[hs_attract_page].cat );
-        break;
-     case HSPG_single:
-        HS_Draw_BestTimes( true, pages[hs_attract_page].skill,
-                                 pages[hs_attract_page].cat );
-        break;
-     case HSPG_slmap:
-        HS_Draw_SL_Map_Page();
-        break;
-     default:
-        break;
-    }
+    HS_Draw_Page( &pages[hs_attract_page], NULL );
 
     // Footer, so it is obvious that other pages follow.
     if( total > 1 )
@@ -4068,6 +4193,107 @@ void HS_Draw_AttractTable( void )
         V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
                       BASEVIDHEIGHT-10, 0, buf );
     }
+}
+
+
+// -------------------------------------------------------------------------
+// [Arcade] The High Scores menu page: the attract cycle's pages, flipped by
+// hand with left and right.
+//
+// The same pages, drawn by the same code, so the two can never disagree about
+// what a record looks like.  One difference: the attract cycle has a single
+// *rotating* per-map slot (so it does not spend ten pages on near-identical
+// maps between demos), whereas a player who has walked up to look at the
+// scores wants every map, so here each map with a single level entry gets a
+// page of its own, in play order.  HSPG_slmap pages carry the map's index in
+// HS_Map_List's order in .ep.
+//
+// Its own cursor, hs_browse_page: flipping pages here must not move the
+// attract cycle's place, and the cycle is still running behind the menu.
+#define HS_MAX_BROWSE_PAGES  (HS_MAX_PAGES + HS_MAX_PAGE_MAPS)
+
+static int  hs_browse_page = 0;
+
+static int  HS_Build_Browse_Pages( hs_page_t * out, int out_max,
+                                   char maps[][9], int * out_nm )
+{
+    int  n = HS_Build_Pages( out, out_max );
+    int  nm, i;
+
+    // Replace the one rotating slot, always last, with a page per map.
+    if( n > 0 && out[n-1].kind == HSPG_slmap )
+        n--;
+
+    nm = HS_Map_List( maps, HS_MAX_PAGE_MAPS );
+    for( i=0; i<nm && n<out_max; i++ )
+    {
+        if( ! HS_SL_Map_Has_Entries( maps[i] ) )  continue;
+        out[n].kind = HSPG_slmap;  out[n].skill = 0;  out[n].cat = 0;
+        out[n].ep = (byte) i;
+        n++;
+    }
+
+    *out_nm = nm;
+    return n;
+}
+
+void  HS_Browse_Reset( void )
+{
+    hs_browse_page = 0;
+}
+
+void  HS_Browse_Step( int dir )
+{
+    hs_page_t  pages[HS_MAX_BROWSE_PAGES];
+    char  maps[HS_MAX_PAGE_MAPS][9];
+    int   nm;
+    int   total = HS_Build_Browse_Pages( pages, HS_MAX_BROWSE_PAGES, maps, &nm );
+
+    if( total <= 0 )
+    {
+        hs_browse_page = 0;
+        return;
+    }
+
+    // Wraps both ways: on a cabinet there is no Home or End, so going round
+    // is the quickest way back to the first page.
+    hs_browse_page = ( hs_browse_page + dir ) % total;
+    if( hs_browse_page < 0 )  hs_browse_page += total;
+}
+
+void  HS_Draw_Browse( void )
+{
+    hs_page_t  pages[HS_MAX_BROWSE_PAGES];
+    char  maps[HS_MAX_PAGE_MAPS][9];
+    char  buf[64];
+    int   nm, total, cur;
+
+    // The whole screen, exactly as the attract version sets it up.
+    V_SetupDraw( 0 | V_SCALESTART | V_SCALEPATCH | V_CENTERHORZ | V_SCALEEXACT );
+    V_DrawScaledFill( 0, 0, BASEVIDWIDTH, BASEVIDHEIGHT, 0 );  // black
+
+    total = HS_Build_Browse_Pages( pages, HS_MAX_BROWSE_PAGES, maps, &nm );
+    if( total == 0 )
+    {
+        V_DrawString( (BASEVIDWIDTH - V_StringWidth("No times recorded yet"))/2,
+                      90, 0, "No times recorded yet" );
+        return;
+    }
+
+    // Read only: a table that shrank under the cursor (a clearhighscores, a
+    // Cabinet Link import) is clamped for drawing, not corrected here --
+    // drawers run every frame and must not change state.
+    cur = ( hs_browse_page < total ) ? hs_browse_page : 0;
+
+    HS_Draw_Page( &pages[cur],
+                  (pages[cur].kind == HSPG_slmap && pages[cur].ep < nm)
+                  ? maps[pages[cur].ep] : NULL );
+
+    // The arrows say how to reach the rest.  "<  88 of 88  >" is 97px.
+    snprintf( buf, sizeof(buf), (total > 1) ? "<  %d of %d  >" : "%d of %d",
+              cur + 1, total );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2,
+                  BASEVIDHEIGHT-10, 0, buf );
 }
 
 
@@ -4202,7 +4428,7 @@ static void  HS_Format_Split_Label( const hs_maprecord_t * rec, int sk,
     // table.  Measured: widest is 283px of 320.
     HS_Format_Time_CS( rec->besttime[cat][sk], timebuf, sizeof(timebuf) );
     snprintf( label, labelsz, "%s  %s  %s  %s  %s",
-              range, hs_skillnames[sk], hs_catname[cat], timebuf,
+              range, hs_skillnames[sk], HS_Cat_Label( sk, cat ), timebuf,
               ini[0] ? ini : "---" );
     strupr( label );
 }
@@ -4251,7 +4477,7 @@ static boolean  HS_Demo_At( int slot, char * path, tic_t * out_tics,
             // STCFN lumps, the widest realistic form is 304px of 320.
             HS_Format_Time_CS( tics, timebuf, sizeof(timebuf) );
             snprintf( label, labelsz, "Survival  %s  %s  %s  %s  %s",
-                      hs_skillnames[sk], hs_catname[cat], mapname, timebuf,
+                      hs_skillnames[sk], HS_Cat_Label( sk, cat ), mapname, timebuf,
                       ini[0] ? ini : "---" );
             strupr( label );
         }

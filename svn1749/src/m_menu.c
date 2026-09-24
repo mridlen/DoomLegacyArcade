@@ -791,6 +791,14 @@ consvar_t cv_multiplayermenu = {"multiplayermenu", "1", CV_SAVE, CV_OnOff };
 // Operator setting, on by default, for the same reasons as the row above.
 consvar_t cv_gameoptionsmenu = {"gameoptionsmenu", "1", CV_SAVE, CV_OnOff };
 
+// [Arcade] Offer No Monsters on the Single Level page's Skill row.  On by
+// default -- it is a new way to play rather than a risk to the board, which
+// keeps it in its own slot -- but some maps cannot be finished without
+// killing something (E1M8's Barons hold the exit), and an operator who would
+// rather not field that question can take it away.  Read live by
+// M_SingleLevel_Update_Items, so no restart is needed.
+consvar_t cv_nomonstersmenu = {"nomonstersmenu", "1", CV_SAVE, CV_OnOff };
+
 static
 void CV_menusound_OnChange(void)
 {
@@ -913,7 +921,8 @@ menu_t MainDef, SoundDef, EpiDef, NewDef,
   GammaOptionsDef,  // [Arcade] Video Options -> Gamma Options
   PlayerDirectorDef, PlayerOptionsDef,
   SingleMultiDef, TwoPlayerDef, MultiPlayerDef, SetupMultiPlayerDef,
-  ReadDef2, ReadDef1, SaveDef, LoadDef, 
+  HighScoresDef,    // [Arcade] replaces Read This
+  SaveDef, LoadDef,
   ControlDef, ControlDef2, ControlDef3, MControlDef,
 #ifdef JOYSTICK_SUPPORT
   JoystickOptionsDef,
@@ -1446,17 +1455,21 @@ static void M_Savegame(int choice);
 static void M_QuitDOOM(int choice);
 static void M_EndGame(int choice);
 static void M_Update_EndGame_Row(void);
+static void M_HighScores_Open(int choice);   // [Arcade]
 
 enum
 {
-    // [Arcade] Cheats is inserted at index 4 and End Game at 5, so Read This
-    // and Quit are 6 and 7 rather than the stock 4 and 5.  Both inserts sit
-    // *before* Read This deliberately: the Doom 2 fixup below copies Quit
-    // over the Read This slot and drops one item, which would cut off
-    // anything after it.
+    // [Arcade] Cheats is inserted at index 4 and End Game at 5, so High
+    // Scores and Quit are 6 and 7 rather than the stock 4 and 5.
+    //
+    // [Arcade] High Scores took Read This's slot, and Read This is gone from
+    // every game and from devmode: its help and order-form screens are of no
+    // use on a cabinet.  That also retires the Doom 2 fixup in M_Configure,
+    // which copied Quit over this slot and dropped the last row -- so every
+    // game now has the same eight rows, and Quit is always MM_quitdoom.
     MM_cheats   = 4,	// referenced
     MM_endgame  = 5,	// referenced
-    MM_readthis = 6,	// referenced
+    MM_hiscores = 6,	// referenced
     MM_quitdoom = 7,	// referenced
 } main_e;
 
@@ -1467,7 +1480,7 @@ menuitem_t MainMenu[]=
     // New Game, beside Single Player, where it reads as the third way to
     // start a game rather than a peer of New Game itself -- see
     // SingleMulti_Menu.  Everything that addressed this menu by index moved
-    // back with it: MM_cheats/MM_readthis/MM_quitdoom above, and the
+    // back with it: MM_cheats/MM_hiscores/MM_quitdoom above, and the
     // Load/Save hiding in the lockdown below.
     {IT_SUBMENU | IT_PATCH,"M_NGAME" ,"NEW GAME" ,&SingleMultiDef,'n'},
     {IT_CALL    | IT_PATCH,"M_LOADG" ,"LOAD GAME",M_Loadgame,'l'},
@@ -1479,12 +1492,11 @@ menuitem_t MainMenu[]=
     // the bottom of the menu that Quit used to occupy -- Quit is hidden for
     // players (cv_quitmenu), so this is the last row they see, and in devmode
     // it sits directly above Quit.  Shown only while a game is actually being
-    // played; M_Update_EndGame_Row hides it otherwise.  It goes *before* Read
-    // This for the same reason Cheats does: the Doom 2 fixup in M_Configure
-    // copies Quit over the Read This slot and drops the last item, so a row
-    // appended past Quit would vanish under Doom 2.
+    // played; M_Update_EndGame_Row hides it otherwise.
     {IT_CALL    | IT_PATCH,"M_ENDGAM","END GAME" ,M_EndGame  ,'e'},
-    {IT_SUBMENU | IT_PATCH,"M_RDTHIS","INFO"     ,&ReadDef1  ,'r'},  // Another hickup with Special edition.
+    // [Arcade] The score pages the attract cycle shows, flipped by hand.
+    // M_HISCOR is the cabinet's own, in legacy.wad (143x17).
+    {IT_CALL    | IT_PATCH,"M_HISCOR","HIGH SCORES",M_HighScores_Open,'h'},
     {IT_CALL    | IT_PATCH,"M_QUITG" ,"QUIT GAME",M_QuitDOOM,'q'}
 };
 
@@ -1756,6 +1768,25 @@ CV_PossibleValue_t exmy_cons_t[] ={{11,"e1m1"} ,{12,"e1m2"} ,{13,"e1m3"}
                                   ,{0,NULL}};
 
 consvar_t cv_skill    = {"skill"    ,"4",CV_HIDEN,skill_cons_t};
+
+// [Arcade] Single Level's own skill row, which has one more difficulty than
+// the engine: No Monsters, to the left of I'm Too Young To Die as the easiest.
+// It is Ultra-Violence with -nomonsters, the dsda-doom category, scored in its
+// own slot (HS_SK_NOMON).  1..5 are cv_skill's values, so the two rows read
+// the same; 0 is the extra one.  A cvar of its own rather than a sixth value
+// on cv_skill, which the Multiplayer Start Game page passes straight to
+// "map -skill", where 0 would be skill -1.
+//
+// M_SingleLevel_Update_Items starts the list one entry in when No Monsters is
+// switched off (cv_nomonstersmenu), so the arrows cannot reach it.
+CV_PossibleValue_t slskill_cons_t[] = {{0,"No Monsters"}
+                                      ,{1,"I'm too young to die"}
+                                      ,{2,"Hey, not too rough"}
+                                      ,{3,"Hurt me plenty"}
+                                      ,{4,"Ultra violence"}
+                                      ,{5,"Nightmare!" }
+                                      ,{0,NULL}};
+consvar_t cv_slskill  = {"slskill"  ,"4",CV_HIDEN,slskill_cons_t};
 consvar_t cv_monsters = {"monsters" ,"0",CV_HIDEN,CV_YesNo};
 // The bots use player slots, so number of bots is limited to MAXPLAYERS.
 CV_PossibleValue_t bots_cons_t[] = {{0,"MIN"}, {MAXPLAYERS,"MAX"}, {0,NULL}};
@@ -2017,7 +2048,7 @@ enum { SL_map = 0, SL_skill, SL_start, SL_speeddemo, SL_maxdemo, SL_numitems };
 menuitem_t  SingleLevelMenu[]=
 {
     {IT_STRING | IT_CVAR,0,"Map"             ,&cv_nextmap    ,0},
-    {IT_STRING | IT_CVAR,0,"Skill"           ,&cv_skill      ,0},
+    {IT_STRING | IT_CVAR,0,"Skill"           ,&cv_slskill    ,0},
     // [Arcade] 82, not the original 50: the best-times block below the cvar
     // rows grew from two lines to a three deep board with initials, ending
     // at menu y + 73.  This puts Start clear of it.
@@ -2145,9 +2176,16 @@ static const char *  M_SingleLevel_MapName( void )
 // menu's item index.  Passing cv_skill.value to those raw launched and scored
 // one skill too hard: picking Ultra violence ran sk_nightmare, with fast
 // monsters and respawning, which is how this was noticed.
+//
+// [Arcade] The row is cv_slskill now, 0 being No Monsters, which comes back
+// as the score slot HS_SK_NOMON -- the key every HS_* lookup on this page
+// wants.  It is not a skill the engine can run: M_SingleLevel_Start turns it
+// into Ultra-Violence with monsters off.
 static skill_e  M_SingleLevel_Skill( void )
 {
-    return (skill_e)(cv_skill.value - 1);
+    if( cv_slskill.value == 0 )
+        return (skill_e) HS_SK_NOMON;
+    return (skill_e)(cv_slskill.value - 1);
 }
 
 
@@ -2156,8 +2194,30 @@ static skill_e  M_SingleLevel_Skill( void )
 // height as the player scrolls through maps, which looks broken.
 static void  M_SingleLevel_Update_Items( void )
 {
-    const char * mn = M_SingleLevel_MapName();
-    skill_e sk = M_SingleLevel_Skill();
+    const char * mn;
+    skill_e sk;
+
+    // [Arcade] No Monsters is offered unless the operator has switched it
+    // off (Disable/Enable Menu Options), and always in devmode, like the
+    // other rows there.  Switched off, the list starts one entry in so the
+    // arrows cannot reach it, and a selection left on it moves to ITYTD.
+    // Only assigns values computed from current state, so it is safe in the
+    // drawer, which is where it runs.
+    if( devmode || cv_nomonstersmenu.EV )
+        cv_slskill.PossibleValue = slskill_cons_t;
+    else
+    {
+        cv_slskill.PossibleValue = &slskill_cons_t[1];
+        if( cv_slskill.value == 0 )
+            CV_SetValue( &cv_slskill, 1 );
+    }
+
+    mn = M_SingleLevel_MapName();
+    sk = M_SingleLevel_Skill();
+
+    // "Max" is "100%S" under No Monsters, and the replay row says so.
+    SingleLevelMenu[SL_maxdemo].text = ( sk == HS_SK_NOMON )
+        ? "Watch 100%S run" : "Watch max run";
 
     SingleLevelMenu[SL_speeddemo].status =
         HS_Demo_Path_For( mn, sk, 0, true, NULL )
@@ -2212,7 +2272,9 @@ static void  M_Draw_SingleLevel( void )
     V_DrawString( x, y, V_WHITEMAP, buf );
 
     V_DrawString( x + SL_BD_INI0, y+12, V_WHITEMAP, "SPEED" );
-    V_DrawString( x + SL_BD_INI1, y+12, V_WHITEMAP, "MAX" );
+    // "100%S" under No Monsters: 37px, at 184 it ends at 221.
+    V_DrawString( x + SL_BD_INI1, y+12, V_WHITEMAP,
+                  HS_Cat_Label( M_SingleLevel_Skill(), 1 ) );
 
     for( place = 0; place < HS_BOARD_DEPTH_SL; place++ )
     {
@@ -2269,7 +2331,16 @@ static void  M_SingleLevel_Start( int choice )
     // StartSplitScreenGame, *not* resetplayer -- it feeds straight into the
     // "splitscreen %d" command G_DeferedInitNew issues.  Single Level is
     // always one player; passing true launched it in two player splitscreen.
-    G_DeferedInitNew( M_SingleLevel_Skill(), M_SingleLevel_MapName(), false );
+    //
+    // [Arcade] No Monsters is Ultra-Violence with monsters off -- the rule
+    // dsda-doom scores the category under.  HS_LevelExit sees nomonsters and
+    // files the run under HS_SK_NOMON, which is what this page looks it up by.
+    if( M_SingleLevel_Skill() == (skill_e) HS_SK_NOMON )
+        G_DeferedInitNew_Monsters( sk_hard, M_SingleLevel_MapName(), false,
+                                   false );
+    else
+        G_DeferedInitNew( M_SingleLevel_Skill(), M_SingleLevel_MapName(),
+                          false );
     M_Clear_Menus( true );
 }
 
@@ -3282,7 +3353,8 @@ void M_Episode(int choice)
     if ( (gamemode == doom_shareware)
          && choice)
     {
-        Push_Setup_Menu(&ReadDef1);
+        // [Arcade] The order-form page this used to open behind the message
+        // (Read This) is gone; the message alone says why.
         M_SimpleMessage( text[SWSTRING_NUM] );
         return;
     }
@@ -6225,6 +6297,9 @@ menuitem_t MenuDisableMenu[]=
     {IT_STRING | IT_CVAR,0, "Multiplayer Menu", &cv_multiplayermenu, 0},
     {IT_STRING | IT_CVAR,0, "Quit Menu"       , &cv_quitmenu       , 0},
     {IT_STRING | IT_CVAR,0, "Game Options"    , &cv_gameoptionsmenu, 0},
+    // [Arcade] 135px against STCFN, so 60..195 -- clear of an "On"/"Off"
+    // value right-justified at 260.
+    {IT_STRING | IT_CVAR,0, "Enable No Monsters", &cv_nomonstersmenu , 0},
 };
 
 menu_t  MenuDisableDef =
@@ -7209,102 +7284,60 @@ menu_t  MPOptionDef =
 
 
 //===========================================================================
-//                          Read This! MENU 1
+//                          HIGH SCORES  [Arcade]
 //===========================================================================
+// The score pages the attract cycle shows, on demand: left and right flip
+// through them, fire steps forward, Escape backs out.  It took Read This's
+// row on the main menu, and Read This is gone entirely -- the help and
+// order-form screens were never any use on a cabinet.
+//
+// One IT_ARROWS item and a drawer of its own, rather than an IT_KEYHANDLER
+// page: a key handler item is exempted from M_Cabinet_Menu_Key (so text entry
+// sees raw letters), which would leave the panel sticks and buttons unable to
+// flip a page.  IT_ARROWS gets the translated keys: left calls the routine
+// with 0, right and fire with 1, and Escape backs out as on any page.
+//
+// The pages and their cursor live in hs_stuff.c (HS_Draw_Browse), so the
+// attract cycle and this page draw the same thing by the same code.
 
-void M_DrawReadThis1(void);
-void M_DrawReadThis2(void);
+static void M_HighScores_Flip( int choice );
+static void M_Draw_HighScores( void );
 
-menuitem_t ReadMenu1[] =
+menuitem_t HighScoresMenu[] =
 {
-    {IT_SUBMENU | IT_NOTHING,0,"",&ReadDef2,0}
+    {IT_ARROWS | IT_EXTERNAL, 0, "", M_HighScores_Flip, 0}
 };
 
-menu_t  ReadDef1 =
+menu_t  HighScoresDef =
 {
     NULL,
     NULL,
-    ReadMenu1,
-    M_DrawReadThis1,
+    HighScoresMenu,
+    M_Draw_HighScores,
     NULL,
-    sizeof(ReadMenu1)/sizeof(menuitem_t),
-    280,185,
+    sizeof(HighScoresMenu)/sizeof(menuitem_t),
+    0, 0,
     0
 };
 
-//
-// Read This Menus
-// Had a "quick hack to fix romero bug"
-//
-void M_DrawReadThis1(void)
+// From the main menu.  An IT_CALL rather than an IT_SUBMENU so the page can
+// open on its first page every time -- the drawer cannot do that, drawers
+// run every frame -- while backing out keeps the main menu's place.
+static void M_HighScores_Open( int choice )
 {
-    // Draw to screen0, scaled
-    switch ( gamemode )
-    {
-      case doom2_commercial:
-        V_DrawScaledPatch_Name (0,0, "HELP");
-        break;
-      case doom_shareware:
-      case doom_registered:
-      case ultdoom_retail:
-        V_DrawScaledPatch_Name (0,0, "HELP1");
-        break;
-      case heretic:
-        V_DrawRawScreen_Num(0,0,W_GetNumForName("HELP1"), 320, 200);
-        break;
-      default:
-        break;
-    }
-    return;
+    HS_Browse_Reset();
+    Push_Setup_Menu( &HighScoresDef );
 }
 
-//===========================================================================
-//                          Read This! MENU 2
-//===========================================================================
-
-menuitem_t ReadMenu2[]=
+static void M_HighScores_Flip( int choice )
 {
-    {IT_SUBMENU | IT_NOTHING,0,"",&MainDef,0}
-};
-
-menu_t  ReadDef2 =
-{
-    NULL,
-    NULL,
-    ReadMenu2,
-    M_DrawReadThis2,
-    NULL,
-    sizeof(ReadMenu2)/sizeof(menuitem_t),
-    330,175,
-    0
-};
-
-
-//
-// Read This Menus - optional second page.
-//
-void M_DrawReadThis2(void)
-{
-    // Draw to screen0, scaled
-    switch ( gamemode )
-    {
-      case ultdoom_retail:
-      case doom2_commercial:
-        // This hack keeps us from having to change menus.
-        V_DrawScaledPatch_Name (0,0, "CREDIT");
-        break;
-      case doom_shareware:
-      case doom_registered:
-        V_DrawScaledPatch_Name (0,0, "HELP2");
-        break;
-      case heretic :
-        V_DrawRawScreen_Num(0,0,W_GetNumForName("HELP2"), 320, 200);
-      default:
-        break;
-    }
-    return;
+    HS_Browse_Step( choice ? +1 : -1 );
 }
 
+static void M_Draw_HighScores( void )
+{
+    HS_Draw_Browse();
+}
 //===========================================================================
 //                        SOUND VOLUME MENU
 //===========================================================================
@@ -12046,17 +12079,7 @@ boolean M_Responder (event_t* ev)
             cvar_incdec( &cv_viewsize, +1 );
             goto ret_true;
 
-          case KEY_F1:            // Help key
-            M_StartControlPanel ();
-
-            if ( gamemode == ultdoom_retail )
-              currentMenu = &ReadDef2;
-            else
-              currentMenu = &ReadDef1;
-
-            itemOn = 0;
-            S_StartSound(menu_sfx_open);
-            goto ret_true;
+          // [Arcade] F1 (Help) opened Read This, which is gone.
 
           case KEY_F2:            // Save
             M_StartControlPanel();
@@ -12740,6 +12763,7 @@ static
 consvar_t * menu_init_cvar_list[] =
 {
   &cv_skill,
+  &cv_slskill,          // [Arcade] Single Level's skill, with No Monsters
   &cv_monsters,
   &cv_nextmap,
   &cv_nextepmap,
@@ -12767,6 +12791,7 @@ consvar_t * menu_init_cvar_list[] =
 // M_Init
 //
 // Called once, very early
+
 void M_Init (void)
 {
     currentMenu = &MainDef;
@@ -13219,16 +13244,10 @@ void M_Configure (void)
     switch ( gamemode )
     {
       case doom2_commercial:
-        // This is used because DOOM 2 had only one HELP
-        //  page. I use CREDIT as second page now, but
-        //  kept this hack for educational purposes.
-        MainMenu[MM_readthis] = MainMenu[MM_quitdoom];
-        MainDef.numitems--;
-        MainDef.y += 8;
-        ReadDef1.drawroutine = M_DrawReadThis1;
-        ReadDef1.x = 330;
-        ReadDef1.y = 165;
-        ReadMenu1[0].itemaction = &MainDef;
+        // [Arcade] The stock fixup here copied Quit over the Read This row
+        // and dropped the last item, because Doom 2 had only one HELP page.
+        // Read This is gone, and its row is High Scores in every game, so
+        // Doom 2 keeps all eight rows and the same y as Doom 1.
         break;
       case doom_shareware:
         // Episode 2 and 3 are handled,
@@ -13238,16 +13257,6 @@ void M_Configure (void)
           EpiDef.numitems--;
       case ultdoom_retail:
           // We are fine.
-          // [Arcade] Doom 2 replaces the "Read This!" entry just above, but
-          // the Doom 1 gamemodes keep it, and it is the help / order-form
-          // screens -- of no use on a cabinet.  Done here rather than in
-          // M_Init because gamemode is not known that early.
-          if( ! devmode )
-          {
-              MainMenu[MM_readthis].status = IT_HIDDEN;
-              if( MainDef.lastOn == MM_readthis )
-                  MainDef.lastOn = 0;
-          }
           cv_nextmap.PossibleValue = exmy_cons_t;
           cv_nextmap.defaultvalue = "11";
           // We need to remove the fifth episode.
@@ -13319,18 +13328,13 @@ void M_Configure (void)
 #endif
 
     // [Arcade] The Quit Game entry, unless the operator has asked to keep it.
-    // Must be after the gamemode switch above, not with the rest of the
-    // lockdown: on Doom 2 that switch *copies* Quit over the Read This slot
-    // (status and all) and drops the last item, so before it runs the row to
-    // hide is index MM_quitdoom and after it is index MM_readthis.  Hiding
-    // the wrong one leaves Quit sitting on the menu with nothing to show for
-    // the setting.
+    // It used to have to follow the gamemode switch above, whose Doom 2
+    // branch moved Quit into the Read This slot; that fixup is gone with Read
+    // This, so Quit is MM_quitdoom in every game.
     if( ! devmode && ! cv_quitmenu.EV )
     {
-        byte quitrow = (gamemode == doom2_commercial) ? MM_readthis
-                                                      : MM_quitdoom;
-        MainMenu[quitrow].status = IT_HIDDEN;
-        if( MainDef.lastOn == quitrow )
+        MainMenu[MM_quitdoom].status = IT_HIDDEN;
+        if( MainDef.lastOn == MM_quitdoom )
             MainDef.lastOn = 0;
     }
 
@@ -13706,6 +13710,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_cheatsmenu,       // [Arcade]
   &cv_multiplayermenu,  // [Arcade]
   &cv_gameoptionsmenu,  // [Arcade]
+  &cv_nomonstersmenu,   // [Arcade] No Monsters on the Single Level page
   &cv_chasecamdemo,     // [Arcade]
   &cv_link_gamesync,    // [Arcade] Select Game Sync
   &cv_link_musiccab,    // [Arcade] Music Cabinet

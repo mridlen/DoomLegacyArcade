@@ -71,6 +71,18 @@ Discord is likely to get you banned.
   around the edges.
 - **Single Level mode.** Play one chosen map and come straight back to the menu to retry it, with
   its own separate high score table and its own record demos.
+- **No Monsters, in Single Level.** A sixth difficulty on the Single Level page's Skill row, to the
+  left of *I'm too young to die*: the map with every monster taken out, played at Ultra-Violence —
+  the same rules dsda-doom scores its "NoMo" category under. It has its own records, shown with
+  its own title graphic, and its **Max** is called **100%S**, since with nothing to kill it only
+  means finding every secret. Some maps cannot be finished this way (E1M8's exit is behind the
+  Barons). Single Level only: a whole campaign mostly cannot be finished without killing anything,
+  and a campaign started with no monsters some other way scores nothing.
+- **A High Scores page on the main menu**, where Read This used to be. It shows the same score
+  pages the attract cycle does, and you flip through them yourself with left and right (fire steps
+  forward too). Every map with Single Level times gets its own page, where the attract cycle shows
+  one map at a time. Read This is gone entirely — its help and order-form screens were never any
+  use on a cabinet, and F1 no longer opens them.
 - **Single Player - Survival.** A campaign run is scored on **how far you got in the episode**,
   with the faster run winning a tie — so dying on E1M7 beats dying on E1M3 however quick the latter
   was, and finishing the episode tops the board because nothing outranks it on progress. One record
@@ -252,7 +264,10 @@ Discord is likely to get you banned.
   the game: **Deathmatch is not affected**, and neither is anything a player can already start.
   **Game Options** takes the **Game Options** page out of the Options menu, so the gameplay rules an operator has settled — weapon switching, jumping, monster
   behaviour — are not there to be rewritten between runs. Both ship **On**, which is what the
-  cabinet did before they existed, and both are ignored in a `-devmode` session.
+  cabinet did before they existed, and both are ignored in a `-devmode` session. **Enable No
+  Monsters** takes No Monsters off the Single Level page's Skill row, for an operator who would
+  rather not explain why E1M8 cannot be finished that way; it ships **On**, takes effect at once, and
+  a `-devmode` session always offers it.
 - **A chase camera switch.** **Options → Arcade Options → Chase Cam Demo** turns the third-person
   attract demos on and off. On by default; it costs nothing on a cabinet with no records yet, since
   there is then no record demo to show that way.
@@ -923,7 +938,8 @@ cp /path/to/DOOM2.WAD ../bin/
 ```
 
 `legacy.wad` is required — it ships with this repository and holds the engine's own menu graphics,
-including the cabinet's own artwork (the Single Level, join, cheats and game-over screens) and the
+including the cabinet's own artwork (the Single Level, join, cheats and game-over screens, the
+High Scores menu entry and the No Monsters title) and the
 `ENDOOM` text screen printed on exit, so use the copy from `common/` rather than one from an
 upstream DoomLegacy release. `tools/endoom.py` edits that exit screen; SLADE will not, which is why
 the tool exists. (Building with plain `make` instead of the scripts does not copy it:
@@ -1113,10 +1129,16 @@ setting, **fire** selects, **use** backs out. No keyboard is needed.
 
 ### Single Level
 
-**Single Level**, under **New Game** beside Single Player, plays one map and comes straight back to
+**Single Level**, under **New Game** beside Campaign, plays one map and comes straight back to
 the same page, so you can retry immediately. Pick the map and skill and the best speed and max times for that exact map are
 shown right there. If a record demo exists you can watch it with **Watch speed run** or **Watch max
 run**; those are greyed out when nothing has been recorded yet.
+
+**No Monsters** is the leftmost skill: the map with no monsters in it, at Ultra-Violence, scored on
+its own. Speed is just reaching the exit, and Max is shown as **100%S** — every secret, the only
+thing left to be thorough about. There are no Pacifist or Tyson records for it, since with nothing
+to fight both would be free. The operator can take the option away (see *Switches for how much menu
+a player gets*).
 
 Single Level keeps its **own high score table**, separate from campaign runs — a one-map time isn't
 comparable to a run that reached the same map from level one. Those times get their own pages in
@@ -1153,6 +1175,11 @@ says so. Start a new game to try again.
 
 Scores are per game *and* level pack — Doom II's `MAP01` and Plutonia's `MAP01` are different
 levels and keep separate records.
+
+**To look at them, choose High Scores on the main menu.** Left and right flip through the pages —
+Survival for each episode, Single Level best times for each difficulty (No Monsters first), then a
+page for every map that has Single Level times — and wrap round at either end. Backing out returns
+to the main menu, and the page opens at the first page every time.
 
 ### Level packs and IWADs
 

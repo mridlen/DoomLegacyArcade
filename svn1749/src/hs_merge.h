@@ -24,7 +24,7 @@
 #define HSM_CAB_LEN     10    // LK_ID_SHORT_LEN: "7F3A-91C2"
 #define HSM_SHA_LEN     32
 #define HSM_NUMCAT       4    // HS_NUMCAT: speed, max, pacifist, tyson
-#define HSM_NUMSKILLS    5    // HS_NUMSKILLS
+#define HSM_NUMSKILLS    6    // HS_NUMSKILLS: five skills and No Monsters
 
 #define HSM_DEPTH_SURVIVAL  1   // HS_BOARD_DEPTH_RUN
 #define HSM_DEPTH_SINGLE    3   // HS_BOARD_DEPTH_SL
