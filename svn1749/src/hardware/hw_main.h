@@ -140,6 +140,7 @@ extern consvar_t cv_grmlook_extends_fov;
 extern consvar_t cv_grdynamiclighting;
 extern consvar_t cv_grstaticlighting;
 extern consvar_t cv_grcorona_draw;
+extern consvar_t cv_grvanilla_weapon_light;  // [Arcade]
 extern consvar_t cv_grfov;
 extern consvar_t cv_grpolygonsmooth;
 extern consvar_t cv_grmd2;

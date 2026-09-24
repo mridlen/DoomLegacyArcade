@@ -469,6 +469,16 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     COLORMAP *n* is `(32-n)/32` as bright to within 2% at every level. After: hand **82** (software
     88), step **67 → 57** (software 62 → 57). A bright room is unchanged (level 0 either way); a
     medium one gets a brighter weapon, which is what software always drew.
+  - **That software match is now a switch, and it ships Off.** Once Weapon Flash Fix (below) had
+    cured the line on its own, the owner wanted the OpenGL weapon's original look back.
+    *Vanilla Weapon Lighting* (`gr_vanilla_weapon_light`, `cv_grvanilla_weapon_light` in
+    `hw_main.c`; *OpenGL 3D Card Options → Lighting*, default Off): On is the software-matched lum above,
+    Off is the stock `LightLevelToLum(sll)`, which already returns 255 under `fixedcolormap` and
+    adds `extralight` itself. Off by explicit request, even though that departs from what the
+    cabinet drew before the switch existed. Measured with an idle pistol in E1M8's opening room
+    (offscreen driver, real GPU, 1024x768): the gun's changed pixels averaged luma **48.7** On and
+    **23.3** Off; nothing outside the weapon changed except the level clock, which ticked between
+    the two shots. Picture only: no netvar, no demo header byte, no `P_Random`.
   - **Why it looked filter-only.** Nearest has the same brightness step, measured. But in Nearest
     every edge of the gun is a hard pixel edge, while with Bilinear/Trilinear the gun is smooth
     everywhere *except* here — the flash quad ends on that row, so its bottom edge stays hard, and

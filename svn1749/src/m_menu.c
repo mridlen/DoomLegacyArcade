@@ -13401,6 +13401,7 @@ menuitem_t OGL_LightingMenu[]=
     {IT_STRING | IT_CVAR, 0, "Dynamic lighting"    , &cv_grdynamiclighting,  0},
     {IT_STRING | IT_CVAR, 0, "Static lighting"     , &cv_grstaticlighting,  0},
     {IT_STRING | IT_CVAR, 0, "Monster ball light"  , &cv_monball_light,  0},
+    {IT_STRING | IT_CVAR, 0, "Vanilla Weapon Lighting", &cv_grvanilla_weapon_light,  0},  // [Arcade]
 };
 
 #define FOG_COLOR_ITEM  1
