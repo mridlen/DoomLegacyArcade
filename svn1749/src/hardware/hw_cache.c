@@ -920,11 +920,15 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     // linear filter has something to fade the silhouette into.  See
     // HWR_GetMarginPatch.  Not when the block would have to be scaled to fit.
     int     margin = 0;
+    // [Arcade] The weapon copy has no clear row below the art: its bottom
+    // meets the screen's, and the padding fill below carries the last row on.
+    int     mbottom;
 
-    if( (drawflags & (TF_SpriteCopy|TF_2DCopy))
+    if( (drawflags & TF_MarginCopies)
         && ! cv_grrounddown.value
         && patch->width + 2 <= 2048 && patch->height + 2 <= 2048 )
         margin = 1;
+    mbottom = (drawflags & TF_PSpriteCopy)? 0 : margin;
 
     // don't do it twice (like a cache)
     if(grMipmap->width==0)
@@ -938,7 +942,7 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
         grPatch->topoffset = patch->topoffset;
 
         // find the good 3dfx size (boring spec)
-        HWR_ResizeBlock( patch->width + 2*margin, patch->height + 2*margin, grMipmap );
+        HWR_ResizeBlock( patch->width + 2*margin, patch->height + margin + mbottom, grMipmap );
 
         // setup the texture info
         grMipmap->GR_format = patchformat;
@@ -977,15 +981,15 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     {
         // no rounddown, do not size up patches, so they don't look 'scaled'
         newwidth  = min( patch->width  + 2*margin, blockwidth );
-        newheight = min( patch->height + 2*margin, blockheight);
+        newheight = min( patch->height + margin + mbottom, blockheight);
     }
 
     // [Arcade] A block sized before the margin was wanted is too small for it.
     if( margin
         && ( newwidth  != patch->width  + 2*margin
-             || newheight != patch->height + 2*margin ) )
+             || newheight != patch->height + margin + mbottom ) )
     {
-        margin = 0;
+        margin = mbottom = 0;
         newwidth  = min( patch->width , blockwidth );
         newheight = min( patch->height, blockheight);
     }
@@ -994,7 +998,7 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     bytepp = format2bpp[ grMipmap->GR_format ];
     HWR_DrawPatchInCache( grMipmap,
                           newwidth, newheight, blockwidth*bytepp,
-                          patch->width + 2*margin, patch->height + 2*margin,
+                          patch->width + 2*margin, patch->height + margin + mbottom,
                           margin, margin,
                           patch, bytepp );
 
@@ -1056,7 +1060,7 @@ void HWR_MakePatch (patch_t* patch, MipPatch_t* grPatch, Mipmap_t *grMipmap,
     grMipmap->max_s = (float)newwidth / (float)blockwidth;
     grMipmap->max_t = (float)newheight / (float)blockheight;
 
-    if( ! (drawflags & (TF_SpriteCopy|TF_2DCopy)) )
+    if( ! (drawflags & TF_MarginCopies) )
     {
         grPatch->max_s = (float)newwidth / (float)blockwidth;
         grPatch->max_t = (float)newheight / (float)blockheight;
@@ -1439,7 +1443,7 @@ void HWR_GetMappedPatch(MipPatch_t* gpatch, byte *colormap)
     {
         grmip = grmip->nextcolormap;
         // [Arcade] skip the world-sprite copies, which have a different layout
-        if (grmip->colormap==colormap && !(grmip->tfflags & (TF_SpriteCopy|TF_2DCopy)))
+        if (grmip->colormap==colormap && !(grmip->tfflags & TF_MarginCopies))
         {
             HWR_LoadMappedPatch( grmip, gpatch );
             return;
@@ -1462,8 +1466,9 @@ void HWR_GetMappedPatch(MipPatch_t* gpatch, byte *colormap)
 
 // [Arcade] HWR_GetMarginPatch : a copy of a patch with a transparent texel all
 // round (TF_SpriteMargin) when it fits, loaded and bound.  drawflags carries
-// TF_2DCopy for text, menus and the HUD, otherwise it is the world-sprite
-// copy (TF_SpriteCopy); plus TF_Opaquetrans.  The drawer reads the copy's own
+// TF_2DCopy for text, menus and the HUD, TF_PSpriteCopy for the weapon
+// (no margin below), otherwise it is the world-sprite copy (TF_SpriteCopy);
+// plus TF_Opaquetrans.  The drawer reads the copy's own
 // max_s/max_t, and widens its quad by one texel each way when TF_SpriteMargin
 // is set so the art lands where it did.
 //
@@ -1492,14 +1497,14 @@ Mipmap_t * HWR_GetMarginPatch(MipPatch_t* gpatch, byte *colormap, uint32_t drawf
 
     if( colormap == reg_colormaps )
         colormap = NULL;   // the same thing; one copy, not two
-    drawflags = (drawflags & (TF_Opaquetrans|TF_2DCopy))
-              | ((drawflags & TF_2DCopy)? 0 : TF_SpriteCopy);
+    drawflags = (drawflags & (TF_Opaquetrans|TF_2DCopy|TF_PSpriteCopy))
+              | ((drawflags & (TF_2DCopy|TF_PSpriteCopy))? 0 : TF_SpriteCopy);
 
     for(grmip = &gpatch->mipmap ; grmip->nextcolormap ;)
     {
         grmip = grmip->nextcolormap;
         if( grmip->colormap == colormap
-            && (grmip->tfflags & (TF_SpriteCopy|TF_2DCopy|TF_Opaquetrans)) == drawflags )
+            && (grmip->tfflags & (TF_MarginCopies|TF_Opaquetrans)) == drawflags )
         {
             HWR_LoadMappedPatch( grmip, gpatch );
             return grmip;
