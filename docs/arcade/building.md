@@ -165,6 +165,36 @@ The script now tells the two cases apart by looking for live data beside the bin
 was updated in place; without, it offers to run from `bin/` or to copy the binary out, with the
 warning about the glob attached.
 
+## It stages `common/legacy.wad` beside the binary
+
+Both scripts copy `common/legacy.wad` into the output `bin/` (`debug/bin/` or `tsan/bin/` for those
+builds) once the compile succeeds, so a fresh checkout runs from `bin/` with only an IWAD added. It
+also makes `common/legacy.wad` the one copy to edit: change it, rebuild, and the cabinet has it.
+
+This works because legacy.wad has **its own search, and the program's directory is first**
+(`d_main.c`, `found_legacy_wad`): progdir, then `LEGACYWADDIR`, and only then the general
+doomwaddir list. That list is the opposite way round for everything else — `DOOMWADDIR`, the
+current directory, `<bindir>/wads/`, the `DEFWADS` in `doomdef.h` (`~/games/doom` among them), and
+the program's directory *last* — so an IWAD beside the binary loses to one in `~/games/doom`, but a
+`legacy.wad` beside it beats every other copy. The consequence is that the cabinet's old live copy
+in `~/games/doom/legacy.wad` is **shadowed** from the first build that stages one: edits there stop
+reaching the screen, silently.
+
+Two rules keep this from destroying anything:
+
+- **Copied only when it differs** (`cmp` / `Get-FileHash`), so a rebuild leaves the file alone.
+- **A staged copy that differs and is newer than `common/`'s was edited in place**, and is kept as
+  `legacy.wad.bak` with a warning before being replaced. Nothing else can tell "stale" apart from
+  "somebody's afternoon of work in SLADE", and the timestamp is the only evidence either way.
+
+`dogs.wad` is deliberately not staged: nothing loads it except an explicit `-file dogs.wad`.
+
+Verified: the block was lifted out of `build.sh` and driven through all five cases (source missing,
+fresh, identical, stale, edited in place); a full `build.sh` run staged the wad; and a headless run
+from a scratch directory with `-v` reported `Legacy.wad: <rundir>/legacy.wad` with
+`~/games/doom/legacy.wad` also on the search path. `build.ps1`'s copy mirrors it but has not been
+run — there is no PowerShell on the Linux machines.
+
 ## Windows
 
 DoomLegacy is a GNU Make project written for a Unix-like toolchain; **Visual Studio cannot build
