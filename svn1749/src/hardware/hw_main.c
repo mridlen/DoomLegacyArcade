@@ -1046,6 +1046,8 @@ void HWR_DrawSegsSplats( FSurfaceInfo_t * pSurfin )
 {
     wallsplat_t * splat;
     MipPatch_t * gpatch;
+    Mipmap_t * smip;           // [Arcade] the splat's margin copy
+    float margin, x1, z1, x2, z2;
     int blendmode = PF_Translucent;
     FSurfaceInfo_t pSurf2;
     fixed_t tmy;
@@ -1086,23 +1088,46 @@ void HWR_DrawSegsSplats( FSurfaceInfo_t * pSurfin )
             continue;
 
         gpatch = W_CachePatchNum(splat->patch, PU_CACHE);
-        HWR_GetPatch(gpatch);
+        // [Arcade] The world-sprite margin copy, with a clear texel all round
+        // when it fits (TF_SpriteMargin), so a bullet mark or blood splat
+        // fades out under Bilinear/Trilinear instead of stopping in a hard
+        // straight line where its art touches its box.  The clear texel is
+        // black with no alpha, which leaves the wall untouched under both the
+        // subtractive and the translucent blend.  See HWR_GetMarginPatch.
+        smip = HWR_GetMarginPatch(gpatch, NULL, 0);
+        margin = (smip->tfflags & TF_SpriteMargin)? 1.0f : 0.0f;
 
         // Consider unrolling the loop and merge with the first assigns.
-        vxtx[0].x = vxtx[3].x = FIXED_TO_FLOAT( splat->v1.x );
-        vxtx[0].z = vxtx[3].z = FIXED_TO_FLOAT( splat->v1.y );
-        vxtx[2].x = vxtx[1].x = FIXED_TO_FLOAT( splat->v2.x );
-        vxtx[2].z = vxtx[1].z = FIXED_TO_FLOAT( splat->v2.y );
+        x1 = FIXED_TO_FLOAT( splat->v1.x );
+        z1 = FIXED_TO_FLOAT( splat->v1.y );
+        x2 = FIXED_TO_FLOAT( splat->v2.x );
+        z2 = FIXED_TO_FLOAT( splat->v2.y );
+        if( margin > 0.0f && gpatch->width > 0 )
+        {
+            // A texel is one map unit each way (the quad is the patch's
+            // width along the wall and its height up it), so step one unit
+            // out along the wall at each end and the art lands where it did.
+            float ux = (x2 - x1) / (float) gpatch->width;
+            float uz = (z2 - z1) / (float) gpatch->width;
+            x1 -= ux;  z1 -= uz;
+            x2 += ux;  z2 += uz;
+        }
+        vxtx[0].x = vxtx[3].x = x1;
+        vxtx[0].z = vxtx[3].z = z1;
+        vxtx[2].x = vxtx[1].x = x2;
+        vxtx[2].z = vxtx[1].z = z2;
 
         tmy = splat->top;
         if (splat->yoffset)
             tmy += *splat->yoffset;
 
-        vxtx[2].y = vxtx[3].y = FIXED_TO_FLOAT( tmy ) + (gpatch->height >> 1);
-        vxtx[0].y = vxtx[1].y = FIXED_TO_FLOAT( tmy ) - (gpatch->height >> 1);
+        vxtx[2].y = vxtx[3].y = FIXED_TO_FLOAT( tmy ) + (gpatch->height >> 1) + margin;
+        vxtx[0].y = vxtx[1].y = FIXED_TO_FLOAT( tmy ) - (gpatch->height >> 1) - margin;
 
-        vxtx[3].sow = vxtx[3].tow = vxtx[2].sow = vxtx[0].tow = 0.0f;
-        vxtx[1].sow = vxtx[1].tow = vxtx[2].tow = vxtx[0].sow = 1.0f;
+        // The copy's own span, margin included.
+        vxtx[3].sow = vxtx[3].tow = vxtx[2].tow = vxtx[0].sow = 0.0f;
+        vxtx[1].sow = vxtx[2].sow = smip->max_s;
+        vxtx[1].tow = vxtx[0].tow = smip->max_t;
 
         memcpy(&pSurf2, pSurfin, sizeof(FSurfaceInfo_t));
         switch (splat->flags & SPLATDRAWMODE_MASK)
