@@ -2351,6 +2351,9 @@ mobj_t * P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, mobjtype_t type)
     {
         mobj->thinker.function = TFI_MobjThinker;
         P_AddThinker(&mobj->thinker);
+        // [Arcade] P_AddThinker files everything as TH_misc; an object picks
+        // its class-list here, now that its function is set.
+        P_UpdateClassThink(&mobj->thinker, TH_unknown);
     }
 
     if (mobj->spawnpoint)
@@ -2443,7 +2446,11 @@ boolean P_MorphMobj( mobj_t * mo, mobjtype_t type, int mmflags, int keepflags )
     {
         mo->thinker.function = TFI_MobjThinker;
         if( mo->thinker.next == NULL )  // Not currently linked into thinker
+        {
             P_AddThinker(&mo->thinker);
+            // [Arcade] Classify now that the function is set (see P_AddThinker).
+            P_UpdateClassThink(&mo->thinker, TH_unknown);
+        }
     }
    
     if( mmflags & MM_telefog )

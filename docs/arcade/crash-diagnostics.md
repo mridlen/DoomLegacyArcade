@@ -27,6 +27,10 @@ empty list*, after the door existed. Past the door's small struct the "mobj" fie
 graphic (a column-offset table, then palette bytes like `0x6A6A6A6A`), and that value happens to
 carry both `MF_FRIEND` and `MF_COUNTKILL`.
 
+(**Solved 2026-09-24**: the door was filed there by `P_AddThinker` itself, at the moment it was
+created, from its memory's previous contents -- see *The cause, found on 2026-09-24* below. "After
+the door existed" in the paragraph above was the wrong inference.)
+
 What the core could not say is **who inserted it**. Everything after that was reconstruction:
 
 - The simulation was ruled out as the whole story: the demo replays identically on the Pi and on
@@ -132,12 +136,65 @@ core: a door in the friends list. And whether the memory has been reused by then
 allocation history, including what the renderer happened to cache -- which is why the same demo
 plays identically on both machines and faults on only one.
 
-This is the leading explanation, **not a proven one**: E1M5 on ITYTD has no respawn, and the E1M5
-replays never took this path. If it happens again, the anomaly lines and the ring will say. A fix
+**Superseded (2026-09-24): this was not the Pi crash** -- see the next section. The stale `target`
+is still real and still unfixed, but it did not put the door in the list. What follows is kept as it
+was written. It was the leading explanation, **not a proven one**: E1M5 on ITYTD has no respawn,
+and the E1M5 replays never took this path. If it happens again, the anomaly lines and the ring will say. A fix
 belongs in its own change and has to keep demos in sync -- the candidates are turning
 `REFERENCE_COUNTING` on (engine wide: every `target`/`tracer`/`lastenemy` write must go through
 `SET_TARGET_REF`), or not following a `target` whose object is already removed, which is
 behaviour-identical only while the removed object is still intact.
+
+## The cause, found on 2026-09-24
+
+The Pi crashed again, same place (`PIT_FindTarget`, `p_enemy.c:1735`, from `P_LookForMonsters`),
+after hours of untouched attract, in `doomu-sl_E1M8_sk0_max.lmp`. This time the black box named the
+culprit. The ring's last entry, one tic before the fault:
+
+```
+gametic 1670132 leveltime 3943 thinker 0x7f8d65bb54 function 2 type -336860181 health 8488
+  from doomlegacyarcade(+0x9cacc)      -> EV_BuildStairs p_floor.c:935
+```
+
+`p_floor.c:935` is `P_AddThinker( &mfloor->thinker )` for a new **stair step**, and the thinker
+`PIT_FindTarget` faulted on is that same address. `function 2` is `TFI_MobjThinker` -- recorded for
+something that was about to become a floor mover.
+
+**`P_AddThinker` classified the thinker by a field its caller had not written yet.** It ended with
+`P_UpdateClassThink( thinker, TH_unknown )`, which reads `thinker->function`, and for
+`TFI_MobjThinker` also `health`, `flags` and `type`. But `Z_Malloc` does not clear, and nearly every
+caller -- all of `p_doors.c`, `p_floor.c`, `p_ceilng.c`, `p_plats.c`, `p_lights.c`, `p_genlin.c`,
+`p_spec.c`, the FraggleScript movers, the savegame loader -- follows the vanilla pattern of
+`Z_Malloc`, `P_AddThinker`, *then* `function = ...`. So classification read the memory's previous
+owner. When that block had last been a live monster, the new door or stair step was filed into the
+enemies list, or -- if the leftover `flags` carried `MF_FRIEND`, as the cached graphic did on
+2026-09-22 -- the friends list. It stays there until it is removed, since nothing reclassifies a
+sector thinker, and the first monster to look for a target reads it as a monster.
+
+This is an upstream bug (MBF and PrBoom have the same `P_AddThinker`; PrBoom `memset`s its sector
+thinkers, which hides it). The only callers that set `function` *before* `P_AddThinker` are the
+three that add objects: `P_SpawnMobj`, `P_MorphMobj` (Heretic's chicken), and the savegame's mobj
+restore.
+
+**Fix:** `P_AddThinker` no longer classifies. It passes `TH_misc` (which is not a real list: it
+just clears `cnext`/`cprev`), so nothing about the thinker's contents is read. The three object
+callers call `P_UpdateClassThink( ..., TH_unknown )` themselves, right after `P_AddThinker`, once
+`function` is set. For an object the result is identical -- the same list, appended at the same end
+-- so demos cannot drift; for everything else it only changes the case that was reading garbage.
+
+Why the Pi and never the laptop: it needs a freed monster's block reused for a sector thinker, with
+leftovers that pass the `health > 0 && MF_COUNTKILL` test, which depends on allocation history over
+a long run. Both Pi crashes came after 30 minutes to hours of continuous attract. None of the 123
+record demos, each replayed in a fresh process on the laptop, misfiled anything even with the old
+code (a per-tic walk of both lists, temporary instrumentation), and neither did a 15-minute
+headless attract soak of the old code on the laptop (seven demos). So there is no laptop
+reproduction; the evidence is the Pi's ring entry above, which can only have been written with
+`function` still stale. The fix removes the read rather than handling its result, so the misfiling
+is unreachable, not merely less likely.
+
+Verified: `make demotest` against a baseline from the unfixed `main` binary, **123 compared, 0
+desynced**. The "ended at a different tic" lines it prints are the load-dependent noise described in
+`demo-desync.md`; the unfixed binary against its own baseline prints the same kind.
 
 ## A backtrace that stops at libc means a jump to address 0
 
