@@ -8,7 +8,17 @@
 #include "doomtype.h"
 #include "doomstat.h"     // skill_e
 
-#define HS_NUMSKILLS     5     // sk_baby .. sk_nightmare (doomstat.h)
+// [Arcade] Six score slots, not five.  0..4 are the engine's skills
+// (sk_baby .. sk_nightmare, doomstat.h); 5 is No Monsters, a Single Level
+// category played at Ultra-Violence with -nomonsters (dsda-doom's "NoMo").
+// It is a *score* key only -- never a skill_e the engine runs -- and it is
+// listed first wherever the skills are shown, as the easiest (hs_skill_order).
+#define HS_NUMSKILLS     6
+#define HS_SK_NOMON      5
+
+// [Arcade] A category's name as the player reads it, at a score skill: "MAX"
+// is "100%S" under No Monsters.  Display only; the files keep "max".
+const char *  HS_Cat_Label( int skill, int cat );
 
 // [Arcade] Buffer size for the always-on background recording.
 // ~5-9 bytes/tic at TICRATE=35 => ~175-280 B/s; 8MB gives well over an
@@ -190,6 +200,12 @@ boolean  HS_Survival_Entry(int episode, skill_e skill, int cat,
 // shared header with the category as a row label.  See the definition.
 void  HS_Draw_Skill_Records( int episode, skill_e skill, int x, int y );
 void  HS_Draw_AttractTable(void);
+// [Arcade] The main menu's High Scores page: the same pages the attract cycle
+// shows, flipped by hand.  Its own cursor, so browsing never moves the attract
+// cycle's place.  dir is -1 or +1.
+void  HS_Browse_Reset(void);
+void  HS_Browse_Step(int dir);
+void  HS_Draw_Browse(void);
 boolean  HS_Have_Records(void);   // any times for the running game?
 const char *  HS_NextRecordDemoPath(void);
 

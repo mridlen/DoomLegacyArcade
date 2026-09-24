@@ -259,6 +259,9 @@ void G_InitNew (skill_e skill, const char* mapname, boolean resetplayer);
 // A normal game starts at map 1,
 // but a warp test can start elsewhere
 void G_DeferedInitNew (skill_e skill, const char* mapname, boolean StartSplitScreenGame);
+// [Arcade] The same, choosing whether monsters spawn (Single Level's No Monsters).
+void G_DeferedInitNew_Monsters (skill_e skill, const char* mapname,
+                                boolean StartSplitScreenGame, boolean monsters);
 void G_DoLoadLevel (boolean resetplayer);
 
 void G_DeferedPlayDemo (const char* demo);

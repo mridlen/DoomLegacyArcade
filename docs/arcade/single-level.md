@@ -226,3 +226,40 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     21 distinct demos with no duplicate, no immediate repeat anywhere including at the two bag
     boundaries, and a second run produced a different order. A separate run confirmed a MAP02
     record set mid-session appeared in the rotation immediately after that level exit.
+
+---
+
+## No Monsters (2026-09-24)
+
+A sixth difficulty on the Single Level page's Skill row, **to the left of I'm Too Young To Die** as
+the easiest: the map at **Ultra-Violence with `-nomonsters`**, which is the rule dsda-doom scores
+its "NoMo" category under. Single Level only, by design — most campaigns cannot be finished with
+nothing to kill, and neither can some single maps (E1M8's exit is behind the Barons). The operator
+can take the row away with **Enable No Monsters** (`menus.md`).
+
+- **The Skill row is `cv_slskill` now, not `cv_skill`.** A sixth value on `cv_skill` would have
+  reached the Multiplayer Start Game page too, which passes the value straight to
+  `map -skill %d`, where 0 is skill -1. `slskill_cons_t` is `skill_cons_t` with `{0,"No Monsters"}`
+  in front, so 1..5 still mean what they did. `M_SingleLevel_Skill()` — still the one conversion
+  point for all five sites listed above — returns `HS_SK_NOMON` for 0.
+  - The single level page's skill no longer follows the Start Game page's, since they are
+    different cvars. Neither is saved, so each starts at Ultra-Violence per session.
+- **Launching** is `G_DeferedInitNew_Monsters(sk_hard, map, false, false)`. Every menu start used
+  to hardcode `-monsters 1`; the plain `G_DeferedInitNew` is now a wrapper passing true. The map
+  command sets `nomonsters` from `-monsters` on every start, so a No Monsters run cannot leak into
+  the next game started from a menu.
+- **Scoring** keys the run under score slot `HS_SK_NOMON` (5) — see `high-scores.md`, "No Monsters
+  is a sixth score slot". The mapping is done in `HS_LevelExit` from `nomonsters` itself, which the
+  demo header carries, so a replay takes the same branch.
+- **Switched off, the list starts one entry in.** `M_SingleLevel_Update_Items` (run from the
+  drawer) points `cv_slskill.PossibleValue` at `&slskill_cons_t[1]`, so the arrows cannot reach it,
+  and moves a selection left on it to ITYTD. Assignments computed from current state only, so it is
+  idempotent the way a drawer must be.
+- **"Watch max run" reads "Watch 100%S run"** when No Monsters is selected, and the board's MAX
+  heading reads `100%S` (`HS_Cat_Label`): with nothing to kill, max is 100% secrets alone.
+- Verified headless on Doom 2 MAP01 through a temporary console hook onto `M_SingleLevel_Start`:
+  `gameskill` 3 (UV), `nomonsters` 1, `totalkills` 0; the exit wrote
+  `doom2-sl MAP01 5 106 speed` to `highscores.dat`, `doom2-sl MAP01 MAP01 5 speed 106` to
+  `runs.dat` (once the game was ended with `exitgame`, which is when the board commits) and
+  `doom2-sl_MAP01_sk5_speed.lmp`, and **no** pacifist or tyson line. With `nomonstersmenu 0` the
+  row moved from 0 to 1 and the list began at ITYTD.

@@ -2786,7 +2786,14 @@ static void WI_Draw_Stats(void)
     // of 320.  The percent patches are 12 tall and hu_font glyphs 7, so +2
     // centres the text on the row.  Option 0 is the font's native red, which
     // reads on this screen's grey where V_WHITEMAP would not.
-    if( sp_maxed && (gametic & 16) )
+    //
+    // [Arcade] Not under No Monsters.  There that category is 100% secrets
+    // and is called "100%S", which is 37px against STCFN: at 287 it would run
+    // to 324 of 320, and moved left far enough to fit it would touch the '%'
+    // patch.  The kills row would be announcing a category with no kills in
+    // it besides.  The Secrets row already reads 100%, and the record table
+    // below names the category.
+    if( sp_maxed && (gametic & 16) && ! nomonsters )
     {
         V_DrawString( SP_MAXIND_X, SP_STATSY + 2,        0, "MAX" );
         V_DrawString( SP_MAXIND_X, SP_STATSY + 2*lh + 2, 0, "MAX" );
