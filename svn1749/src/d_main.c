@@ -494,10 +494,11 @@ static boolean hs_page_after_demo = false;  // [Arcade] show scores after this d
 // sequence, which showed CREDIT only once per three demos and filled the rest
 // with the help and order pages.  Named because demosequence is read outside
 // D_DoAdvanceDemo as well -- see D_PageDrawer.
+// [Arcade] CREDIT2 (the cabinet's own splash) comes before CREDIT.
 enum {
     attract_title = 0,
-    attract_credit,
     attract_credit2,
+    attract_credit,
     attract_demo,
     attract_num_steps
 };
@@ -2541,7 +2542,7 @@ void D_DoAdvanceDemo(void)
     // CREDIT2 -- an older copy, or another install -- still cycles cleanly.
     if( demosequence == attract_credit2
         && ! VALID_LUMP( W_CheckNumForName("CREDIT2") ) )
-        demosequence = attract_demo;
+        demosequence = attract_credit;
 
     // [Arcade] Leaving the score pages.  Step past the one the block ended
     // on, so the next appearance starts on a new page rather than repeating
@@ -2592,6 +2593,12 @@ void D_DoAdvanceDemo(void)
             }
             gamestate = GS_DEMOSCREEN;
             break;
+        case attract_credit2:
+            pagetic = TICRATE * CREDIT2_SECS;
+            gamestate = GS_DEMOSCREEN;
+            pagename = "CREDIT2";
+            break;
+
         case attract_credit:
             pagetic = 200;
             gamestate = GS_DEMOSCREEN;
@@ -2602,12 +2609,6 @@ void D_DoAdvanceDemo(void)
                            ? "CREDIT" : "ORDER";
             else
                 pagename = "CREDIT";
-            break;
-
-        case attract_credit2:
-            pagetic = TICRATE * CREDIT2_SECS;
-            gamestate = GS_DEMOSCREEN;
-            pagename = "CREDIT2";
             break;
 
         case attract_demo:
