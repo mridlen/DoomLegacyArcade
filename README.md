@@ -33,6 +33,7 @@ to get you banned.
 - [Running](#running)
 - [Playing](#playing)
 - [Operator guide](#operator-guide)
+- [Menu options reference](docs/menu-options.md)
 - [Where your data lives](#where-your-data-lives)
 - [Troubleshooting](#troubleshooting)
 - [Credits and licence](#credits-and-licence)
@@ -634,6 +635,9 @@ Run with `-devmode` to unlock everything:
 This gives you the full stock menus, disables the competitive ruleset, and is the **only** mode
 that saves settings. Launch with `-devmode`, change what you want, quit. Player sessions then start
 from that baseline.
+
+Every menu page and row, what it does, and whether players can see it, is listed in
+[`docs/menu-options.md`](docs/menu-options.md).
 
 ### Unlocking the cabinet without a command line
 

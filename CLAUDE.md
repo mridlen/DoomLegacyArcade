@@ -434,6 +434,11 @@ are kept below, in this file.
 | `docs/arcade/cabinet-link.md` | Networked cabinets. **Phases 1, 2 and 3 built**: TLS + passcode pairing, pinned identities, allow list, lockout, presence, the Cabinet Link page; shared high scores and record demos (the merge, epochs, the pull protocol); invites from the join screen, linked Deathmatch/Campaign games, the sealed UDP game channel, `tools/linktest.sh`; Select Game Sync | `d_link.c`, `d_linkgame.c`, `d_linkscore.c`, `d_linksel.c`, `hs_merge.c`, `HAVE_LINK`, `tools/linktest.sh`, `i_tcp.c` socket code, the join screen, `M_Arcade_MP_Go`, or the score file formats |
 | `docs/arcade/gotchas.md` | Debugging archaeology: demo desync, encoding, palette tints, PK3/music limits | when something behaves impossibly |
 
+`docs/menu-options.md` is the other kind of doc: a reference for players and operators with
+every menu page and row, what it does, and who can see it (★ marks what this fork adds). **When you
+add, remove, rename or re-gate a menu row, update it in the same commit**, or it will quietly fall
+out of date.
+
 ### Where the arcade code lives
 
 The table above maps subjects to *design notes*; this one maps them to *source*. Every local
