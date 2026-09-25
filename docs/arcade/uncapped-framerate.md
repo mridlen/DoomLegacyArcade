@@ -192,6 +192,13 @@ wrong again:
   more than four intervals behind, so a machine that cannot keep up (or a spell in a menu) does not
   produce a burst of catch-up frames.
 
+- **Nothing tic-paced may live inside `draw_now`.** Under a cap, "this pass ran a tic" and "this
+  pass draws" are independent, and the limiter turns `draw_now` off on a tic's own pass whenever the
+  next frame is not yet due. `S_UpdateSounds` sat inside the draw branch gated on `tic_advanced` and
+  was skipped for up to 175 tics at a time at a cap of 60. It releases finished sound channels, so
+  every channel filled and the plasma rifle went silent mid-burst. It now runs once per tic, outside
+  the branch. → `sound.md`
+
 The clock is the tic counter with the sub-tic fraction below it (`I_GetTime() << FRACBITS |
 I_GetTimeFrac()`), which gives ~0.4 µs resolution without needing another platform function. Its
 two halves come from separate reads and can very occasionally appear to step backwards across a tic

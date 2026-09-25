@@ -1176,6 +1176,12 @@ An older Windows build muted everything when **Music Cabinet** muted the music. 
 Cabinet to `All`. If it still happens, run that cabinet with `-volog`, which traces each sound to
 `volog.txt` next to the program.
 
+**A sound effect cuts out, or a weapon goes quiet during rapid fire.**
+Older builds with **Framerate Cap** above 35 could fill every sound channel with finished sounds and
+refuse new ones. The plasma rifle was the worst case. Update. If a sound still stops early, run with
+`-sndlog`, or `-sndlog plasma` for one sound. It writes `sndlog.txt` next to the program, with one
+line for each sound stopped early and the reason.
+
 **A game is missing from Select Game.**
 Its IWAD wasn't found. Run with `-v` to see the search paths.
 

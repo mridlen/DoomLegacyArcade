@@ -153,6 +153,11 @@ typedef enum
 } channel_type_t;
 
 
+// [Arcade] -sndlog: why a sound stopped before it finished.  See s_sound.c.
+extern byte  sndlog_on;
+boolean S_Sndlog_Match( const sfxinfo_t * a, const sfxinfo_t * b );
+void S_Sndlog( const char * fmt, ... );
+
 // General sounds, no location.
 void S_StartSound( sfxid_t sfx_id );
 

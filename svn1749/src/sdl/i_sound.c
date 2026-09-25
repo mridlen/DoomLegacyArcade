@@ -327,6 +327,7 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     mix_channel_t  *  chanp;
     int i;
     int slot;
+    byte single_cut = 0;   // [Arcade] -sndlog
 
     if (nosoundfx)
         return 0;
@@ -354,6 +355,7 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
                 }
                 // Kill, Reset.
                 chanp->data_ptr = 0;
+                single_cut = 1;   // [Arcade] -sndlog
                 break;
             }
         }
@@ -362,6 +364,7 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     // Loop all channels to find unused channel, or oldest SFX.
     slot = 0;  // default
     int oldest = -1;
+    int busy = 0;   // [Arcade] -sndlog: every slot was playing
     for (i = 0; (i < NUM_CHANNELS); i++)
     {
         if (! mix_channel[i].data_ptr )  // unused
@@ -376,9 +379,13 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
             slot = i;
             oldest = agpr;
         }
+        busy++;
     }
    
     chanp = & mix_channel[slot];  // channel to use
+    // [Arcade] -sndlog: what this start is about to cut off, reported once
+    // mix_lock is released.
+    sfxid_t  evicted = ( busy == NUM_CHANNELS && chanp->data_ptr ) ? chanp->sfxid : sfx_None;
 
     // Preserve sound SFX id,
     //  e.g. for avoiding duplicates of chainsaw.
@@ -481,6 +488,13 @@ int I_StartSound(sfxid_t sfxid, int vol, int sep, int pitch, int priority)
     chanp->handle = handle;
 
     mix_lock_give();
+
+    // [Arcade] -sndlog
+    if( single_cut && S_Sndlog_Match( & S_sfx[sfxid], NULL ) )
+        S_Sndlog( "CUT %s in mixer: single-copy sound restarted\n", S_sfx[sfxid].name );
+    if( evicted != sfx_None && S_Sndlog_Match( & S_sfx[evicted], & S_sfx[sfxid] ) )
+        S_Sndlog( "CUT %s in mixer slot %d by %s: all %d mixer slots busy, oldest-by-age+priority evicted\n",
+                  S_sfx[evicted].name, slot, S_sfx[sfxid].name, NUM_CHANNELS );
 
     // Returns a handle
     return handle;
