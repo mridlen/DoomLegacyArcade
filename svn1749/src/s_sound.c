@@ -114,6 +114,7 @@
 #include "p_info.h"
 
 #include "i_sound.h"
+#include "i_system.h"   // [Arcade] -sndlog: I_GetTime
 #include "s_sound.h"
 #include "qmus2mid.h"
 #include "w_wad.h"
@@ -333,7 +334,88 @@ typedef struct
     const xyz_t * origin;    // origin of sound
     int16_t   priority;  // Heretic style signed priority, adjusted for dist,
     int       handle;    // handle of the sound being played
+    // [Arcade] -sndlog: gametic at which the mobj this sound came from was
+    // removed while the sound played on, 0 if it has not been.  Its origin
+    // then points into freed memory -- see S_StopXYZSound.
+    tic_t     orphan_tic;
+    tic_t     start_tic;   // [Arcade] -sndlog: when it started
+    // [Arcade] Where a sound that outlived its mobj plays on from; origin is
+    // pointed here by S_StopXYZSound.
+    xyz_t     orphan_pos;
 } channel_t;
+
+
+// [Arcade] -sndlog: a line for every sound cut off before it finished, with
+// the reason.  Written for "the plasma rifle sound cuts off on E4M2 but not
+// E1M1".  A sound can be stopped early in five places, in two layers --
+// S_get_channel (same origin, or a lower priority stolen when every channel
+// is busy), S_UpdateSounds (out of earshot), S_StopXYZSound (its source
+// removed) and the mixer's own slot table in sdl/i_sound.c -- and nothing
+// said which one did it.
+//
+// "-sndlog" alone logs every cut and every refused start.  "-sndlog plasma"
+// logs only the lines naming that sfx (the lump name without DS), and also
+// every start of it, so each plasma shot can be followed to how it ended.
+// Writes sndlog.txt beside the program, flushed per line, for the same reason
+// -volog does: the Windows build has no console.
+byte  sndlog_on = 0;
+static FILE * sndlog_fp = NULL;
+static const char * sndlog_filter = NULL;
+
+static void S_Sndlog_Init( void )
+{
+    int p = M_CheckParm( "-sndlog" );
+    if( ! p )
+        return;
+    sndlog_on = 1;
+    if( p + 1 < myargc && myargv[p+1][0] != '-' && myargv[p+1][0] != '+' )
+        sndlog_filter = myargv[p+1];
+    sndlog_fp = fopen( "sndlog.txt", "w" );
+    S_Sndlog( "SNDLOG start, filter=%s, snd_channels=%d\n",
+              sndlog_filter ? sndlog_filter : "(all)", cv_numChannels.value );
+}
+
+// True when a line about these sfx should be written.  Either may be NULL.
+boolean S_Sndlog_Match( const sfxinfo_t * a, const sfxinfo_t * b )
+{
+    if( ! sndlog_on )
+        return false;
+    if( ! sndlog_filter )
+        return true;
+    return ( a && a->name && strcasecmp( a->name, sndlog_filter ) == 0 )
+        || ( b && b->name && strcasecmp( b->name, sndlog_filter ) == 0 );
+}
+
+void S_Sndlog( const char * fmt, ... )
+{
+    char buf[512];
+    va_list ap;
+    int n;
+
+    if( ! sndlog_on )
+        return;
+    // Game tic, then the wall clock in tics: they part company when the
+    // game stalls or catches up, and a sound's length is wall-clock time.
+    n = snprintf( buf, sizeof(buf), "T%-6u W%-6u ", (unsigned int) gametic,
+                  (unsigned int) I_GetTime() );
+    va_start( ap, fmt );
+    vsnprintf( buf + n, sizeof(buf) - n, fmt, ap );
+    va_end( ap );
+    GenPrintf( EMSG_warn, "%s", buf );
+    if( sndlog_fp )
+    {
+        fputs( buf, sndlog_fp );
+        fflush( sndlog_fp );
+    }
+}
+
+static const char * S_Sndlog_Name( const sfxinfo_t * sfx )
+{
+    return ( sfx && sfx->name ) ? sfx->name : "?";
+}
+
+// Channels in use, for the "busy" figure on a line.
+static int S_Sndlog_Busy( void );
 
 // The set of channels available.
 // Number of channels is set by cv_numChannels
@@ -466,6 +548,7 @@ static void SetChannelsNum(void)
     {
         channels[i].sfxinfo = NULL;
         channels[i].origin = NULL;
+        channels[i].orphan_tic = 0;   // [Arcade] -sndlog
     }
 
 }
@@ -630,6 +713,7 @@ void S_Init(int sfxVolume, int musicVolume)
     S_SetMusicVolume(musicVolume);
 
     SetChannelsNum();
+    S_Sndlog_Init();   // [Arcade] -sndlog
 
     // no sounds are playing, and they are not mus_paused
     mus_paused = false;
@@ -788,6 +872,7 @@ int S_get_channel(const xyz_t * origin, sfxinfo_t * sfxinfo,
     int chanlimit = sfxinfo->limit_channels; // 1..99
     int cnum;  // channel number to use
     channel_t * c;
+    const char * cut_why = "same origin";   // [Arcade] -sndlog
 
     // Using the Heretic system, higher num is higher priority.
     // Priority adjusted by dist.
@@ -838,12 +923,42 @@ int S_get_channel(const xyz_t * origin, sfxinfo_t * sfxinfo,
         if( low_priority == -0x3FFF )  // found empty
             goto use_cnum;
         if( priority >= low_priority )  // can replace this sound
+        {
+            cut_why = "all channels busy, lowest priority stolen";  // [Arcade]
             goto reuse_cnum;
+        }
     }
     // No lower priority.  Sorry, Charlie.
+    // [Arcade] -sndlog
+    if( S_Sndlog_Match( sfxinfo, NULL ) )
+    {
+        // Name what is holding the channels: sfx/age in tics, * = orphaned.
+        char held[256];
+        int  hn = 0;
+        held[0] = 0;
+        for( cnum = 0; cnum < cv_numChannels.value && hn < (int)sizeof(held) - 16; cnum++ )
+        {
+            c = &channels[cnum];
+            hn += snprintf( held + hn, sizeof(held) - hn, " %s/%u%s",
+                            S_Sndlog_Name(c->sfxinfo),
+                            (unsigned int)(gametic - c->start_tic),
+                            c->orphan_tic ? "*" : "" );
+        }
+        S_Sndlog( "REFUSED %s pri=%d: all %d channels busy, lowest pri=%d%s; held by%s\n",
+                  S_Sndlog_Name(sfxinfo), priority, cv_numChannels.value,
+                  low_priority, (chanlimit <= 0) ? " (over its limit)" : "", held );
+    }
     return -1;
 
  reuse_cnum:
+    // [Arcade] -sndlog: only a sound still playing is being cut off.
+    c = &channels[cnum];
+    if( c->sfxinfo && I_SoundIsPlaying(c->handle)
+        && S_Sndlog_Match( c->sfxinfo, sfxinfo ) )
+        S_Sndlog( "CUT %s ch=%d pri=%d by %s pri=%d: %s, busy=%d/%d\n",
+                  S_Sndlog_Name(c->sfxinfo), cnum, c->priority,
+                  S_Sndlog_Name(sfxinfo), priority, cut_why,
+                  S_Sndlog_Busy(), cv_numChannels.value );
     S_StopChannel(cnum);
  use_cnum:   
     c = &channels[cnum];
@@ -852,6 +967,8 @@ int S_get_channel(const xyz_t * origin, sfxinfo_t * sfxinfo,
     c->sfxinfo = sfxinfo;
     c->priority = priority;
     c->origin = origin;
+    c->orphan_tic = 0;   // [Arcade] -sndlog
+    c->start_tic = gametic;
 
     return cnum;
 }
@@ -1121,6 +1238,15 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
     // Returns a handle to a mixer/output channel.
     channels[cnum].handle =
       I_StartSound(sfx_id, sp1.volume, sp1.sep, sp1.pitch, priority);
+
+    // [Arcade] -sndlog: starts are only logged for the filtered sfx, where
+    // they are what lets each one be followed to how it ended.
+    if( sndlog_filter && S_Sndlog_Match( sfx, NULL ) )
+        S_Sndlog( "START %s ch=%d pri=%d vol=%d dist=%d from=%s busy=%d/%d\n",
+                  S_Sndlog_Name(sfx), cnum, priority, sp1.volume, sp1.dist,
+                  ( ! origin ) ? "none" : ( mo && mo == displayplayer_ptr->mo ) ? "player"
+                  : mo ? "mobj" : "sector",
+                  S_Sndlog_Busy(), cv_numChannels.value );
 done:
     return;
 }
@@ -1237,7 +1363,30 @@ void S_StopXYZSound(const xyz_t * origin)
         {
             if( (channels[cnum].sfxinfo->flags & SFX_org_kill) )
             {
+                // [Arcade] -sndlog
+                if( I_SoundIsPlaying(channels[cnum].handle)
+                    && S_Sndlog_Match( channels[cnum].sfxinfo, NULL ) )
+                    S_Sndlog( "CUT %s ch=%d: its source was stopped or removed\n",
+                              S_Sndlog_Name(channels[cnum].sfxinfo), cnum );
                 S_StopChannel(cnum);
+            }
+            else
+            {
+                // [Arcade] The sound plays on, but when this is a mobj being
+                // removed (P_RemoveMobj) its origin is about to be freed, and
+                // S_UpdateSounds would go on reading a position out of freed
+                // zone memory every tic -- whatever was allocated there next.
+                // A missile's firing sound (plasma, rocket, imp fireball) is
+                // played from the missile itself, so this is every missile
+                // that hits something within its sound's length.  Keep the
+                // last position in the channel and play on from there.
+                channel_t * c = &channels[cnum];
+                c->orphan_pos = *origin;
+                c->origin = &c->orphan_pos;
+                c->orphan_tic = gametic ? gametic : 1;   // -sndlog
+                if( S_Sndlog_Match( c->sfxinfo, NULL ) )
+                    S_Sndlog( "ORPHAN %s ch=%d: source removed, plays on from where it was\n",
+                              S_Sndlog_Name(c->sfxinfo), cnum );
             }
         }
     }
@@ -1691,6 +1840,10 @@ void S_UpdateSounds(void)
         {
             if ( ! I_SoundIsPlaying(c->handle))
             {
+                // [Arcade] -sndlog: finished, or cut by the mixer (which
+                // logs that itself).  Only for the filtered sfx.
+                if( sndlog_filter && S_Sndlog_Match( c->sfxinfo, NULL ) )
+                    S_Sndlog( "END %s ch=%d\n", S_Sndlog_Name(c->sfxinfo), cnum );
                 // if channel is allocated but sound has stopped,
                 //  free it
                 S_StopChannel(cnum);
@@ -1750,6 +1903,17 @@ void S_UpdateSounds(void)
 
                 if (!audible1)
                 {
+                    // [Arcade] -sndlog
+                    if( S_Sndlog_Match( c->sfxinfo, NULL ) )
+                    {
+                        if( c->orphan_tic )
+                            S_Sndlog( "CUT %s ch=%d: out of earshot, dist=%d (source removed %u tics ago)\n",
+                                      S_Sndlog_Name(c->sfxinfo), cnum, sp1.dist,
+                                      (unsigned int)(gametic - c->orphan_tic) );
+                        else
+                            S_Sndlog( "CUT %s ch=%d: out of earshot, dist=%d\n",
+                                      S_Sndlog_Name(c->sfxinfo), cnum, sp1.dist );
+                    }
                     S_StopChannel(cnum);
                     continue;		   
                 }
@@ -2041,6 +2205,15 @@ void S_StopMusic()
 
         mus_playing = NULL;
     }
+}
+
+// [Arcade] -sndlog
+static int S_Sndlog_Busy( void )
+{
+    int cnum, n = 0;
+    for( cnum = 0; cnum < cv_numChannels.value; cnum++ )
+        if( channels[cnum].sfxinfo )  n++;
+    return n;
 }
 
 static void S_StopChannel(int cnum)

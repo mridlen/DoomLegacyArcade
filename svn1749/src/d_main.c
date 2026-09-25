@@ -2227,16 +2227,34 @@ void D_DoomLoop(void)
             rendertimeout = entertic + TICRATE / 17;
         }
 
+        // [Arcade] Positional sound, once for every tic that ran -- NOT only
+        // on a pass that also draws.  This used to sit inside draw_now below,
+        // gated on tic_advanced, and under a frame-rate cap the two part
+        // company: the pace above turns draw_now off on a tic's own pass when
+        // the next frame is not yet due, the frame is drawn on a later pass
+        // where tic_advanced is already false, and that tic's sound update is
+        // simply lost.  When the tic and frame clocks fall into step it is lost
+        // for seconds at a time (175 tics measured on E4M2 at framerate_cap
+        // 60).  S_UpdateSounds is also what frees a channel whose sound has
+        // finished, so the finished sounds sat on all 16 channels and every
+        // new one was refused -- the plasma rifle going silent mid-burst.
+        // -sndlog shows it: channels released ten at a time, in one tic.
+        {
+            static tic_t  sound_tic = 0;
+            if( ! dedicated && gametic != sound_tic )
+            {
+                sound_tic = gametic;
+                //added:16-01-98:consoleplayer -> displayplayer (hear sounds from viewpoint)
+                S_UpdateSounds();   // move positional sounds
+            }
+        }
+
         if( draw_now )
         {
             if( ! dedicated )
             {
-                //added:16-01-98:consoleplayer -> displayplayer (hear sounds from viewpoint)
-                // [Arcade] Only when a tic actually ran.  The positional
-                // sound update is tic-paced work, and calling it several
-                // times per tic is repeated effort, not finer sound.
-                if( tic_advanced )
-                    S_UpdateSounds();   // move positional sounds
+                // [Arcade] S_UpdateSounds moved above: it is once per tic,
+                // and a tic whose own pass does not draw still needs it.
                 // Update display, next frame, with current state.
                 D_Display();
             }
