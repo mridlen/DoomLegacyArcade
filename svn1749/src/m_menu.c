@@ -5465,7 +5465,14 @@ void M_Scan_LevelPacks( void )
     struct dirent * dent;
     int  i, j;
     int  num_skipped = 0;
+    // A rescan (M_GameSelect_Refresh) keeps what is loaded: a pack added in
+    // place is not on the command line, so M_LevelPack_InArgv cannot say.
+    static char  was_loaded[MAX_LEVELPACK][MAX_WADPATH];
+    int  num_was_loaded = 0;
 
+    for( i = 0; i < num_levelpack; i++ )
+        if( levelpack_isloaded[i] )
+            memcpy( was_loaded[num_was_loaded++], levelpack_path[i], MAX_WADPATH );
     num_levelpack = 0;
 
     cat_filename( dirpath, legacyhome, LEVELPACK_DIR );
@@ -5519,6 +5526,8 @@ void M_Scan_LevelPacks( void )
         // already loaded -- whether or not it makes the list below.
         {
             boolean isloaded = M_LevelPack_InArgv( path );
+            for( j = 0; j < num_was_loaded && ! isloaded; j++ )
+                isloaded = ( strcmp( was_loaded[j], path ) == 0 );
             if( isloaded )
                 levelpack_loaded = true;
 
@@ -5559,6 +5568,52 @@ void M_Scan_LevelPacks( void )
         GenPrintf( EMSG_warn, "Level packs: %d in %s not listed, Select Game shows the first %d\n",
                    num_skipped, dirpath, MAX_LEVELPACK );
     }
+}
+
+
+// [Arcade] Fill the Select Game page from what is installed: the IWADs found
+// on the wad search paths, then legacyhome/levels/.  Run by M_Configure, and
+// again by M_GameSelect_Refresh once Copy Missing Wads has put a new file in
+// place (d_linksel.c), so it shows without a restart.
+static int M_GameSelect_Build( void )
+{
+    int gs;
+    int avail = 0;
+    int first = -1;
+
+    M_Scan_LevelPacks();
+
+    for( gs = 0; gs < GS_numgames; gs++ )
+    {
+        if( D_Game_Available( gameselect_arg[gs] ) )
+        {
+            GameSelectMenu[gs].status = IT_STRING | IT_CALL;   // a copied IWAD appears
+            if( first < 0 )  first = gs;
+            avail++;
+        }
+        else
+            GameSelectMenu[gs].status = IT_HIDDEN;
+    }
+
+    // Append a line per level pack found.
+    for( gs = 0; gs < num_levelpack; gs++ )
+    {
+        int mi = GS_numgames + gs;
+        GameSelectMenu[mi].status = IT_STRING | IT_CALL;
+        GameSelectMenu[mi].text = levelpack_label[gs];
+        GameSelectMenu[mi].itemaction = M_SelectGame;
+        GameSelectMenu[mi].alphaKey = 0;
+        if( first < 0 )  first = mi;
+        avail++;
+    }
+    GameSelectDef.numitems = GS_numgames + num_levelpack;
+    if( first >= 0 )
+        GameSelectDef.lastOn = first;   // start on a shown item
+
+    // Nothing worth switching to: only the game already running, or none.
+    OptionsMenu[OPT_selectgame].status = ( avail < 2 ) ? IT_HIDDEN
+                                         : ( IT_SUBMENU | IT_WHITESTRING );
+    return avail;
 }
 
 
@@ -6288,6 +6343,74 @@ boolean  M_Link_Wad_Dest( const char * game_id, int what, const char * offered, 
     I_mkdir( dir, 0755 );
     cat_filename( dest, dir, name );
     return access( dest, F_OK ) != 0;   // never over a file that is there
+}
+
+static int  M_Link_Pack_Cmp( const void * a, const void * b )
+{
+    return strcasecmp( (const char *) a, (const char *) b );
+}
+
+// Everything on this cabinet's Select Game list, as game ids a member can ask
+// for (d_linksel.c, the background wad sync): each IWAD found, then every pack
+// in legacyhome/levels/ -- not only those the running game can play -- named
+// under an IWAD this cabinet has that can load it.  A pack no IWAD here can
+// load is left out; it is on nobody's list.  Returns the count.
+int  M_Link_Wad_List( char * list, int max )
+{
+    char (*out)[LK_GAME_LEN] = (char (*)[LK_GAME_LEN]) list;
+    const char * mapxx = NULL, * exmy = NULL;
+    char dirpath[MAX_WADPATH];
+    DIR * dp;
+    struct dirent * dent;
+    int  n = 0, packs, gs;
+
+    for( gs = 0; gs < GS_numgames && n < max; gs++ )
+    {
+        if( ! D_Game_Available( gameselect_arg[gs] ) )  continue;
+        dl_strncpy( out[n++], gameselect_arg[gs], LK_GAME_LEN );
+        // Ultimate Doom is the one episodic game on the page.
+        if( ! strcasecmp( gameselect_arg[gs], "doomu" ) )  exmy = gameselect_arg[gs];
+        else if( ! mapxx )  mapxx = gameselect_arg[gs];
+    }
+    packs = n;
+
+    cat_filename( dirpath, legacyhome, LEVELPACK_DIR );
+    dp = opendir( dirpath );
+    if( ! dp )  return n;
+    while( n < max && (dent = readdir( dp )) != NULL )
+    {
+        char  path[MAX_WADPATH];
+        char  stem[ sizeof(levelpack_name[0]) ];   // cut short as the page does
+        const char * iwad = NULL;
+        char * extp = strrchr( dent->d_name, '.' );
+        int  len, style;
+        if( (extp == NULL) || (strcasecmp( extp, ".wad" ) != 0) )  continue;
+        len = extp - dent->d_name;
+        if( len <= 0 )  continue;
+        if( len > (int)sizeof(stem) - 1 )  len = sizeof(stem) - 1;
+        memcpy( stem, dent->d_name, len );
+        stem[len] = '\0';
+        cat_filename( path, dirpath, dent->d_name );
+        style = M_LevelPack_MapStyle( path );
+        if( (style & LPM_mapxx) && mapxx )      iwad = mapxx;
+        else if( (style & LPM_exmy) && exmy )   iwad = exmy;
+        if( ! iwad )  continue;
+        snprintf( out[n], LK_GAME_LEN, "%s+%s", iwad, stem );
+        if( M_Link_Game_Id_Valid( out[n] ) )  n++;
+    }
+    closedir( dp );
+    // The order the page shows them in, whatever order the disk returned.
+    qsort( out[packs], n - packs, LK_GAME_LEN, M_Link_Pack_Cmp );
+    return n;
+}
+
+// A wad has arrived (d_linksel.c): list it on Select Game now.  Not while the
+// menus are open -- the page would change under a player's cursor -- so the
+// caller tries again.  Returns how many rows it lists, -1 when it did not.
+int  M_GameSelect_Refresh( void )
+{
+    if( menuactive )  return -1;
+    return M_GameSelect_Build();
 }
 
 // Linked cabinets drop the pack too when it is the master's choice, or this one
@@ -13303,43 +13426,7 @@ void M_Configure (void)
 
     // [Arcade] Only offer games whose IWAD is actually present.  Done here
     // because the doomwaddir search paths are not set up as early as M_Init.
-    {
-        int gs;
-        int avail = 0;
-        int first = -1;
-
-        M_Scan_LevelPacks();
-
-        for( gs = 0; gs < GS_numgames; gs++ )
-        {
-            if( D_Game_Available( gameselect_arg[gs] ) )
-            {
-                if( first < 0 )  first = gs;
-                avail++;
-            }
-            else
-                GameSelectMenu[gs].status = IT_HIDDEN;
-        }
-
-        // Append a line per level pack found.
-        for( gs = 0; gs < num_levelpack; gs++ )
-        {
-            int mi = GS_numgames + gs;
-            GameSelectMenu[mi].status = IT_STRING | IT_CALL;
-            GameSelectMenu[mi].text = levelpack_label[gs];
-            GameSelectMenu[mi].itemaction = M_SelectGame;
-            GameSelectMenu[mi].alphaKey = 0;
-            if( first < 0 )  first = mi;
-            avail++;
-        }
-        GameSelectDef.numitems = GS_numgames + num_levelpack;
-        if( first >= 0 )
-            GameSelectDef.lastOn = first;   // start on a shown item
-
-        // Nothing worth switching to: only the game already running, or none.
-        if( avail < 2 )
-            OptionsMenu[OPT_selectgame].status = IT_HIDDEN;
-    }
+    M_GameSelect_Build();
 
     switch ( gamemode )
     {

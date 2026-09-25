@@ -1633,6 +1633,93 @@ wads a *netgame* may want are not copied (they are not required, see the music w
 boots later keeps its Boot Game. Two picks made on two cabinets within the same second may each
 restart the other once before settling on the one the master heard last.
 
+#### The whole list, in the background (2026-09-24)
+
+Mark: "I'd like it to sync wads automatically in the background instead of just on demand. I want
+my whole list synched up." On demand meant a member only found out it lacked a game when someone
+picked it, and then the pick sat waiting 20 seconds or more per IWAD while it copied.
+
+**Same setting, new meaning.** `link_copywads` now means "members keep the master's whole Select
+Game list", not a new cvar beside it: the cabinet's config already had it `On`, and a second switch
+would have left the two able to disagree. That changes what an existing `On` does, which the
+new-cvar default rule normally forbids, but here the change *is* the request.
+
+**What "the list" is.** `M_Link_Wad_List` (`m_menu.c`): each Select Game IWAD the master has, then
+**every** `.wad` in its `levels/`, not only the packs the running game can load (Select Game's own
+scan filters by map style; a Doom 2 master still holds Ultimate Doom packs). Each pack is named
+under an IWAD the master has that can load it (ExMy → `doomu`, MAPxx → the first of
+doom2/plutonia/tnt it has), because the transfer below speaks in game ids; a pack no IWAD there can
+load is on nobody's list and is left out. Sorted, as the page shows them. One `LIST` message holds
+102 ids, past the page's 4 IWADs + 64 packs.
+
+**Two new sync kinds, no protocol bump.** `LIST_ASK` (37, member → master) and `LIST` (38: count,
+then the ids; count 0 = copying is off). An older master ignores kind 37, so a new member simply
+never gets a list and behaves as before. Each file then travels by the unchanged
+`WANT`/`OFFER`/`GET`/`DATA` path, so the md5 check, the `.part` + rename, the destination rules and
+"never over an existing file" all apply unchanged.
+
+**When it runs** (`lkb_member_tick`, `d_linksel.c`):
+- Only while **both** ends are quiet: `IDLE`, `MENU` or `DEVMODE` (`lkc_quiet`). The member's state
+  was already checked; the **master's** is new, and it matters: the master reads each chunk off disk
+  on its game thread, and building the list opens every pack's directory. A background copy under
+  way pauses when either end stops being quiet. A pick's copy still waits only for its own
+  cabinet, as before.
+- One `M_Link_Missing` check per tic, because each one runs `Search_doomwaddir`.
+- The list is asked for on connecting (so a restarted master is re-read), every five minutes (a
+  pack dropped into the master's `levels/` arrives without anyone touching anything), and pushed
+  by the master to every member when the setting is turned **on**, so an operator does not wait
+  five minutes to see it work.
+- A file that failed is not tried again until a list that differs, or the next five-minute list
+  after a failure. `NOT ENOUGH DISK SPACE` and `COPY MISSING WADS IS OFF` stop the pass until then.
+
+**A pick comes first, and takes over rather than restarting.** `lkc_start(game, follow)` replaced
+`lkc_want`. A background copy of the same *file* (`lkc_part_key`: `tnt` and `tnt+x` both need
+TNT.WAD) becomes the pick's copy, progress and all; any other background copy is dropped for the
+pick. A background copy never displaces anything. `wadsyncpick` shows the takeover surviving the
+master restarting to follow its own pick mid-copy: 9 MB in, the connection drops, and the copy
+resumes from 9 MB.
+
+**A copied file shows on Select Game without a restart.** The page was built once, in
+`M_Configure`; that block is now `M_GameSelect_Build`, run again by `M_GameSelect_Refresh` once
+the menus are closed (never under a player's cursor). The rescan has to keep which pack is loaded:
+`M_Scan_LevelPacks` rebuilt `levelpack_isloaded[]` from the command line alone, which is right at
+startup and wrong for a pack added in place, so it now carries the old flags over by path. And
+`OPT_selectgame` is now un-hidden too, since a cabinet that booted with one game can have two.
+
+**Also fixed on the way**, both of which only matter once copies run unattended for minutes:
+- **Free space.** Nothing checked it. On the Pi's SD card, a full disk means the next config or
+  score save fails. A copy is now refused unless it leaves 256 MB (`lkc_free_space`, `statvfs` on
+  the destination directory; on Windows, `I_GetDiskFreeSpace`, which asks about the current drive).
+- **A copy could stall for ever.** The master serves `LKC_OFFERS` files at once and reuses the
+  oldest slot; a member whose offer was evicted sent `GET`s that were silently ignored, and it only
+  gave up if the master went *offline*. Now ten seconds without data (not counting pauses) re-sends
+  `WANT`, and the master's re-offer of the same md5 resumes the copy. `LKC_OFFERS` went 4 → 8.
+- The master's page notes say **`WAD SYNC:`**, not `GAME SYNC:`: the master cannot tell a pick's
+  copy from the background's, and most copies are now the background's. The member's own note uses
+  `GAME SYNC:` for a pick's copy and `WAD SYNC:` otherwise.
+
+**Verified** — `tools/linktest.sh`, four new cases (`wadsynccabs`: the master holds a MAPxx and an
+ExMy pack, built by `mkpack`, which now takes an IWAD and a map; the follower lacks both and TNT):
+- `wadsync` — nothing is picked: the member is sent 6 ids, copies TNT into `wads/` and both packs
+  into `levels/`, all byte-identical, no `.part` left; Select Game went 3 → 4 → 5 rows with no
+  restart; the member stays on Doom 2 and starts once.
+- `wadsyncbusy` — the master in a level until 35 s: its first `copying` line comes after its
+  `exitgame`.
+- `wadsyncoff` — off: the member hears "not copying"; turned on from the master's console at 25 s,
+  it gets the list at once and copies everything.
+- `wadsyncpick` — the takeover above, TNT started exactly once, then the switch.
+- **Each shown red** in one build with its protection taken out: the master-state gate
+  (`wadsyncbusy`: copy line 52, game ended line 183), the push on turning it on (`wadsyncoff`), the
+  takeover (`wadsyncpick`: TNT started twice).
+- All eleven Select Game Sync cases (the copy cases now exercise the takeover too, since their
+  follower lacks TNT from the start), `pair linkgame scores scorebusy iwadname` pass; `make smoke`
+  5/5. `unbound` failed once in the batch of 21 run three at a time, and passed alone; it is a TLS
+  handshake test that touches no wad code.
+
+**Not done**: copies go master → members only; a pack only a member has stays there, and a member
+never pushes. A pack changed on the master under the same name is not re-sent, since an existing
+file is never overwritten. Throughput is still the sync channel's (about 1 MB/s on the laptop).
+
 ### Windows port — what was built (2026-09-15)
 
 Until now a Windows build always compiled the link out: `tools/build.ps1` never probed OpenSSL, and

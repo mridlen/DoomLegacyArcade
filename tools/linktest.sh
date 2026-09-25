@@ -40,7 +40,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +54,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|musiccab|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep) echo "-" ;;
+        linkgame|campaign|musiccab|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep|wadsync|wadsyncbusy|wadsyncoff|wadsyncpick) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -2047,16 +2047,16 @@ case_gamesyncbusy() {
       the member was only in its level for $inlevel status lines -- too short to prove it waited"
 }
 
-# mkpack <out.wad> : a level pack holding Doom 2's own MAP01, so the attract
-# demos still play on it.
+# mkpack <out.wad> [iwad map] : a level pack holding Doom 2's own MAP01, so the
+# attract demos still play on it -- or another IWAD's map (DOOM.WAD E1M1).
 mkpack() {
-    python3 - "$WADDIR/DOOM2.WAD" "$1" <<'PYEOF'
+    python3 - "$WADDIR/${2:-DOOM2.WAD}" "$1" "${3:-MAP01}" <<'PYEOF'
 import struct, sys
-src, out = sys.argv[1], sys.argv[2]
+src, out, mapname = sys.argv[1], sys.argv[2], sys.argv[3].encode()
 b = open(src, 'rb').read()
 n, ofs = struct.unpack_from('<ii', b, 4)
 ents = [struct.unpack_from('<ii8s', b, ofs + 16*i) for i in range(n)]
-i = [e[2].rstrip(b'\0') for e in ents].index(b'MAP01')
+i = [e[2].rstrip(b'\0') for e in ents].index(mapname)
 lumps = ents[i:i+11]
 data = b''; d = b''
 for pos, size, name in lumps:
@@ -2115,7 +2115,7 @@ case_gamesynccopy() {
       the copied TNT.WAD differs from the master's"
     [ -z "$(ls "$d/follower/wads/"*.part 2>/dev/null)" ] || FAILS="$FAILS
       a .part file was left behind"
-    expect "the master's page said it was copied" "$d/master" "^LINKSELPEER .* GAME SYNC: COPIED TNT\.WAD$"
+    expect "the master's page said it was copied" "$d/master" "^LINKSELPEER .* WAD SYNC: COPIED TNT\.WAD$"
 }
 
 # The same for a level pack, into legacyhome/levels/.
@@ -2155,6 +2155,127 @@ case_gamesynccopybad() {
     [ -z "$(ls "$d/follower/wads/"* 2>/dev/null)" ] || FAILS="$FAILS
       something was left in wads/: $(ls "$d/follower/wads/")"
     expect_game "$d/follower" doom2
+}
+
+# --------------------------------------------------------------------------
+#  Background wad sync (d_linksel.c, Copy Missing Wads)
+# --------------------------------------------------------------------------
+
+# wadsynccabs <dir> <port> : gamesynccabs with Select Game Sync off, Copy
+# Missing Wads $1 on the master, two level packs there (one MAPxx, one ExMy),
+# and a FOLLOWER with neither pack, no TNT.WAD, and a HOME with no
+# ~/games/doom (the IWAD search reads it too).
+wadsynccabs() {
+    local d=$1 p=$2
+    SYNC=${SYNC:-0} gamesynccabs "$d" "$p"
+    echo "link_copywads \"${COPY:-1}\"" >> "$d/master/legacyhome/config.cfg"
+    mkdir -p "$d/master/legacyhome/levels"
+    mkpack "$d/master/legacyhome/levels/syncpack.wad"
+    mkpack "$d/master/legacyhome/levels/episode.wad" DOOM.WAD E1M1
+    rm -f "$d/follower/TNT.WAD" "$d/follower/tnt.wad"
+    mkdir -p "$d/follower/home"
+}
+wadsync_have() {   # <dir> : everything wadsynccabs left off FOLLOWER arrived, intact
+    local d=$1 f
+    cmp -s "$d/follower/wads/TNT.WAD" "$WADDIR/TNT.WAD" || FAILS="$FAILS
+      FOLLOWER has no TNT.WAD identical to the master's in wads/"
+    for f in syncpack episode; do
+        cmp -s "$d/follower/legacyhome/levels/$f.wad" "$d/master/legacyhome/levels/$f.wad" || FAILS="$FAILS
+      FOLLOWER has no $f.wad identical to the master's in levels/"
+    done
+    [ -z "$(ls "$d/follower/wads/"*.part "$d/follower/legacyhome/levels/"*.part 2>/dev/null)" ] || FAILS="$FAILS
+      a .part file was left behind"
+}
+
+# Nothing is picked.  The member gets the IWAD and both packs it lacks, stays
+# on its own game without restarting, and lists them on Select Game.
+case_wadsync() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    wadsynccabs "$d" "$p"
+    run "$d/master" 75 0
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 72 0
+    wait
+    expect "the master sent its whole list: 4 IWADs, 2 packs" "$d/follower" "^LINKLOG .*wad sync: the master lists 6 games and level packs"
+    expect "TNT went into wads/" "$d/follower" "^LINKLOG .*copied TNT\.WAD from the master to .*/follower/wads/TNT\.WAD"
+    expect "the MAPxx pack went into levels/" "$d/follower" "^LINKLOG .*copied syncpack\.wad from the master to .*/follower/legacyhome/levels/syncpack\.wad"
+    expect "the ExMy pack went into levels/" "$d/follower" "^LINKLOG .*copied episode\.wad from the master to .*/follower/legacyhome/levels/episode\.wad"
+    expect "and it said it was done" "$d/follower" "^LINKLOG .*wad sync: done, 3 copied, 0 failed"
+    # Doom 2 lists the four IWADs and the one MAPxx pack.
+    expect "Select Game lists them without a restart" "$d/follower" "^LINKLOG .*wad sync: Select Game now lists 5$"
+    wadsync_have "$d"
+    expect_game "$d/follower" doom2
+    [ "$(starts "$d/follower")" = 1 ] || FAILS="$FAILS
+      FOLLOWER restarted"
+    expect_not "nothing was switched" "$d/follower" "^LINKLOG .*switching to"
+}
+
+# The master is in a level until 35 s in: nothing is copied before that.
+case_wadsyncbusy() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    wadsynccabs "$d" "$p"
+    run "$d/master" 90 0 -warp 1 -skill 3 -linktest -linkcmdat 35 "exitgame"
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 87 0
+    wait
+    expect "the master was in a level" "$d/master" "^LINKGAME gamestate=1 "
+    expect "then its game ended" "$d/master" "^LINKTEST console: exitgame"
+    wadsync_have "$d"
+    local ended first inlevel
+    ended=$(out "$d/master" | grep -an "^LINKTEST console: exitgame" | head -1 | cut -d: -f1)
+    first=$(out "$d/master" | grep -an "^LINKLOG .*copying .* to FOLLOWER" | head -1 | cut -d: -f1)
+    [ -n "$ended" ] && [ -n "$first" ] && [ "$ended" -lt "$first" ] || FAILS="$FAILS
+      the master sent a wad during its game (game ended line ${ended:-?}, first copy line ${first:-?})"
+    inlevel=$(out "$d/master" | head -n "${ended:-0}" | grep -ac "^LINKGAME gamestate=1 ")
+    [ "$inlevel" -ge 8 ] || FAILS="$FAILS
+      the master was only in its level for $inlevel status lines -- too short to prove anything waited"
+}
+
+# Copy Missing Wads off: nothing moves.  Turned on 25 s in, from the master's
+# console: the member hears at once, not at its next five-minute ask.
+case_wadsyncoff() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    COPY=0 wadsynccabs "$d" "$p"
+    run "$d/master" 80 0 -linktest -linkcmdat 25 "link_copywads 1"
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 77 0
+    wait
+    expect "the member heard copying was off" "$d/follower" "^LINKLOG .*wad sync: the master is not copying wads"
+    expect "then that it was on" "$d/follower" "^LINKLOG .*wad sync: the master lists 6 games and level packs"
+    local off on asked
+    off=$(out "$d/follower" | grep -an "wad sync: the master is not copying wads" | head -1 | cut -d: -f1)
+    on=$(out "$d/follower" | grep -an "wad sync: the master lists" | head -1 | cut -d: -f1)
+    asked=$(out "$d/follower" | grep -an "wad sync: asking the master for" | head -1 | cut -d: -f1)
+    [ -n "$off" ] && [ -n "$on" ] && [ -n "$asked" ] && [ "$off" -lt "$on" ] && [ "$on" -lt "$asked" ] || FAILS="$FAILS
+      it asked for a wad while copying was off (off line ${off:-?}, on line ${on:-?}, first ask line ${asked:-?})"
+    wadsync_have "$d"
+}
+
+# A pick for a file the background is already copying takes the copy over --
+# nothing is fetched twice -- and switches once it is here.
+case_wadsyncpick() {
+    local d=$1 p=$2
+    [ -f "$WADDIR/TNT.WAD" ] || { FAILS="$FAILS
+      no $WADDIR/TNT.WAD to test with"; return; }
+    SYNC=1 wadsynccabs "$d" "$p"
+    run "$d/master" 90 0 -linktest -linkselectat 14 tnt
+    sleep 2
+    HOME="$d/follower/home" run "$d/follower" 87 0
+    wait
+    expect "the background copy of TNT was under way" "$d/follower" "^LINKLOG .*wad sync: asking the master for TNT"
+    expect "the pick took it over" "$d/follower" "^LINKLOG .*TNT(\.WAD)? is already being copied; switching to tnt after"
+    local n
+    n=$(out "$d/follower" | grep -acE "^LINKLOG .*copying TNT\.WAD \([0-9]+ bytes\) from the master")
+    [ "$n" = 1 ] || FAILS="$FAILS
+      TNT.WAD was started $n times (expected once)"
+    expect "and switched to it, from wads/" "$d/follower" "Added file .*/follower/wads/TNT\.WAD"
+    expect_game "$d/follower" tnt
 }
 
 # A pack both cabinets followed is dropped on both when a game on one of them

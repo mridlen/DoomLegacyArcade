@@ -34,6 +34,9 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifndef _WIN32
+#include <sys/statvfs.h>   // free space before a copy
+#endif
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -82,7 +85,8 @@ static char      lksel_self_note[LKSEL_NOTE_LEN];
 static lksel_peer_t  lksel_peers[LK_MAX_PEERS];
 
 // Copy Missing Wads: its state is here, its code further down.
-enum { LKC_WANT = LKSEL_SYNC_FIRST, LKC_OFFER, LKC_NONE, LKC_GET, LKC_DATA };
+enum { LKC_WANT = LKSEL_SYNC_FIRST, LKC_OFFER, LKC_NONE, LKC_GET, LKC_DATA,
+       LKC_LIST_ASK, LKC_LIST };
 
 #define LKC_NAME_LEN     64
 #define LKC_DATA_HDR     (1 + 16 + 4)
@@ -93,7 +97,12 @@ enum { LKC_WANT = LKSEL_SYNC_FIRST, LKC_OFFER, LKC_NONE, LKC_GET, LKC_DATA };
 #define LKC_WANT_TICS    (30*TICRATE)   // no offer this long: give up
 #define LKC_ASK_TICS     (3*TICRATE)    // ask again this often until then
 #define LKC_AWAY_TICS    (60*TICRATE)   // a master gone this long mid-copy: give up
-#define LKC_OFFERS       4
+#define LKC_REOFFER_TICS (10*TICRATE)   // no data this long: ask for the offer again
+#define LKC_OFFERS       8
+// The background sync: the master's whole Select Game list, one message.
+#define LKB_LIST_MAX     ( (LK_SYNC_DATA_MAX - 2) / LK_GAME_LEN )
+#define LKB_LIST_TICS    (5*60*TICRATE)   // ask for the list again this often
+#define LKB_SPARE        (256ull*1024*1024)   // never fill a disk past this
 
 extern consvar_t  cv_link_copywads;   // m_menu.c
 
@@ -125,8 +134,23 @@ static tic_t        lkc_last, lkc_started;
 static boolean      lkc_paused;
 static boolean      lkc_master_back = true;   // false: reconnected mid-copy, offer not seen again yet
 static char         lkc_pending[LK_GAME_LEN];   // the pick to follow once copied
+static boolean      lkc_follow;     // this copy is for a pick, not the background sync
+static tic_t        lkc_data_at;    // the last data that arrived, while not paused
 
-static void  lkc_want( const char * game );
+// member: the background sync (see "Copy Missing Wads" below)
+static char         lkb_list[LKB_LIST_MAX][LK_GAME_LEN];
+static byte         lkb_tried[LKB_LIST_MAX];
+static int          lkb_count, lkb_next;
+static boolean      lkb_have_list;
+static tic_t        lkb_asked;      // 0: ask as soon as the master is quiet
+static int          lkb_copied, lkb_failed;
+static boolean      lkb_stopped;    // out of disk, or copying is off: until the next list
+static boolean      lkb_said_done;
+static boolean      lkb_refresh;    // a file arrived: Select Game has to list it
+static lk_state_e   lksel_master_state;
+static int          lkb_copywads_was = -1;   // master: to notice it being turned on
+
+static void  lkc_start( const char * game, boolean follow );
 static void  lkc_member_tick( void );
 
 // member: the last selection it could not follow, re-sent whenever its master
@@ -351,8 +375,11 @@ void  LKSEL_Status_Print( void )
                cv_link_gamesync.EV, LK_Game_Id(), numwadfiles, lksel_target[0] ? lksel_target : "-",
                lksel_announce, lksel_self_note[0] ? lksel_self_note : "-" );
     if( lkc_phase != LKCM_NONE )
-        GenPrintf( EMSG_errlog, "LINKCOPY phase=%d name=%s got=%u size=%u paused=%d\n",
-                   lkc_phase, lkc_name[0] ? lkc_name : "-", (unsigned) lkc_got, (unsigned) lkc_size, lkc_paused );
+        GenPrintf( EMSG_errlog, "LINKCOPY phase=%d name=%s got=%u size=%u paused=%d follow=%d\n",
+                   lkc_phase, lkc_name[0] ? lkc_name : "-", (unsigned) lkc_got, (unsigned) lkc_size, lkc_paused, lkc_follow );
+    if( lkb_have_list )
+        GenPrintf( EMSG_errlog, "LINKWADSYNC list=%d next=%d copied=%d failed=%d stopped=%d\n",
+                   lkb_count, lkb_next, lkb_copied, lkb_failed, lkb_stopped );
     {
         int i;
         for( i = 0; i < LK_MAX_PEERS; i++ )
@@ -465,7 +492,7 @@ static void  lksel_on_switch( const lk_event_t * ev )
     lksel_have_cannot = true;
     LK_Send( master.fp, LK_GM_GAME_CANNOT, lksel_cannot, LKSEL_CANNOT_LEN );
     // Copy Missing Wads: the master says whether it will.
-    lkc_want( game );
+    lkc_start( game, true );
 }
 
 static void  lksel_on_cannot( const lk_event_t * ev )
@@ -527,12 +554,52 @@ void  LKSEL_On_Event( const lk_event_t * ev )
 // is still the latest one.  A member in a game pauses the copy -- a copy must
 // never cost a player a frame.
 //
+// The background sync does the same for everything else.  A member asks for
+// the master's whole Select Game list (LIST_ASK; every IWAD it has and every
+// pack in its levels/, M_Link_Wad_List) and works down it one file at a time,
+// asking for each thing it lacks exactly as a pick would, but following
+// nothing.  Only while both cabinets are quiet -- attract, menus or an operator
+// session -- so neither a player here nor one on the master pays for it; a copy
+// under way pauses as soon as either is not.  A pick's copy comes first: it
+// takes over a background copy of the same file, and replaces any other.  The
+// list is asked for again on reconnecting and every five minutes, and pushed
+// by the master when Copy Missing Wads is turned on.  A file that arrives is
+// listed on Select Game once the menus are closed (M_GameSelect_Refresh).
+//
 // Sync payloads (little-endian), member <-> master only:
 //   WANT   u8 32, u8 what (1 IWAD, 2 pack), game[LK_GAME_LEN]
 //   OFFER  u8 33, u8 what, md5[16], u32 size, name[64], game[LK_GAME_LEN]
 //   NONE   u8 34, reason[48]
 //   GET    u8 35, md5[16], u32 offset, u8 chunks
 //   DATA   u8 36, md5[16], u32 offset, bytes
+//   LIST_ASK  u8 37
+//   LIST      u8 38, u8 count, game[LK_GAME_LEN] * count   (0: copying is off)
+
+// Quiet: nobody playing, signing or joining.  A copy moves only while both ends
+// are; a pick's switch has the stricter lksel_can_switch_now.
+static boolean  lkc_quiet( lk_state_e st )
+{
+    return st == LK_STATE_IDLE || st == LK_STATE_MENU || st == LK_STATE_DEVMODE;
+}
+
+// "GAME SYNC:" for a pick's copy, "WAD SYNC:" for the background one.
+static const char *  lkc_prefix( void )
+{
+    return lkc_follow ? "GAME SYNC" : "WAD SYNC";
+}
+
+// The file a game id's part names: its IWAD, or its pack.  Two ids that share
+// it share a copy ("tnt" and "tnt+x" both need TNT.WAD).
+static const char *  lkc_part_key( const char * game, int what )
+{
+    static char  k[LK_GAME_LEN];
+    const char * plus = strchr( game, '+' );
+    if( what == 2 && plus )
+        snprintf( k, sizeof(k), "+%s", plus + 1 );
+    else
+        snprintf( k, sizeof(k), "%.*s", plus ? (int)( plus - game ) : (int) strlen( game ), game );
+    return k;
+}
 
 static const char *  lkc_what_word( const char * game, int what )
 {
@@ -575,11 +642,12 @@ static void  lkc_abandon( const char * why )
     if( lkc_phase == LKCM_COPYING )  remove( lkc_part );
     if( why )
     {
-        snprintf( lksel_self_note, sizeof(lksel_self_note), "GAME SYNC: NO %s - %s",
-                  lkc_what_word( lkc_game, lkc_what ), why );
+        snprintf( lksel_self_note, sizeof(lksel_self_note), "%s: NO %s - %s",
+                  lkc_prefix(), lkc_what_word( lkc_game, lkc_what ), why );
         lksel_upper( lksel_self_note );
         GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copy of %s failed: %s\n",
                    lkc_name[0] ? lkc_name : lkc_game, why );
+        if( ! lkc_follow )  lkb_failed++;
     }
     lkc_phase = LKCM_NONE;
 }
@@ -599,24 +667,47 @@ static void  lkc_send_want( void )
     LK_Sync_Send( fp, msg, sizeof(msg) );
 }
 
-// A member that cannot run game: ask for the first part of it that it lacks.
-static void  lkc_want( const char * game )
+// A member that lacks part of game: ask for the first part of it that it lacks.
+// follow: for a pick, which it switches to once copied; otherwise the
+// background sync, which only copies.
+static void  lkc_start( const char * game, boolean follow )
 {
     int  what = M_Link_Missing( game );
 
     if( ! what )  return;
     if( lkc_phase != LKCM_NONE )
     {
-        if( ! strcasecmp( lkc_game, game ) )  return;   // already under way
-        lkc_abandon( NULL );                            // a newer pick replaces it
+        char  key[LK_GAME_LEN];
+        dl_strncpy( key, lkc_part_key( lkc_game, lkc_what ), sizeof(key) );
+        if( what == lkc_what && ! strcasecmp( key, lkc_part_key( game, what ) ) )
+        {
+            // Already under way -- perhaps by the background sync, in which
+            // case the pick takes it over, progress and all.
+            if( follow && ! lkc_follow )
+                GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s is already being copied; switching to %s after\n",
+                           lkc_name[0] ? lkc_name : lkc_what_word( game, what ), game );
+            if( follow )
+            {
+                lkc_follow = true;
+                dl_strncpy( lkc_game, game, LK_GAME_LEN );   // its pack is asked for next
+                dl_strncpy( lkc_pending, game, LK_GAME_LEN );
+            }
+            return;
+        }
+        if( ! follow )  return;   // never displaces anything
+        lkc_abandon( NULL );      // a newer pick replaces it
     }
     lkc_phase = LKCM_WANTED;
     lkc_what = what;
+    lkc_follow = follow;
     lkc_name[0] = 0;
     dl_strncpy( lkc_game, game, LK_GAME_LEN );
-    dl_strncpy( lkc_pending, game, LK_GAME_LEN );
+    if( follow )
+        dl_strncpy( lkc_pending, game, LK_GAME_LEN );
     lkc_started = I_GetTime();
-    GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: asking the master for %s\n", lkc_what_word( game, what ) );
+    GenPrintf( EMSG_errlog, follow ? "LINKLOG Cabinet Link: asking the master for %s\n"
+                                   : "LINKLOG Cabinet Link: wad sync: asking the master for %s\n",
+               lkc_what_word( game, what ) );
     lkc_send_want();
 }
 
@@ -640,12 +731,22 @@ static void  lkc_finish( void )
         return;
     }
     lkc_phase = LKCM_NONE;
-    lksel_self_note[0] = 0;
-    lksel_have_cannot = false;
+    lkb_refresh = true;   // list it on Select Game
+    if( lkc_follow )
+    {
+        lksel_self_note[0] = 0;
+        lksel_have_cannot = false;
+    }
+    else
+    {
+        lkb_copied++;
+        snprintf( lksel_self_note, sizeof(lksel_self_note), "WAD SYNC: COPIED %s", lkc_name );
+        lksel_upper( lksel_self_note );
+    }
     GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copied %s from the master to %s\n", lkc_name, lkc_dest );
     // A pack may still be missing after its IWAD: ask for that next.
     if( M_Link_Missing( lkc_game ) )
-        lkc_want( lkc_game );
+        lkc_start( lkc_game, lkc_follow );
 }
 
 static void  lkc_master_want( const lk_sync_msg_t * m )
@@ -711,7 +812,7 @@ static void  lkc_master_want( const lk_sync_msg_t * m )
     s = lksel_slot( m->peer, peers, LK_Peers( peers, LK_MAX_PEERS ) );
     if( s )
     {
-        snprintf( s->note, sizeof(s->note), "GAME SYNC: COPYING %s", o->name );
+        snprintf( s->note, sizeof(s->note), "WAD SYNC: COPYING %s", o->name );
         lksel_upper( s->note );
     }
 }
@@ -760,13 +861,31 @@ static void  lkc_master_get( const lk_sync_msg_t * m )
         if( s )
         {
             if( offset >= o->size )
-                snprintf( s->note, sizeof(s->note), "GAME SYNC: COPIED %s", o->name );
+                snprintf( s->note, sizeof(s->note), "WAD SYNC: COPIED %s", o->name );
             else
-                snprintf( s->note, sizeof(s->note), "GAME SYNC: COPYING %s %u%%", o->name,
+                snprintf( s->note, sizeof(s->note), "WAD SYNC: COPYING %s %u%%", o->name,
                           (unsigned)( (uint64_t) offset * 100 / o->size ) );
             lksel_upper( s->note );
         }
     }
+}
+
+// Free bytes where dest is going; ~0 when it cannot be told.
+static uint64_t  lkc_free_space( const char * dest )
+{
+#ifdef _WIN32
+    (void) dest;
+    return I_GetDiskFreeSpace();   // the current drive: the program's, as started
+#else
+    char  dir[MAX_WADPATH];
+    char * slash;
+    struct statvfs  st;
+    dl_strncpy( dir, dest, sizeof(dir) );
+    slash = strrchr( dir, '/' );
+    if( slash )  *slash = 0;
+    if( statvfs( dir, &st ) != 0 )  return ~(uint64_t)0;
+    return (uint64_t) st.f_bavail * st.f_frsize;
+#endif
 }
 
 static void  lkc_member_offer( const lk_sync_msg_t * m )
@@ -793,6 +912,14 @@ static void  lkc_member_offer( const lk_sync_msg_t * m )
         lkc_abandon( "NOWHERE TO PUT IT" );
         return;
     }
+    // The Pi runs off an SD card: a disk filled to the last byte loses the
+    // config and scores next time they are saved.
+    if( lkc_free_space( lkc_dest ) < (uint64_t) size + LKB_SPARE )
+    {
+        if( ! lkc_follow )  lkb_stopped = true;   // nothing else will fit either
+        lkc_abandon( "NOT ENOUGH DISK SPACE" );
+        return;
+    }
     snprintf( lkc_part, sizeof(lkc_part), "%s.part", lkc_dest );
     lkc_file = fopen( lkc_part, "wb" );
     if( ! lkc_file )  { lkc_abandon( "COULD NOT WRITE IT" );  return; }
@@ -803,6 +930,7 @@ static void  lkc_member_offer( const lk_sync_msg_t * m )
     lkc_phase = LKCM_COPYING;
     lkc_paused = false;
     lkc_master_back = true;
+    lkc_data_at = I_GetTime();
     GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: copying %s (%u bytes) from the master\n", name, (unsigned) size );
     lkc_send_get();
 }
@@ -817,8 +945,8 @@ static void  lkc_member_data( const lk_sync_msg_t * m )
     if( fwrite( m->data + LKC_DATA_HDR, 1, n, lkc_file ) != n )  { lkc_abandon( "COULD NOT WRITE IT" );  return; }
     md5_process_bytes( m->data + LKC_DATA_HDR, n, &lkc_ctx );
     lkc_got += n;
-    lkc_last = I_GetTime();
-    snprintf( lksel_self_note, sizeof(lksel_self_note), "GAME SYNC: COPYING %s %u%%", lkc_name,
+    lkc_last = lkc_data_at = I_GetTime();
+    snprintf( lksel_self_note, sizeof(lksel_self_note), "%s: COPYING %s %u%%", lkc_prefix(), lkc_name,
               (unsigned)( (uint64_t) lkc_got * 100 / lkc_size ) );
     lksel_upper( lksel_self_note );
     if( lkc_got == lkc_size )
@@ -827,10 +955,58 @@ static void  lkc_member_data( const lk_sync_msg_t * m )
         lkc_send_get();
 }
 
+// Master: send a member the whole Select Game list, or an empty one when
+// Copy Missing Wads is off.
+static void  lkb_send_list( const byte * peer )
+{
+    static byte  msg[2 + LKB_LIST_MAX * LK_GAME_LEN];
+    int  n = 0;
+    memset( msg, 0, sizeof(msg) );
+    if( cv_link_copywads.EV )
+        n = M_Link_Wad_List( (char*) msg + 2, LKB_LIST_MAX );
+    msg[0] = LKC_LIST;
+    msg[1] = (byte) n;
+    LK_Sync_Send( peer, msg, 2 + n * LK_GAME_LEN );
+}
+
+// Member: the master's list.  The pass starts over when it changed, or when
+// something on it failed last time; otherwise it carries on where it was.
+static void  lkb_member_list( const lk_sync_msg_t * m )
+{
+    char  list[LKB_LIST_MAX][LK_GAME_LEN];
+    int  i, n = 0, count;
+    boolean same;
+
+    if( LK_Role() != LK_ROLE_MEMBER || m->len < 2 )  return;
+    count = m->data[1];
+    if( count > LKB_LIST_MAX || m->len != 2 + count * LK_GAME_LEN )  return;
+    for( i = 0; i < count; i++ )
+    {
+        lksel_field( list[n], m->data + 2 + i * LK_GAME_LEN, LK_GAME_LEN );
+        if( M_Link_Game_Id_Valid( list[n] ) )  n++;   // it came off the network
+    }
+    same = lkb_have_list && n == lkb_count && ! memcmp( list, lkb_list, n * LK_GAME_LEN );
+    if( same && ! lkb_failed && ! lkb_stopped )  return;
+    GenPrintf( EMSG_errlog, count ? "LINKLOG Cabinet Link: wad sync: the master lists %d games and level packs\n"
+                                  : "LINKLOG Cabinet Link: wad sync: the master is not copying wads\n", n );
+    memcpy( lkb_list, list, n * LK_GAME_LEN );
+    memset( lkb_tried, 0, sizeof(lkb_tried) );
+    lkb_count = n;
+    lkb_next = 0;
+    lkb_have_list = true;
+    lkb_copied = lkb_failed = 0;
+    lkb_stopped = false;
+    lkb_said_done = false;
+}
+
 void  LKSEL_On_Sync( const lk_sync_msg_t * m )
 {
     switch( m->data[0] )
     {
+     case LKC_LIST_ASK:
+        if( LK_Role() == LK_ROLE_MASTER && m->len == 1 )  lkb_send_list( m->peer );
+        break;
+     case LKC_LIST:   lkb_member_list( m );  break;
      case LKC_WANT:   lkc_master_want( m );  break;
      case LKC_GET:    lkc_master_get( m );  break;
      case LKC_OFFER:  lkc_member_offer( m );  break;
@@ -841,6 +1017,8 @@ void  LKSEL_On_Sync( const lk_sync_msg_t * m )
             char  why[LKSEL_REASON_LEN];
             lksel_field( why, m->data + 1, LKSEL_REASON_LEN );
             lkc_pending[0] = 0;
+            if( ! lkc_follow && ! strcmp( why, "COPY MISSING WADS IS OFF" ) )
+                lkb_stopped = true;   // until the next list says otherwise
             lkc_abandon( why );
         }
         break;
@@ -852,6 +1030,10 @@ static void  lkc_member_tick( void )
 {
     tic_t now = I_GetTime();
     boolean free_now = lksel_can_switch_now( LK_State() );
+    // A pick's copy waits only for this cabinet, as it always has: the master
+    // chose that game, so it is not in one.  The background's waits for both.
+    boolean quiet = lkc_quiet( LK_State() )
+                    && ( lkc_follow || lkc_quiet( lksel_master_state ) );
 
     if( lkc_phase == LKCM_WANTED )
     {
@@ -876,8 +1058,19 @@ static void  lkc_member_tick( void )
         }
         else if( ! lkc_master_back && now - lkc_last > LKC_STALL_TICS )
             lkc_send_want();   // back: its offers were forgotten in its restart
-        else if( ! free_now )
+        else if( ! quiet )
+        {
             lkc_paused = true;   // a game is on: not a byte until it is over
+            lkc_data_at = now;
+        }
+        else if( now - lkc_data_at > LKC_REOFFER_TICS )
+        {
+            // Asked, and nothing comes: the master no longer holds the offer
+            // (it serves LKC_OFFERS files at once).  The same file offered
+            // again carries on from here.
+            lkc_data_at = now;
+            lkc_send_want();
+        }
         else if( lkc_paused || now - lkc_last > LKC_STALL_TICS )
         {
             lkc_paused = false;
@@ -894,6 +1087,55 @@ static void  lkc_member_tick( void )
             GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: switching to %s, selected on the link\n", game );
             M_Link_Follow_Game( game, false );   // does not return when it restarts
         }
+    }
+}
+
+// Member, every tick: the background sync.  Keeps the master's list fresh,
+// lists what arrived on Select Game, and starts the next copy -- one thing at a
+// time, only with both cabinets quiet, and never while a pick is being copied
+// or waited on.
+static void  lkb_member_tick( const lk_peer_info_t * master )
+{
+    byte  ask = LKC_LIST_ASK;
+    tic_t now = I_GetTime();
+
+    if( lkb_refresh && lkc_quiet( LK_State() ) )
+    {
+        int  rows = M_GameSelect_Refresh();
+        if( rows >= 0 )
+        {
+            lkb_refresh = false;
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: wad sync: Select Game now lists %d\n", rows );
+        }
+    }
+    if( ! lkc_quiet( LK_State() ) || ! lkc_quiet( master->state ) )  return;
+    // Building the list reads every pack's directory on the master: never
+    // while it is being played.
+    if( ! lkb_asked || now - lkb_asked > LKB_LIST_TICS )
+    {
+        if( LK_Sync_Send( master->fp, &ask, 1 ) )
+            lkb_asked = now | 1;
+        return;
+    }
+    if( ! lkb_have_list || lkb_stopped || lkc_phase != LKCM_NONE || lkc_pending[0] )  return;
+
+    // One check a tic: each one searches the wad directories.
+    if( lkb_next < lkb_count )
+    {
+        int  i = lkb_next++;
+        if( ! lkb_tried[i] && M_Link_Missing( lkb_list[i] ) )
+        {
+            lkb_tried[i] = 1;   // once a pass: a failure waits for the next list
+            lkc_start( lkb_list[i], false );
+        }
+        return;
+    }
+    if( ! lkb_said_done && lkb_count )
+    {
+        lkb_said_done = true;
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: wad sync: done, %d copied, %d failed; the master's %d games and level packs are here\n",
+                   lkb_copied, lkb_failed, lkb_count );
+        if( ! lkb_failed )  lksel_self_note[0] = 0;
     }
 }
 
@@ -1066,8 +1308,13 @@ static void  lksel_member_tick( void )
         if( lkc_phase == LKCM_WANTED )
             lkc_send_want();
     }
+    if( online && ! lksel_master_online )
+        lkb_asked = 0;   // a restarted master may hold other wads now
     lksel_master_online = online;
+    lksel_master_state = online ? master.state : LK_STATE_PLAYING;
     lkc_member_tick();
+    if( online )
+        lkb_member_tick( &master );
 
     if( lksel_announce && online )
     {
@@ -1114,7 +1361,19 @@ void  LKSEL_Ticker( void )
 
     switch( LK_Role() )
     {
-     case LK_ROLE_MASTER:  lksel_master_tick();  break;
+     case LK_ROLE_MASTER:
+        // Copy Missing Wads turned on: every member starts its background sync
+        // now, rather than at its next five-minute ask.
+        if( cv_link_copywads.EV && lkb_copywads_was == 0 )
+        {
+            lk_peer_info_t  peers[LK_MAX_PEERS];
+            int  i, n = LK_Sync_Peers( peers, LK_MAX_PEERS );
+            for( i = 0; i < n; i++ )
+                lkb_send_list( peers[i].fp );
+        }
+        lkb_copywads_was = cv_link_copywads.EV;
+        lksel_master_tick();
+        break;
      case LK_ROLE_MEMBER:  lksel_member_tick();  break;
      default:
         lksel_announce = false;
