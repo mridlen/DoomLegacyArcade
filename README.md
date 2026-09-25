@@ -611,7 +611,9 @@ each episode, Single Level best times per difficulty, and a page per map with Si
 
 Drop a `.wad` level pack into `legacyhome/levels/` and it appears under **Options → Select Game** as
 `<game> wad: <name>`. Packs are filtered by game (`MAPxx` under Doom II, `ExMy` under Ultimate
-Doom). Selecting a pack loads it; selecting it again unloads it. One pack at a time.
+Doom). Selecting a pack loads it; selecting it again unloads it. One pack at a time. A long list
+scrolls, with `MORE ABOVE`/`MORE BELOW` showing how many rows are off screen. Up to 64 packs per
+game are listed, in alphabetical order; any beyond that are left off (the log says how many).
 
 **Switching IWAD restarts the program**, showing `SWITCHING GAME...` for a second or two. Loading a
 pack does not restart, but unloading one does.

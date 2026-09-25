@@ -5235,7 +5235,7 @@ enum { GS_numgames = 4 };   // the IWAD entries, ahead of the level packs
 // M_Scan_LevelPacks.  Unlike an IWAD switch these need no restart: the map
 // command accepts a wad filename, and P_SetupLevel then calls
 // P_AddWadFile() to load it and jump to its first map.
-#define MAX_LEVELPACK   16
+#define MAX_LEVELPACK   64   // Select Game scrolls, see M_DrawGameSelectMenu
 #define LEVELPACK_DIR   "levels"
 
 // map styles a level pack may contain, see M_LevelPack_MapStyle
@@ -5257,12 +5257,94 @@ menuitem_t GameSelectMenu[ GS_numgames + MAX_LEVELPACK ] =
     // remainder filled in from the levels directory
 };
 
+// [Arcade] Select Game scrolls.  Every pack in legacyhome/levels/ is a row,
+// so the page is as long as that folder, and M_DrawGenericMenu simply does
+// not draw a row past the 200-line screen -- the cursor still moves onto it,
+// so the player picks blind.  While the rows fit this is M_DrawGenericMenu
+// untouched; past that it draws a window of rows that follows the cursor,
+// with a "MORE ABOVE"/"MORE BELOW" line where rows are cut off (hu_font has
+// '^' but no down arrow, so words rather than glyphs).
+//
+// The window only moves when the cursor would leave it, so gs_scroll_top is
+// state the drawer keeps -- but it is a fixed point for a given itemOn, so
+// drawing the same frame again changes nothing.
+static int  gs_scroll_top = 0;   // first shown row, counting shown rows only
+
+static
+void M_DrawGameSelectMenu( void )
+{
+    fontinfo_t * fip = V_FontInfo();
+    int  x = currentMenu->x;
+    int  y = currentMenu->y;
+    // Rows from menu y at STRINGHEIGHT whose glyphs end on the screen: 14.
+    int  fit = (BASEVIDHEIGHT - fip->height - y) / STRINGHEIGHT + 1;
+    int  rows, shown = 0, cur = 0;
+    int  i, n, cursory = y;
+    char buf[32];
+
+    for( i = 0; i < currentMenu->numitems; i++ )
+    {
+        if( (currentMenu->menuitems[i].status & IT_DISPLAY) == IT_NODRAW )
+            continue;
+        if( i == itemOn )  cur = shown;
+        shown++;
+    }
+
+    if( shown <= fit )
+    {
+        gs_scroll_top = 0;
+        M_DrawGenericMenu();
+        return;
+    }
+
+    // The last row gives its place to the MORE BELOW line.
+    rows = fit - 1;
+    if( cur < gs_scroll_top )  gs_scroll_top = cur;
+    if( cur >= gs_scroll_top + rows )  gs_scroll_top = cur - rows + 1;
+    if( gs_scroll_top > shown - rows )  gs_scroll_top = shown - rows;
+    if( gs_scroll_top < 0 )  gs_scroll_top = 0;
+
+    M_DrawMenuTitle();
+
+    if( gs_scroll_top > 0 )
+    {
+        snprintf( buf, sizeof(buf), "- %d MORE ABOVE -", gs_scroll_top );
+        V_DrawString( x, y - STRINGHEIGHT, V_WHITEMAP, buf );
+    }
+
+    for( i = 0, n = 0; i < currentMenu->numitems; i++ )
+    {
+        menuitem_t * mip = & currentMenu->menuitems[i];
+        if( (mip->status & IT_DISPLAY) == IT_NODRAW )
+            continue;
+        if( n >= gs_scroll_top && n < gs_scroll_top + rows )
+        {
+            if( i == itemOn )  cursory = y;
+            V_DrawString( x, y, ((mip->status & IT_DISPLAY) == IT_WHITESTRING) ? V_WHITEMAP : 0,
+                          mip->text );
+            y += STRINGHEIGHT;
+        }
+        n++;
+    }
+
+    if( gs_scroll_top + rows < shown )
+    {
+        snprintf( buf, sizeof(buf), "- %d MORE BELOW -", shown - rows - gs_scroll_top );
+        V_DrawString( x, y, V_WHITEMAP, buf );
+    }
+
+    // The cursor, as M_DrawGenericMenu draws it for a string row.
+    if( whichSkull > 1 )  return;
+    if( skullAnimCounter < 4 * NEWTICRATERATIO )  // blink cursor
+        V_DrawCharacter( x - 10, cursory, '*' | 0x80 );  // white
+}
+
 menu_t  GameSelectDef =
 {
     "M_OPTTTL",
     "Select Game",
     GameSelectMenu,
-    M_DrawGenericMenu,
+    M_DrawGameSelectMenu,
     NULL,
     sizeof(GameSelectMenu)/sizeof(menuitem_t),
     // x=20: pack lines are long ("* Ultimate Doom wad: mapsofchaos-hc"), and
@@ -5382,6 +5464,7 @@ void M_Scan_LevelPacks( void )
     DIR * dp;
     struct dirent * dent;
     int  i, j;
+    int  num_skipped = 0;
 
     num_levelpack = 0;
 
@@ -5396,8 +5479,14 @@ void M_Scan_LevelPacks( void )
     dp = opendir( dirpath );
     if( ! dp )  return;
 
-    while( num_levelpack < MAX_LEVELPACK )
+    // readdir order is arbitrary, so each pack is inserted into its sorted
+    // place as it is found.  Sorting only after the cap had been reached
+    // kept whichever MAX_LEVELPACK the directory happened to return first,
+    // so which packs were missing from a long list was down to the disk.
+    for( ;; )
     {
+        char path[MAX_WADPATH];
+        char name[ sizeof(levelpack_name[0]) ];
         char * extp;
         int len;
 
@@ -5407,57 +5496,68 @@ void M_Scan_LevelPacks( void )
         extp = strrchr( dent->d_name, '.' );
         if( (extp == NULL) || (strcasecmp( extp, ".wad" ) != 0) )  continue;
 
-        cat_filename( levelpack_path[num_levelpack], dirpath, dent->d_name );
+        cat_filename( path, dirpath, dent->d_name );
 
         // Only offer packs carrying maps the running game can load: a
         // MAPxx-only pack under Ultimate Doom (or an ExMy-only pack under
         // Doom 2) fails.  A pack holding both is offered under either.
         // gamemode is valid here because the scan runs from M_Configure.
         {
-            int style = M_LevelPack_MapStyle( levelpack_path[num_levelpack] );
+            int style = M_LevelPack_MapStyle( path );
             int want = (gamemode == doom2_commercial) ? LPM_mapxx : LPM_exmy;
             if( ! (style & want) )  continue;   // wrong style, or no maps
         }
 
         // Menu label is the filename without its extension.
         len = extp - dent->d_name;
-        if( len > (int)sizeof(levelpack_name[0]) - 1 )
-            len = sizeof(levelpack_name[0]) - 1;
-        memcpy( levelpack_name[num_levelpack], dent->d_name, len );
-        levelpack_name[num_levelpack][len] = '\0';
+        if( len > (int)sizeof(name) - 1 )
+            len = sizeof(name) - 1;
+        memcpy( name, dent->d_name, len );
+        name[len] = '\0';
 
         // A pack re-added by a restart arrives on the command line, so it is
-        // already loaded and must show as such -- otherwise selecting it
-        // would add it a second time.
-        levelpack_isloaded[num_levelpack] =
-            M_LevelPack_InArgv( levelpack_path[num_levelpack] );
-        if( levelpack_isloaded[num_levelpack] )
-            levelpack_loaded = true;
-        M_LevelPack_SetLabel( num_levelpack );
+        // already loaded -- whether or not it makes the list below.
+        {
+            boolean isloaded = M_LevelPack_InArgv( path );
+            if( isloaded )
+                levelpack_loaded = true;
 
-        num_levelpack ++;
+            for( i = 0; i < num_levelpack; i++ )
+            {
+                if( strcasecmp( name, levelpack_name[i] ) < 0 )  break;
+            }
+            if( i >= MAX_LEVELPACK )
+            {
+                num_skipped ++;   // sorts after a full list
+                continue;
+            }
+            if( num_levelpack >= MAX_LEVELPACK )
+            {
+                num_skipped ++;   // the last one falls off the end
+                num_levelpack --;
+            }
+            // Open a slot at i.  Every per-pack array moves together: the
+            // loaded flag was once left behind by the sort, which marked
+            // the wrong pack as the one loaded.
+            j = num_levelpack - i;
+            memmove( &levelpack_path[i+1], &levelpack_path[i], j * sizeof(levelpack_path[0]) );
+            memmove( &levelpack_name[i+1], &levelpack_name[i], j * sizeof(levelpack_name[0]) );
+            memmove( &levelpack_isloaded[i+1], &levelpack_isloaded[i], j * sizeof(levelpack_isloaded[0]) );
+            memcpy( levelpack_path[i], path, sizeof(path) );
+            memcpy( levelpack_name[i], name, sizeof(name) );
+            levelpack_isloaded[i] = isloaded;
+            num_levelpack ++;
+        }
     }
     closedir( dp );
 
-    // readdir order is arbitrary, so sort for a stable menu.
-    for( i = 1; i < num_levelpack; i++ )
+    for( i = 0; i < num_levelpack; i++ )
+        M_LevelPack_SetLabel( i );
+
+    if( num_skipped )
     {
-        for( j = i; j > 0
-             && strcasecmp( levelpack_name[j-1], levelpack_name[j] ) > 0; j-- )
-        {
-            char tmpname[ sizeof(levelpack_name[0]) ];
-            char tmplabel[ sizeof(levelpack_label[0]) ];
-            char tmppath[ MAX_WADPATH ];
-            memcpy( tmpname, levelpack_name[j-1], sizeof(tmpname) );
-            memcpy( levelpack_name[j-1], levelpack_name[j], sizeof(tmpname) );
-            memcpy( levelpack_name[j], tmpname, sizeof(tmpname) );
-            memcpy( tmplabel, levelpack_label[j-1], sizeof(tmplabel) );
-            memcpy( levelpack_label[j-1], levelpack_label[j], sizeof(tmplabel) );
-            memcpy( levelpack_label[j], tmplabel, sizeof(tmplabel) );
-            memcpy( tmppath, levelpack_path[j-1], sizeof(tmppath) );
-            memcpy( levelpack_path[j-1], levelpack_path[j], sizeof(tmppath) );
-            memcpy( levelpack_path[j], tmppath, sizeof(tmppath) );
-        }
+        GenPrintf( EMSG_warn, "Level packs: %d in %s not listed, Select Game shows the first %d\n",
+                   num_skipped, dirpath, MAX_LEVELPACK );
     }
 }
 

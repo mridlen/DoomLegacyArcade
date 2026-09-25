@@ -627,6 +627,33 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `-file` (`M_Restart_Program(idstr, keep_packs)`). Only loading into an empty slot avoids a
     restart. Packs restored by `-file` are detected in `argv` during the scan so they come back
     marked, and the old `-file` list is always stripped when rebuilding so packs cannot accumulate.
+  - **The page scrolls** (`M_DrawGameSelectMenu`). Its length is the `levels/` folder's, so a
+    fixed layout cannot fit it: from y=60 at `STRINGHEIGHT`, 14 rows end on the 200-line screen
+    (`(BASEVIDHEIGHT - glyph height - y) / STRINGHEIGHT + 1`, computed in the drawer, not
+    hardcoded), which with all four IWADs installed was **10 packs** -- past that, rows were not
+    drawn and the cursor moved onto them blind. While the rows fit, the drawer is
+    `M_DrawGenericMenu` untouched. Past that it shows 13 rows and gives the 14th place to a
+    `- N MORE BELOW -` line, with `- N MORE ABOVE -` at y=50 (under the title, which ends by y~40
+    in either title style). Words, not arrows: `hu_font` has `^` but no down glyph. The window only
+    moves when the cursor would leave it; `gs_scroll_top` is kept between frames, but is a fixed
+    point for a given `itemOn`, so redrawing is idempotent. Hidden IWAD rows are skipped when
+    counting, exactly as the generic drawer skips `IT_NODRAW`.
+    - Verified headlessly on the real GPU by driving the page with `-linktest -linkkeys`
+      (`esc d d d enter u enter`, then `d`/`u` and `shot`) against 77 generated packs: top,
+      mid-list, bottom, and wrap both ways. (`c=o` does not jump to Options; count the rows.)
+      `tools/menufit-test.py` does not measure this page and never did -- its row count is only
+      known at run time.
+  - **Up to 64 packs are listed (`MAX_LEVELPACK`), the alphabetically first.** Each one is inserted
+    into its sorted place as the directory is read. The old scan sorted *after* stopping at the cap
+    (then 16), so with more packs than the cap, which ones were missing depended on `readdir`
+    order. The surplus is logged: `Level packs: N in <dir> not listed`.
+  - **Every per-pack array moves together.** The old sort swapped name, label and path but not
+    `levelpack_isloaded[]`, so after a restart that kept a pack loaded, the flag could sit on a
+    different pack -- `M_LevelPack_LoadedName()` (which Cabinet Link reports) and the load/unload
+    decision read the wrong one, while the `*` in the label, built before the sort, still looked
+    right. Found by reading, not reproduced. Labels are now built after the scan.
+    `M_LevelPack_InArgv` is an exact string match, so testing the marker by hand needs `-file`
+    with the same absolute path the scan builds; a relative one silently never matches.
   - Once a pack is loaded the attract screen is not trustworthy — the pack overrides the IWAD maps,
     so the built-in demos play against the wrong levels. `M_LevelPack_Loaded()` reports this, and
     both routes back to the attract screen (the idle timeout in `G_Ticker`, and
