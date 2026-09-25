@@ -105,6 +105,12 @@ boolean  M_Link_Wad_Path( const char * game_id, int what, char * path );
 // A member: where a copy offered as that file name goes (MAX_WADPATH).  False
 // when the name is not one that part may have, or the file is already there.
 boolean  M_Link_Wad_Dest( const char * game_id, int what, const char * offered, char * dest );
+// A master: every game id on its Select Game list, each IWAD then each level
+// pack, into list (max entries of LK_GAME_LEN bytes).  Returns the count.
+int      M_Link_Wad_List( char * list, int max );
+// A copied wad arrived: rebuild the Select Game list.  Returns the rows it
+// lists; -1, and nothing done, while the menus are open.
+int      M_GameSelect_Refresh( void );
 // tools/linktest.sh (-linkselectat): choose an IWAD short name or a level
 // pack name on the Select Game page.
 void  M_Link_Test_Select( const char * name );

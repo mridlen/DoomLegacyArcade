@@ -933,17 +933,32 @@ linked cabinet is picked on all of them.
 - A pick made in an operator session is passed on, but an operator session is never switched by
   someone else's pick.
 
-**Copy Missing Wads** (default Off). A cabinet that lacks the IWAD or level pack for a pick gets the
-master's copy, then switches.
+**Copy Missing Wads** (default Off). Every member keeps a copy of **everything on the master's Select
+Game list**, copied in the background without anyone picking anything: each IWAD the master has
+and every level pack in its `legacyhome/levels/`. To put a new pack on every cabinet, drop it into
+the master's `levels/` folder; the members pick it up within five minutes.
 
 - IWADs go into a **`wads`** folder beside the program; level packs into **`legacyhome/levels/`**.
-- The master's page shows progress, such as **GAME SYNC: COPYING TNT.WAD 45%**, then **COPIED
-  TNT.WAD**. An 18 MB IWAD took about 20 seconds on a laptop; a Pi on Wi-Fi is slower.
-- Only files Select Game could offer are sent (the four IWADs and packs in `levels/`). Each is
-  checked on arrival; a damaged copy is discarded (**GAME SYNC: NO TNT - IT ARRIVED DAMAGED**).
-  Existing files are never overwritten.
-- A copy pauses while that cabinet is playing.
-- With it off, the page says **COPY MISSING WADS IS OFF**.
+  A copied game shows on that cabinet's Select Game straight away, with no restart (once its menus
+  are closed).
+- Copying happens only while **both** cabinets are on attract, in the menus or in an operator
+  session. It pauses the moment either one starts a game and carries on afterwards, so it never
+  costs a player a frame.
+- One file at a time. An 18 MB IWAD took about 20 seconds on a laptop; a Pi on Wi-Fi is slower.
+- A pick still comes first: a cabinet that lacks the picked game gets that file next, then
+  switches. If the background copy was already fetching it, the pick takes it over rather than
+  starting again.
+- The master's page shows progress, such as **WAD SYNC: COPYING TNT.WAD 45%**, then **COPIED
+  TNT.WAD**.
+- Only files Select Game could offer are sent. Each is checked on arrival; a damaged copy is
+  discarded (**WAD SYNC: NO TNT - IT ARRIVED DAMAGED**). Existing files are never overwritten, so a
+  pack changed on the master is not re-sent to a cabinet that already has one by that name.
+- A cabinet stops copying while its disk would be left with less than 256 MB free (**NOT ENOUGH
+  DISK SPACE**).
+- Files are only ever copied **from the master to the members**; a pack that only a member has
+  stays there.
+- Turning the setting on starts every member at once. With it off, nothing is copied and a pick
+  that needs a file says **COPY MISSING WADS IS OFF**.
 
 **Music Cabinet** (default **All**). Music on several machines drifts out of step within a few bars,
 so pick one cabinet to carry it during linked games. The list shows this cabinet first, then every
