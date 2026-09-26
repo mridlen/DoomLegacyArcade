@@ -1973,6 +1973,34 @@ void S_Update_Volumes(void)
                     volog_vol_peak_l = volog_vol_peak_r = -1;
                     volog_sfx_peak = 0;
                 }
+#ifdef OPL_MUSIC
+                // [Arcade] OPL music: what the last song registration decided
+                // (and why, when it fell back to MIDI), how often SDL_mixer
+                // ran the hook, and the loudest sample the hook wrote.
+                {
+                    extern char volog_opl_info[160];
+                    extern unsigned int volog_opl_hooks;
+                    extern int volog_opl_peak;
+                    static char  last_info[160] = "";
+                    static unsigned int  last_hooks = 0;
+                    if( strcmp( last_info, volog_opl_info ) != 0
+                        || volog_opl_hooks != last_hooks )
+                    {
+                        const char * ofmt = "VOLOG opl cv=%d %s hooks=%u peak=%d\n";
+                        strcpy( last_info, volog_opl_info );
+                        last_hooks = volog_opl_hooks;
+                        GenPrintf( EMSG_warn, ofmt, cv_opl_music.EV, volog_opl_info,
+                                   volog_opl_hooks, volog_opl_peak );
+                        if( volog )
+                        {
+                            fprintf( volog, ofmt, cv_opl_music.EV, volog_opl_info,
+                                     volog_opl_hooks, volog_opl_peak );
+                            fflush( volog );
+                        }
+                        volog_opl_peak = 0;
+                    }
+                }
+#endif
             }
         }
 

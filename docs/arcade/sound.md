@@ -213,3 +213,20 @@ music off with it.) The synth writes the same sample to both channels, which is 
 
 Not verified: Heretic, which has a `GENMIDI` but no IWAD on the test machine; the Windows build;
 and how it sounds.
+
+**When switching it changes nothing**, the synth declined the song and SDL_mixer played it as
+before. First reported on Windows with no soundtrack wad; cause not yet known. Run with `-volog`
+and read the `VOLOG opl` line, which is printed whenever it changes and also written to
+`volog.txt` beside the program (Windows has no console):
+
+    VOLOG opl cv=1 OPL playing MUS song, 17699 bytes, at 22050 Hz hooks=128 peak=5946
+    VOLOG opl cv=0 MIDI: opl_music is Off (song type MUS, device 22050 Hz, synth state 1) ...
+
+- `cv` is the switch.
+- The text is the last song registration's decision, with the reason whenever it went to MIDI:
+  switch off; not MUS or MIDI (an OGG soundtrack); device not 16-bit stereo; synth init failed
+  (`GENMIDI`); MUS conversion failed; or the synth could not load the song.
+- `synth state` is 0 when never tried, 1 when up, 2 when it failed.
+- `hooks` counts SDL_mixer's calls to the music hook, and `peak` is the loudest sample it wrote
+  since the last line. `OPL playing` with `hooks` flat means SDL_mixer is not running the hook.
+  With `peak` at 0, the synth is running but silent.
