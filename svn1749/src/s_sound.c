@@ -287,6 +287,14 @@ consvar_t cv_rndsoundpitch = { "rndsoundpitch", "Off", CV_SAVE, CV_OnOff };
 static void CV_pcspeaker_OnChange( void );
 consvar_t cv_pcspeaker = { "pcspeaker", "Off", CV_SAVE | CV_CALL, CV_OnOff, CV_pcspeaker_OnChange };
 
+#ifdef OPL_MUSIC
+// [Arcade] OPL music: MUS and MIDI through prboom-plus's OPL2 player instead of
+// SDL_mixer's MIDI synth.  Off keeps what the cabinet already plays.  MP3 and
+// OGG music is not affected.  I_RegisterSong decides, per song.
+static void CV_opl_music_OnChange( void );
+consvar_t cv_opl_music = { "opl_music", "Off", CV_SAVE | CV_CALL, CV_OnOff, CV_opl_music_OnChange };
+#endif
+
 // [Arcade] Attract volume, as a percentage of the ordinary volumes above.
 // An arcade cabinet advertises itself with sound, but a machine that lives in
 // a house cannot do it at the same volume as the game all day.  0 is a silent
@@ -433,6 +441,21 @@ static boolean mus_paused;
 
 // music currently being played
 static musicinfo_t *mus_playing = NULL;
+
+#ifdef OPL_MUSIC
+// [Arcade] Restart the song through whichever player now applies.  On config
+// load nothing is playing yet, so this does nothing.  Loops, as the music
+// source switch above does.
+static void CV_opl_music_OnChange( void )
+{
+    if( mus_playing )
+    {
+        int music_num = mus_playing - S_music;
+        S_StopMusic();
+        S_ChangeMusic( music_num, 1 );
+    }
+}
+#endif
 
 
 // [WDJ] unused

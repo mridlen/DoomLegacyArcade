@@ -896,11 +896,135 @@ static void free_music_rwop( void )
 #endif
 
 
+#ifdef OPL_MUSIC
+// [Arcade] OPL music: prboom-plus's OPL2 player (opl/), which renders MIDI on
+// an emulated chip with the IWAD's GENMIDI instruments -- the sound Doom made
+// on an AdLib or Sound Blaster.  It plays through SDL_mixer's music hook in
+// place of a Mix_Music, so SDL_mixer's own music volume, pause and fades do
+// not reach it: each of those is applied here instead.
+//
+// Locking: the hook runs on the audio thread, inside SDL_mixer's device lock,
+// and takes opl_lock.  So opl_lock is never held across a Mix_* call from the
+// game thread, or the two would wait on each other.
+#include "opl/musicplayer.h"
+#include "opl/oplplayer.h"
+
+// Output level.  The synth plays at its own full volume and the Music Volume
+// slider is applied to its output, linearly, which is the curve Mix_VolumeMusic
+// gives MIDI.  Left to the player's DMX volume curve, half the slider was a
+// seventh of the level and the cabinet's usual music volume near silent.
+// Measured at full volume: the synth peaked at 17280 on DOOM2 MAP01 and sat
+// 3.5 to 4 times below SDL_mixer's MIDI, which itself clips there.  Twice
+// leaves it below MIDI but clips only the loudest passages near the top of
+// the slider.  256 is unity.
+#define OPL_GAIN_256  512
+
+static int          opl_dev_freq = 0;     // device rate, 0 when unusable
+static SDL_mutex *  opl_lock = NULL;
+static byte         opl_state = 0;        // 0 not tried, 1 up, 2 failed
+static const void * opl_song = NULL;      // registered song, NULL when not OPL
+static int          opl_volume = 15;      // 0..31, as I_SetMusicVolume
+static int          opl_scale = OPL_GAIN_256 * 15 / 31;  // gain x volume, /256
+
+static void SDLCALL  opl_music_hook( void * udata, Uint8 * stream, int len )
+{
+    Sint16 * s = (Sint16 *) stream;
+    int n = len / 2;
+    int scale;
+
+    SDL_LockMutex( opl_lock );
+    opl_synth_player.render( stream, len / 4 );  // 16-bit stereo frames
+    scale = opl_scale;
+    SDL_UnlockMutex( opl_lock );
+
+    while( n-- > 0 )
+    {
+        int v = ( *s * scale ) >> 8;
+        *s++ = ( v > 32767 ) ? 32767 : ( v < -32768 ) ? -32768 : v;
+    }
+}
+
+// Bring the synth up the first time it is wanted: GENMIDI has to be loaded.
+static boolean  I_OPL_Ready( void )
+{
+    if( opl_state == 0 )
+    {
+        opl_state = 2;
+        if( opl_dev_freq <= 0 )
+        {
+            GenPrintf( EMSG_warn, "OPL music: audio device is not 16-bit stereo, using MIDI\n" );
+        }
+        else if( ! opl_synth_player.init( opl_dev_freq ) )
+        {
+            GenPrintf( EMSG_warn, "OPL music: no usable GENMIDI lump, using MIDI\n" );
+        }
+        else
+        {
+            opl_lock = SDL_CreateMutex();
+            opl_state = 1;
+        }
+    }
+    return ( opl_state == 1 );
+}
+
+// Register a MUS or MIDI song with the synth.  False to fall back to SDL_mixer.
+static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
+{
+    const void * song;
+
+    if( ! cv_opl_music.EV
+        || ( music_type != MUSTYPE_MUS && music_type != MUSTYPE_MIDI )
+        || ! I_OPL_Ready() )
+        return false;
+
+    if( music_type == MUSTYPE_MUS )
+    {
+        unsigned long midilength;
+        // Same conversion, same parameters, as the SDL_mixer path below.
+        int err = qmus2mid(data, len, 89, 0, MIDI_BUFFER_SIZE,
+                           /*INOUT*/ midi_buffer, &midilength);
+        if( err != QM_success )
+            return false;
+        data = midi_buffer;
+        len = midilength;
+    }
+
+    SDL_LockMutex( opl_lock );
+    song = opl_synth_player.registersong( data, len );
+    opl_song = song;
+    SDL_UnlockMutex( opl_lock );
+
+    if( ! song )
+        GenPrintf( EMSG_warn, "OPL music: could not load the song, using MIDI\n" );
+    return ( song != NULL );
+}
+
+// Music Volume, 0..31.  Caller holds opl_lock.
+static void  I_OPL_SetVolume( int volume )
+{
+    opl_scale = OPL_GAIN_256 * volume / 31;
+}
+#endif
+
+
 void I_PlaySong(int handle, byte looping)
 {
 #ifdef HAVE_MIXER
   if (nomusic)
     return;
+
+#ifdef OPL_MUSIC
+  if( opl_song )
+  {
+      SDL_LockMutex( opl_lock );
+      I_OPL_SetVolume( opl_volume );
+      opl_synth_player.setvolume( 15 );   // its full volume; see OPL_GAIN_256
+      opl_synth_player.play( opl_song, looping );
+      SDL_UnlockMutex( opl_lock );
+      Mix_HookMusic( opl_music_hook, NULL );   // not under opl_lock
+      return;
+  }
+#endif
 
   if (music.mus)
   {
@@ -915,6 +1039,15 @@ void I_PauseSong(int handle)
   if (nomusic)
     return;
 
+#ifdef OPL_MUSIC
+  if( opl_song )
+  {
+      SDL_LockMutex( opl_lock );
+      opl_synth_player.pause();
+      SDL_UnlockMutex( opl_lock );
+      return;
+  }
+#endif
   Mix_PauseMusic();
 #endif
 }
@@ -925,6 +1058,15 @@ void I_ResumeSong(int handle)
   if (nomusic)
     return;
 
+#ifdef OPL_MUSIC
+  if( opl_song )
+  {
+      SDL_LockMutex( opl_lock );
+      opl_synth_player.resume();
+      SDL_UnlockMutex( opl_lock );
+      return;
+  }
+#endif
   Mix_ResumeMusic();
 #endif
 }
@@ -935,6 +1077,15 @@ void I_StopSong(int handle)
   if (nomusic)
     return;
 
+#ifdef OPL_MUSIC
+  if( opl_song )
+  {
+      SDL_LockMutex( opl_lock );
+      opl_synth_player.stop();
+      SDL_UnlockMutex( opl_lock );
+      return;
+  }
+#endif
   Mix_FadeOutMusic(MUSIC_FADE_TIME);
 #endif
 }
@@ -945,6 +1096,20 @@ void I_UnRegisterSong(int handle)
 #ifdef HAVE_MIXER
   if (nomusic)
     return;
+
+#ifdef OPL_MUSIC
+  if( opl_song )
+  {
+      // Unhook first: once Mix_HookMusic returns, the hook is not running
+      // and will not run again, so the song can go.
+      Mix_HookMusic( NULL, NULL );
+      SDL_LockMutex( opl_lock );
+      opl_synth_player.unregistersong( opl_song );
+      opl_song = NULL;
+      SDL_UnlockMutex( opl_lock );
+      return;
+  }
+#endif
 
   if (music.mus)
   {
@@ -981,11 +1146,22 @@ int I_RegisterSong( byte music_type, void* data, int len )
   if (nomusic)
     return 0;
 
-  if (music.mus)
+  if (music.mus
+#ifdef OPL_MUSIC
+      || opl_song
+#endif
+     )
   {
       I_SoftError("Two registered pieces of music simultaneously!\n");
       return 0;
   }
+
+#ifdef OPL_MUSIC
+  // [Arcade] MUS and MIDI go to the OPL synth when it is selected and can
+  // take them; anything else, or a failure, carries on to SDL_mixer.
+  if( I_OPL_RegisterSong( music_type, data, len ) )
+      return 0;
+#endif
 
 # ifdef USE_RWOPS
   rwop_music_type = music_type;
@@ -1067,6 +1243,17 @@ void I_SetMusicVolume(int volume)
   if (nomusic)
     return;
 
+#ifdef OPL_MUSIC
+  // The hook's output is not scaled by Mix_VolumeMusic.  Remembered for the
+  // next OPL song even when none is playing.
+  opl_volume = volume;
+  if( opl_state == 1 )
+  {
+      SDL_LockMutex( opl_lock );
+      I_OPL_SetVolume( volume );
+      SDL_UnlockMutex( opl_lock );
+  }
+#endif
   Mix_VolumeMusic((MIX_MAX_VOLUME * volume) / 32);
 #endif
 }
@@ -1198,6 +1385,12 @@ void I_StartupSound(void)
                 audspec.freq, (unsigned)audspec.format, number_channels,
                 audspec.samples );
   }
+
+#ifdef OPL_MUSIC
+  // [Arcade] The OPL synth renders 16-bit stereo, so it is used only on a
+  // device that took that; otherwise MIDI stays with SDL_mixer.
+  opl_dev_freq = ( audspec.format == AUDIO_S16SYS && number_channels == 2 ) ? audspec.freq : 0;
+#endif
 
   Mix_SetPostMix(audspec.callback, NULL);  // after mixing music, add sound fx
 #ifdef DONE_CALLBACK

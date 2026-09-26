@@ -86,6 +86,14 @@ extern consvar_t cv_numChannels;
 extern consvar_t cv_rndsoundpitch;
 extern consvar_t cv_pcspeaker;   // [Arcade] PC speaker emulation
 
+// [Arcade] OPL music: MUS and MIDI played on an emulated OPL2 chip with the
+// IWAD's GENMIDI instruments (sdl/i_sound.c, opl/).  SDL_mixer only, since it
+// is SDL_mixer's music hook that the synth plays through.
+#if defined(SMIF_SDL) && defined(HAVE_MIXER)
+# define OPL_MUSIC
+extern consvar_t cv_opl_music;
+#endif
+
 extern CV_PossibleValue_t soundvolume_cons_t[];
 #ifdef CDMUS
 //part of i_cdmus.c

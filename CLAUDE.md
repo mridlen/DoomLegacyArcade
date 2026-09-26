@@ -89,6 +89,9 @@ Adding a new `.c` file requires manually adding its `.o` to the hand-maintained 
 The vendored ZDBSP node builder in `svn1749/src/nodebuild/` is the tree's **only C++**; its objects
 are the separate `NBOBJS:=` list, built by a `$(SD)nodebuild/%.cpp` rule with `$(CXX)`/`$(CXXFLAGS)`
 and linked via `-lstdc++`. → `docs/arcade/gotchas.md`
+The vendored OPL music player in `svn1749/src/opl/` (prboom-plus's, plus the DOSBox OPL emulator)
+is C, in its own `OPLOBJS:=` list with a `$(SD)opl/%.c` rule; its files include `opl_compat.h` in
+place of prboom-plus's headers. → `docs/arcade/sound.md`
 
 Useful targets: `make clean`, `make distclean` (also removes `make_options`), `make depend`,
 `make BUILD=<dir>` (build into an alternate output directory), `make DEBUG=1 BUILD=debug`,
@@ -416,7 +419,7 @@ are kept below, in this file.
 | `docs/arcade/spectre-fuzz.md` | The original fuzz effect for spectres and partial invisibility, in both renderers | `HWR_DrawFuzzSprite`, the `MF_SHADOW` branch of `HWR_DrawSprite`, `CV_Fuzzymode_OnChange`, `R_DrawFuzzColumn_*` |
 | `docs/arcade/invulnerability.md` | The invulnerability view in OpenGL: why a colormap effect had no hardware equivalent, the `PF_Invert` blend, the view's 3.99 near plane | `PF_Invert`, `blend_param[]` in `r_opengl.c`, `view_inverse_colormap`, the tail of `HWR_RenderPlayerView` |
 | `docs/arcade/shaders.md` | The post-process shaders in OpenGL (CRT, FXAA, Software Look, VHS, colour looks): what could be borrowed and why, libretro conventions, the downsample to game-sized scanlines, the palette lookup, the wipe hook, texture names, re-entry | `sdl/ogl_shader.c`, `sdl/shaders/`, `tools/glsl2c.py`, `cv_grshader`, `ogl_read_front_hook` |
-| `docs/arcade/sound.md` | Sound channels and mixer slots, every way a sound stops early, the `-sndlog` tracer; the frame-cap bug that left finished sounds holding every channel, and missile sounds reading freed memory; PC speaker emulation (the `DP*` lumps rendered to square waves, one voice) and how to measure audio headlessly with `SDL_AUDIODRIVER=disk` | `S_get_channel`, `S_UpdateSounds` and its call in `D_DoomLoop`, `S_StopXYZSound`, `mix_channel[]` in `sdl/i_sound.c`, `cv_pcspeaker`/`S_PCSpeaker_*` |
+| `docs/arcade/sound.md` | Sound channels and mixer slots, every way a sound stops early, the `-sndlog` tracer; the frame-cap bug that left finished sounds holding every channel, and missile sounds reading freed memory; PC speaker emulation (the `DP*` lumps rendered to square waves, one voice) and how to measure audio headlessly with `SDL_AUDIODRIVER=disk`; OPL music (prboom-plus's player vendored in `opl/`, played through `Mix_HookMusic`, its lock order and volume) | `S_get_channel`, `S_UpdateSounds` and its call in `D_DoomLoop`, `S_StopXYZSound`, `mix_channel[]` in `sdl/i_sound.c`, `cv_pcspeaker`/`S_PCSpeaker_*`, `opl/`, `cv_opl_music`, the `I_OPL_*`/`opl_*` code and the music functions in `sdl/i_sound.c` |
 | `docs/arcade/hud.md` | Status bar overlay elements (`kahmfeistb`) | `ST_overlayDrawer`, the `overlay` cvar |
 | `docs/arcade/screen-wipe.md` | Melt and crossfade, the `screenlink` cvar, the hardware wipe path | `f_wipe.c`, the wipe block in `D_Display`, `ReadScreenRect`/`DrawScreenRect` |
 | `docs/arcade/gameplay-defaults.md` | Weapon switching, deathmatch defaults, weapon dropping | gameplay cvar defaults (several are demo-sensitive) |
