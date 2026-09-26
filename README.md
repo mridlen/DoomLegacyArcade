@@ -158,6 +158,9 @@ to get you banned.
   sound at a time (a new one cuts off the last), no stereo, and no fading with distance. Music is
   not affected. Off by default. It does not change scores or demos. Doom and Doom II only; Heretic
   has no speaker sounds, so there it changes nothing.
+- **OPL music.** **Options → Sound Volume → OPL music** plays the music the way an AdLib or Sound
+  Blaster did, on an emulated FM chip using the game's own instrument set. This is the player
+  prboom-plus had. Off by default. See [OPL music](#opl-music-the-sound-blaster-sound).
 
 ---
 
@@ -979,6 +982,22 @@ paired cabinet. **Pick the middle cabinet of the row.**
 - It only applies to linked games. A cabinet playing alone always plays its own music.
 - **All** means every cabinet plays its own music. Sound effects are never affected.
 - The cabinet is remembered by name, so the setting survives restarts.
+
+### OPL music (the Sound Blaster sound)
+
+**Options → Sound Volume → OPL music** plays Doom's music on an emulated OPL2, the FM chip on an
+AdLib or Sound Blaster, using the instrument set stored in the game itself (the `GENMIDI` lump).
+This is how most people heard Doom in 1993. With it off, music goes to the computer's MIDI synth,
+which sounds like whatever that synth's instruments are.
+
+- It switches straight away, restarting the current song.
+- **Music Volume** works as usual. At the same setting, OPL is somewhat quieter than the MIDI synth,
+  so you may want the slider a notch or two higher.
+- **It only replaces MIDI music.** A soundtrack wad (below) still plays its recordings. To hear OPL
+  with one loaded, set **Music src** to `MUS`.
+- If the game has no usable instrument set, the MIDI synth plays instead and the console says
+  `OPL music: no usable GENMIDI lump, using MIDI`.
+- It does not change scores or demos.
 
 ### Replacement music (OGG soundtracks)
 

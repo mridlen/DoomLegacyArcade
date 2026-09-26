@@ -7607,6 +7607,10 @@ menuitem_t SoundMenu[]=
     {IT_STRING | IT_CVAR,  0, "Random sound pitch",   &cv_rndsoundpitch, 0},
     // [Arcade] Appended last: nothing indexes this menu by position.
     {IT_STRING | IT_CVAR,  0, "PC speaker",   &cv_pcspeaker, 0},
+#ifdef OPL_MUSIC
+    // [Arcade] Appended too; see cv_opl_music.
+    {IT_STRING | IT_CVAR,  0, "OPL music",   &cv_opl_music, 0},
+#endif
 };
 
 menu_t  SoundDef =
@@ -14046,6 +14050,9 @@ consvar_t * menu_command_cvar_list[] =
   &cv_numChannels,
   &cv_rndsoundpitch,
   &cv_pcspeaker,       // [Arcade]
+#ifdef OPL_MUSIC
+  &cv_opl_music,       // [Arcade]
+#endif
 
 #ifdef CDMUS
     // i_cdmus.c

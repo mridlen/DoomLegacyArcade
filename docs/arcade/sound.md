@@ -2,7 +2,8 @@
 
 **Read this before touching** `S_get_channel`, `S_UpdateSounds`, `S_StopXYZSound`, the channel table
 in `s_sound.c`, the mixer slot table in `sdl/i_sound.c`, or where `D_DoomLoop` calls
-`S_UpdateSounds`. Also for the PC speaker emulation (`cv_pcspeaker`, `S_PCSpeaker_*`), at the end.
+`S_UpdateSounds`. Also for the PC speaker emulation (`cv_pcspeaker`, `S_PCSpeaker_*`) and OPL
+music (`opl/`, `cv_opl_music`, the music functions in `sdl/i_sound.c`), at the end.
 
 For a cabinet that is *silent* rather than cutting sounds short, see `-volog` in `cabinet-link.md`.
 
@@ -156,3 +157,59 @@ Off from On:
   times.
 
 Music has to be off for any of this, because it fills the file with stereo that is not a square.
+
+## OPL music
+
+**Options → Sound Volume → OPL music** (`opl_music`, default Off, SDL_mixer builds only; the
+`OPL_MUSIC` macro in `s_sound.h`) plays MUS and MIDI through prboom-plus's OPL2 player instead
+of SDL_mixer's MIDI synth.
+
+**The code is vendored in `opl/`**: `oplplayer.c` (Chocolate Doom's DMX-style MIDI-on-OPL player,
+via prboom-plus), `opl.c`/`opl_queue.c` (timing), `dbopl.c` (the DOSBox OPL emulator, converted to
+C) and `midifile.c`. All are GPLv2 or later.
+- Each file includes `opl/opl_compat.h` in place of prboom-plus's headers. It maps `lprintf`,
+  `dboolean`, `doom_htows` and `PACKEDATTR` onto this tree's names, and sends every notice to
+  `EMSG_ver`, because unknown-controller messages are noise on a cabinet.
+- The only edit to their logic is in `LoadInstrumentTable`: it checks that `GENMIDI` exists and is
+  long enough, because this tree's `W_CacheLumpName` aborts on a missing lump, and it holds the lump
+  `PU_STATIC` until shutdown.
+- They build from `OPLOBJS` in the Makefile, like `nodebuild/`. `OPLWARN` silences two warnings
+  about code the player never calls, instead of patching it out.
+
+**How it plays.**
+- `I_RegisterSong` (`sdl/i_sound.c`) offers each MUS or MIDI song to `I_OPL_RegisterSong`. MUS goes
+  through the same `qmus2mid` call the SDL_mixer path uses. Anything it declines (option off, OGG or
+  MP3, no usable `GENMIDI`, a device that is not 16-bit stereo, a song that will not load) carries
+  on to SDL_mixer.
+- The synth plays through `Mix_HookMusic` in place of a `Mix_Music`. That means SDL_mixer's music
+  volume, pause and fades never reach it, so `I_SetMusicVolume`, `I_PauseSong`, `I_StopSong` and
+  `I_UnRegisterSong` each handle the OPL case themselves.
+- The synth is brought up on first use, because `GENMIDI` comes from the loaded wads.
+- `CV_opl_music_OnChange` restarts the current song, so a switch is heard immediately.
+
+**Locking.** The hook runs on the audio thread inside SDL_mixer's device lock and takes `opl_lock`.
+So the game thread never holds `opl_lock` across a `Mix_*` call, or each would wait on the other.
+`I_UnRegisterSong` unhooks *before* freeing the song: once `Mix_HookMusic(NULL, NULL)` returns, the
+hook is not running and cannot run again.
+
+**Volume.** The player's own volume follows DMX's curve, where half the slider is about a seventh
+of the level. At the cabinet's usual music volume (about 5 of 31) that is close to silent, and it
+does not match what `Mix_VolumeMusic` does to MIDI. So the synth plays at its full volume
+(`setvolume(15)`), and the hook scales its output linearly by the slider, times `OPL_GAIN_256`
+(2×).
+- Measured at full volume, prboom-plus's unity gain peaked at 17280 on DOOM2 MAP01 and sat 3.5–4×
+  below SDL_mixer's MIDI, which itself clips at that setting.
+- At 2× it is about half the MIDI level, and clips 6 samples in a million on MAP01 at volume 31.
+
+**How it was verified**, headlessly: `SDL_AUDIODRIVER=disk` capture, as for the speaker above, with
+`soundvolume "0"` so the file holds only music. (`-nosound` cannot be used: `I_StartupSound` turns
+music off with it.) The synth writes the same sample to both channels, which is its signature:
+- With OPL on, every sample has L equal to R.
+- With it off (SDL_mixer MIDI), about 5% do.
+- A run switched from an autoexec reads MIDI, then OPL, then MIDI, then OPL, second by second.
+- With `Doom2OST.wad` and *Music src* `Auto`, the OGG tracks stay stereo with OPL on.
+- A PWAD with a bad `GENMIDI` header falls back to MIDI with the warning.
+- `-synclog` is byte-identical with OPL off, on and switched.
+
+Not verified: Heretic, which has a `GENMIDI` but no IWAD on the test machine; the Windows build;
+and how it sounds.

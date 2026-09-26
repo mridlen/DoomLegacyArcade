@@ -1463,8 +1463,12 @@ endif
 NBOBJS:= nb_build.o nodebuild.o nodebuild_events.o nodebuild_extract.o \
 	nodebuild_gl.o nodebuild_utility.o nodebuild_classify_nosse2.o
 
+# [Arcade] opl directory: prboom-plus's OPL music player and the DOSBox OPL
+# emulator, for the "OPL music" option (sdl/i_sound.c).  Plain C, GPLv2+.
+OPLOBJS:= oplplayer.o opl.o opl_queue.o dbopl.o midifile.o
+
 # combine all objs ( main, INTERFACE specific, asm, CDMUS )
-OBJS:=$(addprefix $(O)/, $(SMIFOBJS) $(OPTOBJS) $(MOBJS) $(UMIOBJS) $(NBOBJS))
+OBJS:=$(addprefix $(O)/, $(SMIFOBJS) $(OPTOBJS) $(MOBJS) $(UMIOBJS) $(NBOBJS) $(OPLOBJS))
 MAINOBJ:=$(addprefix $(O)/, $(MAINOBJ))
 
 
@@ -1771,6 +1775,15 @@ NBWARN:= -Wno-class-memaccess -Wno-template-id-cdtor -Wno-unused-but-set-variabl
 
 $(O)/%.o: $(SD)nodebuild/%.cpp
 	$(CXX) $(CXXFLAGS) $(NBWARN) -DDISABLE_SSE -DNB_QUIET=1 -c $< -o $@
+
+# [Arcade] Vendored OPL player (opl/); see OPLOBJS.  As with nodebuild/, a
+# warning about its unchanged upstream code is silenced here rather than
+# patched out of it: IsMid is defined and never called, and GCC suspects
+# epos[-1] in MIDI_GenerateFlatList, which only prboom-plus's other music
+# players use -- the OPL player walks the tracks with MIDI_IterateTrack.
+OPLWARN:= -Wno-unused-function -Wno-maybe-uninitialized
+$(O)/%.o: $(SD)opl/%.c
+	$(CC) $(CFLAGS) $(OPLWARN) -c $< -o $@
 
 $(O)/%.o: $(SD)umapinfo/%.c
 	$(CC) $(CFLAGS) -Iumapinfo/ -c $< -o $@
