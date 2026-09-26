@@ -2316,6 +2316,36 @@ byte detect_music_type( lumpnum_t music_ln, byte can_play_adm )
 }
 
 
+// [Arcade] The newest MUS or MIDI lump with this music's standard name, in any
+// loaded wad, or NO_LUMP.  For when a later wad has replaced it with OGG or MP3
+// under the same name; see its use in S_ChangeMusic.
+static lumpnum_t  S_Find_Midi_Music( const char * name, /*OUT*/ byte * type )
+{
+    char  lumpname[16];
+    int   w;
+
+    snprintf( lumpname, sizeof(lumpname), (EN_heretic ? "%.8s" : "d_%.6s"), name );
+    for( w = numwadfiles - 1; w >= 0; w-- )
+    {
+        byte  head[4];
+        lumpnum_t  ln = W_CheckNumForNamePwad( lumpname, w, 0 );
+        if( ! VALID_LUMP(ln) || W_LumpLength(ln) < 4 )
+            continue;
+        W_ReadLumpHeader( ln, head, 4 );
+        if( memcmp( head, "MUS", 3 ) == 0 )
+        {
+            *type = MUSTYPE_MUS;
+            return ln;
+        }
+        if( memcmp( head, "MThd", 4 ) == 0 )
+        {
+            *type = MUSTYPE_MIDI;
+            return ln;
+        }
+    }
+    return NO_LUMP;
+}
+
 void S_ChangeMusic(int music_num, byte looping)
 {
     musicinfo_t * music;
@@ -2420,9 +2450,36 @@ void S_ChangeMusic(int music_num, byte looping)
     music->data = NULL;
     music->handle = I_PlayServerSong( music->name, music->lumpnum, looping );
 #else
+    // [Arcade] A soundtrack wad (IDKFAv2.wad, Doom2OST.wad) replaces the
+    // IWAD's D_ lumps by name with OGG data, so asking for MUS -- Music src
+    // "MUS", or OPL music, which plays nothing else -- still found the OGG.
+    // Then look under it for the newest MUS or MIDI of the same name, which is
+    // the IWAD's own song.  Chosen per play and not cached in music->lumpnum,
+    // so switching either setting back picks the OGG up again.
+    lumpnum_t  play_ln = music->lumpnum;
+    if( VALID_LUMP(play_ln)
+        && music_type != MUSTYPE_MUS && music_type != MUSTYPE_MIDI
+        && ( 0
+#ifdef MUSIC_SOURCE_CONTROL
+             || cv_music_source.EV == 0
+#endif
+#ifdef OPL_MUSIC
+             || cv_opl_music.EV
+#endif
+           ) )
+    {
+        byte  alt_type;
+        lumpnum_t  alt_ln = S_Find_Midi_Music( music->name, &alt_type );
+        if( VALID_LUMP(alt_ln) )
+        {
+            play_ln = alt_ln;
+            music_type = alt_type;
+        }
+    }
+
     // load & register it
-    music->data = (void *) S_CacheMusicLump(music->lumpnum);
-    music->handle = I_RegisterSong( music_type, music->data, W_LumpLength(music->lumpnum));
+    music->data = (void *) S_CacheMusicLump(play_ln);
+    music->handle = I_RegisterSong( music_type, music->data, W_LumpLength(play_ln));
     // play it
     I_PlaySong(music->handle, looping);
 #endif

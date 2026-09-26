@@ -989,12 +989,12 @@ static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
     extern char * music_type_str[];
 
     if( ! cv_opl_music.EV )
-        why = "MIDI: opl_music is Off";
+        why = "SDL_mixer: opl_music is Off";
     else if( music_type != MUSTYPE_MUS && music_type != MUSTYPE_MIDI )
         why = "not MUS or MIDI, left to SDL_mixer";
     else if( ! I_OPL_Ready() )
-        why = ( opl_dev_freq <= 0 ) ? "MIDI: device not 16-bit stereo"
-                                    : "MIDI: synth init failed (GENMIDI)";
+        why = ( opl_dev_freq <= 0 ) ? "SDL_mixer: device not 16-bit stereo"
+                                    : "SDL_mixer: synth init failed (GENMIDI)";
     if( why )
         goto declined;
 
@@ -1006,7 +1006,7 @@ static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
                            /*INOUT*/ midi_buffer, &midilength);
         if( err != QM_success )
         {
-            why = "MIDI: MUS conversion failed";
+            why = "SDL_mixer: MUS conversion failed";
             goto declined;
         }
         data = midi_buffer;
@@ -1021,7 +1021,7 @@ static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
     if( ! song )
     {
         GenPrintf( EMSG_warn, "OPL music: could not load the song, using MIDI\n" );
-        why = "MIDI: synth could not load the song";
+        why = "SDL_mixer: synth could not load the song";
         goto declined;
     }
     snprintf( volog_opl_info, sizeof(volog_opl_info),

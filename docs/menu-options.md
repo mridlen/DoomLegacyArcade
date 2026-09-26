@@ -411,7 +411,7 @@ sound device options where the build has them, **Random sound pitch**, **PC spea
 | Item | Default | What it does |
 | --- | --- | --- |
 | **PC speaker** ★ | Off | Plays Doom's PC speaker beeps (the `DP*` lumps) instead of the sampled sound effects: one sound at a time, centred, at a fixed loudness. Music is unaffected. Changes nothing in Heretic, which has no speaker sounds. Does not affect scores or demos. |
-| **OPL music** ★ | Off | Plays MUS and MIDI music on an emulated OPL2 FM chip (AdLib / Sound Blaster) with the game's `GENMIDI` instruments, instead of the system MIDI synth. Switching restarts the current song. OGG and MP3 soundtracks are unaffected; set **Music src** to `MUS` to hear OPL with one loaded. Falls back to MIDI if the game has no usable `GENMIDI`. Does not affect scores or demos. |
+| **OPL music** ★ | Off | Plays MUS and MIDI music on an emulated OPL2 FM chip (AdLib / Sound Blaster) with the game's `GENMIDI` instruments, instead of the system MIDI synth. Switching restarts the current song. With a soundtrack wad loaded it plays the game's original song instead of the recording (★ as does Music src `MUS`). Falls back to MIDI if the game has no usable `GENMIDI`. Does not affect scores or demos. |
 
 → [`arcade/sound.md`](arcade/sound.md#pc-speaker-emulation), [`arcade/sound.md`](arcade/sound.md#opl-music)
 
