@@ -2,7 +2,7 @@
 
 **Read this before touching** `S_get_channel`, `S_UpdateSounds`, `S_StopXYZSound`, the channel table
 in `s_sound.c`, the mixer slot table in `sdl/i_sound.c`, or where `D_DoomLoop` calls
-`S_UpdateSounds`.
+`S_UpdateSounds`. Also for the PC speaker emulation (`cv_pcspeaker`, `S_PCSpeaker_*`), at the end.
 
 For a cabinet that is *silent* rather than cutting sounds short, see `-volog` in `cabinet-link.md`.
 
@@ -105,3 +105,54 @@ it would cut sounds as "out of earshot" whenever the memory was reused.
 
 **Fix:** `S_StopXYZSound` copies the last position into the channel (`orphan_pos`) and points
 `origin` there. The sound plays on from where the missile died. The `ORPHAN` line marks each one.
+
+## PC speaker emulation
+
+**Options → Sound Volume → PC speaker** (`pcspeaker`, default Off) plays the `DP*` lumps instead of
+the `DS*` ones. Every Doom IWAD has a `DP` lump for each `DS` one (107 in DOOM2.WAD). Each is a list of
+tones, one per 1/140 s: `uint16 0`, `uint16 count`, then `count` tone numbers, where 0 is silence.
+
+**How it plays.** `S_PCSpeaker_Lump` renders the tones to an ordinary DMX sound at 22050 Hz: a
+square wave, box-filtered from 8x oversampling, with its phase kept across tone changes. After
+that it is a normal `sfx->data`, so the mixer and every backend play it with no special case. The
+behaviour copies prboom-plus, which dsda-doom inherited and then dropped in v0.27:
+
+- **Its tone table**, with one tone added. The stock lumps use tone 96 and the table stopped at 95,
+  so that tone played as silence. The table rises a quarter tone per step, so 96 is 2716 Hz.
+- **One voice.** A new sound stops every channel, and the newest always wins.
+- **No distance, stereo or pitch.** The start takes the unattenuated volume, centred, at
+  `NORM_PITCH`. `S_UpdateSounds` skips `I_UpdateSoundParams`, because the speaker had nothing to
+  update. It still stops sounds that go out of earshot, as vanilla's sound code above the driver
+  did.
+- **Six sounds never play**: `posact`, `bgact`, `dmact`, `dmpain`, `popain`, `sawidl`. A missing
+  `DP` lump is silent. It does not fall back to the sampled sound, and it cuts nothing off.
+- **Heretic has no `DP` lumps.** `S_PCSpeaker_Active` checks for `dppistol`, and without it the
+  option does nothing, so turning it on cannot mute the game.
+
+**Amplitude is RMS-matched, not peak-matched.** A square wave's RMS is its amplitude. The median
+RMS of DOOM2.WAD's `DS` sounds is 28.8, so the amplitude is 32 of 127, the same fraction as
+prboom-plus's `0x2000`. By peak, the speaker measures about a tenth of normal play (645 against
+6878 in `-volog`'s `sfxpeak`). That is because sampled sounds are spiky and up to 16 of them
+overlap, not because the speaker is quiet.
+
+**Switching swaps two caches rather than freeing one.** `CV_pcspeaker_OnChange` exchanges each
+sound's `data`/`length`/`lumpnum` with a second set. The SDL mixer mixes from a private copy of the
+channel table outside `mix_lock`, so data freed from a menu could still be read for one buffer.
+`PU_SOUND` is never purged, and nothing else in the tree frees sound data at run time either.
+
+**It must not move the random numbers.** The speaker block in `S_StartSoundAtVolume` sits after
+the `M_Random` draws for random pitch. A demo's `-synclog` is byte-identical with the option Off,
+On, and switched three times during playback.
+
+**How it was verified**, headlessly and without listening. `SDL_AUDIODRIVER=disk` with
+`SDL_DISKAUDIOFILE` writes the mixer's real output to a file. Under sdl2-compat that file is at
+44100 Hz whatever `-volog` says the mixer got (22050), so measure it at 44100. Checks that tell
+Off from On:
+
+- With `-nomusic`, left equals right on every sample.
+- Flat-topped square half-cycles: 1705 with the option on, 0 with it off.
+- Sustained tones land on the table with a median error of 0.005%.
+- A run switched from an autoexec shows squares, then none, then squares again, at the switch
+  times.
+
+Music has to be off for any of this, because it fills the file with stereo that is not a square.

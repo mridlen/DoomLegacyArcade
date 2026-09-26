@@ -280,6 +280,13 @@ consvar_t cv_soundvolume = { "soundvolume", "15", CV_SAVE, soundvolume_cons_t };
 consvar_t cv_musicvolume = { "musicvolume", "15", CV_SAVE, soundvolume_cons_t };
 consvar_t cv_rndsoundpitch = { "rndsoundpitch", "Off", CV_SAVE, CV_OnOff };
 
+// [Arcade] PC speaker emulation: play the DP* lumps -- the square-wave tones
+// Doom shipped for machines with no sound card -- instead of the digital DS*
+// sounds.  Off is the stock behaviour, which is what an unconfigured cabinet
+// keeps.  Not gameplay: it draws no random numbers (see S_StartSoundAtVolume).
+static void CV_pcspeaker_OnChange( void );
+consvar_t cv_pcspeaker = { "pcspeaker", "Off", CV_SAVE | CV_CALL, CV_OnOff, CV_pcspeaker_OnChange };
+
 // [Arcade] Attract volume, as a percentage of the ordinary volumes above.
 // An arcade cabinet advertises itself with sound, but a machine that lives in
 // a house cannot do it at the same volume as the game all day.  0 is a silent
@@ -562,6 +569,161 @@ void S_InitRuntimeMusic()
 }
 
 
+// [Arcade] PC speaker emulation.
+//
+// A DP* lump is not sampled sound: it is a list of tones, one per 1/140 s,
+// that DMX fed to the speaker's timer.  Format: uint16 0 (format), uint16
+// count, then count tone bytes, 0 meaning silence.  They are rendered here to
+// ordinary 8-bit DMX sound data, so the mixer and every sound backend play
+// them like any other lump.  Behaviour follows prboom-plus's emulation (which
+// dsda-doom inherited, then removed in v0.27): its tone table, the six sounds
+// the speaker never played, and one voice at a time, the newest sound cutting
+// off the one playing (S_StartSoundAtVolume).
+
+// Tone number -> Hz, from prboom-plus i_pcsound.c (after pcspkr10.zip), with
+// one tone added: the stock DOOM2.WAD lumps go up to tone 96, which that table
+// stopped short of and so played as silence.  The table rises a quarter tone
+// per entry, 2^(1/24), and tone 96 is the next step up.  Tones past the end
+// are silence.
+static const float pcs_frequencies[] = {
+    0.0f, 175.00f, 180.02f, 185.01f, 190.02f, 196.02f, 202.02f, 208.01f, 214.02f, 220.02f,
+    226.02f, 233.04f, 240.02f, 247.03f, 254.03f, 262.00f, 269.03f, 277.03f, 285.04f,
+    294.03f, 302.07f, 311.04f, 320.05f, 330.06f, 339.06f, 349.08f, 359.06f, 370.09f,
+    381.08f, 392.10f, 403.10f, 415.01f, 427.05f, 440.12f, 453.16f, 466.08f, 480.15f,
+    494.07f, 508.16f, 523.09f, 539.16f, 554.19f, 571.17f, 587.19f, 604.14f, 622.09f,
+    640.11f, 659.21f, 679.10f, 698.17f, 719.21f, 740.18f, 762.41f, 784.47f, 807.29f,
+    831.48f, 855.32f, 880.57f, 906.67f, 932.17f, 960.69f, 988.55f, 1017.20f, 1046.64f,
+    1077.85f, 1109.93f, 1141.79f, 1175.54f, 1210.12f, 1244.19f, 1281.61f, 1318.43f,
+    1357.42f, 1397.16f, 1439.30f, 1480.37f, 1523.85f, 1569.97f, 1614.58f, 1661.81f,
+    1711.87f, 1762.45f, 1813.34f, 1864.34f, 1921.38f, 1975.46f, 2036.14f, 2093.29f,
+    2157.64f, 2217.80f, 2285.78f, 2353.41f, 2420.24f, 2490.98f, 2565.97f, 2639.77f,
+    2716.00f,
+};
+#define PCS_NUM_TONES   (sizeof(pcs_frequencies) / sizeof(pcs_frequencies[0]))
+#define PCS_TONE_RATE   140     // tones per second
+#define PCS_SAMPLERATE  22050   // rendered rate; the header carries it
+#define PCS_OVERSAMPLE  8       // box-filtered, to tame the square's aliasing
+// Of 127.  A square wave's RMS is its amplitude, and 32 is the median RMS of
+// the DS* sounds in DOOM2.WAD (28.8), so a speaker sound is about as loud as
+// the sound it replaces.  Its peaks are lower: sampled sound is spikier.
+#define PCS_AMPLITUDE   32
+
+// Whether the loaded wads have speaker lumps at all.  Heretic has none, so
+// there the option leaves the digital sounds alone rather than muting them.
+static byte  pcs_lumps_present = 2;  // 2 = not yet looked
+
+// True when sounds are being played as the PC speaker.
+static boolean S_PCSpeaker_Active( void )
+{
+    if( ! cv_pcspeaker.EV || EN_heretic )
+        return false;
+    if( pcs_lumps_present == 2 )
+        pcs_lumps_present = VALID_LUMP( W_CheckNumForName("dppistol") );
+    return pcs_lumps_present;
+}
+
+// Render sfx's DP lump into sfx->data.  A sound with no speaker lump, or a
+// malformed one, is left without data and so is silent, as it was on the
+// speaker -- it must not fall back to the sampled sound, or to dspistol.
+static void S_PCSpeaker_Lump( sfxinfo_t * sfx )
+{
+    char  lmpname_buf[20];
+    lumpnum_t  lumpnum;
+    byte * lump;
+    int  lumplen, count, nsamples, i;
+    uint32_t  phase = 0;
+    byte * out;
+
+    snprintf( lmpname_buf, sizeof(lmpname_buf), "dp%s", sfx->name );
+    lumpnum = W_CheckNumForName( lmpname_buf );
+    if( ! VALID_LUMP( lumpnum ) )
+        return;
+
+    lumplen = W_LumpLength( lumpnum );
+    if( lumplen < 4 )
+        return;
+    // Held as PU_SOUND while reading: the Z_Malloc below may purge PU_CACHE.
+    lump = W_CacheLumpNum( lumpnum, PU_SOUND );
+    count = lump[2] | (lump[3] << 8);
+    if( lump[0] != 0 || lump[1] != 0 || count <= 0 || count > lumplen - 4 )
+    {
+        Z_ChangeTag( lump, PU_CACHE );
+        return;
+    }
+
+    nsamples = (count * PCS_SAMPLERATE + PCS_TONE_RATE - 1) / PCS_TONE_RATE;
+    out = Z_Malloc( nsamples + 8, PU_SOUND, 0 );
+    // DMX header: format 3, sample rate, sample count; see S_GetSfxLump.
+    out[0] = 3;  out[1] = 0;
+    out[2] = PCS_SAMPLERATE & 0xFF;  out[3] = PCS_SAMPLERATE >> 8;
+    out[4] = nsamples & 0xFF;  out[5] = (nsamples >> 8) & 0xFF;
+    out[6] = (nsamples >> 16) & 0xFF;  out[7] = 0;
+
+    for( i = 0; i < nsamples; i++ )
+    {
+        int tone = lump[ 4 + (i * PCS_TONE_RATE / PCS_SAMPLERATE) ];
+        float freq = ( tone < (int)PCS_NUM_TONES ) ? pcs_frequencies[tone] : 0.0f;
+        uint32_t step;
+        int k, sum = 0;
+
+        if( freq <= 0.0f )
+        {
+            out[8 + i] = 128;   // silence; the phase carries on into the next tone
+            continue;
+        }
+        // Phase is a 32-bit fraction of a cycle: high for the first half.
+        step = (uint32_t)( freq * (4294967296.0 / ((double)PCS_SAMPLERATE * PCS_OVERSAMPLE)) );
+        for( k = 0; k < PCS_OVERSAMPLE; k++ )
+        {
+            sum += ( phase < 0x80000000u ) ? 1 : -1;
+            phase += step;
+        }
+        out[8 + i] = 128 + (PCS_AMPLITUDE * sum) / PCS_OVERSAMPLE;
+    }
+    Z_ChangeTag( lump, PU_CACHE );
+
+    sfx->lumpnum = lumpnum;
+    sfx->data = out;
+    sfx->length = nsamples + 8;   // I_GetSfx takes the header back off
+}
+
+// The two kinds of sound data are cached side by side, and a switch swaps
+// them.  Nothing is freed: the SDL mixer mixes from its own copy of a channel
+// outside mix_lock, so data freed on a menu change could still be read for a
+// buffer.  PU_SOUND is never purged, so the other set stays valid.
+static void *     pcs_other_data[NUMSFX_EXT];
+static int32_t    pcs_other_length[NUMSFX_EXT];
+static lumpnum_t  pcs_other_lumpnum[NUMSFX_EXT];
+
+static void CV_pcspeaker_OnChange( void )
+{
+    int i;
+
+    for( i = 1; i < NUMSFX_EXT; i++ )
+    {
+        sfxinfo_t * sfx = & S_sfx[i];
+        void *    d;
+        int32_t   n;
+        lumpnum_t l;
+
+        if( sfx->link_id )
+        {
+            // Only a reference to its link's data, refreshed at every start.
+            sfx->data = NULL;
+            sfx->length = 0;
+            continue;
+        }
+        d = sfx->data;  n = sfx->length;  l = sfx->lumpnum;
+        sfx->data = pcs_other_data[i];
+        sfx->length = pcs_other_length[i];
+        sfx->lumpnum = pcs_other_data[i] ? pcs_other_lumpnum[i] : NO_LUMP;
+        pcs_other_data[i] = d;
+        pcs_other_length[i] = n;
+        pcs_other_lumpnum[i] = l;
+    }
+}
+
+
 // [WDJ] Common routine to handling sfx names and get the sound lump.
 // Much easier to maintain here.
 // Replace S_GetSfxLumpNum
@@ -572,6 +734,13 @@ void S_GetSfxLump( sfxinfo_t * sfx )
     char * lumpname_p = lmpname_buf;
     byte * sfx_lump_data;
     lumpnum_t  sfx_lumpnum;
+
+    // [Arcade] PC speaker emulation: the DP lump, rendered, or silence.
+    if( S_PCSpeaker_Active() )
+    {
+        S_PCSpeaker_Lump( sfx );
+        return;
+    }
 
     if (EN_heretic) {	// [WDJ] heretic names are different
        sprintf(lmpname_buf, "%s", sfx->name);
@@ -1168,6 +1337,32 @@ void S_StartSoundAtVolume(const xyz_t * origin, const mobj_t * mo,
         sp1.pitch = NORM_PITCH;
     if (sp1.pitch > 255)
         sp1.pitch = 255;
+
+    // [Arcade] PC speaker: one voice, no distance, no stereo, no pitch.  Only
+    // here, after every M_Random draw above, so that switching it cannot
+    // change which random numbers a demo sees.
+    if( S_PCSpeaker_Active() )
+    {
+        // The speaker never played these; see prboom-plus I_PCS_StartSound.
+        if( sfx_id == sfx_posact || sfx_id == sfx_bgact || sfx_id == sfx_dmact
+            || sfx_id == sfx_dmpain || sfx_id == sfx_popain || sfx_id == sfx_sawidl )
+            goto done;
+
+        if( !sfx->data )
+            S_GetSfx( sfx );
+        if( sfx->length <= 0 )
+        {
+            volog_snd_nodata++;   // no DP lump: silent, and cuts nothing off
+            goto done;
+        }
+
+        sp1.volume = (volume > 255) ? 255 : volume;
+        sp1.sep = 0;
+        sp1.pitch = NORM_PITCH;
+        // Newest wins: whatever was playing stops, as on the real speaker.
+        for (cnum = 0; cnum < cv_numChannels.value; cnum++)
+            S_StopChannel(cnum);
+    }
 
     if( EN_heretic )
     {
@@ -1927,7 +2122,10 @@ void S_UpdateSounds(void)
                 if (cv_stereoreverse.value)
                     sp1.sep = -sp1.sep;
 #endif
-                I_UpdateSoundParams(c->handle, sp1.volume, sp1.sep, sp1.pitch);
+                // [Arcade] The speaker has no volume or stereo to follow a
+                // moving source with; its driver ignored this call too.
+                if( ! S_PCSpeaker_Active() )
+                    I_UpdateSoundParams(c->handle, sp1.volume, sp1.sep, sp1.pitch);
             }
         }
     }

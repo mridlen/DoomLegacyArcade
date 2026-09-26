@@ -84,6 +84,7 @@ extern consvar_t cv_musicvolume;
 extern consvar_t cv_attractvolume;   // [Arcade] attract cycle volume, percent
 extern consvar_t cv_numChannels;
 extern consvar_t cv_rndsoundpitch;
+extern consvar_t cv_pcspeaker;   // [Arcade] PC speaker emulation
 
 extern CV_PossibleValue_t soundvolume_cons_t[];
 #ifdef CDMUS
