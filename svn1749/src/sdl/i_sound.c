@@ -926,11 +926,19 @@ static const void * opl_song = NULL;      // registered song, NULL when not OPL
 static int          opl_volume = 15;      // 0..31, as I_SetMusicVolume
 static int          opl_scale = OPL_GAIN_256 * 15 / 31;  // gain x volume, /256
 
+// -volog: what the last song registration decided and why, how often SDL_mixer
+// called the hook, and the loudest sample the hook wrote (0..32767).  The
+// decision is the thing to read when switching OPL changes nothing: every
+// way the synth can decline a song leaves a different reason here.
+char          volog_opl_info[160] = "no song registered yet";
+unsigned int  volog_opl_hooks = 0;
+int           volog_opl_peak = 0;
+
 static void SDLCALL  opl_music_hook( void * udata, Uint8 * stream, int len )
 {
     Sint16 * s = (Sint16 *) stream;
     int n = len / 2;
-    int scale;
+    int scale, peak = volog_opl_peak;
 
     SDL_LockMutex( opl_lock );
     opl_synth_player.render( stream, len / 4 );  // 16-bit stereo frames
@@ -940,8 +948,14 @@ static void SDLCALL  opl_music_hook( void * udata, Uint8 * stream, int len )
     while( n-- > 0 )
     {
         int v = ( *s * scale ) >> 8;
-        *s++ = ( v > 32767 ) ? 32767 : ( v < -32768 ) ? -32768 : v;
+        if( v > 32767 )  v = 32767;
+        else if( v < -32768 )  v = -32768;
+        *s++ = v;
+        if( v < 0 )  v = -v;
+        if( v > peak )  peak = v;
     }
+    volog_opl_peak = peak;
+    volog_opl_hooks++;
 }
 
 // Bring the synth up the first time it is wanted: GENMIDI has to be loaded.
@@ -971,11 +985,18 @@ static boolean  I_OPL_Ready( void )
 static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
 {
     const void * song;
+    const char * why = NULL;
+    extern char * music_type_str[];
 
-    if( ! cv_opl_music.EV
-        || ( music_type != MUSTYPE_MUS && music_type != MUSTYPE_MIDI )
-        || ! I_OPL_Ready() )
-        return false;
+    if( ! cv_opl_music.EV )
+        why = "MIDI: opl_music is Off";
+    else if( music_type != MUSTYPE_MUS && music_type != MUSTYPE_MIDI )
+        why = "not MUS or MIDI, left to SDL_mixer";
+    else if( ! I_OPL_Ready() )
+        why = ( opl_dev_freq <= 0 ) ? "MIDI: device not 16-bit stereo"
+                                    : "MIDI: synth init failed (GENMIDI)";
+    if( why )
+        goto declined;
 
     if( music_type == MUSTYPE_MUS )
     {
@@ -984,7 +1005,10 @@ static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
         int err = qmus2mid(data, len, 89, 0, MIDI_BUFFER_SIZE,
                            /*INOUT*/ midi_buffer, &midilength);
         if( err != QM_success )
-            return false;
+        {
+            why = "MIDI: MUS conversion failed";
+            goto declined;
+        }
         data = midi_buffer;
         len = midilength;
     }
@@ -995,8 +1019,21 @@ static boolean  I_OPL_RegisterSong( byte music_type, void * data, int len )
     SDL_UnlockMutex( opl_lock );
 
     if( ! song )
+    {
         GenPrintf( EMSG_warn, "OPL music: could not load the song, using MIDI\n" );
-    return ( song != NULL );
+        why = "MIDI: synth could not load the song";
+        goto declined;
+    }
+    snprintf( volog_opl_info, sizeof(volog_opl_info),
+              "OPL playing %s song, %d bytes, at %d Hz",
+              music_type_str[music_type], len, opl_dev_freq );
+    return true;
+
+ declined:
+    snprintf( volog_opl_info, sizeof(volog_opl_info),
+              "%s (song type %s, device %d Hz, synth state %d)",
+              why, music_type_str[music_type], opl_dev_freq, opl_state );
+    return false;
 }
 
 // Music Volume, 0..31.  Caller holds opl_lock.
