@@ -993,8 +993,10 @@ which sounds like whatever that synth's instruments are.
 - It switches straight away, restarting the current song.
 - **Music Volume** works as usual. At the same setting, OPL is somewhat quieter than the MIDI synth,
   so you may want the slider a notch or two higher.
-- **It only replaces MIDI music.** A soundtrack wad (below) still plays its recordings. To hear OPL
-  with one loaded, set **Music src** to `MUS`.
+- **It wins over a soundtrack wad.** With a soundtrack wad (below) loaded, OPL plays the game's
+  original song instead of the recording. Turn OPL off to get the recordings back.
+- **Music src `MUS` now means the original songs too**, through the MIDI synth, even with a
+  soundtrack wad loaded. *Auto* with OPL off plays the recordings.
 - If the game has no usable instrument set, the MIDI synth plays instead and the console says
   `OPL music: no usable GENMIDI lump, using MIDI`.
 - It does not change scores or demos.

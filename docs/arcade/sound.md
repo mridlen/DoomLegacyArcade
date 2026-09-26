@@ -187,6 +187,15 @@ C) and `midifile.c`. All are GPLv2 or later.
 - The synth is brought up on first use, because `GENMIDI` comes from the loaded wads.
 - `CV_opl_music_OnChange` restarts the current song, so a switch is heard immediately.
 
+**Soundtrack wads replace the songs by name.** `IDKFAv2.wad` and `Doom2OST.wad` store their OGG
+tracks as `D_E1M1`, `D_RUNNIN` and so on, so every lookup, including Music src `MUS`, found the
+OGG, and OPL, which takes only MUS and MIDI, turned every song down. On the Linux cabinet, whose
+autoexec adds both, the switch therefore did nothing at all.
+- `S_ChangeMusic` now asks `S_Find_Midi_Music` whenever OPL is on or Music src is `MUS` and the
+  lump it found is neither. That function returns the newest MUS or MIDI lump of the same name,
+  searching the wads newest first, which is the IWAD's own song.
+- It is chosen per play, not stored in `music->lumpnum`, so switching back finds the OGG again.
+
 **Locking.** The hook runs on the audio thread inside SDL_mixer's device lock and takes `opl_lock`.
 So the game thread never holds `opl_lock` across a `Mix_*` call, or each would wait on the other.
 `I_UnRegisterSong` unhooks *before* freeing the song: once `Mix_HookMusic(NULL, NULL)` returns, the
@@ -207,7 +216,11 @@ music off with it.) The synth writes the same sample to both channels, which is 
 - With OPL on, every sample has L equal to R.
 - With it off (SDL_mixer MIDI), about 5% do.
 - A run switched from an autoexec reads MIDI, then OPL, then MIDI, then OPL, second by second.
-- With `Doom2OST.wad` and *Music src* `Auto`, the OGG tracks stay stereo with OPL on.
+- With `IDKFAv2.wad` loaded, the `VOLOG opl` line reads:
+  - OGG with OPL off on *Auto*;
+  - OPL on the IWAD's MUS with OPL on;
+  - MUS through SDL_mixer on Music src `MUS`;
+  - OGG, then OPL, then OGG, then OPL when switched.
 - A PWAD with a bad `GENMIDI` header falls back to MIDI with the warning.
 - `-synclog` is byte-identical with OPL off, on and switched.
 
@@ -215,16 +228,23 @@ Not verified: Heretic, which has a `GENMIDI` but no IWAD on the test machine; th
 and how it sounds.
 
 **When switching it changes nothing**, the synth declined the song and SDL_mixer played it as
-before. First reported on Windows with no soundtrack wad; cause not yet known. Run with `-volog`
-and read the `VOLOG opl` line, which is printed whenever it changes and also written to
-`volog.txt` beside the program (Windows has no console):
+before. On Linux that was the soundtrack wads, above.
+- On Windows the synth works: a `-volog` run on WASAPI at 22050 Hz, 16-bit stereo played both songs
+  through it with the hook running.
+- A separate report was a Windows session with no sound at all, effects included, with OPL on. It
+  is unexplained. It was not a switch from MIDI, which that same `-volog` run did cleanly;
+  probably it booted with OPL already on.
+
+To diagnose, run with `-volog` and read the `VOLOG opl` line. It is printed whenever it changes
+and also written to `volog.txt` beside the program, since Windows has no console:
 
     VOLOG opl cv=1 OPL playing MUS song, 17699 bytes, at 22050 Hz hooks=128 peak=5946
-    VOLOG opl cv=0 MIDI: opl_music is Off (song type MUS, device 22050 Hz, synth state 1) ...
+    VOLOG opl cv=0 SDL_mixer: opl_music is Off (song type MUS, device 22050 Hz, synth state 1) ...
 
 - `cv` is the switch.
-- The text is the last song registration's decision, with the reason whenever it went to MIDI:
-  switch off; not MUS or MIDI (an OGG soundtrack); device not 16-bit stereo; synth init failed
+- The text is the last song registration's decision, with the reason whenever it went to
+  SDL_mixer: switch off; not MUS or MIDI (an OGG or MP3 with no MUS under it); device not 16-bit
+  stereo; synth init failed
   (`GENMIDI`); MUS conversion failed; or the synth could not load the song.
 - `synth state` is 0 when never tried, 1 when up, 2 when it failed.
 - `hooks` counts SDL_mixer's calls to the music hook, and `peak` is the loudest sample it wrote
