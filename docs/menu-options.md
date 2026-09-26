@@ -405,8 +405,14 @@ scores are in step.
 ### Sound Volume
 
 Operator only. **Sound Volume** and **Music Volume** sliders, then CD volume, music source and
-sound device options where the build has them, and **Random sound pitch**. The attract cycle plays
-at *Attract Volume* percent of these.
+sound device options where the build has them, **Random sound pitch**, and **PC speaker** ★. The
+attract cycle plays at *Attract Volume* percent of these.
+
+| Item | Default | What it does |
+| --- | --- | --- |
+| **PC speaker** ★ | Off | Plays Doom's PC speaker beeps (the `DP*` lumps) instead of the sampled sound effects: one sound at a time, centred, at a fixed loudness. Music is unaffected. Changes nothing in Heretic, which has no speaker sounds. Does not affect scores or demos. |
+
+→ [`arcade/sound.md`](arcade/sound.md#pc-speaker-emulation)
 
 ### Video Options
 
