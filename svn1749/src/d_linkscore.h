@@ -17,6 +17,10 @@
 // Called from LK_Ticker every pass while the link runs.
 void  LKS_Ticker( void );
 
+// [Arcade] Where the last LKS_Ticker pass spent its time, for LK_Ticker's
+// slow-pass line: "peers N, score msgs N (xK), game list msgs N (xK), ...".
+void  LKS_Pass_Times( char * out, int size );
+
 // One LINKSCORE status line per peer (-linkstatus), terminal only.
 void  LKS_Status_Print( void );
 

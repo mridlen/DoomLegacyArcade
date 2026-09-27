@@ -1347,6 +1347,25 @@ static void  lks_on_message( const lk_sync_msg_t * m )
 
 // ---------------------------------------------------------------------------
 
+// [Arcade] The last pass, section by section (SDL_GetTicks ms), for
+// LKS_Pass_Times.  Set on every pass; read only when LK_Ticker found it slow.
+static struct
+{
+    uint32_t  start, peers, score_ms, sync_ms, manifest, end;
+    int       score_n, sync_n;
+} lks_pt;
+
+void  LKS_Pass_Times( char * out, int size )
+{
+    snprintf( out, size, "setup %u, peers %u, score msgs %u (x%d), game list msgs %u (x%d),"
+              " manifest %u, per peer %u",
+              (unsigned)( lks_pt.peers ? 0 : lks_pt.end - lks_pt.start ),
+              (unsigned)( lks_pt.peers ? lks_pt.peers - lks_pt.start : 0 ),
+              (unsigned) lks_pt.score_ms, lks_pt.score_n, (unsigned) lks_pt.sync_ms, lks_pt.sync_n,
+              (unsigned)( lks_pt.manifest ? lks_pt.manifest - lks_pt.peers - lks_pt.score_ms - lks_pt.sync_ms : 0 ),
+              (unsigned)( lks_pt.manifest ? lks_pt.end - lks_pt.manifest : 0 ) );
+}
+
 void  LKS_Ticker( void )
 {
     lk_peer_info_t  list[LK_MAX_PEERS];
@@ -1354,7 +1373,9 @@ void  LKS_Ticker( void )
     int i, j, n;
     uint32_t now = lks_now();
 
-    if( ! LK_My_Fp() || ! lks_alloc() )  return;
+    memset( &lks_pt, 0, sizeof(lks_pt) );
+    lks_pt.start = lks_pt.end = SDL_GetTicks();
+    if( ! LK_My_Fp() || ! lks_alloc() )  { lks_pt.end = SDL_GetTicks();  return; }
 
     // Peers come and go with the link.
     n = LK_Sync_Peers( list, LK_MAX_PEERS );
@@ -1397,16 +1418,27 @@ void  LKS_Ticker( void )
             }
     }
 
+    lks_pt.peers = SDL_GetTicks();
     while( LK_Sync_Poll( &m ) )
     {
+        uint32_t  t = SDL_GetTicks();
         // [Arcade] Copy Missing Wads shares the sync channel (d_linksel.c).
         if( m.len >= 1 && m.data[0] >= LKSEL_SYNC_FIRST )
+        {
             LKSEL_On_Sync( &m );
+            lks_pt.sync_ms += SDL_GetTicks() - t;
+            lks_pt.sync_n++;
+        }
         else
+        {
             lks_on_message( &m );
+            lks_pt.score_ms += SDL_GetTicks() - t;
+            lks_pt.score_n++;
+        }
     }
 
     lks_build_manifest();
+    lks_pt.manifest = SDL_GetTicks();
 
     for( i = 0; i < LK_MAX_PEERS; i++ )
     {
@@ -1476,6 +1508,7 @@ void  LKS_Ticker( void )
             lks_man_valid = false;   // offer the result straight away
         }
     }
+    lks_pt.end = SDL_GetTicks();
 }
 
 static const char *  lks_phase_name( lks_phase_e ph )

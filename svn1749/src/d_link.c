@@ -150,6 +150,12 @@ const char* LK_Forget_Pins( void )  { return lk_not_built; }
 # include <netdb.h>
 # include <poll.h>
 # include <fcntl.h>
+# ifdef __linux__
+#  include <sys/resource.h>
+#  ifndef RUSAGE_THREAD
+#   define RUSAGE_THREAD  1    // Linux's value; the header hides it without _GNU_SOURCE
+#  endif
+# endif
 # include <sys/ioctl.h>   // [Arcade] FIONREAD, for lkt_log_trouble
 # include <signal.h>
 #endif
@@ -208,6 +214,9 @@ static const char *  lk_sock_strerror( int err, char * buf, int size )
 // LK_MAX_ALLOW is in d_link.h (the Cabinet Link page lists it)
 #define LK_MAX_PINS         64
 #define LK_SLOW_TICK_MS     100   // [Arcade] LK_Ticker reports a pass this long
+#ifdef RUSAGE_THREAD
+static struct rusage  lk_ru_start;    // [Arcade] the game thread's faults at the pass's start
+#endif
 #define LK_LOG_LINES        32
 #define LK_LOG_LEN          160
 
@@ -2185,6 +2194,9 @@ void  LK_Ticker( void )
     lk_unlock();
 
     t_start = SDL_GetTicks();
+#ifdef RUSAGE_THREAD
+    getrusage( RUSAGE_THREAD, &lk_ru_start );
+#endif
     if( save_pins )
         lk_pins_save( pins, num_pins );   // [Arcade] after the unlock: it waits on the disk
     t_pins = SDL_GetTicks();
@@ -2217,11 +2229,31 @@ void  LK_Ticker( void )
     // Said on the terminal when it is long enough to see, with where it went,
     // so a freeze on a cabinet names its own cause.  docs/arcade/cabinet-link.md
     if( t_end - t_start >= LK_SLOW_TICK_MS )
+    {
+        char  faults[64] = "";
+#ifdef RUSAGE_THREAD
+        // [Arcade] And whether the time went on memory the kernel had swapped
+        // out or dropped: the pages of a sync that runs once a reconnect are
+        // the first to go on a machine short of RAM, and a major fault is a
+        // read from disk.
+        struct rusage  ru;
+        if( getrusage( RUSAGE_THREAD, &ru ) == 0 )
+            snprintf( faults, sizeof(faults), "; page faults %ld, %ld from disk or swap",
+                      ru.ru_minflt + ru.ru_majflt - lk_ru_start.ru_minflt - lk_ru_start.ru_majflt,
+                      ru.ru_majflt - lk_ru_start.ru_majflt );
+#endif
         GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: link work held the screen for %u ms"
-                   " (pins file %u, log %u, invites %u, scores %u, game sync %u)\n",
+                   " (pins file %u, log %u, invites %u, scores %u, game sync %u%s)\n",
                    (unsigned)( t_end - t_start ), (unsigned)( t_pins - t_start ),
                    (unsigned)( t_log - t_pins ), (unsigned)( t_game - t_log ),
-                   (unsigned)( t_scores - t_game ), (unsigned)( t_end - t_scores ) );
+                   (unsigned)( t_scores - t_game ), (unsigned)( t_end - t_scores ), faults );
+        if( t_scores - t_game >= LK_SLOW_TICK_MS / 2 )
+        {
+            char  parts[160];
+            LKS_Pass_Times( parts, sizeof(parts) );
+            GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link:   scores were %s\n", parts );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
