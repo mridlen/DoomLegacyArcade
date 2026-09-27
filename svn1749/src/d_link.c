@@ -207,6 +207,7 @@ static const char *  lk_sock_strerror( int err, char * buf, int size )
 #define LK_BACKOFF_MAX_MS   60000
 // LK_MAX_ALLOW is in d_link.h (the Cabinet Link page lists it)
 #define LK_MAX_PINS         64
+#define LK_SLOW_TICK_MS     100   // [Arcade] LK_Ticker reports a pass this long
 #define LK_LOG_LINES        32
 #define LK_LOG_LEN          160
 
@@ -538,20 +539,36 @@ static void  lk_pins_load( void )
     fclose( f );
 }
 
-// Game thread, with lk_mutex held by the caller or no thread running.
-static void  lk_pins_save( void )
+// Game thread.  [Arcade] Writes a copy, not lk_shared: the write is an fsync'd
+// atomic rewrite, and doing it with lk_mutex held would stall the link thread
+// behind the disk too (LK_Ticker takes the copy under the lock).
+static void  lk_pins_save( const lk_pin_t * pins, int num_pins )
 {
     int i, j;
     FILE * fw = lk_private_open( lk_pinfile );
     if( ! fw )  return;
     fprintf( fw, "# Cabinet Link: cabinets this one has authenticated, by public key.\n" );
-    for( i = 0; i < lk_shared.num_pins; i++ )
+    for( i = 0; i < num_pins; i++ )
     {
         for( j = 0; j < LK_FP_LEN; j++ )
-            fprintf( fw, "%02x", lk_shared.pins[i].fp[j] );
-        fprintf( fw, " %s\n", lk_shared.pins[i].name[0] ? lk_shared.pins[i].name : "-" );
+            fprintf( fw, "%02x", pins[i].fp[j] );
+        fprintf( fw, " %s\n", pins[i].name[0] ? pins[i].name : "-" );
     }
     M_Atomic_Write_Close( fw, lk_pinfile );
+}
+
+// [Arcade] Would the pins file hold the same name for both?  It keeps the
+// first word, and "-" for none (lk_pins_save, lk_pins_load), so compare in
+// that form: otherwise a name with a space in it reads back different from
+// the one the cabinet sends, and every reconnect looks like a change.
+static boolean  lk_pin_name_same( const char * a, const char * b )
+{
+    char  wa[LK_NAME_LEN] = "", wb[LK_NAME_LEN] = "";
+    sscanf( a, "%15s", wa );
+    sscanf( b, "%15s", wb );
+    if( ! wa[0] )  strcpy( wa, "-" );
+    if( ! wb[0] )  strcpy( wb, "-" );
+    return strcmp( wa, wb ) == 0;
 }
 
 // Link thread.  Returns the pin index, or -1.
@@ -570,6 +587,19 @@ static void  lk_pin_add( const byte * fp, const char * name, boolean only )
 {
     int i;
     lk_lock();
+    // [Arcade] A cabinet already pinned under the same name changes nothing,
+    // so the file is not rewritten.  This runs on every authentication, and
+    // it used to mark the pins dirty every time: each restart of the Pi, or
+    // blink of its Wi-Fi, cost the master's game thread an fsync'd rewrite of
+    // pins.txt -- on the attract screen, where it shows as a freeze.
+    for( i = 0; i < lk_shared.num_pins; i++ )
+        if( ! memcmp( lk_shared.pins[i].fp, fp, LK_FP_LEN ) )  break;
+    if( i < lk_shared.num_pins && lk_pin_name_same( lk_shared.pins[i].name, name )
+        && ( ! only || lk_shared.num_pins == 1 ) )
+    {
+        lk_unlock();
+        return;
+    }
     if( only )
         lk_shared.num_pins = 0;
     for( i = 0; i < lk_shared.num_pins; i++ )
@@ -2106,10 +2136,12 @@ static void  lk_status_tick( void )
 
 void  LK_Ticker( void )
 {
-    int i, nlog = 0, save_pins = 0;
+    int i, nlog = 0, save_pins = 0, num_pins = 0;
     char log[LK_LOG_LINES][LK_LOG_LEN];
+    static lk_pin_t  pins[LK_MAX_PINS];   // game thread only
     lk_state_e st;
     byte panels;
+    Uint32  t_start, t_pins, t_log, t_game, t_scores, t_end;
 
     if( ! lk_inited )  return;
 
@@ -2147,9 +2179,15 @@ void  LK_Ticker( void )
     {
         lk_shared.pins_dirty = 0;
         save_pins = 1;
-        lk_pins_save();
+        num_pins = lk_shared.num_pins;
+        memcpy( pins, lk_shared.pins, num_pins * sizeof(lk_pin_t) );
     }
     lk_unlock();
+
+    t_start = SDL_GetTicks();
+    if( save_pins )
+        lk_pins_save( pins, num_pins );   // [Arcade] after the unlock: it waits on the disk
+    t_pins = SDL_GetTicks();
 
     if( st != lk_last_state )
     {
@@ -2163,13 +2201,27 @@ void  LK_Ticker( void )
         // And to the terminal alone, where a headless test can read it.
         GenPrintf( EMSG_errlog, "LINKLOG %s\n", log[i] );
     }
-    (void) save_pins;
 
     // Invites and linked games: after the log lines, so a message's effect
     // is printed after the line that says it arrived.
+    t_log = SDL_GetTicks();
     LKG_Ticker();
+    t_game = SDL_GetTicks();
     LKS_Ticker();   // [Arcade] shared scores
+    t_scores = SDL_GetTicks();
     LKSEL_Ticker(); // [Arcade] Select Game Sync
+    t_end = SDL_GetTicks();
+
+    // [Arcade] Everything above runs on the game thread, so time spent here
+    // is a frame the screen does not get -- a freeze on the attract screen.
+    // Said on the terminal when it is long enough to see, with where it went,
+    // so a freeze on a cabinet names its own cause.  docs/arcade/cabinet-link.md
+    if( t_end - t_start >= LK_SLOW_TICK_MS )
+        GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: link work held the screen for %u ms"
+                   " (pins file %u, log %u, invites %u, scores %u, game sync %u)\n",
+                   (unsigned)( t_end - t_start ), (unsigned)( t_pins - t_start ),
+                   (unsigned)( t_log - t_pins ), (unsigned)( t_game - t_log ),
+                   (unsigned)( t_scores - t_game ), (unsigned)( t_end - t_scores ) );
 }
 
 // ---------------------------------------------------------------------------
@@ -2316,8 +2368,8 @@ const char *  LK_Forget_Pins( void )
     lk_stop();
     lk_lock();
     lk_shared.num_pins = 0;
-    lk_pins_save();
     lk_unlock();
+    lk_pins_save( lk_shared.pins, 0 );   // the thread is stopped: nothing to race
     lk_start_failed_reported = false;
     return NULL;
 }

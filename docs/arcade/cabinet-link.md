@@ -2352,3 +2352,59 @@ Verified by forcing it: a temporary extra `P_Random()` on the client at gametic 
 cabinets' histories, and `nettrace-diff.py` reported "consistency first differs at tic 701" — while
 the snapshots, taken after the repair, all agreed. Also found on the way: `RQ_CLOSE_ACK` runs
 `SV_network_wait_handler` with no pause on, so the `waitpause end` line prints only when one was.
+
+## A freeze on the attract screen when a cabinet reconnects (2026-09-26)
+
+Reported on the laptop (master): restarting the Pi froze the laptop's attract screen for a couple
+of seconds. The network work is all on the link thread, so the stall had to be something the link
+makes the *game* thread do. Every piece of that was timed on a master/member pair on loopback --
+the member restarted twice, then the master -- with the laptop's live `legacyhome` on the master
+and a copy of the Pi's on the member, the master drawing in OpenGL on the real GPU.
+
+What the master's game thread does when a known cabinet comes back, with nothing to merge:
+
+| work | where | measured on the laptop |
+| --- | --- | --- |
+| rewrite `link/pins.txt`, fsync'd (file and directory) | `LK_Ticker` | 24-47 ms, one pass |
+| build the Select Game list for the member's wad sync (opens every pack) | `M_Link_Wad_List` | 7-20 ms |
+| everything else in `LKG_`/`LKS_`/`LKSEL_Ticker` | | under 5 ms a pass |
+
+The pins rewrite was the only disk *write*, and it was pointless: `lk_pin_add` marked the pins
+dirty on **every** authentication, including a known cabinet under its known name. `pins.txt` on
+the laptop had been rewritten at 21:27 that evening by a reconnect that was not even a restart
+(the Pi's engine had been up for five hours -- a Wi-Fi blink or a keep-alive timeout). The write
+also ran with `lk_mutex` held, so the link thread waited on the disk as well.
+
+Why a 40 ms write can be a visible freeze on the laptop: `/home` is **btrfs at 96% full**, inside a
+folder Dropbox watches. Timing fsync'd atomic rewrites in the live `link/` directory gave 33-108 ms
+with one of 15 at **679 ms**, on an idle machine. A nearly full btrfs is known for fsync stalls far
+longer than that under other writes. **The full couple of seconds was not reproduced here**, so
+this is the likely cause rather than a proven one.
+
+What changed:
+
+- **`lk_pin_add` returns early for a cabinet already pinned under the same name**, so a reconnect
+  writes nothing. It compares names in the file's form (first word, `-` for none), or a name with a
+  space in it would read back different and still count as a change every time. A new cabinet, a
+  new name, or a member re-pinning to a different master still writes.
+- **The write happens after `lk_mutex` is released**, from a copy taken under it
+  (`lk_pins_save( pins, n )`).
+- **`LK_Ticker` reports a slow pass on the terminal** (`EMSG_errlog`, never the console):
+  `LINKLOG Cabinet Link: link work held the screen for N ms (pins file, log, invites, scores, game
+  sync)`, at 100 ms or more (`LK_SLOW_TICK_MS`). If the freeze comes back, this line names the part
+  that took the time. Shown to fire by lowering the threshold to 20 ms: it reported the first
+  pairing's pins write (24 ms) and two score passes (40 and 76 ms) against the Pi's data.
+
+Verified: across a member restart and a master restart, each side's `pins.txt` was written once, at
+first pairing, and never again. `linktest.sh pair identity pinnedfake fakemaster passcode scores`
+passes, and `--selfcheck identity pinnedfake` still goes red with the pin check switched off.
+
+Left as they are:
+
+- **Score merges** (`lks_apply`) write demos and both score tables, each fsync'd, on the game
+  thread -- on the attract screen by design, since that is when nobody is playing. That runs only
+  when the other cabinet brings new records, not on every reconnect, and it is what the `scores`
+  figure in the new line would show.
+- **Screen wipes** run inside `D_Display` for 0.5-1 s at each attract page change. They are
+  animated, not frozen, but a frame timer counts them: an instrumented loop that flags long frames
+  must exclude them, or every page change looks like the bug.

@@ -1202,6 +1202,11 @@ An older Windows build muted everything when **Music Cabinet** muted the music. 
 Cabinet to `All`. If it still happens, run that cabinet with `-volog`, which traces each sound to
 `volog.txt` next to the program.
 
+**The attract screen freezes for a moment when another cabinet restarts or reconnects.**
+Older builds rewrote the link's `pins.txt` file on every reconnect, which on a nearly full or busy
+disk could hold the screen. Update. If it still happens, look in the terminal for
+`link work held the screen for N ms`; it names the part that took the time.
+
 **A sound effect cuts out, or a weapon goes quiet during rapid fire.**
 Older builds with **Framerate Cap** above 35 could fill every sound channel with finished sounds and
 refuse new ones. The plasma rifle was the worst case. Update. If a sound still stops early, run with
