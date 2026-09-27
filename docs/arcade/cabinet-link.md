@@ -2468,3 +2468,35 @@ Still on the game thread, knowingly:
   file racing the first one's rename -- a risk to the power-cut safety of the score files, which is
   the reason they are written atomically at all. Not done; if it shows, the line says `scores`.
 - **Serving a demo to the other cabinet** reads it whole (`lks_serve`); record demos are tens of KB.
+
+### Still 700 ms on the cabinet, and what has been ruled out (2026-09-26)
+
+With #96 in, the laptop still reported, on a fresh start with the Windows desktop and then the Pi
+connecting:
+
+    LINKLOG Cabinet Link: link work held the screen for 708 ms (pins file 0, log 0, invites 0, scores 708, game sync 0)
+    LINKLOG Cabinet Link: link work held the screen for 707 ms (pins file 0, log 0, invites 0, scores 707, game sync 0)
+
+No score file or demo was written. Not reproduced here, under any of:
+
+- loopback, with the laptop's live `legacyhome` on the master and the Pi's on the member,
+  `-game doomu`, OpenGL on the real GPU: 6-12 ms a pass;
+- **the real LAN**: a scratch master on the laptop (port 5130, a copy of the live home, OpenGL) and
+  a scratch member on the Pi (`~/phase0/lkfreeze`, the Pi's own binary and home), the member
+  restarted three times: every pass under 100 ms, the largest 13 ms;
+- the same with the master squeezed by a user cgroup (`systemd-run --user --scope -p
+  MemoryHigh=40M`): still nothing over 100 ms.
+
+The laptop *is* short of memory -- 6.8 GB with 5.3 GB of zram swap in use, the live engine had
+43 MB swapped out two minutes after starting, and `/proc/pressure/memory` shows stalls -- so paging
+remains a suspect, but a cgroup limit did not reproduce it. Nothing in the score code blocks (no
+sleep, lookup or lock held across I/O; the wake socket is non-blocking).
+
+So the slow-pass line now carries what the live cabinet has to tell:
+
+- **page faults** during the pass, and how many came from disk or swap (`getrusage(RUSAGE_THREAD)`,
+  Linux only; `RUSAGE_THREAD` is defined by hand when the header hides it without `_GNU_SOURCE`);
+- a second line when scores took at least half the threshold, from `LKS_Pass_Times`:
+  `scores were setup, peers, score msgs N (xcount), game list msgs N (xcount), manifest, per peer`.
+
+Shown to print and to add up by lowering the threshold to 4 ms on loopback.
