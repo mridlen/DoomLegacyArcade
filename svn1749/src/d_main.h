@@ -60,8 +60,11 @@ void  owner_wad_search_order( void );
 // [Arcade] Is the IWAD for the -game short name (e.g. "doom2") available?
 // Only valid after the doomwaddir search paths are set up.
 boolean  D_Game_Available( const char * idstr );
-// [Arcade] The same, writing where it was found (MAX_WADPATH).
+// [Arcade] The same, writing where it was found (MAX_WADPATH).  Both remember
+// the answer per game; D_Game_Path_Forget drops it, for when an IWAD has been
+// added (Copy Missing Wads) or the search paths have changed.
 boolean  D_Game_Path( const char * idstr, char * pathbuf );
+void     D_Game_Path_Forget( void );
 // [Arcade] The wads directory beside the program, searched early for IWADs
 // (NULL when the program directory is unknown).  Cabinet Link copies land here.
 const char * D_Progdir_Wads( void );

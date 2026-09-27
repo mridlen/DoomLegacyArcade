@@ -1319,3 +1319,18 @@ the strings out of both objects.
 That is the check to repeat if this is ever done again: convert, rebuild,
 compare objects. Anything that differs beyond the version string means a byte
 was changed somewhere the compiler could see it.
+
+## The current directory is a wad directory, searched four deep
+
+With `DOOMWADDIR` unset, the directory the engine was started from is `doomwaddir[1]`, searched
+**before** the configured wad directories, and every IWAD lookup through
+`Search_doomwaddir( name, GAME_SEARCH_DEPTH /* 4 */, ... )` walks it four directories deep, once per
+possible file name. The cabinet is started from its checkout, which holds the source, the build
+output and every `.claude/worktrees` copy, so one lookup can mean thousands of directory entries.
+It was 706 ms of frozen attract screen each time a cabinet reconnected, until `D_Game_Path` began
+remembering its answers (`cabinet-link.md`, "Found: the IWAD search walked the source tree").
+
+Anything new that looks for an IWAD at run time should go through `D_Game_Path` /
+`D_Game_Available`, and a test of it should start the engine **from the checkout**: every test
+harness here `cd`s into a scratch directory, which is exactly why this hid through three rounds of
+measurements.

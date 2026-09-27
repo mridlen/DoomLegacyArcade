@@ -13289,6 +13289,11 @@ void M_Configure (void)
     int i;
     int cval;
 
+    // [Arcade] The wad search paths are final now; anything D_Game_Path
+    // remembered from the start-up juggling of doomwaddir[1] is dropped, and
+    // Select Game's build below fills it in again.
+    D_Game_Path_Forget();
+
     if(dedicated)
         return;
 

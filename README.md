@@ -1203,9 +1203,9 @@ Cabinet to `All`. If it still happens, run that cabinet with `-volog`, which tra
 `volog.txt` next to the program.
 
 **The attract screen freezes for a moment when another cabinet restarts or reconnects.**
-Older builds read every record demo and every level pack from disk while the attract screen was
-up, and could do it many times over when a cabinet reconnected. On a nearly full or busy disk that
-held the screen for most of a second. Update. If it still happens, look in the terminal for
+Older builds searched for every game's IWAD, through every folder below the one the game was
+started from, each time a cabinet connected. Started from its source checkout, that held the
+screen for most of a second. Update. If it still happens, look in the terminal for
 `link work held the screen for N ms`; it names the part that took the time. A pause right after
 the other cabinet sets a new record is expected: that is the new record being saved.
 
