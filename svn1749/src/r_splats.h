@@ -41,6 +41,10 @@
 //#define FLOORSPLATS
 
 #define MAXLEVELSPLATS      1024
+// [Arcade] The wall splat pool Super Gore uses (cv_supergore).  MAXLEVELSPLATS
+// stays the "MAX" of the Max splats menu; a single gore rocket splash can
+// place ~200 splats, so 1024 would be recycled after about five of them.
+#define MAXGORESPLATS       4096
 
 // splat flags
 #define SPLATDRAWMODE_MASK   0x03       // mask to get drawmode from flags

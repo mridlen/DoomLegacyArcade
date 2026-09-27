@@ -154,8 +154,8 @@ to get you banned.
   lights the gun while its muzzle flash shows, hiding the hard line in the original art.
   **Translucency** defaults to `Auto`. None of these affect scores or demos.
 - **Super Gore.** **Options → Effects Options → Next → Super Gore** sprays five times the blood
-  splats on the walls with every hit (Splats must be on). Off by default. It does not change scores
-  or demos.
+  splats on the walls with every hit, thrown further and spread wider, so even a pistol shot marks
+  the wall behind the target (Splats must be on). Off by default. It does not change scores or demos.
 - **PC speaker sound.** **Options → Sound Volume → PC speaker** plays the beeps Doom made on a PC
   with no sound card, instead of the sampled sound effects. It works like the real speaker: one
   sound at a time (a new one cuts off the last), no stereo, and no fading with distance. Music is
