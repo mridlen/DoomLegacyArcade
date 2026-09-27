@@ -62,7 +62,8 @@ typedef enum
     LKSP_IDLE = 0,     // nothing to do (or done)
     LKSP_MANIFEST,     // pulling its manifest
     LKSP_DEMO,         // pulling a record demo
-    LKSP_APPLY         // everything is here; waiting for the cabinet to be idle
+    LKSP_APPLY,        // everything is here; waiting for the cabinet to be idle
+    LKSP_HASHING       // [Arcade] planning waits on this cabinet's demo hashes (lks_hasher)
 } lks_phase_e;
 
 typedef struct
@@ -345,36 +346,229 @@ static byte *  read_file( const char * path, uint32_t max, uint32_t * len )
     return b;
 }
 
-// The SHA-256 of the file at path; false when there is no such file.
-static boolean  file_sha( const char * path, byte * out )
+// [Arcade] Demo hashing runs on a thread of its own.
+//
+// Hashing reads every record demo in scope, and the first manifest after a
+// start (or after a merge rewrote demos) finds none of them cached.  Done on
+// the game thread that was a freeze on the attract screen: 746 ms on the
+// laptop's nearly full btrfs, "scores 746" in LK_Ticker's slow-pass line.
+// Now file_sha hands a miss to lks_hasher and answers LKS_SHA_PENDING, and
+// its callers wait for the answer instead: the manifest is built, and a merge
+// planned, only once every hash is in.  That delays the sync by the time the
+// reads take and costs the screen nothing.
+//
+// The jobs are shared under lks_hash_mutex; the cache stays the game
+// thread's alone -- a finished job is copied into it by file_sha, on the next
+// pass that asks for that file.  A job is keyed by path, size and mtime, so
+// a file that changes under the hasher is simply asked for again.
+typedef enum { LKS_SHA_NONE = 0, LKS_SHA_OK, LKS_SHA_PENDING } lks_sha_e;
+typedef enum { LKSJ_FREE = 0, LKSJ_QUEUED, LKSJ_WORKING, LKSJ_DONE, LKSJ_FAILED } lks_job_state_e;
+typedef struct
+{
+    char    path[MAX_WADPATH];
+    off_t   size;
+    time_t  mtime;
+    byte    sha[32];
+    int     state;    // lks_job_state_e
+} lks_hashjob_t;
+#define LKS_HASHJOBS  64
+
+static lks_hashjob_t  lks_jobs[LKS_HASHJOBS];
+static SDL_mutex *    lks_hash_mutex = NULL;
+static SDL_cond *     lks_hash_cond = NULL;
+static SDL_Thread *   lks_hash_thread = NULL;
+static boolean        lks_hash_sync = false;   // no thread: hash on the caller, as before
+static boolean        lks_sha_waited;          // file_sha answered PENDING since the caller cleared it
+
+static boolean  lks_same_stat( const char * path, off_t size, time_t mtime )
 {
     struct stat st;
+    return stat( path, &st ) == 0 && st.st_size == size && st.st_mtime == mtime;
+}
+
+static int  lks_hasher( void * unused )
+{
+    (void) unused;
+    for( ;; )
+    {
+        char     path[MAX_WADPATH];
+        off_t    size;
+        time_t   mtime;
+        byte     sha[32];
+        byte *   data;
+        uint32_t len = 0;
+        int      i, result;
+
+        SDL_LockMutex( lks_hash_mutex );
+        for( ;; )
+        {
+            for( i = 0; i < LKS_HASHJOBS; i++ )
+                if( lks_jobs[i].state == LKSJ_QUEUED )  break;
+            if( i < LKS_HASHJOBS )  break;
+            SDL_CondWait( lks_hash_cond, lks_hash_mutex );
+        }
+        lks_jobs[i].state = LKSJ_WORKING;
+        memcpy( path, lks_jobs[i].path, MAX_WADPATH );
+        size = lks_jobs[i].size;
+        mtime = lks_jobs[i].mtime;
+        SDL_UnlockMutex( lks_hash_mutex );
+
+        data = read_file( path, LKS_DEMO_MAX, &len );
+        if( data )
+        {
+            LK_Sha256( data, len, sha );
+            free( data );
+        }
+        // Changed while it was read: the hash would be filed under the wrong
+        // size and time.  Let the next pass ask again.
+        if( ! lks_same_stat( path, size, mtime ) )
+            result = LKSJ_FREE;
+        else
+            result = data ? LKSJ_DONE : LKSJ_FAILED;
+
+        SDL_LockMutex( lks_hash_mutex );
+        if( lks_jobs[i].state == LKSJ_WORKING )
+        {
+            memcpy( lks_jobs[i].sha, sha, 32 );
+            lks_jobs[i].state = result;
+        }
+        SDL_UnlockMutex( lks_hash_mutex );
+    }
+    return 0;
+}
+
+// Start the hasher.  Without it every hash is done on the caller, the way it
+// was before; slower to look at, never wrong.
+static void  lks_hash_start( void )
+{
+    if( lks_hash_thread || lks_hash_sync )  return;
+    lks_hash_mutex = SDL_CreateMutex();
+    lks_hash_cond = SDL_CreateCond();
+    if( lks_hash_mutex && lks_hash_cond )
+        lks_hash_thread = SDL_CreateThread( lks_hasher, "link-demo-hash", NULL );
+    if( ! lks_hash_thread )
+    {
+        GenPrintf( EMSG_errlog, "LINKLOG Scores: no demo hashing thread (%s); hashing on the game thread\n",
+                   SDL_GetError() );
+        lks_hash_sync = true;
+        return;
+    }
+    // It waits on a condition when idle and holds nothing at exit.
+    SDL_DetachThread( lks_hash_thread );
+}
+
+// Any hash still being worked on?
+static boolean  lks_hash_busy( void )
+{
     int i;
-    byte * data;
-    uint32_t len;
-    if( stat( path, &st ) != 0 )  return false;
+    boolean busy = false;
+    if( ! lks_hash_thread )  return false;
+    SDL_LockMutex( lks_hash_mutex );
+    for( i = 0; i < LKS_HASHJOBS && ! busy; i++ )
+        busy = ( lks_jobs[i].state == LKSJ_QUEUED || lks_jobs[i].state == LKSJ_WORKING );
+    SDL_UnlockMutex( lks_hash_mutex );
+    return busy;
+}
+
+static void  lks_hc_add( const char * path, off_t size, time_t mtime, const byte * sha )
+{
+    lks_hashcache_t * c = &lks_hc[lks_hc_next];
+    lks_hc_next = (lks_hc_next + 1) % LKS_HASHCACHE;
+    dl_strncpy( c->path, path, MAX_WADPATH );
+    c->size = size;
+    c->mtime = mtime;
+    memcpy( c->sha, sha, 32 );
+}
+
+// The SHA-256 of the file at path: LKS_SHA_OK with it in out, LKS_SHA_NONE
+// when there is no such file (or it cannot be read), LKS_SHA_PENDING when the
+// hasher has it -- ask again on a later pass (lks_sha_waited is set).
+static lks_sha_e  file_sha( const char * path, byte * out )
+{
+    struct stat st;
+    int i, free_slot = -1, done_slot = -1;
+    lks_sha_e ret = LKS_SHA_PENDING;
+
+    if( stat( path, &st ) != 0 )  return LKS_SHA_NONE;
     for( i = 0; i < LKS_HASHCACHE; i++ )
     {
         lks_hashcache_t * c = &lks_hc[i];
         if( c->size == st.st_size && c->mtime == st.st_mtime && ! strcmp( c->path, path ) )
         {
             memcpy( out, c->sha, 32 );
-            return true;
+            return LKS_SHA_OK;
         }
     }
-    data = read_file( path, LKS_DEMO_MAX, &len );
-    if( ! data )  return false;
-    LK_Sha256( data, len, out );
-    free( data );
+
+    lks_hash_start();
+    if( ! lks_hash_thread )
     {
-        lks_hashcache_t * c = &lks_hc[lks_hc_next];
-        lks_hc_next = (lks_hc_next + 1) % LKS_HASHCACHE;
-        dl_strncpy( c->path, path, MAX_WADPATH );
-        c->size = st.st_size;
-        c->mtime = st.st_mtime;
-        memcpy( c->sha, out, 32 );
+        uint32_t len;
+        byte * data = read_file( path, LKS_DEMO_MAX, &len );
+        if( ! data )  return LKS_SHA_NONE;
+        LK_Sha256( data, len, out );
+        free( data );
+        lks_hc_add( path, st.st_size, st.st_mtime, out );
+        return LKS_SHA_OK;
     }
-    return true;
+
+    SDL_LockMutex( lks_hash_mutex );
+    for( i = 0; i < LKS_HASHJOBS; i++ )
+    {
+        lks_hashjob_t * j = &lks_jobs[i];
+        if( j->state == LKSJ_FREE )
+        {
+            if( free_slot < 0 )  free_slot = i;
+            continue;
+        }
+        if( strcmp( j->path, path ) )
+        {
+            if( done_slot < 0 && ( j->state == LKSJ_DONE || j->state == LKSJ_FAILED ) )
+                done_slot = i;
+            continue;
+        }
+        if( j->size != st.st_size || j->mtime != st.st_mtime )
+        {
+            // An old request for this file.  One being read is left to find
+            // that out for itself; a finished one is dropped.
+            if( j->state == LKSJ_DONE || j->state == LKSJ_FAILED )
+            {
+                j->state = LKSJ_FREE;
+                if( free_slot < 0 )  free_slot = i;
+            }
+            continue;
+        }
+        if( j->state == LKSJ_DONE )
+        {
+            memcpy( out, j->sha, 32 );
+            lks_hc_add( path, st.st_size, st.st_mtime, out );
+            ret = LKS_SHA_OK;
+        }
+        else if( j->state == LKSJ_FAILED )
+            ret = LKS_SHA_NONE;
+        if( ret != LKS_SHA_PENDING )
+            j->state = LKSJ_FREE;
+        SDL_UnlockMutex( lks_hash_mutex );
+        if( ret == LKS_SHA_PENDING )  lks_sha_waited = true;
+        return ret;
+    }
+    // Not asked for yet.  A finished job nobody has collected -- a demo no
+    // record names any more -- gives up its slot rather than hold it for good;
+    // at worst that file is read again.  All slots busy: the next pass asks.
+    if( free_slot < 0 )
+        free_slot = done_slot;
+    if( free_slot >= 0 )
+    {
+        lks_hashjob_t * j = &lks_jobs[free_slot];
+        dl_strncpy( j->path, path, MAX_WADPATH );
+        j->size = st.st_size;
+        j->mtime = st.st_mtime;
+        j->state = LKSJ_QUEUED;
+        SDL_CondSignal( lks_hash_cond );
+    }
+    SDL_UnlockMutex( lks_hash_mutex );
+    lks_sha_waited = true;
+    return LKS_SHA_PENDING;
 }
 
 // Does this look like a whole record demo?  The DoomLegacy demo header at the
@@ -395,6 +589,9 @@ static boolean  demo_looks_whole( const byte * d, uint32_t len )
 // cabinets that both hold the same old record (a copied runs.dat, say) must
 // see one record, not two.  Filling in each side's own id made the same run
 // two entries and pushed a real one off a three deep board.
+//
+// [Arcade] Returns false while a demo's hash is still with the hasher: the
+// hashes are not all filled in, so nothing may be built or planned from it.
 static boolean  lks_load_local( void )
 {
     char path[MAX_WADPATH];
@@ -403,6 +600,7 @@ static boolean  lks_load_local( void )
     lks_raw.max_runs = HS_Sync_Max_Runs();
     HS_Sync_Export( &lks_raw );
     copy_set( &lks_local, &lks_raw );
+    lks_sha_waited = false;
     for( i = 0; i < lks_local.nsplits; i++ )
     {
         hsm_split_t * s = &lks_local.splits[i];
@@ -420,7 +618,7 @@ static boolean  lks_load_local( void )
         if( lks_game_in_scope( r->game ) && HS_Sync_Run_Demo_Path( r, path ) )
             file_sha( path, r->sha );
     }
-    return true;
+    return ! lks_sha_waited;
 }
 
 // Build the manifest when the scores (or the game) changed.
@@ -437,7 +635,12 @@ static void  lks_build_manifest( void )
         return;
     if( lks_man_valid && lks_now() - lks_man_ms < LKS_REBUILD_MS )
         return;
-    lks_load_local();
+    // [Arcade] Hashes still being read: try once they are in, and offer the
+    // old manifest (if any) until then.
+    if( lks_hash_busy() )
+        return;
+    if( ! lks_load_local() )
+        return;
 
     cap = 512 + MAX_WADFILES * (8 + 32 + LKS_WAD_NAME) + (lks_local.nsplits + lks_local.nruns) * 200;
     free( lks_man );
@@ -821,15 +1024,20 @@ static void  lks_free_ready( void )
 
 // Compute merge(local, their records) into lks_merged.  Returns how many demos
 // the result needs that are not on disk, and the first one not yet fetched in
-// *missing (zero if all of them have arrived).
+// *missing (zero if all of them have arrived).  -1: the merge did not fit.
+// [Arcade] LKS_PLAN_WAIT: a demo hash is still with the hasher; plan again once
+// it is in (LKSP_HASHING).
+#define LKS_PLAN_WAIT  (-2)
 static int  lks_plan( lks_peer_t * p, byte * missing )
 {
     int i, need = 0;
     char path[MAX_WADPATH];
     byte have[32];
+    lks_sha_e got;
 
     memset( missing, 0, 32 );
-    lks_load_local();
+    if( ! lks_load_local() )
+        return LKS_PLAN_WAIT;
 
     // Their records only if they are comparable, and without any whose demo
     // did not check out.  Their epoch counts either way: a clear on the master
@@ -864,12 +1072,14 @@ static int  lks_plan( lks_peer_t * p, byte * missing )
             if( ! memcmp( r->sha, lks_zero, 32 ) || ! HS_Sync_Run_Demo_Path( r, path ) )  continue;
             sha = r->sha;
         }
-        if( file_sha( path, have ) && ! memcmp( have, sha, 32 ) )  continue;
+        got = file_sha( path, have );
+        if( got == LKS_SHA_PENDING )  continue;   // answered below, once the loop has queued them all
+        if( got == LKS_SHA_OK && ! memcmp( have, sha, 32 ) )  continue;
         need++;
         if( ! lks_find_ready( sha ) && ! memcmp( missing, lks_zero, 32 ) )
             memcpy( missing, sha, 32 );
     }
-    return need;
+    return lks_sha_waited ? LKS_PLAN_WAIT : need;
 }
 
 // Write the merge.  Every demo it needs has arrived (lks_plan said so a moment
@@ -898,7 +1108,9 @@ static void  lks_apply( lks_peer_t * p )
             if( ! memcmp( r->sha, lks_zero, 32 ) || ! HS_Sync_Run_Demo_Path( r, path ) )  continue;
             sha = r->sha;
         }
-        if( file_sha( path, have ) && ! memcmp( have, sha, 32 ) )  continue;
+        // Still with the hasher cannot happen (planned just now); if it did,
+        // writing the demo again is harmless.
+        if( file_sha( path, have ) == LKS_SHA_OK && ! memcmp( have, sha, 32 ) )  continue;
         rd = lks_find_ready( sha );
         if( ! rd )  return;   // cannot happen: planned just now
         // Atomic, like every file here: a power cut leaves the old demo or the
@@ -974,6 +1186,11 @@ static void  lks_next( lks_peer_t * p )
 {
     byte missing[32];
     int need = lks_plan( p, missing );
+    if( need == LKS_PLAN_WAIT )
+    {
+        p->phase = LKSP_HASHING;   // LKS_Ticker comes back once the hashes are in
+        return;
+    }
     if( need < 0 )
     {
         GenPrintf( EMSG_errlog, "LINKLOG Scores: merging with %s ran out of room\n", p->name );
@@ -1235,6 +1452,10 @@ void  LKS_Ticker( void )
             lks_send_get( p, p->phase == LKSP_MANIFEST ? LKS_BLOB_MANIFEST : LKS_BLOB_DEMO );
         }
 
+        // [Arcade] The plan was waiting on the hasher: go on once it is idle.
+        if( p->phase == LKSP_HASHING && ! lks_hash_busy() )
+            lks_next( p );
+
         // Apply when nobody is mid-run, signing initials, or in a game.
         if( p->phase == LKSP_APPLY && lks_since( now, p->last_ms ) > LKS_APPLY_POLL_MS )
         {
@@ -1245,6 +1466,7 @@ void  LKS_Ticker( void )
             {
                 byte missing[32];
                 int need = lks_plan( p, missing );   // the local scores may have moved on
+                if( need == LKS_PLAN_WAIT )  continue;   // [Arcade] hashes still coming: next poll
                 if( need < 0 )  { p->phase = LKSP_IDLE; continue; }
                 if( memcmp( missing, lks_zero, 32 ) )  { lks_next( p ); continue; }
             }
@@ -1258,7 +1480,7 @@ void  LKS_Ticker( void )
 
 static const char *  lks_phase_name( lks_phase_e ph )
 {
-    static const char * names[] = { "idle", "manifest", "demo", "apply" };
+    static const char * names[] = { "idle", "manifest", "demo", "apply", "hashing" };
     return names[ph];
 }
 
