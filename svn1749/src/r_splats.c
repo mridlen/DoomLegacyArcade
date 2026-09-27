@@ -134,7 +134,9 @@ static wallsplat_t* R_AllocWallSplat (void)
 
     // for next allocation
     freewallsplat++;
-    if (freewallsplat >= cv_maxsplats.value)
+    // [Arcade] Super Gore sprays five times the splats, so it takes the
+    // whole pool or the blood would recycle five times as fast.
+    if (freewallsplat >= (cv_supergore.EV ? MAXLEVELSPLATS : cv_maxsplats.value))
         freewallsplat = 0;
 
     return splat;

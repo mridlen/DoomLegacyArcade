@@ -294,6 +294,7 @@ Operator only.
 | Sound oof 2s | Play the "oof" when the player bumps into a two-sided line, as PrBoom can. |
 | Width Clip | Stock clipping-width correction switch. |
 | **Weapon Flash Fix** ★ | Draws the weapon fullbright while its muzzle flash shows, hiding the hard line in dark rooms. Drawing only. |
+| **Super Gore** ★ | Off by default. Five times the blood splats on walls for every hit, and the full 1024-splat pool (ignores *Max splats*) so the extra blood is not recycled faster. Needs *Splats* on. Does not affect scores or demos. |
 
 → [`arcade/spectre-fuzz.md`](arcade/spectre-fuzz.md), [`arcade/gameplay-defaults.md`](arcade/gameplay-defaults.md)
 

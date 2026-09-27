@@ -86,6 +86,7 @@ extern consvar_t   cv_netstat;
 extern consvar_t   cv_translucency;
 extern consvar_t   cv_splats;
 extern consvar_t   cv_maxsplats;
+extern consvar_t   cv_supergore;  // [Arcade]
 extern consvar_t   cv_screenslink;
 
 // Network XCmd.

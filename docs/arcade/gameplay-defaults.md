@@ -365,6 +365,34 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     changed tree — worth counting with `wc -l` rather than by eye, since a demo count is exactly
     the kind of number that later gets treated as evidence that files went missing.)
 
+- **Super Gore** (`cv_supergore`, "supergore", `CV_SAVE`, default **`Off`**, `p_mobj.c`) multiplies
+  the wall blood splats in `P_SpawnBloodSplats` by five (the per-hit cap goes 20 -> 100) and, in
+  `R_AllocWallSplat`, uses the whole `MAXLEVELSPLATS` pool instead of `cv_maxsplats`, or five
+  times the splats would recycle five times as fast. Operator-only: *Effects Options -> Next*,
+  appended as the last row so no index shifts.
+  - **Demo safe without a header byte, unlike rocket trails — and why.** A hit makes two kinds of
+    blood. The falling *sprite* (`P_SpawnBlood`) draws `PP_Random`, the shared gameplay index, so
+    it is left alone: one more per hit would desync everything. The *wall splats* draw a random
+    per splat for their angle and height, but through `EN_bloodsplat_prandom ? PP_Random :
+    N_Random`, and `EN_bloodsplat_prandom` is false from demoversion 148 on (and in any netgame),
+    so every cabinet demo draws `N_Random`, a separate index nothing in the simulation reads (its
+    only other user is a smoke-trail path that is dead when `EV_legacy` is set). For older demos,
+    where the splats still draw `PP_Random`, gore is simply refused.
+  - The other thing more splats do is run more `P_PathTraverse`s, which rewrite transient globals
+    (`trace`, `opentop`/`openbottom`, the intercepts, `validcount`). Stock already runs a variable
+    number of them per hit (damage / 3 + 1), so this was argued safe — **and then measured**:
+    `make demotest` against copies of the cabinet home with `supergore` Off (baseline) and On
+    (compare) gave 0 desyncs in 126 demos, over three runs. Proved able to fail by making the
+    gore splats draw `PP_Random` instead: 116 of 126 desynced. A temporary counter in
+    `R_AddWallSplat` showed the effect is real: `doomu_ep1_sk3_max` placed 200–400 splats Off and
+    1000–1200 On.
+  - Under 8-way parallel load the `doom2_MAP01_*_speed` demos sometimes log extra tics past the
+    baseline's end (`ended at a different tic`, prefix matched). This happens with gore Off
+    against an Off baseline too, and the lengths vary run to run. It is pre-existing harness noise,
+    not this.
+  - **Cost to watch on the Pi**: a BFG ball plus its 40 tracers can now run up to ~4000 splat
+    traversals in one tic instead of ~800, each up to damage*6 units long. Not measured on the Pi.
+    If it stutters there, lower the multiplier before blaming anything else.
 - **Pickup Flash defaults to `Vanilla`, and Translucency to `Auto`.** Both are *look of the game*
   settings on **Options → Effects Options**, which the lockdown hides — so the operator is the only
   person who can reach them, and whatever they default to is what every player sees forever.
