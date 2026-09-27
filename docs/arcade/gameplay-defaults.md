@@ -366,10 +366,25 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     the kind of number that later gets treated as evidence that files went missing.)
 
 - **Super Gore** (`cv_supergore`, "supergore", `CV_SAVE`, default **`Off`**, `p_mobj.c`) multiplies
-  the wall blood splats in `P_SpawnBloodSplats` by five (the per-hit cap goes 20 -> 100) and, in
-  `R_AllocWallSplat`, uses the whole `MAXLEVELSPLATS` pool instead of `cv_maxsplats`, or five
-  times the splats would recycle five times as fast. Operator-only: *Effects Options -> Next*,
-  appended as the last row so no index shifts.
+  the wall blood splats in `P_SpawnBloodSplats` by five (the per-hit cap goes 20 -> 100), doubles
+  their reach (minimum 128 units), widens the height band in `PTR_BloodTraverse` from 0..+32 to
+  -16..+48, and in `R_AllocWallSplat` uses a 4096 pool (`MAXGORESPLATS`) instead of
+  `cv_maxsplats`. Operator-only: *Effects Options -> Next*, appended as the last row so no index
+  shifts. `MAXLEVELSPLATS` is left at 1024 because it is also the *Max splats* menu's "MAX".
+  - **Multiplying the count alone did not work, and the first version shipped that way (#99).**
+    The spray only reaches `damage * 6` units from the hit point, which is on the *near* side of
+    the target: 30..90 units for a bullet. Most traces run out before any wall, and the few that
+    arrive are the ones aimed nearly straight back, so they land on top of each other. Mark's
+    report was exact: "I hit a zombieman with the pistol and it only creates one splat". Measured
+    over the 104 pistol-sized hits (damage <= 15) in `doomu_ep1_sk3_max`: stock leaves **no splat
+    on 72**; count-only gore still left none on **68** (avg 3.3 splats/hit, nearly all from the
+    few hits beside a wall); with the reach and height spread, none on 23 and 5+ on 63 (avg 9.3).
+    A screenshot of the same tic showed the count-only version as one clump of 4-5 overlapping
+    splats; the spread version marks the whole wall. **For an effect, measure where it lands, not
+    how many were made** -- the "200 -> 1000 splats placed" check passed while the thing the
+    player looks at barely changed.
+  - A single gore rocket splash placed ~200 splats, which is why the pool is 4096: at 1024 about
+    five of them would start recycling the level's blood.
   - **Demo safe without a header byte, unlike rocket trails — and why.** A hit makes two kinds of
     blood. The falling *sprite* (`P_SpawnBlood`) draws `PP_Random`, the shared gameplay index, so
     it is left alone: one more per hit would desync everything. The *wall splats* draw a random
@@ -386,12 +401,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     gore splats draw `PP_Random` instead: 116 of 126 desynced. A temporary counter in
     `R_AddWallSplat` showed the effect is real: `doomu_ep1_sk3_max` placed 200–400 splats Off and
     1000–1200 On.
-  - Under 8-way parallel load the `doom2_MAP01_*_speed` demos sometimes log extra tics past the
-    baseline's end (`ended at a different tic`, prefix matched). This happens with gore Off
-    against an Off baseline too, and the lengths vary run to run. It is pre-existing harness noise,
-    not this.
+  - The `doom2_MAP01_*_speed` demos (sk1/sk2/sk3) log a varying number of tics past their end,
+    even run one at a time (`ended at a different tic`, prefix matched), and `sk3` sometimes
+    reloads MAP01 in that tail, which demotest reports as **1 desynced** ("loaded different
+    levels"). Gore Off against a gore Off baseline does exactly the same, in 2 of 4 runs. It is
+    pre-existing harness noise, not this. Discount those three when reading a result.
   - **Cost to watch on the Pi**: a BFG ball plus its 40 tracers can now run up to ~4000 splat
-    traversals in one tic instead of ~800, each up to damage*6 units long. Not measured on the Pi.
+    traversals in one tic instead of ~800, each up to damage*12 units long. Not measured on the Pi.
     If it stutters there, lower the multiplier before blaming anything else.
 - **Pickup Flash defaults to `Vanilla`, and Translucency to `Auto`.** Both are *look of the game*
   settings on **Options → Effects Options**, which the lockdown hides — so the operator is the only

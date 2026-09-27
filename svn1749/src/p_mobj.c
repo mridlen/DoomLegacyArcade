@@ -270,8 +270,8 @@ CV_PossibleValue_t splats_cons_t[] = { {0, "OFF"}, {1, "ON"}, {2, "Vanilla"}, {7
 consvar_t cv_splats = { "splats", "1", CV_SAVE | CV_CALL, CV_OnOff, DemoAdapt_p_mobj };
 CV_PossibleValue_t maxsplats_cons_t[] = { {1, "MIN"}, {MAXLEVELSPLATS, "MAX"}, {0, NULL} };
 consvar_t cv_maxsplats = { "maxsplats", "512", CV_SAVE, maxsplats_cons_t, NULL };
-// [Arcade] Super Gore: five times the wall splats per hit, and the whole
-// splat pool.  Safe for demos: from demoversion 148 splat placement draws
+// [Arcade] Super Gore: five times the wall splats per hit, spread wider and
+// taller, and a larger splat pool (MAXGORESPLATS).  Safe for demos: from demoversion 148 splat placement draws
 // N_Random, never the shared gameplay index -- see P_SpawnBloodSplats.
 consvar_t cv_supergore = { "supergore", "0", CV_SAVE, CV_OnOff, NULL };
 
@@ -3360,6 +3360,7 @@ static byte  mt_blood_splat;  // blood splat id for this game (Heretic, Hexen)
 
 #ifdef WALLSPLATS
 static byte  EN_bloodsplat_prandom;    // optional blood splat use of prandom
+static byte  bloodsplat_gore;          // [Arcade] Super Gore, for this spray
 
 boolean PTR_BloodTraverse(intercept_t * in)
 {
@@ -3377,6 +3378,10 @@ boolean PTR_BloodTraverse(intercept_t * in)
         // Use N_Random to avoid sync loss during netgames.
         byte rbs = EN_bloodsplat_prandom ? PP_Random(pL_bloodtrav) : N_Random();
         z = bloodthing->z + ( rbs << (FRACBITS - 3));
+        // [Arcade] Super Gore: -16..+48 instead of 0..+32, or five times
+        // the splats all land in one band and read as a single blob.
+        if( bloodsplat_gore )
+            z = bloodthing->z + ( rbs << (FRACBITS - 2)) - (16 << FRACBITS);
         if (!(li->flags & ML_TWOSIDED))
             goto hitline;
 
@@ -3490,8 +3495,19 @@ void P_SpawnBloodSplats(fixed_t x, fixed_t y, fixed_t z, int damage, fixed_t mom
     // blood sprite from P_SpawnBlood above draws the gameplay index and
     // one more of those would desync every demo.  Refused where the splats
     // still draw PP_Random (old demos), for the same reason.
-    if( cv_supergore.EV && ! EN_bloodsplat_prandom )
+    // Measured, not guessed: at stock reach (30..90 units for a bullet)
+    // most traces hit no wall, and the ones that do land within a few units
+    // of each other, so five times the splats in the same spot looked like
+    // one blob.  Gore also doubles the reach, at least 128 units, and widens
+    // the height band (PTR_BloodTraverse).
+    bloodsplat_gore = cv_supergore.EV && ! EN_bloodsplat_prandom;
+    if( bloodsplat_gore )
+    {
         numsplats *= 5;
+        distance *= 2;
+        if( distance < 128 )
+            distance = 128;
+    }
 
     if (gamemode == chexquest1)
     {

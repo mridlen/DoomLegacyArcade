@@ -43,7 +43,7 @@
 #include "d_netcmd.h"
 
 #ifdef WALLSPLATS
-static wallsplat_t  wallsplats[MAXLEVELSPLATS];     // WALL splats
+static wallsplat_t  wallsplats[MAXGORESPLATS];      // WALL splats  [Arcade] sized for Super Gore
 static int          freewallsplat;
 #endif
 
@@ -135,8 +135,8 @@ static wallsplat_t* R_AllocWallSplat (void)
     // for next allocation
     freewallsplat++;
     // [Arcade] Super Gore sprays five times the splats, so it takes the
-    // whole pool or the blood would recycle five times as fast.
-    if (freewallsplat >= (cv_supergore.EV ? MAXLEVELSPLATS : cv_maxsplats.value))
+    // larger gore pool or the blood would recycle five times as fast.
+    if (freewallsplat >= (cv_supergore.EV ? MAXGORESPLATS : cv_maxsplats.value))
         freewallsplat = 0;
 
     return splat;
