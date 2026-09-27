@@ -29,6 +29,7 @@
 #include "command.h"
 #include "m_misc.h"
 #include "w_wad.h"     // numwadfiles, for the status line; W_Md5_File
+#include "d_main.h"    // D_Game_Path_Forget
 #include "md5.h"
 
 #include <stdio.h>
@@ -744,6 +745,7 @@ static void  lkc_finish( void )
     }
     lkc_phase = LKCM_NONE;
     lkb_refresh = true;   // list it on Select Game
+    D_Game_Path_Forget(); // [Arcade] an IWAD may have just arrived: look again
     if( lkc_follow )
     {
         lksel_self_note[0] = 0;

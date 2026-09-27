@@ -3000,6 +3000,30 @@ const char * D_Game_Iwad_Name( const char * idstr, const char * offered )
     return NULL;
 }
 
+// [Arcade] What D_Game_Path found, per game, until D_Game_Path_Forget.
+//
+// The search goes GAME_SEARCH_DEPTH directories deep into every doomwaddir,
+// once per possible file name, and the current directory is one of them.  The
+// cabinet is started from its checkout, so a game whose IWAD is missing -- and
+// every game, since the checkout is searched first -- meant walking the whole
+// source tree, worktrees and all.  Select Game Sync asks for every game each
+// time a member connects (M_Link_Wad_List), on the master's game thread: 706 ms
+// of attract screen on the laptop, "game list msgs 706 (x1)".
+//
+// Found: the path is checked to still be there before it is used.  Not found:
+// it stays not found until something that adds an IWAD says otherwise (Copy
+// Missing Wads, lkc_finish) -- or the next start.
+static struct
+{
+    boolean  known, found;
+    char     path[MAX_WADPATH];
+} game_path_cache[NUM_GDESC];
+
+void  D_Game_Path_Forget( void )
+{
+    memset( game_path_cache, 0, sizeof(game_path_cache) );
+}
+
 boolean  D_Game_Path( const char * idstr, char * pathbuf )
 {
     int   gmi, w;
@@ -3013,13 +3037,31 @@ boolean  D_Game_Path( const char * idstr, char * pathbuf )
         if( ! gmtp->idstr || strcasecmp( gmtp->idstr, idstr ) != 0 )
             continue;
 
+        if( game_path_cache[gmi].known )
+        {
+            if( ! game_path_cache[gmi].found )
+                return false;
+            if( access( game_path_cache[gmi].path, R_OK ) == 0 )
+            {
+                dl_strncpy( pathbuf, game_path_cache[gmi].path, MAX_WADPATH );
+                return true;
+            }
+            // Moved or deleted since: search again.
+        }
+
+        game_path_cache[gmi].known = true;
+        game_path_cache[gmi].found = false;
         // Any one of the possible filenames will do.
         for( w = 0; w < 3; w++ )
         {
             if( gmtp->iwad_filename[w] == NULL )  break;
             if( Search_doomwaddir( gmtp->iwad_filename[w], GAME_SEARCH_DEPTH,
                                    /*OUT*/ pathbuf ) != FS_NOTFOUND )
+            {
+                game_path_cache[gmi].found = true;
+                dl_strncpy( game_path_cache[gmi].path, pathbuf, MAX_WADPATH );
                 return true;
+            }
         }
         return false;   // matched the game, but found no iwad for it
     }

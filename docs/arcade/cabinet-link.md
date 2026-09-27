@@ -2500,3 +2500,40 @@ So the slow-pass line now carries what the live cabinet has to tell:
   `scores were setup, peers, score msgs N (xcount), game list msgs N (xcount), manifest, per peer`.
 
 Shown to print and to add up by lowering the threshold to 4 ms on loopback.
+
+### Found: the IWAD search walked the source tree (2026-09-27)
+
+The breakdown from the cabinet settled it:
+
+    LINKLOG Cabinet Link: link work held the screen for 706 ms (pins file 0, log 0, invites 0, scores 706, game sync 0; page faults 8, 0 from disk or swap)
+    LINKLOG Cabinet Link:   scores were setup 0, peers 0, score msgs 0 (x3), game list msgs 706 (x1), manifest 0, per peer 0
+
+One `LKC_LIST_ASK`, and no paging. Building the answer (`M_Link_Wad_List`) asks
+`D_Game_Available` of every game on Select Game, and that is the engine's stock wad search:
+`Search_doomwaddir( name, GAME_SEARCH_DEPTH, ... )`, **four directories deep into every
+doomwaddir, once per possible IWAD file name.** With `DOOMWADDIR` unset, the current directory
+is `doomwaddir[1]` -- searched *first* -- and the cabinet is started from its checkout. So each
+game, found or not, meant walking the repository: `svn1749`, the docs, and 37
+`.claude/worktrees` copies of the tree, about 11,000 entries within reach.
+
+Reproduced by starting the loopback master from the checkout (`reconnect-cwd`, the same test with
+only the working directory changed): **728-786 ms** a reconnect, against 7-15 ms from a scratch
+directory. Every earlier test had started the engine in its scratch directory, which is why none
+of them saw it.
+
+The fix: `D_Game_Path` remembers its answer per game (`game_path_cache`, `d_main.c`). A found path
+is checked with `access()` before use and searched again if it has gone; not found stays not
+found until `D_Game_Path_Forget()`, which is called by `M_Configure` (the search paths are final
+by then, and the start-up juggling of `doomwaddir[1]` around the `legacy.wad` search must not be
+remembered) and by `lkc_finish` when Copy Missing Wads has put a file in place. The same check ran
+on members too, once per listed game in `lkb_member_tick` (`M_Link_Missing`), on the Pi's own
+checkout.
+
+Verified: the reproducing setup gives no slow-pass line on any reconnect, and the member still
+receives all 17 games and packs; `linktest.sh` `gamesync gamesyncmissing gamesynccopy
+gamesynccopypack gamesynccopybad gamesyncpack gamesyncattract wadsync wadsyncbusy wadsyncoff
+wadsyncpick iwadname iwadversion scores scorewads pair` pass; `make smoke` passes.
+
+**Lesson for the next one: run the test the way the cabinet is run.** Three rounds of fixes were
+real but beside the point, because every harness `cd`s into a scratch directory, and the one
+thing that differed on the cabinet was where it was started from.
