@@ -1203,9 +1203,11 @@ Cabinet to `All`. If it still happens, run that cabinet with `-volog`, which tra
 `volog.txt` next to the program.
 
 **The attract screen freezes for a moment when another cabinet restarts or reconnects.**
-Older builds rewrote the link's `pins.txt` file on every reconnect, which on a nearly full or busy
-disk could hold the screen. Update. If it still happens, look in the terminal for
-`link work held the screen for N ms`; it names the part that took the time.
+Older builds read every record demo and every level pack from disk while the attract screen was
+up, and could do it many times over when a cabinet reconnected. On a nearly full or busy disk that
+held the screen for most of a second. Update. If it still happens, look in the terminal for
+`link work held the screen for N ms`; it names the part that took the time. A pause right after
+the other cabinet sets a new record is expected: that is the new record being saved.
 
 **A sound effect cuts out, or a weapon goes quiet during rapid fire.**
 Older builds with **Framerate Cap** above 35 could fill every sound channel with finished sounds and

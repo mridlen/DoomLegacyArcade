@@ -2378,8 +2378,9 @@ also ran with `lk_mutex` held, so the link thread waited on the disk as well.
 Why a 40 ms write can be a visible freeze on the laptop: `/home` is **btrfs at 96% full**, inside a
 folder Dropbox watches. Timing fsync'd atomic rewrites in the live `link/` directory gave 33-108 ms
 with one of 15 at **679 ms**, on an idle machine. A nearly full btrfs is known for fsync stalls far
-longer than that under other writes. **The full couple of seconds was not reproduced here**, so
-this is the likely cause rather than a proven one.
+longer than that under other writes. **The full couple of seconds was not reproduced here**, and
+this was **not** the cause: the slow-pass line below, on the cabinet, said `scores 746` with the
+pins file at 0. See the next section.
 
 What changed:
 
@@ -2408,3 +2409,62 @@ Left as they are:
 - **Screen wipes** run inside `D_Display` for 0.5-1 s at each attract page change. They are
   animated, not frozen, but a frame timer counts them: an instrumented loop that flags long frames
   must exclude them, or every page change looks like the bug.
+
+### The real cause: the wad list, asked for 17 times, and demo hashing (2026-09-26)
+
+The slow-pass line's first report from the laptop, with the pins fix in:
+
+    LINKLOG Cabinet Link: link work held the screen for 746 ms (pins file 0, log 0, invites 0, scores 746, game sync 0)
+
+No score file or demo on the laptop had been written since that afternoon, so it was not a merge.
+Two things had been hiding in the test setup: the laptop runs **Ultimate Doom**, and the loopback
+runs had used Doom 2, whose records the sync leaves out of scope; and "scores" in that line is all
+of `LKS_Ticker`, which also hands **Select Game Sync** its messages (`LKSEL_On_Sync`, the sync
+channel is shared). Timing each step with `-game doomu` found two costs:
+
+- **Demo hashing.** The manifest carries a SHA-256 of every in-scope record demo, and the first
+  build after a start finds none cached: 101 demos, 42-241 ms on the laptop depending on the page
+  cache. That is on every start, and after any merge that rewrote demos.
+- **`LKC_LIST_ASK`, 17 of them in one frame.** A member asks the master for its game and pack list
+  once when it connects (then every 5 minutes), and the master answers by opening every level pack
+  to read its lump directory (`M_Link_Wad_List` → `M_LevelPack_MapStyle`): 6-20 ms each, 13 packs,
+  105 MB, cold right after a start. The member stamped the ask `now | 1`, and on an even tic that
+  is one tic in the future; the next pass through the loop in the same tic computed `now - then` as
+  `(tic_t)-1` and asked again, on every pass until the tic ended. Loopback: 17 asks queued, answered
+  in one `LKS_Ticker` pass, **106-130 ms** on a restarted master. On the laptop's disk, plausibly the
+  746.
+
+The same stamp cut short `LKSEL_DEFAULT_GRACE`, the wait before a newly online cabinet is told to
+switch to the master's game. The other `| 1` stamps in the link code (`d_link.c`, `d_linkscore.c`)
+are compared through a guarded `*_since()` and were fine; `d_linksel.c` now has `lksel_since()` too.
+**Any `now | 1` stamp must be compared with a guarded helper, never a bare subtraction.**
+
+What changed:
+
+- **Demo hashes are read and computed on a thread of their own** (`lks_hasher`, `d_linkscore.c`).
+  `file_sha` answers from the cache, or hands the file to the hasher and says `LKS_SHA_PENDING`.
+  The manifest is built only once every hash is in (the previous one is offered until then), and a
+  merge that would need one waits in the new phase **`hashing`** (`LKSP_HASHING`,
+  `LKS_PLAN_WAIT`). Jobs are keyed by path, size and mtime and live under `lks_hash_mutex`; the
+  cache stays the game thread's own. There are 64 job slots, fewer than a real cabinet's demos: a
+  finished job nobody collected (a demo no record names any more) gives its slot to a new request,
+  or the slots would fill with orphans and the manifest wait forever. `scoreslarge` with the
+  laptop's history (101 Ultimate Doom demos) passes through them with no pass over 100 ms. If the thread cannot be created, hashing is done on the game
+  thread exactly as before, with a `LINKLOG` saying so.
+- **`M_LevelPack_MapStyle` remembers each pack by path, size and mtime.** Select Game's scan at
+  start-up already reads every pack, so a list asked for later costs a directory listing and a
+  `stat` per pack, and no wad is opened on the attract screen.
+- **`lksel_since()`** for the ask interval and the grace period.
+
+Measured, same test with the reporting threshold lowered to 5 ms: every pass on both cabinets, at
+start, first pairing, a member restart and a master restart, was **6-12 ms**, against 67-241 ms
+before. The remainder is the manifest's own SHA, parsing the other side's, and a `stat` per demo.
+
+Still on the game thread, knowingly:
+
+- **A merge that brings new records** writes the demos and both score tables, each fsync'd
+  (`lks_apply`, `HS_Sync_Import`). It runs only when the other cabinet has records this one lacks.
+  Moving it off the game thread means an asynchronous atomic write, and a second write of the same
+  file racing the first one's rename -- a risk to the power-cut safety of the score files, which is
+  the reason they are written atomically at all. Not done; if it shows, the line says `scores`.
+- **Serving a demo to the other cabinet** reads it whole (`lks_serve`); record demos are tens of KB.

@@ -166,6 +166,18 @@ static const char * lksel_test_name;
 static int       lksel_test_secs;
 static tic_t     lksel_test_start;
 
+// [Arcade] Tics since a stamp, as lk_since does for milliseconds.  The stamps
+// here are "now | 1" (0 means never), which on an even tic is one tic in the
+// *future*; a bare now - then is then -1, a huge unsigned number, on every
+// other pass through the loop in that tic.  That had a member re-sending
+// LKC_LIST_ASK on each of them -- 17 asks in one burst, and the master opening
+// every level pack 17 times in a frame -- and cut the grace a newly online
+// cabinet gets before being switched to the master's game.
+static tic_t  lksel_since( tic_t now, tic_t then )
+{
+    return ( now > then ) ? now - then : 0;
+}
+
 static void  put32( byte * p, uint32_t v )
 {
     p[0] = v & 0xff;  p[1] = (v >> 8) & 0xff;  p[2] = (v >> 16) & 0xff;  p[3] = (v >> 24) & 0xff;
@@ -1111,7 +1123,7 @@ static void  lkb_member_tick( const lk_peer_info_t * master )
     if( ! lkc_quiet( LK_State() ) || ! lkc_quiet( master->state ) )  return;
     // Building the list reads every pack's directory on the master: never
     // while it is being played.
-    if( ! lkb_asked || now - lkb_asked > LKB_LIST_TICS )
+    if( ! lkb_asked || lksel_since( now, lkb_asked ) > LKB_LIST_TICS )
     {
         if( LK_Sync_Send( master->fp, &ask, 1 ) )
             lkb_asked = now | 1;
@@ -1217,7 +1229,7 @@ static void  lksel_send_defaults( void )
         s->seen = true;
         if( ! s->online_since )  s->online_since = now | 1;
         if( p->state != LK_STATE_IDLE || ! strcasecmp( p->game, group ) )  continue;
-        if( now - s->online_since < LKSEL_DEFAULT_GRACE )  continue;
+        if( lksel_since( now, s->online_since ) < LKSEL_DEFAULT_GRACE )  continue;
         if( lksel_target[0] && s->done_serial != lksel_serial )  continue;   // a pick is on its way to it
         if( ! strcasecmp( s->default_game, group )
             && now - s->default_at < ( s->default_cannot ? LKSEL_DEFAULT_CANNOT : LKSEL_DEFAULT_RESEND ) )

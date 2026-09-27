@@ -5404,7 +5404,7 @@ void  M_LevelPack_SetLabel( int i )
 // come first in the directory, hiding them under the other game.
 //   LPM_mapxx = has MAPxx (Doom 2 style),  LPM_exmy = has ExMy (episodic)
 static
-int  M_LevelPack_MapStyle( const char * path )
+int  M_LevelPack_MapStyle_Read( const char * path )
 {
     unsigned char hdr[12], ent[16];
     FILE * f;
@@ -5450,6 +5450,48 @@ int  M_LevelPack_MapStyle( const char * path )
 
 done:
     fclose( f );
+    return style;
+}
+
+// [Arcade] The same, remembered by path, size and modification time.
+//
+// Select Game's scan (M_Configure, at start-up) reads every pack's directory,
+// and so did each Cabinet Link list a member asked for (M_Link_Wad_List) --
+// on the master's game thread, on its attract screen.  A pack's maps do not
+// change unless the file does, so the ask now costs a directory listing and a
+// stat per pack, and the reading stays where it was: at start-up.
+#include <sys/stat.h>
+#define LPM_CACHE  64
+static struct
+{
+    char    path[MAX_WADPATH];
+    off_t   size;
+    time_t  mtime;
+    int     style;
+} lpm_cache[LPM_CACHE];
+static int  lpm_cache_next = 0;
+
+static
+int  M_LevelPack_MapStyle( const char * path )
+{
+    struct stat st;
+    int  i, style;
+
+    if( stat( path, &st ) != 0 )
+        return M_LevelPack_MapStyle_Read( path );   // it says 0, as it always has
+    for( i = 0; i < LPM_CACHE; i++ )
+    {
+        if( lpm_cache[i].size == st.st_size && lpm_cache[i].mtime == st.st_mtime
+            && ! strcmp( lpm_cache[i].path, path ) )
+            return lpm_cache[i].style;
+    }
+    style = M_LevelPack_MapStyle_Read( path );
+    i = lpm_cache_next;
+    lpm_cache_next = (lpm_cache_next + 1) % LPM_CACHE;
+    dl_strncpy( lpm_cache[i].path, path, MAX_WADPATH );
+    lpm_cache[i].size = st.st_size;
+    lpm_cache[i].mtime = st.st_mtime;
+    lpm_cache[i].style = style;
     return style;
 }
 
