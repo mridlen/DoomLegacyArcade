@@ -270,6 +270,10 @@ CV_PossibleValue_t splats_cons_t[] = { {0, "OFF"}, {1, "ON"}, {2, "Vanilla"}, {7
 consvar_t cv_splats = { "splats", "1", CV_SAVE | CV_CALL, CV_OnOff, DemoAdapt_p_mobj };
 CV_PossibleValue_t maxsplats_cons_t[] = { {1, "MIN"}, {MAXLEVELSPLATS, "MAX"}, {0, NULL} };
 consvar_t cv_maxsplats = { "maxsplats", "512", CV_SAVE, maxsplats_cons_t, NULL };
+// [Arcade] Super Gore: five times the wall splats per hit, and the whole
+// splat pool.  Safe for demos: from demoversion 148 splat placement draws
+// N_Random, never the shared gameplay index -- see P_SpawnBloodSplats.
+consvar_t cv_supergore = { "supergore", "0", CV_SAVE, CV_OnOff, NULL };
 
 static const fixed_t FloatBobOffsets[64] = {
     0, 51389, 102283, 152192,
@@ -3481,6 +3485,13 @@ void P_SpawnBloodSplats(fixed_t x, fixed_t y, fixed_t z, int damage, fixed_t mom
     // BFG is funy without this check
     if (numsplats > 20)
         numsplats = 20;
+    // [Arcade] Super Gore.  Only the wall splats are multiplied: they draw
+    // N_Random (demoversion >= 148, see EN_bloodsplat_prandom), whereas the
+    // blood sprite from P_SpawnBlood above draws the gameplay index and
+    // one more of those would desync every demo.  Refused where the splats
+    // still draw PP_Random (old demos), for the same reason.
+    if( cv_supergore.EV && ! EN_bloodsplat_prandom )
+        numsplats *= 5;
 
     if (gamemode == chexquest1)
     {

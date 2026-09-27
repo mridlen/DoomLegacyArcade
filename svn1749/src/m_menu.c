@@ -6808,6 +6808,7 @@ menuitem_t EffectsOption2Menu[]=
     {IT_STRING | IT_CVAR,0, "Sound oof 2s"    , &cv_oof_2s , 0},
     {IT_STRING | IT_CVAR,0, "Width Clip"      , &cv_corr_clip_width , 0},
     {IT_STRING | IT_CVAR,0, "Weapon Flash Fix", &cv_weapon_flash_fix, 0},  // [Arcade]
+    {IT_STRING | IT_CVAR,0, "Super Gore"      , &cv_supergore     , 0},  // [Arcade] 5x wall splats
 };
 
 
@@ -13968,6 +13969,7 @@ consvar_t * menu_command_cvar_list[] =
   &cv_predictingmonsters,     //added by AC for predmonsters
   &cv_splats,
   &cv_maxsplats,
+  &cv_supergore,  // [Arcade]
 
 #ifdef MAPTHING_ADJUST
 # ifdef MAPTHING_ADJUST_MASTER
