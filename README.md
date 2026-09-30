@@ -190,6 +190,11 @@ Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
   playing, Escape doing nothing visible). The game clock overflowed and the frame-rate cap waited
   for a time 34 hours away. The clock is 64-bit now, and the cap can no longer wait on a clock that
   has gone backwards.
+- Linked cabinets left on for 49.7 days would have lost each other: Cabinet Link's timers ran on a
+  32-bit millisecond count, and when it wrapped a cabinet stopped sending keep-alives (the other
+  dropped it, even mid-game), a member could stop trying to reconnect, and a passcode lockout could
+  last 49 days. Every link timer is now wrap-safe, and `tools/linktest.sh` can put the wrap a few
+  seconds into a test (`WRAPAT`).
 
 **OpenGL**
 
@@ -1120,7 +1125,7 @@ PrtSc is a fallback binding, but GNOME's screenshot tool takes it first. To rebi
 | `-file <wad>` | Load a wad at startup: a level pack, soundtrack or DEH/BEX patch |
 | `-config <file>` | Use a different configuration file |
 | `-logfile <file>` | Write every message to a file, with timestamps |
-| `-uptime <hours>` | Start the game clock as though the program had been running that long (for testing long-running faults) |
+| `-uptime <hours>` | Start the clocks as though the program had been running that long, Cabinet Link's included (for testing long-running faults) |
 | `-v` | Verbose startup, showing which files were found |
 | `-nonodebuild` | Don't rebuild BSP nodes at level load (turns off the slime-trail fix) |
 | `-frameprofile` | Print where each frame's time goes |

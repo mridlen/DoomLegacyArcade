@@ -26,6 +26,7 @@
 #include "doomincl.h"
 #include "doomstat.h"
 #include "d_link.h"
+#include "i_system.h"    // [Arcade] I_GetMillis32
 #include "d_linkscore.h"
 #include "d_linksel.h"
 #include "d_netfil.h"
@@ -123,16 +124,19 @@ static hsm_set_t lks_offer;
 static hsm_set_t lks_raw, lks_local, lks_merged, lks_filtered;
 static boolean   lks_alloc_failed = false;
 
-static uint32_t  lks_now( void )  { return SDL_GetTicks(); }
+static uint32_t  lks_now( void )  { return I_GetMillis32(); }   // [Arcade] -uptime moves it
 
 // [Arcade] Milliseconds from then to now, never "negative".  LKS_Ticker reads
 // now before it handles the messages that stamp last_ms, so a stamp can be
 // later than now and the plain subtraction wraps to 49 days: a transfer that
 // had just answered read as stalled, was asked for again, and after
 // LKS_RETRIES gave up as "stopped answering".  See lk_since in d_link.c.
+// [Arcade] Wrap-safe: see lk_since in d_link.c, which this copies.
+#define LK_SINCE_FUTURE  0xFFFF0000u
 static uint32_t  lks_since( uint32_t now, uint32_t then )
 {
-    return ( now > then ) ? now - then : 0;
+    uint32_t  d = now - then;
+    return ( d > LK_SINCE_FUTURE ) ? 0 : d;
 }
 
 // ---------------------------------------------------------------------------

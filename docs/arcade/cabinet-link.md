@@ -2537,3 +2537,66 @@ wadsyncpick iwadname iwadversion scores scorewads pair` pass; `make smoke` passe
 **Lesson for the next one: run the test the way the cabinet is run.** Three rounds of fixes were
 real but beside the point, because every harness `cd`s into a scratch directory, and the one
 thing that differed on the cabinet was where it was started from.
+
+## The 49.7 day wrap (2026-09-30)
+
+Every Cabinet Link timer runs on `SDL_GetTicks`, a 32-bit millisecond count that wraps to zero after
+**49.7 days** of uptime: pings, dead peers, handshakes, the member's reconnect backoff, the passcode
+lockout, invite countdowns, score-sync re-offers. Nothing had ever crossed it -- the 34 hour freeze
+(`uncapped-framerate.md`) had been restarting every cabinet long before -- and it was broken in two
+different ways.
+
+- **The elapsed-time helpers read the wrap as "no time has passed".** `lk_since`, `lkg_since` and
+  `lks_since` were `( now > then ) ? now - then : 0`. After the wrap every earlier stamp is "in the
+  future", so they returned 0 until the count caught up again: up to 49 days. Pings are never
+  answered, so a cabinet with nothing else to say stopped sending anything and the other side
+  dropped it 15 s later ("silent -- heard 15010 ms ago ... stopped responding"), in a linked game
+  too; a dead peer was never noticed; a handshake never timed out. That last one stranded a member
+  whose connect attempt straddled the wrap: it never tried again.
+- **Stored deadlines compared with now.** `lk_now() < lo->until` (the lockout), `now >=
+  lkt_next_attempt` (the backoff), `now > lkg_deadline_ms + LKG_GRACE_MS` (an invite), and the
+  status and test-driver timers. A deadline set before the wrap that did not itself overflow is ~49
+  days away afterwards: an address locked out for a wrong passcode stayed locked out.
+
+The `( now > then )` guard was there for a real reason, recorded above `lk_since`: the link thread
+stamps a connection after reading `now`, so a stamp can be a millisecond *ahead*, and plain `now -
+then` read that as 49 days and closed the connection at once -- on Windows, most attempts. So the fix
+keeps it, narrowed: `d = now - then`, and a `d` above `LK_SINCE_FUTURE` (0xFFFF0000, a stamp up to
+~65 s ahead) reads as 0. The unsigned subtraction is right across the wrap, and 0 meaning "never"
+still reads as long ago. **Every timer is now "when it started" plus that helper; there are no stored
+deadlines left.** A signed-difference deadline test (`(int32_t)(now - deadline) >= 0`) was rejected:
+it misreads anything more than 24.8 days old, and a lockout slot that last fired a month ago would
+lock its address out again.
+
+### Testing it: `WRAPAT`
+
+`-uptime <hours>` (from the 34 hour fix) now also moves the 32-bit clock the link reads
+(`I_GetMillis32`, `sdl/i_system.c`: `SDL_GetTicks` plus the offset, in 32 bits so it wraps exactly as
+SDL's does; read by `lk_now`/`lkg_now`/`lks_now`). `I_SysInit` reads `-uptime` before the link thread
+exists. In `tools/linktest.sh`, **`WRAPAT=S`** makes an engine's clock wrap S seconds after it starts,
+for one `run`, a case, or a whole command line (`WRAPAT=20 tools/linktest.sh scores`), and
+**`WRAPONLY=<cabinet dir>`** limits it to one cabinet.
+
+**Wrap one cabinet, not both.** A timer broken by the wrap fails *open* -- nobody is ever declared
+dead -- so with both wrapped nobody is left to notice the other go quiet, and the first version of
+these cases caught the stopped pings on one run in two. The cabinet that did not wrap is the witness.
+And **look for timeouts, not any lost connection**: whichever engine the harness stops first is
+"connection lost" to the other, bug or no bug, which failed the first version on the fixed code.
+
+| case | what crosses the wrap | before the fix | after |
+| --- | --- | --- | --- |
+| `wrapidle` | a quiet link; the member wraps | FAIL twice: master logs "stopped responding" | PASS twice |
+| `wrapidlemaster` | a quiet link; the master wraps | pass (the master's roster traffic never needed pings) -- kept as a guard against a fix that declares live peers dead | PASS twice |
+| `wrapreconnect` | the member's backoff, master away | FAIL: never reconnected, "timed out before authenticating" | PASS twice |
+| `wraplockout` | a 60 s passcode lockout | FAIL: 43 refusals after it should have ended | PASS twice |
+| `wrapgame` | a linked deathmatch; the joiner wraps | FAIL twice: host logs the joiner "stopped responding" mid-game | PASS twice |
+
+`wraplockout` has to wrap *after* the lockout's end time (t=72 for a lockout from ~t=8): a deadline
+set under 60 s before the wrap overflows with it and works by accident, which is what its first
+version tested.
+
+**Not covered:** a stamp left untouched for a full 49.7 days wraps all the way round and reads as new
+again. The lockout was the one place that kept a stamp after it mattered; the check now clears it
+once the 60 s are up. A lockout slot that is never looked at again keeps its stamp, so the same
+address failing again in the one minute exactly 49.7 days later would be refused for up to that
+minute. That was judged not worth more code.

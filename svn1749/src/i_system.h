@@ -73,6 +73,12 @@ tic_t I_GetTime (void);
 // framerate's interpolation (r_fps.c).  A backend with no sub-tic clock
 // returns FRACUNIT, which leaves the game running exactly as it always did.
 fixed_t I_GetTimeFrac (void);
+// [Arcade] Milliseconds since start as a 32-bit count, which wraps every
+// 49.7 days exactly as SDL_GetTicks does, moved on by -uptime so that the
+// wrap can be tested.  For Cabinet Link's timers.  SDL backend only.
+uint32_t I_GetMillis32 (void);
+// [Arcade] Read -uptime.  Called from I_SysInit, before any thread starts.
+void I_Uptime_Init (void);
 
 // replace getchar() once the keyboard has been appropriated
 int I_GetKey (void);

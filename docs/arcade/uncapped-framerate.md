@@ -238,7 +238,9 @@ Two fixes, each sufficient alone, both kept:
 
 **`-uptime <hours>` starts the clock as though the program had already been running that long**, so
 the fault shows in seconds instead of a day and a half. `-uptime 34.0855` puts the old wrap ~5 s
-after startup. Measured headless with a temporary frames-per-3-seconds counter, cap 60:
+after startup. It moves Cabinet Link's 32-bit millisecond clock too (`I_GetMillis32`), whose own
+49.7 day wrap is tested by `WRAPAT` in `tools/linktest.sh` -- see "The 49.7 day wrap" in
+`cabinet-link.md`. Measured headless with a temporary frames-per-3-seconds counter, cap 60:
 
 | build | clock across the wrap | frames per 3 s after it |
 | --- | --- | --- |

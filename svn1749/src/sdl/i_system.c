@@ -1436,6 +1436,7 @@ static void I_ShutdownJoystick(void)
 void I_SysInit(void)
 {
   CONS_Printf("Initializing SDL...\n");
+  I_Uptime_Init();   // [Arcade] before any thread can read the clocks
 
   // Initialize Audio as well, otherwise DirectX can not use audio
   if( SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0 )
@@ -2075,22 +2076,42 @@ static uint64_t  I_Clock_ms( void )
 #endif
 }
 
-// [Arcade] -uptime <hours>: start the clock as though the program had already
+// [Arcade] -uptime <hours>: start the clocks as though the program had already
 // been running that long.  The 34 hour fault above took 34 hours to show; this
-// shows it (or its absence) in seconds.  Read once, on the first clock read.
+// shows it (or its absence) in seconds.  I_SysInit reads it before any thread
+// starts, so the Cabinet Link thread only ever reads a settled value; the
+// first clock read reads it too, in case that comes earlier.
+void  I_Uptime_Init( void )
+{
+    static boolean  done = false;
+    int p;
+
+    if( done )  return;
+    done = true;
+    p = M_CheckParm( "-uptime" );
+    if( p && (p + 1) < myargc )
+        tick_uptime_ms = (uint64_t)( atof( myargv[p+1] ) * 3600000.0 );
+}
+
 static uint64_t  I_Elapsed_ms( void )
 {
     uint64_t  now = I_Clock_ms();
 
     if( ! tick_started )
     {
-        int p = M_CheckParm( "-uptime" );
+        I_Uptime_Init();
         tick_started = true;
         tick_basetime = now;
-        if( p && (p + 1) < myargc )
-            tick_uptime_ms = (uint64_t)( atof( myargv[p+1] ) * 3600000.0 );
     }
     return now - tick_basetime + tick_uptime_ms;
+}
+
+// [Arcade] SDL_GetTicks plus -uptime, both in 32 bits, so it wraps every 49.7
+// days exactly as SDL_GetTicks does -- the point is to test that wrap, not to
+// hide it.  No state of its own: the Cabinet Link thread calls it.
+uint32_t  I_GetMillis32( void )
+{
+    return (uint32_t) SDL_GetTicks() + (uint32_t) tick_uptime_ms;
 }
 
 tic_t I_GetTime(void)

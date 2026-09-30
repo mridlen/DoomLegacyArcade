@@ -8,6 +8,7 @@
 #include "doomincl.h"
 #include "doomstat.h"
 #include "d_link.h"
+#include "i_system.h"    // [Arcade] I_GetMillis32
 #include "d_linkgame.h"
 #include "d_linksel.h"
 #include "d_clisrv.h"
@@ -81,7 +82,7 @@ static uint32_t    lkg_music_ms;
 static byte        lkg_host_fp[LK_FP_BYTES];
 static char        lkg_host_name[LK_NAME_LEN];
 static byte        lkg_host_joined;
-static uint32_t    lkg_deadline_ms;
+static uint32_t    lkg_countdown_ms, lkg_countdown_len;   // when the host's countdown was heard, and its length
 
 // A linked game in progress
 static uint32_t    lkg_game_ms;
@@ -99,9 +100,9 @@ static int         lkg_test_join_panels2;   // -linkjoinpanels2 N: panels from t
 static int         lkg_test_invites;
 static int         lkg_test_poll_sleep;
 static int         lkg_test_press_secs;     // -linkpressafter S: a real fire press S s into an invite
-static uint32_t    lkg_test_press_at;
+static uint32_t    lkg_test_press_at;     // [Arcade] when it was armed (| 1), 0 = not; fires lkg_test_press_secs later
 static int         lkg_test_lock_secs;      // -linklockafter S: panel 1 locks in S s into an invite
-static uint32_t    lkg_test_lock_at;
+static uint32_t    lkg_test_lock_at;      // [Arcade] likewise, lkg_test_lock_secs
 static boolean     lkg_test_msgpress;       // -linkmsgpress: fire at any message box, 1 s in
 static int         lkg_test_move_ms;
 static boolean     lkg_test_chaos;          // -linkchaos: every panel, a new random mix of buttons every 50 ms
@@ -121,15 +122,18 @@ static int         lkg_games_done;          // linked games this cabinet has see
 
 static char        lkg_line[96];
 
-static uint32_t  lkg_now( void )  { return SDL_GetTicks(); }
+static uint32_t  lkg_now( void )  { return I_GetMillis32(); }   // [Arcade] -uptime moves it
 
 // Milliseconds from then to now, never "negative".  A stamp taken after now was
 // read -- a message handled later in the same tick -- is 0 ms old, not 49 days:
 // the unsigned wrap is what made a joining cabinet declare its linked game over
 // the instant it began, about one START in five on the Pi.
+// [Arcade] Wrap-safe: see lk_since in d_link.c, which this copies.
+#define LK_SINCE_FUTURE  0xFFFF0000u
 static uint32_t  lkg_since( uint32_t now, uint32_t then )
 {
-    return ( now > then ) ? now - then : 0;
+    uint32_t  d = now - then;
+    return ( d > LK_SINCE_FUTURE ) ? 0 : d;
 }
 
 static void  put32( byte * p, uint32_t v )
@@ -492,7 +496,7 @@ void  LKG_Test_Keys( void )
 {
     static const char * script = NULL;
     static int  state = -1;          // -1 unread, 0 none, 1 running, 2 done
-    static uint32_t  next_ms;
+    static uint32_t  wait_from, wait_ms;   // elapsed, not a deadline: see lk_since
     char  tok[64];
     int   n;
 
@@ -504,11 +508,11 @@ void  LKG_Test_Keys( void )
             return;
         script = M_GetNextParm();
         state = 1;
-        next_ms = lkg_now() + 3000;
+        wait_from = lkg_now();  wait_ms = 3000;
         return;
     }
-    if( lkg_now() < next_ms )  return;
-    next_ms = lkg_now() + 50;
+    if( lkg_since( lkg_now(), wait_from ) < wait_ms )  return;
+    wait_from = lkg_now();  wait_ms = 50;
 
     while( *script == ' ' )  script++;
     if( ! *script )
@@ -534,7 +538,7 @@ void  LKG_Test_Keys( void )
     else if( ! strcmp( tok, "enter" ) )  lkg_post_key( KEY_ENTER, 0 );
     else if( ! strcmp( tok, "bs" ) )     lkg_post_key( KEY_BACKSPACE, 0 );
     else if( tok[0] == 'c' && tok[1] == '=' && tok[2] )  lkg_post_key( (unsigned char) tok[2], (unsigned char) tok[2] );
-    else if( tok[0] == 'w' )             next_ms = lkg_now() + atoi( tok + 1 );
+    else if( tok[0] == 'w' )             wait_ms = atoi( tok + 1 );
     else if( ! strcmp( tok, "shot" ) )   COM_BufAddText( "screenshot\n" );
     else
         GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: unknown key token %s\n", tok );
@@ -562,7 +566,8 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
     dl_strncpy( lkg_host_name, LK_Peer_Find( ev->source, &info ) ? info.name : "ANOTHER CABINET",
                 LK_NAME_LEN );
     if( secs < 3 )  secs = 3;
-    lkg_deadline_ms = lkg_now() + secs * 1000;
+    lkg_countdown_ms = lkg_now();
+    lkg_countdown_len = secs * 1000;
     lkg_sent_joined = lkg_sent_locked = 255;
 
     if( convert )
@@ -583,9 +588,9 @@ static void  lkg_become_remote( const lk_event_t * ev, boolean convert )
             M_Join_Test_Lock( panel, lkg_test_join == 1 );
     }
     if( lkg_test_press_secs > 0 )
-        lkg_test_press_at = lkg_now() + lkg_test_press_secs * 1000;   // -linkautopress: fire, never lock
+        lkg_test_press_at = lkg_now() | 1;   // -linkautopress: fire, never lock
     if( lkg_test_lock_secs > 0 )
-        lkg_test_lock_at = lkg_now() + lkg_test_lock_secs * 1000;
+        lkg_test_lock_at = lkg_now() | 1;
 }
 
 static void  lkg_on_invite( const lk_event_t * ev )
@@ -724,7 +729,8 @@ static void  lkg_on_event( const lk_event_t * ev )
         {
             int secs = get16( p + 10 );
             lkg_host_joined = p[8];
-            lkg_deadline_ms = lkg_now() + secs * 1000;
+            lkg_countdown_ms = lkg_now();
+            lkg_countdown_len = secs * 1000;
             M_Join_Set_Countdown( secs );
         }
         break;
@@ -909,13 +915,13 @@ void  LKG_Ticker( void )
     // exactly like the right one and a whole class of desync went unseen.
     if( lkg_test_chaos && gamestate == GS_LEVEL && netgame )
     {
-        static uint32_t  next_ms = 0, rng = 987654321u;
+        static uint32_t  last_ms = 0, rng = 987654321u;
         static byte      held[MAXSPLITSCREENPLAYERS];
         static const int  gcs[6] = { gc_forward, gc_backward, gc_turnleft, gc_turnright, gc_strafeleft, gc_fire };
-        if( lkg_now() >= next_ms )
+        if( lkg_since( lkg_now(), last_ms ) >= 50 )
         {
             int  panel, g;
-            next_ms = lkg_now() + 50;
+            last_ms = lkg_now();
             for( panel = 0; panel < lkg_test_join_panels && panel < MAXSPLITSCREENPLAYERS; panel++ )
             {
                 byte  want;
@@ -1055,13 +1061,13 @@ void  LKG_Ticker( void )
         // no longer up does not get it.  The test hooks above reach into the
         // join screen directly and could never see it closed underneath them.
         // -linktest -linklockafter: panel 1 locks in late, after the host has.
-        if( lkg_test_lock_at && now >= lkg_test_lock_at )
+        if( lkg_test_lock_at && lkg_since( now, lkg_test_lock_at ) >= (uint32_t) lkg_test_lock_secs * 1000 )
         {
             lkg_test_lock_at = 0;
             GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: locking in\n" );
             M_Join_Test_Lock( 0, true );
         }
-        if( lkg_test_press_at && now >= lkg_test_press_at )
+        if( lkg_test_press_at && lkg_since( now, lkg_test_press_at ) >= (uint32_t) lkg_test_press_secs * 1000 )
         {
             event_t  ev;
             int  key = gamecontrol_pl[0][gc_fire][0] ? gamecontrol_pl[0][gc_fire][0]
@@ -1074,7 +1080,7 @@ void  LKG_Ticker( void )
             ev.type = ev_keyup;
             D_PostEvent( &ev );
         }
-        if( now > lkg_deadline_ms + LKG_GRACE_MS )
+        if( lkg_since( now, lkg_countdown_ms ) > lkg_countdown_len + LKG_GRACE_MS )
         {
             GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: %s did not start the game\n", lkg_host_name );
             M_Join_Remote_Close();
