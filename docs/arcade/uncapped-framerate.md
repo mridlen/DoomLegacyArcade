@@ -204,6 +204,49 @@ I_GetTimeFrac()`), which gives ~0.4 µs resolution without needing another platf
 two halves come from separate reads and can very occasionally appear to step backwards across a tic
 boundary; that is treated as "due now" rather than waiting out a whole tic.
 
+### The 34 hour freeze
+
+**A cabinet left running for 34 hours stopped drawing, and the game carried on underneath.** Both
+the Pi and the Windows cabinet were found on a frozen frame (2026-09-29) with sound still playing,
+Escape doing nothing visible, and the log showing the attract cycle several demos further on than
+the picture. On the Pi the screen said E1M3 while the log said E1M6.
+
+The cause was the clock, not the limiter's logic. `I_GetTime` computed
+`(ticks - tick_basetime)*TICRATE/1000` in 32 bits, and elapsed milliseconds times 35 overflows 32
+bits after 2^32/35 ms = **34.09 hours**. The tic clock fell from ~4,294,967 back to zero. The
+limiter's deadline was still up at the old value, so `now < next_frame_time` stayed true and every
+pass went to `I_Sleep(1)`: no frame, ever. The resync above cannot catch it, because it only runs on
+a pass that *draws*. Meanwhile `TryRunTics` kept the simulation going, which is why the attract
+watchdog (`attract.md`) never fired: it watches for a stalled simulation, and this was the opposite.
+`I_GetTimeFrac` already had a comment about exactly this overflow and did its own sum in 64 bits;
+`I_GetTime`, beside it, did not.
+
+Proved from the Windows cabinet's memory dump (Task Manager -> Create memory dump file, read on
+Linux with the Python `minidump` package and `addr2line` against the Windows build's DWARF): the
+process had been up 34.09 hours plus an hour, the main thread was asleep in the limiter's
+`I_Sleep`, and `gametic` was 4,430,419 -- past the wrap, so the game had played on for an hour
+unseen.
+
+Two fixes, each sufficient alone, both kept:
+
+- **The clock is 64-bit throughout** (`I_Elapsed_ms` in `sdl/i_system.c`, shared by `I_GetTime` and
+  `I_GetTimeFrac`). It reads `SDL_GetTicks64` where SDL has it (2.0.18 and later) and otherwise
+  carries `SDL_GetTicks`' own 49.7 day wrap itself. `tic_t` is still 32 bits, so the tic clock now
+  wraps after 3.9 years.
+- **The limiter resyncs a deadline more than four intervals in the future.** A clock that goes
+  backwards for any reason now costs one frame's timing, not the picture.
+
+**`-uptime <hours>` starts the clock as though the program had already been running that long**, so
+the fault shows in seconds instead of a day and a half. `-uptime 34.0855` puts the old wrap ~5 s
+after startup. Measured headless with a temporary frames-per-3-seconds counter, cap 60:
+
+| build | clock across the wrap | frames per 3 s after it |
+| --- | --- | --- |
+| old clock, no resync | 4,294,951 -> 89 | **0** (game still ran: `gametic` climbing, a new demo started) |
+| old clock, with resync | 4,294,862 -> 0 | 180 |
+| 64-bit clock, with resync | 4,294,973 -> 4,295,078 | 180 |
+| 64-bit clock, `-uptime 1200` (50 days) | 151,200,000 onward | 180 |
+
 When the limiter holds a frame back it calls `I_Sleep(1)` rather than spinning. That is the whole
 point — without it the loop still burns a core at 100% while drawing 60 frames.
 
@@ -237,8 +280,8 @@ aligns frames to the panel instead of merely counting them.
 ## `I_GetTimeFrac`
 
 New in the SMIF interface (`i_system.h`). Returns 0..`FRACUNIT` for the position within the current
-tic. Only the SDL backend has a real implementation; it shares `tick_basetime` with `I_GetTime`
-deliberately, so the two can never disagree about which tic it is — a frac from an independent
+tic. Only the SDL backend has a real implementation; it shares `I_Elapsed_ms` (and so the base
+time) with `I_GetTime` deliberately, so the two can never disagree about which tic it is — a frac from an independent
 timer drifts and the picture jitters by a whole tic wherever the two round differently.
 
 The five dormant backends (`linux_x`, `win32`, `macos`, `os2`, `djgppdos`) return `FRACUNIT`, which

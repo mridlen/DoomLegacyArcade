@@ -505,6 +505,11 @@ while the demo start was still a pending `gameaction` — and with no tics runni
 executes, so the demo never loaded at all and the watchdog, which ignores anything that is not
 `GS_LEVEL`, never saw it. Freezing the thing before it starts is not the fault being reproduced.
 
+**A frozen picture is not necessarily this.** If the log (`-logfile`) shows demos still advancing
+past the one on screen, the *simulation* is fine and it is the drawing that stopped, which this
+watchdog cannot see by design. That was the 34 hour clock wrap, found 2026-09-29 on the Pi and the
+Windows cabinet -- see "The 34 hour freeze" in `uncapped-framerate.md`.
+
 ### The chase camera gets stuck, and how it is unstuck
 
 **`MT_CHASECAM` collides with the world.** It is `MF_NOBLOCKMAP|MF_NOSECTOR`, so nothing can collide

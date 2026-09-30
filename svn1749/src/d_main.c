@@ -2181,6 +2181,16 @@ void D_DoomLoop(void)
                     // as "due now" rather than waiting out a whole tic.
                     uint64_t  now = ((uint64_t)I_GetTime() << FRACBITS)
                                     | (uint32_t)I_GetTimeFrac();
+                    uint64_t  interval =
+                        (uint64_t)TICRATE * FRACUNIT / (unsigned)fps_cap;
+
+                    // A deadline more than a few frames away means the clock
+                    // went backwards, and waiting for it means never drawing
+                    // again while the game plays on unseen -- which is what a
+                    // 32-bit I_GetTime did after 34 hours.  The resync below
+                    // cannot catch that: it only runs on a pass that draws.
+                    if( next_frame_time > now + interval * 4 )
+                        next_frame_time = now;
 
                     if( now < next_frame_time )
                     {
@@ -2195,9 +2205,6 @@ void D_DoomLoop(void)
                     }
                     else
                     {
-                        uint64_t  interval =
-                            (uint64_t)TICRATE * FRACUNIT / (unsigned)fps_cap;
-
                         draw_now = true;
 
                         // Advance the deadline by exactly one interval rather
