@@ -14,6 +14,8 @@
 #   tools/linktest.sh -k              # keep the scratch directory
 #   tools/linktest.sh -b PATH         # engine binary (default svn1749/bin)
 #   tools/linktest.sh -j N            # cases at once (default 2; each is up to 3 engines)
+#   WRAPAT=S tools/linktest.sh CASE   # run CASE with every engine's 32-bit millisecond
+#                                     # clock wrapping S seconds in (the 49.7 day wrap)
 #
 # Security checks that have never been seen to fail are not evidence.
 # --selfcheck builds a copy of the engine with LK_SELFCHECK, which lets an
@@ -40,7 +42,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick wrapidle wrapidlemaster wrapreconnect wraplockout wrapgame"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -54,7 +56,7 @@ selfcheck_of() {
         garbage) echo "-" ;;
         bigframe) echo framesize ;;
         unbound) echo exporter ;;
-        linkgame|campaign|musiccab|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep|wadsync|wadsyncbusy|wadsyncoff|wadsyncpick) echo "-" ;;
+        linkgame|campaign|musiccab|wipejoin|nojoin|noshow|convert|iwadname|iwadversion|memberhost|rehost|memberpress|silentmember|lockinlate|lockinthird|slowclock|idlejoin|musicwad|gamewad|msgfire|menusetup|idleshared|idleall|idlehost|joinview|rehostview|demojoin|slowjoin8|move8|lossy8|chaos8|names8|names12|names12memberhost|rejoin12|nojoinmaster|scores|scoreclear|scoreclearlive|scorebad|scorerules|scorewads|scorewadextra|scoreattract|scorebusy|scoreslarge|scorerestore|scorerestorepath|gamesync|gamesyncoff|gamesyncmissing|gamesyncbusy|gamesyncpack|gamesynccopy|gamesynccopypack|gamesynccopybad|gamesyncunload|gamesyncattract|gamesyncunloadkeep|wadsync|wadsyncbusy|wadsyncoff|wadsyncpick|wrapidle|wrapidlemaster|wrapreconnect|wraplockout|wrapgame) echo "-" ;;
         stranger) echo udp ;;
     esac
 }
@@ -140,8 +142,19 @@ cfg() {
 run() {
     local d=$1 secs=$2; shift 3
     ( cd "$d" && env LK_SELFCHECK="${LKSC:-}" SDL_VIDEODRIVER="${VIDEO:-dummy}" DISPLAY= SDL_AUDIODRIVER=dummy \
-        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" ${NODRAW--nodraw} -nosound -nomusic -linkstatus "$@" \
+        SDL_NO_SIGNAL_HANDLERS=1 timeout "$secs" ./doomlegacyarcade -game "${GAME:-doom2}" ${NODRAW--nodraw} -nosound -nomusic -linkstatus $(wrapargs "$d") "$@" \
         > out.txt 2>&1 ) &
+}
+
+# WRAPAT=S : the engine's 32-bit millisecond clock (SDL_GetTicks, which every
+# Cabinet Link timer runs on) wraps S seconds after it starts, instead of after
+# 49.7 days.  -uptime moves that clock on by 2^32 ms less S seconds.  Set it for
+# one run() (WRAPAT=12 run ...), for a whole case, or on the command line.
+# WRAPONLY=<cabinet dir name> limits it to that one cabinet.
+wrapargs() {
+    [ -n "${WRAPAT:-}" ] || return 0
+    [ -z "${WRAPONLY:-}" ] || [ "$(basename "$1")" = "$WRAPONLY" ] || return 0
+    awk -v s="$WRAPAT" 'BEGIN { printf "-uptime %.9f", (4294967296 - s * 1000) / 3600000 }'
 }
 
 out() { sed 's/\x1b\[[0-9;]*m//g' "$1/out.txt"; }
@@ -2339,6 +2352,127 @@ case_gamesyncunloadkeep() {
     expect "the master kept the pick" "$d/master" "^LINKLOG .*FOLLOWER dropped its level pack; the link stays on tnt"
     expect_not "the master was not switched back" "$d/master" "^LINKLOG .*switching to doom2"
     expect_game "$d/master" tnt; expect_game "$d/follower" tnt
+}
+
+# --------------------------------------------------------------------------
+#  The 49.7 day wrap.  Every Cabinet Link timer runs on SDL_GetTicks, a 32-bit
+#  millisecond count that wraps after 49.7 days of uptime -- pings, dead peers,
+#  handshakes, the reconnect backoff, the lockout, invites.  WRAPAT puts the
+#  wrap a few seconds into a run, and each case crosses it at a moment where a
+#  timer is running.  The cabinets wrap at different times, as real ones would.
+#
+#  Wrap ONE cabinet and leave the other's timers sound.  A timer broken by the
+#  wrap fails open -- a peer is never declared dead -- so with both wrapped,
+#  nobody is left to notice the other going quiet, and the first version of
+#  these cases caught the stopped pings on one run in two.  The cabinet that
+#  did not wrap is the witness.
+#
+#  Look for TIMEOUTS, not for any lost connection.  Whichever engine the
+#  harness stops first is "connection lost" / "receive failed" to the other,
+#  with or without a bug, and the first version of these cases failed on the
+#  fixed code for exactly that.  A timer broken by the wrap shows up as a peer
+#  going silent: "silent -- heard 15010 ms ago", "stopped responding".
+# --------------------------------------------------------------------------
+WRAP_TIMEOUT="^LINKLOG .*(stopped responding|silent --|timed out)"
+
+# A quiet link across the wrap: nothing but pings, which are never answered,
+# so a cabinet whose "last sent" stamp reads as "just now" goes quiet and the
+# other drops it 15 s later.  Only the member wraps; the master is the witness.
+# The member outlives the master, so the master may not lose it at all.
+case_wrapidle() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name MASTER" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name MEMBER" "master 127.0.0.1" "port $p" "$PASS"
+    run "$d/master" 51 0
+    sleep 2
+    WRAPAT=12 run "$d/member" 55 0     # wraps ~t=14
+    wait
+    expect_not "the master never lost the member" "$d/master" "^LINKLOG .*(connection lost|stopped responding|silent --|timed out|receive failed)"
+    expect_not "the member never timed the master out" "$d/member" "$WRAP_TIMEOUT"
+    lastline "$d/master" LINKPEER | grep -q " online .*MEMBER|" || FAILS="$FAILS
+      the master does not see the member online at the end: $(lastline "$d/master" LINKPEER)"
+}
+
+# The same the other way round: the master wraps, the member is the witness.
+# The master outlives the member, so the member may not lose it at all.  This
+# one passed before the fix too -- the master sends its roster on its own
+# schedule and never needed its pings -- so it guards the other direction: a
+# fix under which a wrapped master declares live members dead.
+case_wrapidlemaster() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name MASTER" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name MEMBER" "master 127.0.0.1" "port $p" "$PASS"
+    WRAPAT=12 run "$d/master" 57 0     # wraps ~t=12
+    sleep 2
+    run "$d/member" 51 0
+    wait
+    expect_not "the member never lost the master" "$d/member" "^LINKLOG .*(connection lost|stopped responding|silent --|timed out|receive failed)"
+    expect_not "the master never timed the member out" "$d/master" "$WRAP_TIMEOUT"
+    lastline "$d/member" LINKPEER | grep -q " online .*MASTER|" || FAILS="$FAILS
+      the member does not see the master online at the end: $(lastline "$d/member" LINKPEER)"
+}
+
+# The master goes away just before the member's clock wraps, so the member is
+# backing off between reconnect attempts across the wrap.  It must reconnect
+# once the master is back.
+case_wrapreconnect() {
+    local d=$1 p=$2 mpid n
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name MASTER" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name MEMBER" "master 127.0.0.1" "port $p" "$PASS"
+    run "$d/master" 16 0
+    mpid=$!
+    sleep 2
+    WRAPAT=20 run "$d/member" 62 0     # wraps ~t=22, during the backoff
+    wait "$mpid"
+    mv "$d/master/out.txt" "$d/master/out-first.txt"
+    sleep 8                             # t~26: the master comes back,
+    run "$d/master" 45 0                #   and outlives the member (t~64)
+    wait
+    expect "the member lost the master" "$d/member" "^LINKLOG .*(connection lost|Connection refused)"
+    n=$(out "$d/member" | grep -ac "^LINKLOG .* authenticated")
+    [ "$n" -ge 2 ] || FAILS="$FAILS
+      the member did not reconnect after its clock wrapped ($n connections)"
+    lastline "$d/member" LINKPEER | grep -q " online .*MASTER|" || FAILS="$FAILS
+      the member does not see the master online at the end: $(lastline "$d/member" LINKPEER)"
+}
+
+# Three bad passcodes lock an address out for 60 s, from ~t=8 to ~t=68.  The
+# master's clock wraps after that end time (t=72), so the end time itself did
+# not wrap -- a lockout begun under 60 s before the wrap is carried round with
+# it and works by accident, which is what the first version of this case
+# tested.  A good cabinet from the same address at t~80 must get in, not find
+# itself locked out for 49 days.
+case_wraplockout() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/bad"; mkcab "$d/good"
+    cfg "$d/master" "role master" "name MASTER" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/bad" "role member" "name BAD" "master 127.0.0.1" "port $p" "passcode wrong horse battery staple"
+    cfg "$d/good" "role member" "name GOOD" "master 127.0.0.1" "port $p" "$PASS"
+    WRAPAT=72 run "$d/master" 100 0
+    sleep 2
+    run "$d/bad" 14 0
+    sleep 78                            # t~80: the lockout (from ~t=8) is over
+    run "$d/good" 18 0
+    wait
+    expect "the master locked the address out" "$d/master" "^LINKLOG .*127\.0\.0\.1 locked out for 60 seconds"
+    expect "a cabinet from that address gets in once the lockout is over" "$d/good" "^LINKLOG .* authenticated"
+    expect "the master sees it online" "$d/master" "^LINKPEER 127\.0\.0\.1 [0-9A-F]{4}-[0-9A-F]{4} online .*GOOD\|"
+}
+
+# A linked deathmatch with the joiner's clock wrapping part way through the
+# game, and the host as the witness.  The
+# game itself runs on the UDP channel and linkgame's checks pass even while the
+# link underneath it dies, which is what the first version of this case missed:
+# check the link too.  Before the fix the joiner's pings stopped at its wrap and
+# the host logged "JOINCAB: silent -- heard 15010 ms ago ... stopped responding".
+case_wrapgame() {
+    local d=$1
+    WRAPAT=30 WRAPONLY=member case_linkgame "$@"
+    expect_not "the host never timed the other cabinet out" "$d/master" "$WRAP_TIMEOUT"
+    expect_not "the joiner never timed the host out" "$d/member" "$WRAP_TIMEOUT"
 }
 
 # --------------------------------------------------------------------------

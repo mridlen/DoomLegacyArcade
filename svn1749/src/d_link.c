@@ -375,7 +375,8 @@ static void  lk_fp_short( const byte * fp, char * out )
     snprintf( out, LK_ID_SHORT_LEN, "%02X%02X-%02X%02X", fp[0], fp[1], fp[2], fp[3] );
 }
 
-static uint32_t  lk_now( void )  { return SDL_GetTicks(); }
+static uint32_t  lk_now( void )  { return I_GetMillis32(); }   // [Arcade] -uptime moves it
+#define LK_SINCE_FUTURE  0xFFFF0000u   // a stamp up to ~65 s ahead of now reads as 0
 
 // [Arcade] Milliseconds from then to now, never "negative".  lkt_main reads
 // now once per pass and then stamps connections as it goes, so a stamp can be
@@ -384,10 +385,23 @@ static uint32_t  lk_now( void )  { return SDL_GetTicks(); }
 // closed as "timed out before authenticating" straight after connect()
 // whenever resolving and connecting crossed a millisecond.  On Linux that is
 // almost never; on Windows it was most attempts.  Same fix as lkg_since in
-// d_linkgame.c.
+// d_linkgame.c and lks_since in d_linkscore.c.
+//
+// [Arcade] The clock is SDL_GetTicks, a 32-bit count that wraps every 49.7
+// days.  This used to be ( now > then ) ? now - then : 0, which after the
+// wrap read every earlier stamp as "just now" until the count caught up again
+// -- up to 49 days of it.  Pings stopped (the other cabinet dropped the link),
+// dead peers were never noticed.  The unsigned subtraction is right across the
+// wrap; only a stamp a little *ahead* of now (under a minute: another pass's)
+// reads as 0.  A stamp of 0 meaning "never" still reads as long ago.
+//
+// Every timer here is "when it started" plus this, never a stored deadline
+// compared with now: a deadline straddling the wrap is 49 days away.
+// tools/linktest.sh wrapidle / wrapreconnect / wraplockout / wrapgame.
 static uint32_t  lk_since( uint32_t now, uint32_t then )
 {
-    return ( now > then ) ? now - then : 0;
+    uint32_t  d = now - then;
+    return ( d > LK_SINCE_FUTURE ) ? 0 : d;
 }
 
 // tools/linktest.sh --selfcheck builds with LK_SELFCHECK and switches off one
@@ -772,7 +786,7 @@ typedef struct
 {
     struct in_addr  ip;
     int         fails;
-    uint32_t    until;
+    uint32_t    start;      // [Arcade] when the lockout began (| 1); 0 = none
 } lk_lockout_t;
 
 typedef struct
@@ -792,7 +806,7 @@ static lk_refusal_t   lkt_refused[8];
 static struct in_addr lkt_allow_ip[LK_MAX_ALLOW * 4];
 static int            lkt_num_allow_ip;
 static uint32_t       lkt_allow_resolved;
-static uint32_t       lkt_next_attempt;
+static uint32_t       lkt_attempt_ms, lkt_attempt_wait;   // last member connect attempt, and the wait after it
 static uint32_t       lkt_backoff = LK_BACKOFF_MIN_MS;
 static char           lkt_member_reason[64];
 static lk_peer_info_t lkt_remote[LK_MAX_PEERS];   // member: the master's roster
@@ -803,11 +817,12 @@ static uint32_t       lkt_roster_hash;
 static void  lkt_refusal_status( const char * addr, const char * name, const char * reason,
                                  lk_peer_status_e status )
 {
+    uint32_t  now = lk_now();
     int i, oldest = 0;
     for( i = 0; i < 8; i++ )
     {
         if( ! strcmp( lkt_refused[i].info.address, addr ) )  { oldest = i; break; }
-        if( lkt_refused[i].when < lkt_refused[oldest].when )  oldest = i;
+        if( lk_since( now, lkt_refused[i].when ) > lk_since( now, lkt_refused[oldest].when ) )  oldest = i;
     }
     memset( &lkt_refused[oldest], 0, sizeof(lk_refusal_t) );
     lkt_refused[oldest].when = lk_now() | 1;
@@ -824,12 +839,13 @@ static void  lkt_refusal( const char * addr, const char * name, const char * rea
 
 static lk_lockout_t *  lkt_lockout_find( struct in_addr ip, boolean create )
 {
+    uint32_t  now = lk_now();
     int i, oldest = 0;
     for( i = 0; i < LK_MAX_PEERS; i++ )
     {
-        if( lkt_lockout[i].ip.s_addr == ip.s_addr && (lkt_lockout[i].fails || lkt_lockout[i].until) )
+        if( lkt_lockout[i].ip.s_addr == ip.s_addr && (lkt_lockout[i].fails || lkt_lockout[i].start) )
             return &lkt_lockout[i];
-        if( lkt_lockout[i].until < lkt_lockout[oldest].until )  oldest = i;
+        if( lk_since( now, lkt_lockout[i].start ) > lk_since( now, lkt_lockout[oldest].start ) )  oldest = i;
     }
     if( ! create )  return NULL;
     memset( &lkt_lockout[oldest], 0, sizeof(lk_lockout_t) );
@@ -874,7 +890,7 @@ static void  lkt_close( lk_conn_t * c, const char * reason, boolean count_fail )
         if( ++lo->fails >= LK_LOCKOUT_FAILS )
         {
             lo->fails = 0;
-            lo->until = lk_now() + LK_LOCKOUT_MS;
+            lo->start = lk_now() | 1;
             lk_log( "Cabinet Link: %s locked out for %d seconds after %d failures",
                     c->addr, LK_LOCKOUT_MS / 1000, LK_LOCKOUT_FAILS );
         }
@@ -1516,7 +1532,11 @@ static void  lkt_accept( void )
             continue;
         }
         lo = lkt_lockout_find( sa.sin_addr, false );
-        if( lo && lo->until && lk_now() < lo->until && ! lk_selfcheck_off( "lockout" ) )
+        // [Arcade] Forget a lockout once it is over, so its stamp is not still
+        // lying there when the 32-bit clock comes round again 49.7 days on.
+        if( lo && lo->start && lk_since( lk_now(), lo->start ) >= LK_LOCKOUT_MS )
+            lo->start = 0;
+        if( lo && lo->start && ! lk_selfcheck_off( "lockout" ) )
         {
             lk_closesocket( fd );
             lkt_refusal( addr, NULL, "locked out after repeated failures" );
@@ -1550,7 +1570,8 @@ static void  lkt_member_connect( void )
     lk_conn_t * c = &lkt_conn[0];
     int fd;
 
-    lkt_next_attempt = lk_now() + lkt_backoff;
+    lkt_attempt_ms = lk_now();
+    lkt_attempt_wait = lkt_backoff;
     lkt_backoff = ( lkt_backoff * 2 > LK_BACKOFF_MAX_MS ) ? LK_BACKOFF_MAX_MS : lkt_backoff * 2;
 
     memset( &hints, 0, sizeof(hints) );
@@ -1765,7 +1786,7 @@ static int  lkt_main( void * unused )
         if( lkt_set.role == LK_ROLE_MASTER && lk_since( now, lkt_allow_resolved ) > 60000 )
             lkt_resolve_allow();
         if( lkt_set.role == LK_ROLE_MEMBER && lkt_conn[0].phase == LKC_EMPTY
-            && now >= lkt_next_attempt )
+            && lk_since( now, lkt_attempt_ms ) >= lkt_attempt_wait )
             lkt_member_connect();
 
         for( i = 0; i < LK_MAX_PEERS; i++ )
@@ -2002,7 +2023,7 @@ static boolean  lk_start( void )
     lkt_num_remote = 0;
     lkt_member_reason[0] = 0;
     lkt_backoff = LK_BACKOFF_MIN_MS;
-    lkt_next_attempt = 0;
+    lkt_attempt_ms = lkt_attempt_wait = 0;
     lkt_allow_resolved = 0;
     lkt_roster_hash = 0;
     lkt_sent_state = lkt_sent_panels = 255;
@@ -2129,16 +2150,16 @@ static void  lk_net_status( void );
 // time.  For tools/linktest.sh, whose engines run many to a core and cannot
 // count on game tics keeping up, and for an operator watching a terminal.
 static int       lk_status_every = -1;    // -1 unchecked, 0 off, else ms
-static uint32_t  lk_status_next = 0;
+static uint32_t  lk_status_ms = 0;        // when it last reported
 
 // -linkstatus, whether or not the link is running.
 static void  lk_status_tick( void )
 {
     if( lk_status_every < 0 )
         lk_status_every = M_CheckParm( "-linkstatus" ) ? 2000 : 0;
-    if( lk_status_every && lk_now() >= lk_status_next )
+    if( lk_status_every && lk_since( lk_now(), lk_status_ms ) >= (uint32_t) lk_status_every )
     {
-        lk_status_next = lk_now() + lk_status_every;
+        lk_status_ms = lk_now();
         Command_Link_f();
     }
 }
