@@ -2044,21 +2044,59 @@ ticcmd_t*       I_BaseTiccmd(void)
 // I_GetTime
 // returns time in 1/TICRATE second tics
 //
-// [Arcade] Shared with I_GetTimeFrac, which must agree with I_GetTime about
-// where the current tic began; it was a static local here.
-static Uint32 tick_basetime = 0;
+// [Arcade] Every step of this is 64-bit.  It used to be
+// (ticks - tick_basetime)*TICRATE/1000 in 32 bits, and elapsed ms * 35
+// overflows 32 bits after 34.09 hours: the clock fell from ~4.29 million tics
+// back to zero.  The frame pacer in D_DoomLoop then waited for a deadline 34
+// hours away, so a cabinet left on stopped drawing while the game played on
+// underneath -- a frozen picture, sound still going, Escape opening a menu
+// nobody could see.  The Pi and the Windows cabinet both did exactly this.
+//
+// Shared with I_GetTimeFrac, which must agree with I_GetTime about where the
+// current tic began.
+static uint64_t  tick_basetime = 0;
+static uint64_t  tick_uptime_ms = 0;    // -uptime
+static boolean   tick_started = false;
+
+// Milliseconds since SDL started, without SDL_GetTicks' 49.7 day wrap.
+static uint64_t  I_Clock_ms( void )
+{
+#if defined(SDL2) && SDL_VERSION_ATLEAST(2,0,18)
+    return SDL_GetTicks64();
+#else
+    // Older SDL has only the 32-bit counter: carry its wraps here.
+    static Uint32    last = 0;
+    static uint64_t  wraps = 0;
+    Uint32  t = SDL_GetTicks();
+    if( t < last )
+        wraps += (uint64_t)1 << 32;
+    last = t;
+    return wraps + t;
+#endif
+}
+
+// [Arcade] -uptime <hours>: start the clock as though the program had already
+// been running that long.  The 34 hour fault above took 34 hours to show; this
+// shows it (or its absence) in seconds.  Read once, on the first clock read.
+static uint64_t  I_Elapsed_ms( void )
+{
+    uint64_t  now = I_Clock_ms();
+
+    if( ! tick_started )
+    {
+        int p = M_CheckParm( "-uptime" );
+        tick_started = true;
+        tick_basetime = now;
+        if( p && (p + 1) < myargc )
+            tick_uptime_ms = (uint64_t)( atof( myargv[p+1] ) * 3600000.0 );
+    }
+    return now - tick_basetime + tick_uptime_ms;
+}
 
 tic_t I_GetTime(void)
 {
-    Uint32        ticks;
-
-    // milliseconds since SDL initialization
-    ticks = SDL_GetTicks();
-
-    if (!tick_basetime)
-        tick_basetime = ticks;
-
-    return (ticks - tick_basetime)*TICRATE/1000;
+    // tic_t is 32 bits, so this wraps after 2^32 tics: 3.9 years.
+    return (tic_t)( I_Elapsed_ms() * TICRATE / 1000 );
 }
 
 // [Arcade] How far through the current tic we are, 0..FRACUNIT, for the
@@ -2072,7 +2110,7 @@ fixed_t I_GetTimeFrac(void)
 
     // 64-bit: (elapsed ms * 35) overflows 32 bits after about 34 hours, and
     // this cabinet is left switched on.
-    millitics = (uint64_t)(SDL_GetTicks() - tick_basetime) * TICRATE;
+    millitics = I_Elapsed_ms() * TICRATE;
 
     return (fixed_t)(((millitics % 1000) * FRACUNIT) / 1000);
 }

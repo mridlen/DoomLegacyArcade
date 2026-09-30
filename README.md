@@ -186,6 +186,10 @@ Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
   now works from its own locked copy of the channel list.
 - A door or staircase thinker could be sorted into the monsters' target list, crashing the game
   after long unattended runs on a Raspberry Pi.
+- After 34 hours switched on, the picture froze while the game carried on unseen (sound still
+  playing, Escape doing nothing visible). The game clock overflowed and the frame-rate cap waited
+  for a time 34 hours away. The clock is 64-bit now, and the cap can no longer wait on a clock that
+  has gone backwards.
 
 **OpenGL**
 
@@ -1116,6 +1120,7 @@ PrtSc is a fallback binding, but GNOME's screenshot tool takes it first. To rebi
 | `-file <wad>` | Load a wad at startup: a level pack, soundtrack or DEH/BEX patch |
 | `-config <file>` | Use a different configuration file |
 | `-logfile <file>` | Write every message to a file, with timestamps |
+| `-uptime <hours>` | Start the game clock as though the program had been running that long (for testing long-running faults) |
 | `-v` | Verbose startup, showing which files were found |
 | `-nonodebuild` | Don't rebuild BSP nodes at level load (turns off the slime-trail fix) |
 | `-frameprofile` | Print where each frame's time goes |
