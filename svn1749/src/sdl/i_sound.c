@@ -908,6 +908,7 @@ static void free_music_rwop( void )
 // game thread, or the two would wait on each other.
 #include "opl/musicplayer.h"
 #include "opl/oplplayer.h"
+#include "opl/opl.h"   // opl_start_time, for -oplwrap
 
 // Output level.  The synth plays at its own full volume and the Music Volume
 // slider is applied to its output, linearly, which is the curve Mix_VolumeMusic
@@ -958,6 +959,24 @@ static void SDLCALL  opl_music_hook( void * udata, Uint8 * stream, int len )
     volog_opl_hooks++;
 }
 
+// [Arcade] -oplwrap <seconds>: start the synth's sample clock that many
+// seconds short of 2^32 samples.  That count used to be 32 bits, and the music
+// thread never came back from the wrap: 54.1 hours in at 22050 Hz, 27 at
+// 44100, and the game froze at the next change of music.  This puts the wrap
+// seconds away, at any device rate.
+static void  I_OPL_Wrap_Test( void )
+{
+    int p = M_CheckParm( "-oplwrap" );
+
+    if( p && (p + 1) < myargc )
+    {
+        double secs = atof( myargv[p+1] );
+        opl_start_time = ((uint64_t)1 << 32) - (uint64_t)( secs * opl_dev_freq );
+        GenPrintf( EMSG_warn, "OPL music: -oplwrap, sample clock starts %.1f s short of 2^32 at %d Hz\n",
+                   secs, opl_dev_freq );
+    }
+}
+
 // Bring the synth up the first time it is wanted: GENMIDI has to be loaded.
 static boolean  I_OPL_Ready( void )
 {
@@ -968,7 +987,7 @@ static boolean  I_OPL_Ready( void )
         {
             GenPrintf( EMSG_warn, "OPL music: audio device is not 16-bit stereo, using MIDI\n" );
         }
-        else if( ! opl_synth_player.init( opl_dev_freq ) )
+        else if( I_OPL_Wrap_Test(), ! opl_synth_player.init( opl_dev_freq ) )
         {
             GenPrintf( EMSG_warn, "OPL music: no usable GENMIDI lump, using MIDI\n" );
         }

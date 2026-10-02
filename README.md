@@ -195,6 +195,11 @@ Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
   dropped it, even mid-game), a member could stop trying to reconnect, and a passcode lockout could
   last 49 days. Every link timer is now wrap-safe, and `tools/linktest.sh` can put the wrap a few
   seconds into a test (`WRAPAT`).
+- With OPL music on, the game froze for good after 54 hours switched on (27 on a 44100 Hz sound
+  device): the picture stopped at the next change of music, usually a level starting or an attract
+  demo ending. The synth counted time in samples in a 32-bit number, and when that ran out the
+  music thread played the rest of the song in an endless instant loop while holding the lock the
+  game needs to change songs. The count is 64-bit now.
 
 **OpenGL**
 
@@ -1126,6 +1131,7 @@ PrtSc is a fallback binding, but GNOME's screenshot tool takes it first. To rebi
 | `-config <file>` | Use a different configuration file |
 | `-logfile <file>` | Write every message to a file, with timestamps |
 | `-uptime <hours>` | Start the clocks as though the program had been running that long, Cabinet Link's included (for testing long-running faults) |
+| `-oplwrap <seconds>` | Start the OPL synth's sample clock that many seconds short of the old 32-bit limit (for testing the 54 hour music freeze) |
 | `-v` | Verbose startup, showing which files were found |
 | `-nonodebuild` | Don't rebuild BSP nodes at level load (turns off the slime-trail fix) |
 | `-frameprofile` | Print where each frame's time goes |

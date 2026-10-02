@@ -129,8 +129,9 @@ see below.
 ### Headless verification
 
 **Most of this is packaged as `tools/smoke.sh`, run with `make smoke` from `svn1749/src`.** It sets
-up the scratch directory below, then runs five checks — `startup`, `warp`, `exitlevel` (which drives
-a real level exit and requires a record line in `highscores.dat`), `opengl` (on the real GPU) and
+up the scratch directory below, then runs six checks — `startup`, `warp`, `exitlevel` (which drives
+a real level exit and requires a record line in `highscores.dat`), `oplwrap` (the OPL synth's
+sample clock crossing 2^32, `sound.md`), `opengl` (on the real GPU) and
 `config` — reporting pass/fail per check and exiting non-zero if any failed. Run it after any change
 that touches startup, the config, level setup, scoring or the renderer; it takes about a minute.
 `tools/smoke.sh -l` lists the checks, a check name runs just that one, `-k` keeps the scratch

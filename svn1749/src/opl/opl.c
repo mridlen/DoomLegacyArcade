@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 
 #include "opl.h"
@@ -39,6 +40,10 @@ static int init_stage_reg_writes = 1;
 
 unsigned int opl_sample_rate = 22050;
 
+// [Arcade] Where the sample clock starts: 0, but for -oplwrap, which puts it
+// just short of 2^32 so that the old wrap is seconds away instead of days.
+uint64_t opl_start_time = 0;
+
 
 #define MAX_SOUND_SLICE_TIME 100 /* ms */
 
@@ -47,7 +52,7 @@ typedef struct
     unsigned int rate;        // Number of times the timer is advanced per sec.
     unsigned int enabled;     // Non-zero if timer is enabled.
     unsigned int value;       // Last value that was set.
-    unsigned int expire_time; // Calculated time that timer will expire.
+    uint64_t expire_time;     // Calculated time that timer will expire.
 } opl_timer_t;
 
 
@@ -57,8 +62,13 @@ static opl_callback_queue_t *callback_queue;
 
 
 // Current time, in number of samples since startup:
+// [Arcade] 64 bits.  It was an unsigned int, which at 22050 Hz wraps after
+// 54.1 hours (27 at 44100).  A callback scheduled across the wrap came out
+// earlier than current_time, so it ran at once, and so did every one after
+// it: OPL_AdvanceTime never returned, holding the music lock, and the game
+// froze at the next change of music.
 
-static unsigned int current_time;
+static uint64_t current_time;
 
 // If non-zero, playback is currently paused.
 
@@ -67,7 +77,7 @@ static int opl_paused;
 // Time offset (in samples) due to the fact that callbacks
 // were previously paused.
 
-static unsigned int pause_offset;
+static uint64_t pause_offset;
 
 // OPL software emulator structure.
 
@@ -103,7 +113,7 @@ int OPL_Init (unsigned int rate)
     // Queue structure of callbacks to invoke.
 
     callback_queue = OPL_Queue_Create();
-    current_time = 0;
+    current_time = opl_start_time;   // [Arcade] 0, but for -oplwrap
 
 
     mix_buffer = (int*)malloc(opl_sample_rate * sizeof(int));
@@ -141,7 +151,8 @@ void OPL_SetCallback(unsigned int ms,
                                 void *data)
 {
     OPL_Queue_Push(callback_queue, callback, data,
-                   current_time - pause_offset + (ms * opl_sample_rate) / 1000);
+                   current_time - pause_offset
+                   + ((uint64_t) ms * opl_sample_rate) / 1000);
 }
 
 void OPL_ClearCallbacks(void)
@@ -282,7 +293,7 @@ void OPL_Render_Samples (void *dest, unsigned buffer_len)
 
     while (filled < buffer_len)
     {
-        unsigned int next_callback_time;
+        uint64_t next_callback_time;
         unsigned int nsamples;
 
 
@@ -298,11 +309,19 @@ void OPL_Render_Samples (void *dest, unsigned buffer_len)
         {
             next_callback_time = OPL_Queue_Peek(callback_queue) + pause_offset;
 
-            nsamples = next_callback_time - current_time;
-
-            if (nsamples > buffer_len - filled)
+            // [Arcade] Compare in 64 bits, then narrow.  A callback that is
+            // already due gives none, where the subtraction would wrap.
+            if (next_callback_time <= current_time)
+            {
+                nsamples = 0;
+            }
+            else if (next_callback_time - current_time > buffer_len - filled)
             {
                 nsamples = buffer_len - filled;
+            }
+            else
+            {
+                nsamples = (unsigned int) (next_callback_time - current_time);
             }
         }
 

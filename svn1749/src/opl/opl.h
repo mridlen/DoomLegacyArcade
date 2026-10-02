@@ -110,7 +110,9 @@ void OPL_Delay(unsigned int ms);
 void OPL_SetPaused(int paused);
 
 
+#include <stdint.h>
 extern unsigned int opl_sample_rate;
+extern uint64_t opl_start_time;   // [Arcade] -oplwrap
 
 void OPL_Render_Samples (void *dest, unsigned nsamp);
 
