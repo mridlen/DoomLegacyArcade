@@ -126,7 +126,7 @@ run_game() {
 # Each is  check_<name>  and prints exactly one pass/fail/skip line.
 #---------------------------------------------------------------------------
 
-CHECKS="startup warp exitlevel opengl config"
+CHECKS="startup warp exitlevel oplwrap opengl config"
 
 # Does it start, reach the attract screen and quit cleanly?  The commonest
 # breakage is a startup-order change that dies before the loop.
@@ -192,6 +192,34 @@ quit
     else
         pass exitlevel
         note "scored: $line"
+    fi
+}
+
+# The OPL synth's sample clock crossing 2^32.  It was 32 bits and wrapped after
+# 54.1 hours at 22050 Hz (27 at 44100): every callback scheduled past the wrap
+# looked overdue, so the music thread ran them forever holding the music lock,
+# and the game froze at the next change of music -- here, the level exit.
+# -oplwrap starts the clock 3 seconds short, so the wrap happens mid-level.
+# The dummy audio driver still runs the mixer thread, which is all this needs.
+check_oplwrap() {
+    local log
+    log=$(run_game oplwrap 'wait 350
+exitlevel
+wait 140
+quit
+' -game "$game" -skill 3 -warp "$map" -oplwrap 3 -volog +opl_music On)
+
+    if ! clean "$log" | grep -q 'OPL music: -oplwrap'; then
+        skip oplwrap "the OPL synth never started: no SDL_mixer, or no GENMIDI"
+    elif ! clean "$log" | grep -q 'VOLOG opl.*OPL playing'; then
+        skip oplwrap "no song went to the OPL synth, so nothing crossed the wrap"
+    elif crashed "$log"; then
+        fail oplwrap "crashed; see $log"
+    elif ! quit_cleanly "$log"; then
+        fail oplwrap "never quit: the music thread is stuck past the wrap. $log"
+        note "the main thread waits for opl_lock in I_StopSong at the level exit"
+    else
+        pass oplwrap
     fi
 }
 

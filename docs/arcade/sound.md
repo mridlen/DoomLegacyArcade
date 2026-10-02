@@ -250,3 +250,43 @@ and also written to `volog.txt` beside the program, since Windows has no console
 - `hooks` counts SDL_mixer's calls to the music hook, and `peak` is the loudest sample it wrote
   since the last line. `OPL playing` with `hooks` flat means SDL_mixer is not running the hook.
   With `peak` at 0, the synth is running but silent.
+
+
+### The 54 hour freeze (2026-10-02)
+
+**With OPL music on, a cabinet up for 54.1 hours froze at the next change of music.** The Windows
+cabinet stopped on an attract demo; the log's last line was a level load, there was no `crash.txt`,
+and Escape did nothing. It is the third fixed-width clock after the 34 hour one
+(`uncapped-framerate.md`) and the 49.7 day one (`cabinet-link.md`).
+
+`opl.c` counted time in samples in an `unsigned int`, `current_time`, from the moment the synth
+first came up. The music hook stays installed once a song has played, so the count runs for the
+life of the program: 2^32 samples is **54.1 hours at 22050 Hz** (Windows, WASAPI) and **27.05 at
+44100**. `OPL_SetCallback` schedules the track's next event at `current_time + delay`, and
+`OPL_AdvanceTime` runs every callback with `current_time >= its time`. An event scheduled across
+the wrap gets a small number, compares as long overdue, and runs at once; it schedules the next,
+also small, also overdue. `current_time` does not move inside that loop, so a looping song plays
+round forever in zero time. That is the music thread, inside `opl_music_hook`, **holding
+`opl_lock`**. The game carries on until it next wants the lock, which is `I_StopSong` from
+`S_ChangeMusic`, and stops there.
+
+It needs a song to be playing at the wrap. With the queue empty the count wraps harmlessly, which
+is how a cabinet could pass one wrap and not the next.
+
+**Read from a Windows full memory dump** (Task Manager, as for the 34 hour freeze): the main thread
+waiting on a mutex under `I_StopSong` (`i_sound.c`) from `D_DoAdvanceDemo`; one thread running, in
+`Channel__WriteB0` under `TrackTimerCallback` under `OPL_AdvanceTime`; `current_time` reading
+`0xfffffff0`, 16 samples short; `opl_sample_rate` 22050; and the process 54 h 06 m old. The
+statics are in `nm` output for the MinGW exe, so they can be read straight out of the dump.
+
+**The fix** is 64 bits for `current_time`, `pause_offset`, the queue's times (`opl_queue.c`) and the
+timers' `expire_time`. `OPL_Render_Samples` compares in 64 bits before narrowing the sample count.
+Nothing wraps for 26 million years at 22050 Hz.
+
+**`-oplwrap <seconds>`** starts the count that many seconds short of 2^32, at whatever rate the
+device has, so the crossing is seconds into a run. `make smoke` has an `oplwrap` check: OPL on,
+`-oplwrap 3`, a level exit ten seconds in, and it must quit by itself. The dummy audio driver runs
+the mixer thread, so this needs no sound card. Shown to fail: with the count put back to 32 bits the
+same check hangs at the level exit, and `-volog`'s `hooks` stops counting three seconds in.
+
+**Not checked:** how the music sounds across the crossing, and the Windows build.

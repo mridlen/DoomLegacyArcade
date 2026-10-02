@@ -36,7 +36,7 @@ typedef struct
 {
     opl_callback_t callback;
     void *data;
-    unsigned int time;
+    uint64_t time;   // [Arcade] 64 bits, as current_time in opl.c
 } opl_queue_entry_t;
 
 struct opl_callback_queue_s
@@ -72,7 +72,7 @@ void OPL_Queue_Clear(opl_callback_queue_t *queue)
 
 void OPL_Queue_Push(opl_callback_queue_t *queue,
                     opl_callback_t callback, void *data,
-                    unsigned int time)
+                    uint64_t time)
 {
     int entry_id;
     int parent_id;
@@ -197,7 +197,7 @@ int OPL_Queue_Pop(opl_callback_queue_t *queue,
     return 1;
 }
 
-unsigned int OPL_Queue_Peek(opl_callback_queue_t *queue)
+uint64_t OPL_Queue_Peek(opl_callback_queue_t *queue)
 {
     if (queue->num_entries > 0)
     {
