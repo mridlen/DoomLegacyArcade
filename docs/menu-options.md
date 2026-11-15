@@ -17,7 +17,8 @@ The design notes behind each feature are in [`arcade/`](arcade/). The note linke
 explains why the feature works the way it does.
 
 **Navigating.** Move with the stick or arrow keys. Change a value with left/right. Select with
-fire or Enter. Go back with Escape or the *Main menu* control. Pressing any button on the attract
+fire or Enter. Go back with use, Escape or the *Main menu* control. ★ A panel with **Menu Select** /
+**Menu Back** bound uses those instead of fire and use (A and B on a gamepad). Pressing any button on the attract
 screen opens the main menu.
 
 ---
@@ -475,12 +476,12 @@ Operator only.
 | --- | --- |
 | **Guided setup P1** … **P4** ★ | Shows the recommended layout, then asks you to press each of the ten cabinet controls in turn: four stick directions, then buttons 1–6. It binds whatever you press. Escape cancels and keeps the old layout. Only panels the cabinet has are listed. |
 | **Recommended layout** ★ | The play-tested six-button layout: 1 fire, 2/3 strafe, 4 use, 5/6 weapon down/up, and the stick to move and turn. |
-| Control per key | Whether one key may drive one control or several. |
+| Control per key | Whether one key may drive one control or several. ★ Menu Select and Menu Back are counted apart from the game actions, so they can share a key with one. |
 | Mouse Options >> | Use mouse, mouselook, mouse move, invert, x/y speed, double-click, motion, grab input. |
 | Second Mouse config >> | Player 2's mouse. |
-| **Player1 Controls >>** … **Player4 Controls >>** | The full per-action binding pages (three pages each). ★ Panels 3 and 4 are new. The third page has **Devmode Restart** ★, the key that restarts the cabinet into or out of `-devmode` from the attract screen. |
+| **Player1 Controls >>** … **Player4 Controls >>** | The full per-action binding pages (three pages each). ★ Panels 3 and 4 are new. The third page has **Devmode Restart** ★, the key that restarts the cabinet into or out of `-devmode` from the attract screen, and **Menu Select** / **Menu Back** ★: bound, they replace fire and use as select and back in menus on that panel only (`---` keeps fire and use). They may share a button with a game action even under Control per key: One. |
 | Joystick Options >> | Joystick deadzone (and double-click where built). |
-| **Xbox Controllers >>** ★ | One row per panel. Select a row and press a button on a gamepad to give that panel a complete gamepad layout in one step. It shows which pad each panel has and whether that pad is plugged in. |
+| **Xbox Controllers >>** ★ | One row per panel. Select a row and press a button on a gamepad to give that panel a complete gamepad layout in one step, with A as Menu Select and B as Menu Back. It shows which pad each panel has and whether that pad is plugged in. |
 
 → [`arcade/input.md`](arcade/input.md), [`arcade/menus.md`](arcade/menus.md)
 

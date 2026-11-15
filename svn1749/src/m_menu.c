@@ -3858,6 +3858,28 @@ static boolean  M_Join_Panel_Control( byte panel, uint16_t key, int gc )
         || gamecontrol_pl[panel][gc][1] == key;
 }
 
+// [Arcade] What a prompt calls the menu's select and back buttons.  "FIRE"
+// and "USE" stop being true on a panel that binds Menu Select / Menu Back --
+// on a gamepad they are A and B -- so a screen that belongs to one panel (a
+// join screen box) names that panel's button, and a screen any panel may be
+// working (initials, the Cabinet Link pages) says SELECT / BACK as soon as any
+// panel has them bound.  Measured against the STCFN lumps wherever space is
+// short; see the callers.
+static const char *  M_Select_Word_Panel( byte panel )
+{
+    return G_Control_Bound( panel, gc_menuselect ) ? "SELECT" : "FIRE";
+}
+
+static const char *  M_Select_Word( void )
+{
+    return G_Any_Panel_Bound( gc_menuselect ) ? "SELECT" : "FIRE";
+}
+
+static const char *  M_Back_Word( void )
+{
+    return G_Any_Panel_Bound( gc_menuback ) ? "BACK" : "USE";
+}
+
 // The cvar a setup row edits.  All three are per *panel*, the same ones
 // Player N config edits, so what is picked here is what that page shows.
 static consvar_t *  M_Join_Row_Cvar( byte panel, byte row )
@@ -3897,7 +3919,10 @@ static void  M_Join_Check_All_Locked( void )
 // Per panel: fire joins, then steps down the rows and finally locks in;
 // forward/back move the cursor; turn or strafe change the value, both of them
 // because which pair turns depends on the very scheme being chosen; use steps
-// back up a row, or unlocks.
+// back up a row, or unlocks.  "Fire" and "use" here are that panel's menu
+// select and back -- Menu Select / Menu Back where it binds them
+// (G_Menu_Select_Control), exactly as M_Cabinet_Menu_Key treats every other
+// menu.
 boolean  M_Join_Key( uint16_t key )
 {
     byte panel, panels = M_Join_NumPanels();
@@ -3925,7 +3950,7 @@ boolean  M_Join_Key( uint16_t key )
         if( join_pressed[panel] == JOIN_OUT )
         {
             // Fire joins this panel.
-            if( M_Join_Panel_Control( panel, key, gc_fire ) )
+            if( M_Join_Panel_Control( panel, key, G_Menu_Select_Control( panel ) ) )
             {
                 join_pressed[panel] = JOIN_SETUP;
                 *row = JOIN_ROW_COLOR;
@@ -3942,20 +3967,20 @@ boolean  M_Join_Key( uint16_t key )
         if( join_pressed[panel] == JOIN_LOCKED )
         {
             // Use takes it back, in case of a change of mind.
-            if( M_Join_Panel_Control( panel, key, gc_use ) )
+            if( M_Join_Panel_Control( panel, key, G_Menu_Back_Control( panel ) ) )
             {
                 join_pressed[panel] = JOIN_SETUP;
                 *row = JOIN_ROW_READY;
                 S_StartSound(menu_sfx_esc);
                 return true;
             }
-            if( M_Join_Panel_Control( panel, key, gc_fire ) )
+            if( M_Join_Panel_Control( panel, key, G_Menu_Select_Control( panel ) ) )
                 return true;
             continue;
         }
 
         // JOIN_SETUP
-        if( M_Join_Panel_Control( panel, key, gc_fire ) )
+        if( M_Join_Panel_Control( panel, key, G_Menu_Select_Control( panel ) ) )
         {
             if( *row < JOIN_ROW_READY )
             {
@@ -3970,7 +3995,7 @@ boolean  M_Join_Key( uint16_t key )
             }
             return true;
         }
-        if( M_Join_Panel_Control( panel, key, gc_use )
+        if( M_Join_Panel_Control( panel, key, G_Menu_Back_Control( panel ) )
             || M_Join_Panel_Control( panel, key, gc_forward ) )
         {
             if( *row > 0 )
@@ -4125,8 +4150,14 @@ static void  M_Join_Drawer( void )
 
         if( st == JOIN_OUT )
         {
-            V_DrawString( cx + (cw - V_StringWidth("PRESS FIRE"))/2, cy + 12,
-                          0, "PRESS FIRE" );
+            // [Arcade] This panel's own button.  "PRESS SELECT" is 89 wide
+            // and four boxes side by side are 80, so a narrow box drops the
+            // PRESS (SELECT alone is 47; "PRESS FIRE" is 70 and always fits).
+            const char * word = M_Select_Word_Panel( panel );
+            snprintf( buf, sizeof(buf), "PRESS %s", word );
+            if( V_StringWidth( buf ) > cw - 4 )
+                snprintf( buf, sizeof(buf), "%s", word );
+            V_DrawString( cx + (cw - V_StringWidth(buf))/2, cy + 12, 0, buf );
             continue;
         }
 
@@ -4237,7 +4268,8 @@ static void  M_Join_Drawer( void )
 
     if( secs < 0 )  secs = 0;
     if( join_first_press_starts )
-        snprintf(buf, sizeof(buf), "PRESS FIRE ON YOUR PANEL   (%d)", secs);
+        snprintf(buf, sizeof(buf), "PRESS %s ON YOUR PANEL   (%d)",
+                 M_Select_Word(), secs);   // [Arcade] 231 wide at most
     else
         snprintf(buf, sizeof(buf), "STARTING IN %d", secs);
     V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, BASEVIDHEIGHT - 28, 0, buf );
@@ -4615,8 +4647,9 @@ static void  M_Initials_Drawer( void )
 
     V_DrawString( (BASEVIDWIDTH - V_StringWidth("STICK UP-DOWN TO CHANGE"))/2,
                   116, 0, "STICK UP-DOWN TO CHANGE" );
-    V_DrawString( (BASEVIDWIDTH - V_StringWidth("FIRE TO ACCEPT"))/2,
-                  128, 0, "FIRE TO ACCEPT" );
+    // [Arcade] SELECT TO ACCEPT once any panel has Menu Select (119 wide).
+    snprintf( buf, sizeof(buf), "%s TO ACCEPT", M_Select_Word() );
+    V_DrawString( (BASEVIDWIDTH - V_StringWidth(buf))/2, 128, 0, buf );
 
     if( cv_initialstimeout.EV > 0 )
     {
@@ -8182,7 +8215,16 @@ static void  M_Draw_CabinetLink( void )
             LK_Setting_Get( LK_SET_PORT, val, sizeof(val) );
             break;
          case LKP_FORGET:
-            label = lkp_forget_armed ? "FIRE AGAIN TO FORGET" : "FORGET PAIRED CABINETS";
+            if( lkp_forget_armed )
+            {
+                // [Arcade] SELECT AGAIN TO FORGET is 159 wide, the same as
+                // the unarmed label, and nothing sits to its right.
+                static char armed[32];
+                snprintf( armed, sizeof(armed), "%s AGAIN TO FORGET", M_Select_Word() );
+                label = armed;
+            }
+            else
+                label = "FORGET PAIRED CABINETS";
             break;
         }
         {
@@ -8201,7 +8243,18 @@ static void  M_Draw_CabinetLink( void )
         M_Link_Fit( LKP_LABEL_X, y + 2, 300 - LKP_LABEL_X, 0, lkp_note );
 
     LK_Drawer( 98, 170 );
-    M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, "FIRE CHANGES   LEFT RIGHT ROLE   USE BACK" );
+    {
+        // [Arcade] Named for Menu Select / Menu Back once a panel binds them.
+        // "BACK BACK" would read as a stutter, so that case says EXITS.  With
+        // both replaced it is 310 wide in the usual three-space gaps, five
+        // pixels from either edge, so the gaps close to two past 300 (302).
+        char foot[64];
+        const char * back = G_Any_Panel_Bound( gc_menuback ) ? "BACK EXITS" : "USE BACK";
+        snprintf( foot, sizeof(foot), "%s CHANGES   LEFT RIGHT ROLE   %s", M_Select_Word(), back );
+        if( V_StringWidth( foot ) > 300 )
+            snprintf( foot, sizeof(foot), "%s CHANGES  LEFT RIGHT ROLE  %s", M_Select_Word(), back );
+        M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, foot );
+    }
 }
 
 // ---- the on-screen keyboard ----------------------------------------------
@@ -8443,7 +8496,11 @@ static void  M_Draw_LinkText( void )
         if( lower )
             M_Centre_At( BASEVIDWIDTH/2, 158, V_WHITEMAP, "RED LETTERS ARE LOWER CASE" );
     }
-    M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, "FIRE TYPES   USE DELETES" );
+    {
+        char foot[48];   // [Arcade] SELECT TYPES   BACK DELETES is 193 wide
+        snprintf( foot, sizeof(foot), "%s TYPES   %s DELETES", M_Select_Word(), M_Back_Word() );
+        M_Centre_At( BASEVIDWIDTH/2, 186, V_WHITEMAP, foot );
+    }
 }
 
 // ---- the allow list (a master) -------------------------------------------
@@ -8509,7 +8566,17 @@ static void  M_Draw_LinkAllow( void )
         {
          case LKA_ALLOWED:
             V_DrawString( LKP_LABEL_X, y, 0, rows[i].address );
-            M_Link_Fit( 200, y, 110, V_WHITEMAP, lka_armed == rows[i].index ? "FIRE AGAIN: REMOVE" : "ALLOWED" );
+            if( lka_armed == rows[i].index )
+            {
+                // [Arcade] Was "FIRE AGAIN: REMOVE", 124 wide in this 110
+                // slot, so M_Link_Fit cut it to "FIRE AGAIN: REM".  The short
+                // form fits either word (FIRE 84, SELECT 103).
+                char armed[24];
+                snprintf( armed, sizeof(armed), "%s: REMOVE", M_Select_Word() );
+                M_Link_Fit( 200, y, 110, V_WHITEMAP, armed );
+            }
+            else
+                M_Link_Fit( 200, y, 110, V_WHITEMAP, "ALLOWED" );
             break;
          case LKA_ADD:
             V_DrawString( LKP_LABEL_X, y, 0, "ADD AN ADDRESS" );
@@ -8960,6 +9027,11 @@ menuitem_t ControlMenu3[]=
   // [Arcade] Above the joystick-only heading with the other utility keys, not
   // below it: this is a keyboard key by nature and by default.
   {IT_CONTROL, 0,"Devmode Restart",M_ChangeControl,gc_devmode},
+  // [Arcade] Any input, so above the joystick-only heading too.  Bound, they
+  // replace fire and use as select and back in menus, on this panel only;
+  // unbound ("---") fire and use carry on doing it (M_Cabinet_Menu_Key).
+  {IT_CONTROL, 0,"Menu Select"    ,M_ChangeControl,gc_menuselect},
+  {IT_CONTROL, 0,"Menu Back"      ,M_ChangeControl,gc_menuback},
   {IT_WHITESTRING | IT_SPACE, 0, "Joystick and Mouse Only" ,0},
   {IT_CONTROL, 0,"Main menu"      ,M_ChangeControl,gc_menuesc},
   {IT_CONTROL, 0,"Pause"          ,M_ChangeControl,gc_pause},
@@ -9188,7 +9260,7 @@ void M_ChangecontrolResponse(event_t* ev)
                 found = 0;
                 setupcontrols[control][1] = KEY_NULL;  //replace key1 ,clear key2
             }
-            G_CheckDoubleUsage(ch);
+            G_CheckDoubleUsage(ch, control);
             setupcontrols[control][found] = ch;
         }
     }
@@ -9309,6 +9381,13 @@ static void M_Guided_Response( event_t * ev )
     // way the "Tank" / "WASD" selector keeps working on the custom
     // layout instead of overwriting it.
     G_Save_CustomControls( controls_player, guided_keys );
+
+    // [Arcade] The panel was just taught from scratch, fire and use included,
+    // so those work its menus again.  A Menu Select / Menu Back left over from
+    // a gamepad assigned to this panel would otherwise point at the pad, and
+    // the arcade panel's own fire button would stop selecting anything.
+    G_Clear_ControlKeys( gamecontrol_pl[controls_player], gc_menuselect );
+    G_Clear_ControlKeys( gamecontrol_pl[controls_player], gc_menuback );
 
     // Pop before raising the message, so the message restores to the
     // controls menu rather than to the layout page we came in on.
@@ -12035,16 +12114,31 @@ boolean  M_key_is_control( uint16_t key, int gcnum )
     return false;
 }
 
-// [Arcade] The cabinet panel has no arrow keys, Enter or Escape, so map both
-// players' buttons onto the menu keys: move = cursor, fire = select,
-// use/open = back out.  Read from gamecontrol[]/gamecontrol2[] rather than
-// hardcoding, so this follows the selected control scheme and any rebinding.
-// Turn and strafe both act as left/right, which is what the player expects
-// from a menu regardless of which pair the scheme assigns to turning.
+// [Arcade] The cabinet panel has no arrow keys, Enter or Escape, so map every
+// panel's buttons onto the menu keys: move = cursor, Menu Select = select,
+// Menu Back = back out.  Read from gamecontrol_pl[] rather than hardcoding, so
+// this follows the selected control scheme and any rebinding.  Turn and strafe
+// both act as left/right, which is what the player expects from a menu
+// regardless of which pair the scheme assigns to turning.
+//
+// Menu Select and Menu Back come *first*: they share buttons with game actions
+// by design (A on a pad is Use in play and Select here), so they must win.  A
+// panel that leaves them unbound selects with fire and backs out with use, as
+// it always did.  A panel that binds one has *replaced* that game action in
+// menus, and the replaced button is swallowed -- answered KEY_NULL, which
+// M_Responder consumes -- rather than passed through raw, where upstream's
+// hardcoded KEY_JOY0BUT0 -> ENTER / KEY_JOY0BUT1 -> BACKSPACE would let it
+// carry on selecting for whichever pad happens to be Joy0.
 static
 uint16_t  M_Cabinet_Menu_Key( uint16_t key )
 {
+    byte pind;
+    boolean replaced = false;
+
     if( key == KEY_NULL )  return key;   // unbound actions are KEY_NULL
+
+    if( M_key_is_control(key, gc_menuselect) )  return KEY_ENTER;
+    if( M_key_is_control(key, gc_menuback) )    return KEY_ESCAPE;
 
     if( M_key_is_control(key, gc_forward) )     return KEY_UPARROW;
     if( M_key_is_control(key, gc_backward) )    return KEY_DOWNARROW;
@@ -12052,8 +12146,24 @@ uint16_t  M_Cabinet_Menu_Key( uint16_t key )
      || M_key_is_control(key, gc_strafeleft) )  return KEY_LEFTARROW;
     if( M_key_is_control(key, gc_turnright)
      || M_key_is_control(key, gc_straferight) ) return KEY_RIGHTARROW;
-    if( M_key_is_control(key, gc_fire) )        return KEY_ENTER;
-    if( M_key_is_control(key, gc_use) )         return KEY_ESCAPE;
+
+    // Fire and use, per panel: which of them still select and back out
+    // depends on what that panel has bound.
+    for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        int (* gc)[2] = gamecontrol_pl[pind];
+        if( gc[gc_fire][0] == key || gc[gc_fire][1] == key )
+        {
+            if( G_Menu_Select_Control( pind ) == gc_fire )  return KEY_ENTER;
+            replaced = true;
+        }
+        if( gc[gc_use][0] == key || gc[gc_use][1] == key )
+        {
+            if( G_Menu_Back_Control( pind ) == gc_use )  return KEY_ESCAPE;
+            replaced = true;
+        }
+    }
+    if( replaced )  return KEY_NULL;
 
     return key;
 }
@@ -12075,6 +12185,7 @@ boolean M_Responder (event_t* ev)
     uint16_t key = KEY_NULL; // key pressed (if any)
     uint16_t button_key = 0; // mouse and joystick specific
     unsigned char ch = '\0';  // ASCII char it corresponds to
+    boolean swallowed = false;  // [Arcade] see M_Cabinet_Menu_Key
 
     switch (ev->type )
     {
@@ -12121,7 +12232,25 @@ boolean M_Responder (event_t* ev)
         if( menuactive
             && ! ( currentMenu
                    && (currentMenu->menuitems[itemOn].status & IT_TYPE) == IT_KEYHANDLER ) )
+        {
+            uint16_t raw = key;
             key = M_Cabinet_Menu_Key( key );
+
+            // [Arcade] KEY_NULL is a fire or use button whose menu job this
+            // panel has given to Menu Select / Menu Back: consumed below so it
+            // does nothing.  Not inside a message box, though -- those are the
+            // key captures (Setup Controls, the guided setup, Xbox
+            // assignment), which read the raw button, and swallowing it there
+            // would make RT impossible to bind on a pad with Menu Select.
+            // Hand them the raw key, as every other button reaches them.
+            if( key == KEY_NULL && raw != KEY_NULL )
+            {
+                if( currentMenu && currentMenu->menuitems[itemOn].status == IT_MSGHANDLER )
+                    key = raw;
+                else
+                    swallowed = true;
+            }
+        }
 
         // [Arcade] Initials entry.  Taken after M_Cabinet_Menu_Key -- unlike
         // the join screen this wants the *translated* keys, since stick
@@ -12144,6 +12273,11 @@ boolean M_Responder (event_t* ev)
             }
             // ESC falls through and backs out of the page as usual.
         }
+
+        // [Arcade] After initials entry and the guided setup's "press any
+        // button", both of which take any press; everything else ignores it.
+        if( swallowed )
+            return true;
 
 #ifdef SDL2
         // SDL2 has separate ASCII event for translated char,

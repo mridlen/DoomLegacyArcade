@@ -48,7 +48,9 @@ to get you banned.
 
 - **Locked-down menus.** New Game, a few Options, and End Game while a game is running. No
   save/load, no video or sound settings, and no Quit (the operator can put Quit back).
-- **Cabinet buttons drive the menus.** The stick moves the cursor, fire selects, use backs out.
+- **Cabinet buttons drive the menus.** The stick moves the cursor, fire selects, use backs out. A
+  panel can have its own **Menu Select** and **Menu Back** buttons instead, so a gamepad selects
+  with A and backs out with B.
 - **One-press games.** New Game offers **Campaign** (solo or co-op, decided by who presses in),
   **Deathmatch** and **Team Deathmatch** (both ask only which map), **Single Level**, and the full
   **Multiplayer** page for anyone who wants every setting.
@@ -126,6 +128,8 @@ to get you banned.
   with colour, crosshair and control scheme.
 - **Guided control setup** for each panel: it asks for each control in turn and binds whatever you
   press.
+- **Xbox gamepad assignment:** one press gives a panel the whole gamepad layout, A to select and B
+  to go back in menus included.
 - **Players & Views page** for the panel count and how the screen is divided.
 - **Performance page** with Framerate Cap, Render Threads, 8bpp Draw, Row Padding and Show Ticrate.
 - **OpenGL screen shaders:** CRT (zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom), FXAA, Software Look
@@ -545,10 +549,10 @@ DoomLegacy's own **networked** play is still available under **Networked Multipl
 On a cabinet with more than one panel, a **join screen** appears once the game is chosen. It is laid
 out as the game will be, and each square is headed with that panel's player name (or `PLAYER N`).
 
-1. **Press fire** to join. Your square opens your setup: **COLOR**, **CROSSHAIR** and **CONTROLS**
+1. **Press fire** to join (**A** on a gamepad; your square says which). Your square opens your setup: **COLOR**, **CROSSHAIR** and **CONTROLS**
    (Tank or WASD), the same settings as your `PlayerN config` page.
-2. Stick up/down moves between rows, left/right changes one, **fire** steps down. **Use** steps back
-   up or unlocks.
+2. Stick up/down moves between rows, left/right changes one, **fire** (A) steps down. **Use** (B)
+   steps back up or unlocks.
 3. The last row is **LOCK IN**, so pressing fire four times keeps your current settings.
 
 The game starts **when everyone who joined has locked in**, or when the countdown ends. Panels that
@@ -593,7 +597,9 @@ builds) and **WASD**. They swap which controls turn and which strafe, on the sam
 most joysticks and digital pads.
 
 **In menus**, stick up/down moves, left/right changes a setting, **fire** selects and **use** backs
-out.
+out. On a gamepad, **A** selects and **B** backs out instead. That is the panel's **Menu Select** and
+**Menu Back**, which the operator can set on any panel (see
+[Setting up a control panel](#setting-up-a-control-panel)).
 
 ### Single Level
 
@@ -689,6 +695,19 @@ for each control in turn: stick directions, then the six buttons. It binds whate
 
 There is a guided setup for each panel, P1 to P4. Use the **Player n Controls** page beside each
 one to bind anything past the ten standard controls.
+
+**Gamepads:** **Options → Setup Controls → Xbox Controllers**, select a panel's row and press any
+button on the pad. That panel gets the whole gamepad layout, including **A to select and B to go
+back** in menus. A pad assigned before this build still uses RT and A in menus until you assign it
+again (one press).
+
+**Menu Select and Menu Back** are on the third page of each **Player n Controls**. Leave them at
+`---` and the panel selects with fire and backs out with use. Bind them and they take over that job
+in menus, **for that panel only**; fire and use then do nothing in menus there. They can share a
+button with a game action, so a pad's A can be Use in play and Select in a menu, even with
+**Control per key** set to One. Running the guided setup clears them, since it teaches fire and use
+afresh. The join screen, initials entry and the Cabinet Link pages say **SELECT** and **BACK**
+instead of FIRE and USE when a panel has them bound.
 
 ### Players, panels, and how the screen is divided
 

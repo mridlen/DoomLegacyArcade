@@ -9,7 +9,8 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 - **The menus are driven by the cabinet buttons** (`m_menu.c`, `M_Cabinet_Menu_Key`, called from
   `M_Responder`'s `ev_keydown`). The panel has no arrow keys, Enter or Escape, so both players'
   buttons are translated: forward/backward = cursor up/down, turn *or* strafe left/right =
-  left/right, fire = select, use/open = back out. Read from `gamecontrol[]`/`gamecontrol2[]` **by
+  left/right, fire = select, use/open = back out -- unless the panel binds **Menu Select / Menu
+  Back**, which then take those two jobs (section below). Read from `gamecontrol[]`/`gamecontrol2[]` **by
   action**, not by hardcoded character, so it follows the selected control scheme and any
   rebinding. Turn and strafe both map to left/right on purpose: the two schemes only swap which
   side pair is turning, so mapping both makes the `,aoe` diamond behave identically either way.
@@ -312,6 +313,7 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
   | use / open | A | jump | B |
   | weapon down / up | LB / RB | menu | Start |
   | automap | Back | scores | L3 |
+  | **Menu Select** | **A** | **Menu Back** | **B** |
 
   - **The left stick and the d-pad both work from one binding**, because `sdl/i_system.c` translates
     axes 0/1 into the same `KEY_JOY*HAT*` codes the hat emits. **The right stick has its own key
@@ -379,8 +381,9 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     valid key codes in the `CK_pair_b` slots -- so nothing breaks; the panel simply keeps the old
     layout until the assignment page is run again.
 
-- **`gc_devmode` is appended at the very end of `gamecontrols_e`**, after `gc_automap` and
-  immediately before `num_gamecontrols`, and must stay there. It is the operator key that restarts
+- **`gc_devmode` is appended at the end of `gamecontrols_e`**, after `gc_automap`; only
+  `gc_menuselect`/`gc_menuback` have been appended after it since, and nothing may ever be inserted
+  before any of them. It is the operator key that restarts
   the cabinet into `-devmode` and back out (design note in `menus.md`); it appears on the last Setup
   Controls page as *Devmode Restart* and defaults to Scroll Lock on panel 1 via `G_Controldefault`.
   The end of the enum is the only safe place to add a control, for the reason the next entry
@@ -408,6 +411,63 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     from any `-devmode` session** -- which an operator assigning gamepads is doing anyway.
   - A `typedef` length check now fails the build if the two ever differ in *count*. It cannot catch
     a re-ordering, which is what actually went wrong, but it is free.
+
+- **Menu Select and Menu Back** (`gc_menuselect`, `gc_menuback`; Setup Controls, third page of each
+  panel). Before them, a panel could only select with fire and back out with use, which under the
+  Xbox preset is **RT to pick and A to go back** -- the reverse of every console. They are ordinary
+  per-panel controls (`setcontrol "menuselect"`, `setcontrol3 "menuback"`, ...), only read while a
+  menu is up.
+  - **Bound, they *replace* fire and use, per panel and per action.** `G_Menu_Select_Control(pind)`
+    answers `gc_menuselect` if that panel binds it, else `gc_fire`; `G_Menu_Back_Control` likewise
+    with `gc_use`. So a pad panel beside two arcade panels changes nothing for the arcade panels,
+    and a panel that binds only Menu Select still backs out with use. Unbound (`---`, `"null"` in
+    the config) is exactly the old behaviour, which is why no config needed migrating: re-saving the
+    cabinet's config through the new build added the eight `null` lines and moved nothing.
+  - **`M_Cabinet_Menu_Key` checks them first**, before movement and before fire/use, because they
+    share buttons with game actions *by design* -- A is Use in play and Select here. Then fire and
+    use are checked per panel: still select/back where nothing replaced them; otherwise the key
+    comes back as **`KEY_NULL` and `M_Responder` consumes it**. Passing it through raw instead
+    would have let upstream's hardcoded `KEY_JOY0BUT0 -> ENTER` / `KEY_JOY0BUT1 -> BACKSPACE`
+    keep a replaced button selecting, for whichever pad happens to be Joy0.
+  - **The swallow is skipped inside a message box** (`IT_MSGHANDLER`), which gets the raw key
+    instead. Those boxes are the key captures -- Setup Controls, the guided setup, Xbox assignment
+    -- and with the swallow in place RT on a pad with Menu Select could never be bound to anything.
+    It also comes *after* initials entry and the guided setup's "press any button", which take any
+    press, so a replaced RT still starts the guided setup.
+  - **Control per key exemption.** `G_CheckDoubleUsage(keynum, control)` now takes the control
+    being bound and dedupes the two menu buttons and the game actions **as separate families**:
+    binding A to Menu Select leaves it on Use and vice versa, while Select and Back still cannot
+    share a key, nor two game actions. **It has to cut both ways, not only "menu buttons are
+    exempt"**: `config.cfg` writes controls in enum order, so `menuselect` loads *after* `use`, and
+    a one-way exemption would strip A off Use at every start. Proven through the real loader
+    (`setcontrol`, extracted) in `tools/menukeys-test.py`, and end to end by a config that bound
+    both, saved and reloaded twice by `-devmode` quits.
+  - **The join screen** reads raw keys per panel (it must know *which* panel pressed) and so asks
+    `G_Menu_Select_Control(panel)` / `G_Menu_Back_Control(panel)` itself rather than going through
+    the translation. Its empty box says `PRESS SELECT` for a panel with Menu Select bound and
+    `PRESS FIRE` otherwise; `PRESS SELECT` is 89 wide and four boxes side by side are 80, so a
+    narrow box says just `SELECT` (47).
+  - **Shared screens** -- initials entry, the invite line, the Cabinet Link pages -- cannot know
+    whose panel is in front of them, so they say `SELECT`/`BACK` once *any* panel binds one
+    (`G_Any_Panel_Bound`), else `FIRE`/`USE`. The Link settings footer would read `BACK BACK`, so
+    that case says `BACK EXITS`; with both replaced it is 310 wide in three-space gaps, so the gaps
+    close to two past 300 (302). The allow list's armed text was `FIRE AGAIN: REMOVE`, 124 wide in
+    a 110 slot -- already cut to `FIRE AGAIN: REM` before this change -- and is now
+    `FIRE: REMOVE` / `SELECT: REMOVE` (84 / 103). All measured against the `STCFN` lumps.
+  - **The Xbox preset binds A and B to them**, and clearing a pad clears them. A pad assigned
+    before this change keeps RT/A in menus until it is assigned again.
+  - **The guided setup clears them** for its panel: it teaches fire and use from scratch, and a
+    Menu Select left pointing at a previously assigned pad would leave the arcade panel's own fire
+    button unable to select anything.
+  - The Cabinet Link test harness (`d_linkgame.c`: the `-linkkeys` `f`/`b` tokens, and the
+    automatic presses on a message box and an invite) presses the panel's menu select/back, not
+    fire/use, so it keeps working on a panel with them bound.
+  - Tested by **`tools/menukeys-test.py`**, which extracts `M_Cabinet_Menu_Key`, `M_key_is_control`,
+    the `G_Menu_*` helpers, `G_CheckDoubleUsage`, `setcontrol` and `gamecontrolname[]` verbatim and
+    drives arcade, pad, mixed and half-bound panels plus the load-order case. `--selfcheck`
+    reinstates seven bugs (no exemption, Select checked late, no swallow, global instead of per
+    panel, either replacement ignored, the join screen reading fire directly) and every one goes
+    red.
 
 ---
 
