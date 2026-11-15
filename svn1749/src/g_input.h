@@ -107,14 +107,24 @@ typedef enum
     gc_pause,
     gc_automap,
 
+    // [Arcade] Everything from here down is appended, and new controls go on
+    // the END, immediately before num_gamecontrols.  gamecontrolname[] is
+    // indexed by this enum and config.cfg stores control *names*, so an entry
+    // inserted anywhere else renames every control after it and shifts the
+    // bindings in an existing config -- which is exactly what the gc_comehere
+    // bug did (see gamecontrolname[] in g_input.c).  Appended, no existing
+    // name moves and no config needs migrating.
+
     // [Arcade] Operator key: restarts the program into -devmode and back out.
-    // MUST STAY LAST, immediately before num_gamecontrols.  gamecontrolname[]
-    // is indexed by this enum and config.cfg stores control *names*, so an
-    // entry inserted anywhere else renames every control after it and shifts
-    // the bindings in an existing config -- which is exactly what the
-    // gc_comehere bug did (see gamecontrolname[] in g_input.c).  Appended
-    // here, no existing name moves and no config needs migrating.
     gc_devmode,
+
+    // [Arcade] Menu Select / Menu Back.  Only read while a menu is up, where
+    // they replace fire and use as select and back *on the panel that has
+    // them bound* (M_Cabinet_Menu_Key).  Exempt from "Control per key: One"
+    // against the game actions -- A on a pad is both Use and Menu Select --
+    // see G_CheckDoubleUsage.  G_Menu_Is_Control tells the two families apart.
+    gc_menuselect,
+    gc_menuback,
 
     num_gamecontrols
 } gamecontrols_e;
@@ -167,6 +177,19 @@ void  G_Clear_Xbox_Preset( int pind );
 
 // Store keys[CK_NUMKEYS] into cv_customcontrols[pind] and apply immediately.
 void  G_Save_CustomControls( int pind, const int * keys );
+
+// [Arcade] Menu Select / Menu Back (gc_menuselect, gc_menuback).
+// Is control gc one of the two menu buttons.
+boolean  G_Menu_Is_Control( int gc );
+// Does panel pind have anything bound to control gc.
+boolean  G_Control_Bound( int pind, int gc );
+// Does any panel have anything bound to control gc.
+boolean  G_Any_Panel_Bound( int gc );
+// The control that selects in a menu on panel pind: gc_menuselect when that
+// panel has it bound, otherwise gc_fire.  G_Menu_Back_Control likewise
+// answers gc_menuback or gc_use.
+int  G_Menu_Select_Control( int pind );
+int  G_Menu_Back_Control( int pind );
 
 // mouse1
 extern consvar_t   cv_mouse_invert;
@@ -255,7 +278,7 @@ void  Command_Setcontrol3_f(void);   // [Arcade] third panel
 void  Command_Setcontrol4_f(void);   // [Arcade] fourth panel
 void  G_Controldefault(void);
 void  G_SaveKeySetting(FILE *f);
-void  G_CheckDoubleUsage(int keynum);
+void  G_CheckDoubleUsage(int keynum, int control);
 
 // Called for cv_usemouse, cv_grabinput, cv_mouse_motion
 void  CV_mouse_OnChange( void );

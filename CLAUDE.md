@@ -327,7 +327,9 @@ sed 's/\x1b\[[0-9;]*m//g' out.txt | grep ...   # output is full of ENDOOM color 
   drives the menus headlessly, so `tools/vidmenu-navtest.py`, `tools/vidaspect-test.py`,
   `tools/viewgrid-test.py`, `tools/hudtext-test.py`, `tools/screenfit-test.py` (where the
   finished frame lands on the panel — a thing **screenshots cannot see**, since the capture is of
-  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py`, `tools/cvarlist-test.py` (no
+  the draw buffer and the placement happens after it), `tools/vidmodes-deduptest.py`, `tools/menukeys-test.py`
+  (which button selects and which backs out in a menu, per panel, and the Control per key exemption
+  that lets Menu Select share a button with Use — `input.md`), `tools/cvarlist-test.py` (no
 `CV_PossibleValue_t` list repeats a value — the precondition `CV_ValueIncDec` states in its own
 comment and nothing enforced; a duplicate leaves the cvar correct and makes the *menu arrows* step
 from the wrong index), `tools/restartquote-test.py` (the Windows restart's command-line
@@ -463,7 +465,7 @@ everything else is arcade blocks inside an upstream file.
 | Four players, panels, view grid | `d_clisrv.c`: `localplayer[]`, `D_NumViews`, `D_View_Grid`, `D_Cell_Pos`, `D_View_Cell_Pos`, `D_View_Squash`, `D_Panel_Of`, `D_View_Cell`, `D_Reset_View_Cells`. Viewport geometry in `d_main.c` `D_Display`; software draw window in `r_draw.c` (`R_View_Fills_Cell`, the cell tables) |
 | HUD | `st_stuff.c` `ST_overlayDrawer` (per-view, and the quarter-screen half-scale block). `hu_stuff.c` for the per-view rankings, the attract demo caption, `PRESS FIRE TO START`, the `UNRANKED` markers and `HU_Draw_Tip` |
 | Menus | `m_menu.c`, by region: operator cvars ~475–530, main/new-game lockdown ~1150–1270, Single Level ~1670–1860, cheats ~2780–2930, join screen ~2935, initials entry ~3134, game select and level packs ~3520–3790, program restart ~3791 |
-| Input | `g_input.c`: `gamecontrol_pl[]`, the per-panel presets, `cv_customcontrols` and the guided setup. `sdl/i_system.c` for joystick slots, hotplug, both sticks and the triggers |
+| Input | `g_input.c`: `gamecontrol_pl[]`, the per-panel presets, `cv_customcontrols` and the guided setup; Menu Select / Menu Back in `G_Menu_Select_Control`/`G_Menu_Back_Control` and the two-family `G_CheckDoubleUsage`, read by `M_Cabinet_Menu_Key` and `M_Join_Key` (`m_menu.c`). `sdl/i_system.c` for joystick slots, hotplug, both sticks and the triggers |
 | Config handling | `m_misc.c` (backup generation, `M_Verify_Config`, the player-session no-write rule) and `command.c` (command buffer size, and the loud complaint when text is dropped) |
 | Demos | `g_game.c`: `G_BeginRecording` and the `DEMOHDR_*` offsets it patches, the playback overrides, `G_SnapshotDemo` for the background record-demo buffer |
 | Engine fixes | `r_draw24.c`/`r_draw32.c` (heightmask), `hardware/r_opengl/r_opengl.c` (texture clamp), `hardware/hw_bsp.c` and `f_wipe.c` (wipes), `sdl/i_video.c` |

@@ -532,8 +532,10 @@ void  LKG_Test_Keys( void )
     else if( ! strcmp( tok, "d" ) )      lkg_post_key( lkg_panel_key( gc_backward ), 0 );
     else if( ! strcmp( tok, "l" ) )      lkg_post_key( lkg_panel_key( gc_turnleft ), 0 );
     else if( ! strcmp( tok, "r" ) )      lkg_post_key( lkg_panel_key( gc_turnright ), 0 );
-    else if( ! strcmp( tok, "f" ) )      lkg_post_key( lkg_panel_key( gc_fire ), 0 );
-    else if( ! strcmp( tok, "b" ) )      lkg_post_key( lkg_panel_key( gc_use ), 0 );
+    // [Arcade] "f" and "b" are the panel's menu select and back: Menu Select /
+    // Menu Back when panel 1 binds them, which replace fire and use in menus.
+    else if( ! strcmp( tok, "f" ) )      lkg_post_key( lkg_panel_key( G_Menu_Select_Control( 0 ) ), 0 );
+    else if( ! strcmp( tok, "b" ) )      lkg_post_key( lkg_panel_key( G_Menu_Back_Control( 0 ) ), 0 );
     else if( ! strcmp( tok, "esc" ) )    lkg_post_key( KEY_ESCAPE, 0 );
     else if( ! strcmp( tok, "enter" ) )  lkg_post_key( KEY_ENTER, 0 );
     else if( ! strcmp( tok, "bs" ) )     lkg_post_key( KEY_BACKSPACE, 0 );
@@ -992,8 +994,7 @@ void  LKG_Ticker( void )
         if( text && ! pressed && lkg_now() - seen_ms > 1000 )
         {
             event_t  ev_fire;
-            int  key = gamecontrol_pl[0][gc_fire][0] ? gamecontrol_pl[0][gc_fire][0]
-                                                     : gamecontrol_pl[0][gc_fire][1];
+            int  key = lkg_panel_key( G_Menu_Select_Control( 0 ) );   // [Arcade] a menu press
             char  first[40];
             int  i;
             for( i = 0; i < 39 && text[i] && text[i] != '\n'; i++ )  first[i] = text[i];
@@ -1070,8 +1071,7 @@ void  LKG_Ticker( void )
         if( lkg_test_press_at && lkg_since( now, lkg_test_press_at ) >= (uint32_t) lkg_test_press_secs * 1000 )
         {
             event_t  ev;
-            int  key = gamecontrol_pl[0][gc_fire][0] ? gamecontrol_pl[0][gc_fire][0]
-                                                     : gamecontrol_pl[0][gc_fire][1];
+            int  key = lkg_panel_key( G_Menu_Select_Control( 0 ) );   // [Arcade] a menu press
             lkg_test_press_at = 0;
             GenPrintf( EMSG_errlog, "LINKLOG Cabinet Link: test: pressing fire (key %d)\n", key );
             memset( &ev, 0, sizeof(ev) );

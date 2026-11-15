@@ -620,7 +620,9 @@ char * gamecontrolname[num_gamecontrols] =
     "menuesc",  // joystick enter menu, and menu escape key
     "pause",
     "automap",
-    "devmode",  // [Arcade] last, matching gamecontrols_e
+    "devmode",  // [Arcade] appended, matching gamecontrols_e
+    "menuselect",  // [Arcade]
+    "menuback",    // [Arcade]
 };
 
 // Catches a length mismatch between the enum and the table above at compile
@@ -940,6 +942,12 @@ void  G_Apply_Xbox_Preset( int pind, int joynum )
     XB_BIND( gc_menuesc, JOY_BUT(joynum, XPAD_START) );
     XB_BIND( gc_automap, JOY_BUT(joynum, XPAD_BACK) );
     XB_BIND( gc_scores,  JOY_BUT(joynum, XPAD_L3) );
+    // [Arcade] A selects and B backs out in a menu, as on every console.
+    // Without these the menus fell back to fire (RT) and use (A), so A took
+    // you *back*.  A is still Use in play: the menu buttons are exempt from
+    // Control per key against the game actions (G_CheckDoubleUsage).
+    XB_BIND( gc_menuselect, JOY_BUT(joynum, XPAD_A) );
+    XB_BIND( gc_menuback,   JOY_BUT(joynum, XPAD_B) );
 
     // Upstream binds pause to Back, on Joy0 only (see G_Default_Controls).
     // Back is the automap here, and a cabinet nobody is watching must not be
@@ -973,6 +981,8 @@ void  G_Clear_Xbox_Preset( int pind )
     XB_CLEAR( gc_menuesc );
     XB_CLEAR( gc_automap );
     XB_CLEAR( gc_scores );
+    XB_CLEAR( gc_menuselect );   // [Arcade] back to fire and use in menus
+    XB_CLEAR( gc_menuback );
 
     // The ten the scheme owns, cleared explicitly as well.  For a panel with no
     // compiled preset -- 3 and 4, whose scheme_keys entries are all KEY_NULL --
@@ -1119,13 +1129,67 @@ void G_SaveKeySetting(FILE *f)
 #endif
 }
 
-void G_CheckDoubleUsage(int keynum)
+//===========================================================================
+// [Arcade] Menu Select / Menu Back
+//===========================================================================
+// Two controls that only mean anything while a menu is up.  Without them a
+// panel selects with fire and backs out with use, which on an Xbox pad is RT
+// to pick and A to go back.  A panel that binds one *replaces* the game action
+// it stands in for, in menus only and on that panel only: bind Menu Select and
+// fire stops selecting there; leave Menu Back unbound and use still backs out.
+// Panels that bind neither -- the arcade panels -- behave exactly as before.
+
+boolean  G_Menu_Is_Control( int gc )
+{
+    return gc == gc_menuselect || gc == gc_menuback;
+}
+
+boolean  G_Control_Bound( int pind, int gc )
+{
+    if( pind < 0 || pind >= MAXSPLITSCREENPLAYERS )  return false;
+    return gamecontrol_pl[pind][gc][0] != KEY_NULL
+        || gamecontrol_pl[pind][gc][1] != KEY_NULL;
+}
+
+boolean  G_Any_Panel_Bound( int gc )
+{
+    int pind;
+    for( pind = 0; pind < MAXSPLITSCREENPLAYERS; pind++ )
+    {
+        if( G_Control_Bound( pind, gc ) )  return true;
+    }
+    return false;
+}
+
+int  G_Menu_Select_Control( int pind )
+{
+    return G_Control_Bound( pind, gc_menuselect ) ? gc_menuselect : gc_fire;
+}
+
+int  G_Menu_Back_Control( int pind )
+{
+    return G_Control_Bound( pind, gc_menuback ) ? gc_menuback : gc_use;
+}
+
+// [Arcade] control is the one keynum is being bound to.  The menu buttons
+// (Menu Select, Menu Back) and the game actions are deduplicated separately:
+// binding A to Menu Select must not take it off Use, nor binding A to Use take
+// it off Menu Select, or the Xbox layout -- A is Use in play and Select in a
+// menu -- could never be built.  That cuts both ways for a second reason too:
+// config.cfg writes the controls in enum order, so the "menuselect" line
+// loads *after* "use", and a one-way exemption would strip A off Use at every
+// start.  Within each family the rule is unchanged, so Menu Select and Menu
+// Back still cannot share a key.
+void G_CheckDoubleUsage(int keynum, int control)
 {
     if( cv_controlperkey.value==1 )
     {
         int i;
+        boolean  menu_family = G_Menu_Is_Control( control );
         for(i=0;i<num_gamecontrols;i++)
         {
+            if( G_Menu_Is_Control( i ) != menu_family )
+                continue;   // [Arcade] the other family keeps the key
             if( gamecontrol[i][0]==keynum )
                 gamecontrol[i][0]= KEY_NULL;
             if( gamecontrol[i][1]==keynum )
@@ -1164,7 +1228,7 @@ void setcontrol(int (*gc)[2], const char * cstr)
         return;
     }
     keynum=G_KeyStringtoNum(carg.arg[2]);
-    G_CheckDoubleUsage(keynum);
+    G_CheckDoubleUsage(keynum, numctrl);
     gc[numctrl][0]=keynum;
 
     if(carg.num==4)

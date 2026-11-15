@@ -156,6 +156,16 @@ working check from a check that always passes.
   reading anything into it.** A control run took 31 seconds and settled it.
   Anything under "desynced" is still a real finding.
 
+- **"loaded different levels" can be the same noise, and it is counted as a desync.** While
+  checking the Menu Select change (which cannot touch the simulation), `doom2_MAP01_sk3_speed`
+  reported `1 desynced` on every run of the new build: `MAP01` loaded once, against a baseline that
+  loaded it twice. The baseline run had simply got far enough -- 730 tics -- to reload the map
+  *after* its log ended; the new build's runs were cut off at 340 to 710. Every shared prefix
+  matched. **The proof was replaying that one demo serially (`-j 1`) with the baseline's own
+  binary**: it too stopped at 335 tics with one load and reported the same "desync". So before
+  believing a "loaded different levels" line, check whether the extra load sits past the end of
+  the shorter log, and run the unchanged binary against the same baseline.
+
 - **A relative `--home`, `-d` or `--waddir` silently points somewhere else.**
   Each demo is replayed from inside a slot directory the script `cd`s into, so
   a relative path resolves against *that*, not against where the command was
