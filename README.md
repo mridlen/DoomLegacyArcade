@@ -690,8 +690,10 @@ cabinet shows `ENTERING DEVMODE...` and restarts with `-devmode`. Press it again
 ### Setting up a control panel
 
 **Options → Setup Controls → Guided setup P1** (devmode only) shows the recommended layout, then asks
-for each control in turn: stick directions, then the six buttons. It binds whatever you press
-(keyboard, joystick, encoder). Press ESC to abandon and keep the old layout.
+for each control in turn: stick directions, the six buttons, then **Menu Select** and **Menu Back**
+(press 1 and 4 on an arcade panel, A and B on a gamepad). It binds whatever you press (keyboard,
+joystick, encoder). Press ESC to abandon and keep the old layout. Menu Back has to be a different
+button from Menu Select, or it asks again.
 
 There is a guided setup for each panel, P1 to P4. Use the **Player n Controls** page beside each
 one to bind anything past the ten standard controls.
@@ -705,8 +707,7 @@ again (one press).
 `---` and the panel selects with fire and backs out with use. Bind them and they take over that job
 in menus, **for that panel only**; fire and use then do nothing in menus there. They can share a
 button with a game action, so a pad's A can be Use in play and Select in a menu, even with
-**Control per key** set to One. Running the guided setup clears them, since it teaches fire and use
-afresh. The join screen, initials entry and the Cabinet Link pages say **SELECT** and **BACK**
+**Control per key** set to One. The guided setup asks for both as its last two steps. The join screen, initials entry and the Cabinet Link pages say **SELECT** and **BACK**
 instead of FIRE and USE when a panel has them bound.
 
 ### Players, panels, and how the screen is divided

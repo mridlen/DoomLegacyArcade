@@ -8017,7 +8017,11 @@ static void M_Draw_RecLayout( void )
         y += 12;
     }
 
-    M_Centre_At( BASEVIDWIDTH/2, 158, 0, "STICK MOVES AND TURNS" );
+    // [Arcade] Two lines where there was one, so the menu buttons the setup
+    // now asks for are on the page it opens with.  Rows 148 and 160 sit 5
+    // below the legend's last line (136, 7 tall) and 7 above the footer.
+    M_Centre_At( BASEVIDWIDTH/2, 148, 0, "STICK MOVES AND TURNS" );
+    M_Centre_At( BASEVIDWIDTH/2, 160, 0, "MENUS: 1 SELECTS  4 GOES BACK" );
 
     if( guided_intro )
     {
@@ -8026,7 +8030,7 @@ static void M_Draw_RecLayout( void )
     }
     else
     {
-        M_Centre_At( BASEVIDWIDTH/2, 174, 0, "SETUP ASKS STICK FIRST, THEN 1-6" );
+        M_Centre_At( BASEVIDWIDTH/2, 174, 0, "STICK FIRST, THEN 1-6, THEN MENU" );   // [Arcade] 214
     }
 }
 
@@ -9274,8 +9278,9 @@ done:
 //===========================================================================
 // Walks an operator through the ten actions a cabinet panel actually needs,
 // binding each to whatever button they press: a 4-way stick plus six
-// buttons.  Everything else (run, jump, weapon slots, console, automap) is
-// left to the ordinary Setup Controls pages, which are devmode-only anyway.
+// buttons -- then the panel's two menu buttons, Menu Select and Menu Back.
+// Everything else (run, jump, weapon slots, console, automap) is left to the
+// ordinary Setup Controls pages, which are devmode-only anyway.
 //
 // Built on the same MM_EVENTHANDLER message plumbing M_ChangeControl uses,
 // so key capture, the message box and event routing are all shared.  Mouse
@@ -9290,9 +9295,20 @@ done:
 // Move" / "WASD" selector goes on swapping them for the player afterwards.
 typedef struct
 {
-    int          ck;        // CK_* slot in the key table
+    int          ck;        // CK_* slot in the key table, or a GUIDED_MENU_*
     const char * label;
 } guided_step_t;
+
+// [Arcade] The two menu buttons are not in the scheme's CK_* table -- Tank /
+// WASD has nothing to swap in them -- so they get slots past its end in
+// guided_keys[], and are written straight to gamecontrol_pl at the finish.
+// G_Save_CustomControls reads only the first CK_NUMKEYS.
+enum
+{
+    GUIDED_MENU_SELECT = CK_NUMKEYS,
+    GUIDED_MENU_BACK,
+    GUIDED_NUM_KEYS
+};
 
 // Stick first, then the six buttons in *button number* order, matching the
 // recommended layout page so an operator can follow it straight down.  The
@@ -9310,12 +9326,19 @@ static const guided_step_t  guided_steps[] =
     { CK_use,          "BUTTON 4 - USE / OPEN"   },
     { CK_prevweapon,   "BUTTON 5 - WEAPON DOWN"  },
     { CK_nextweapon,   "BUTTON 6 - WEAPON UP"    },
+    // [Arcade] Last, after the panel itself is taught.  The numbers are the
+    // recommendation that matches fire and use, so an arcade panel pressing
+    // 1 and 4 behaves exactly as it did with them unbound; a gamepad presses
+    // A and B.  Both fit inside the widest label above (155 and 142 of 161).
+    { GUIDED_MENU_SELECT, "MENU SELECT - BUTTON 1" },
+    { GUIDED_MENU_BACK,   "MENU BACK - BUTTON 4"   },
 };
 
 #define GUIDED_NUM_STEPS  ((int)(sizeof(guided_steps)/sizeof(guided_steps[0])))
 
 static int  guided_step = -1;   // -1 when not running
-static int  guided_keys[CK_NUMKEYS];
+static int  guided_keys[GUIDED_NUM_KEYS];
+static boolean  guided_retry = false;   // [Arcade] Menu Back pressed as Select
 
 static void M_Guided_Response(event_t * ev);
 
@@ -9323,10 +9346,11 @@ static void M_Guided_Prompt( void )
 {
     snprintf( msgtmp, MSGTMP_LEN,
               "PLAYER %d CONTROL SETUP\n\n"
-              "Press the control for\n%s\n\n"
+              "Press the control for\n%s\n%s\n"
               "%d of %d\nESC to cancel",
               controls_player + 1,
               guided_steps[guided_step].label,
+              guided_retry ? "NOT THE SAME AS MENU SELECT\n" : "",   // [Arcade] 195 wide
               guided_step + 1, GUIDED_NUM_STEPS );
     msgtmp[MSGTMP_LEN-1] = '\0';
 
@@ -9365,6 +9389,18 @@ static void M_Guided_Response( event_t * ev )
         return;
     }
 
+    // [Arcade] One button for both would leave the panel no way back out of
+    // a menu: Select is checked first, and binding Back replaces use.  Ask
+    // again rather than accept it.
+    guided_retry = false;
+    if( guided_steps[guided_step].ck == GUIDED_MENU_BACK
+        && ch == guided_keys[GUIDED_MENU_SELECT] )
+    {
+        guided_retry = true;
+        M_Guided_Prompt();
+        return;
+    }
+
     guided_keys[ guided_steps[guided_step].ck ] = ch;
 
     guided_step++;
@@ -9382,12 +9418,18 @@ static void M_Guided_Response( event_t * ev )
     // layout instead of overwriting it.
     G_Save_CustomControls( controls_player, guided_keys );
 
-    // [Arcade] The panel was just taught from scratch, fire and use included,
-    // so those work its menus again.  A Menu Select / Menu Back left over from
-    // a gamepad assigned to this panel would otherwise point at the pad, and
-    // the arcade panel's own fire button would stop selecting anything.
-    G_Clear_ControlKeys( gamecontrol_pl[controls_player], gc_menuselect );
-    G_Clear_ControlKeys( gamecontrol_pl[controls_player], gc_menuback );
+    // [Arcade] The menu buttons, written directly: they are outside the
+    // scheme's table, and exempt from Control per key against the game
+    // actions anyway (G_CheckDoubleUsage), so 1 pressed for Menu Select can
+    // stay Fire too.  Always both, replacing whatever was there -- a Menu
+    // Select left over from a gamepad would otherwise point at the pad.
+    {
+        int (* gc)[2] = gamecontrol_pl[controls_player];
+        gc[gc_menuselect][0] = guided_keys[GUIDED_MENU_SELECT];
+        gc[gc_menuselect][1] = KEY_NULL;
+        gc[gc_menuback][0]   = guided_keys[GUIDED_MENU_BACK];
+        gc[gc_menuback][1]   = KEY_NULL;
+    }
 
     // Pop before raising the message, so the message restores to the
     // controls menu rather than to the layout page we came in on.
@@ -9404,6 +9446,7 @@ static void M_Guided_Response( event_t * ev )
 static void M_Guided_Begin_Steps( void )
 {
     guided_step = 0;
+    guided_retry = false;
     M_Guided_Prompt();
 }
 
