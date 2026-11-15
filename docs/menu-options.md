@@ -474,8 +474,8 @@ Operator only.
 
 | Item | What it does |
 | --- | --- |
-| **Guided setup P1** … **P4** ★ | Shows the recommended layout, then asks you to press each of the ten cabinet controls in turn: four stick directions, then buttons 1–6. It binds whatever you press. Escape cancels and keeps the old layout. Only panels the cabinet has are listed. |
-| **Recommended layout** ★ | The play-tested six-button layout: 1 fire, 2/3 strafe, 4 use, 5/6 weapon down/up, and the stick to move and turn. |
+| **Guided setup P1** … **P4** ★ | Shows the recommended layout, then asks you to press each of the twelve cabinet controls in turn: four stick directions, buttons 1–6, then ★ Menu Select and Menu Back (1 and 4 on the recommended layout; A and B on a pad). It binds whatever you press, and asks again if Menu Back is the same button as Menu Select. Escape cancels and keeps the old layout. Only panels the cabinet has are listed. |
+| **Recommended layout** ★ | The play-tested six-button layout: 1 fire, 2/3 strafe, 4 use, 5/6 weapon down/up, and the stick to move and turn; in menus 1 selects and 4 goes back. |
 | Control per key | Whether one key may drive one control or several. ★ Menu Select and Menu Back are counted apart from the game actions, so they can share a key with one. |
 | Mouse Options >> | Use mouse, mouselook, mouse move, invert, x/y speed, double-click, motion, grab input. |
 | Second Mouse config >> | Player 2's mouse. |

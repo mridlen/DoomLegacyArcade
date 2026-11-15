@@ -121,21 +121,25 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     which re-stamps all ten immediately.
 - **Guided control setup** (`m_menu.c`, `M_Guided_Controls_P1`/`_P2`, under Options → Setup
   Controls, which is devmode-only). Prompts for the ten controls a cabinet panel needs, binding
-  each to whatever is pressed — a 4-way stick plus six buttons. Everything else stays on the
+  each to whatever is pressed — a 4-way stick plus six buttons — and then the panel's two menu
+  buttons, twelve steps in all. Everything else stays on the
   ordinary Setup Controls pages. Built on the same `MM_EVENTHANDLER` message plumbing as
   `M_ChangeControl`, so the message box, key capture and event routing are shared; mouse and
   joystick buttons arrive as `ev_keydown` with codes in the key space, so any panel wiring works.
   - Order is **stick first, then the buttons by number**, each labelled with it:
     `STICK UP / DOWN / LEFT / RIGHT`, then `BUTTON 1 - FIRE`, `BUTTON 2 - STRAFE LEFT`,
     `BUTTON 3 - STRAFE RIGHT`, `BUTTON 4 - USE / OPEN`, `BUTTON 5 - WEAPON DOWN`,
-    `BUTTON 6 - WEAPON UP`. **Keep this in step with the recommended layout page** — the two are
+    `BUTTON 6 - WEAPON UP`, then `MENU SELECT - BUTTON 1` and `MENU BACK - BUTTON 4` (155 and 142
+    wide, inside `BUTTON 3 - STRAFE RIGHT`'s 161). **Keep this in step with the recommended layout page** — the two are
     meant to be read together, and an earlier version asked in a different order (strafe before
     fire) while the page claimed otherwise. The numbers are only the recommendation; a panel wired
     differently still works, the operator just presses what they want for that action.
   - **Recommended layout screen** (`M_Draw_RecLayout` / `RecLayoutDef`, same menu). An
     informational page showing the play-tested assignment on the standard six-button arrangement
     (1 2 3 top row, 4 5 6 bottom): 1 fire, 2/3 strafe left/right, 4 use/open, 5 weapon down,
-    6 weapon up, stick moves and turns. Modelled on the "Read This" screens — a custom
+    6 weapon up, stick moves and turns, and `MENUS: 1 SELECTS  4 GOES BACK` (197 wide; the stick
+    line moved up from 158 to 148 to make room at 160, 5 below the legend and 7 above the footer).
+    Modelled on the "Read This" screens — a custom
     `drawroutine` plus one `IT_SUBMENU | IT_NOTHING` item that backs out.
   - **The guided setup opens on that page**, showing "PRESS ANY BUTTON TO BEGIN", so the operator
     sees the target layout in the order they are about to be asked for it. `guided_intro` gates
@@ -456,9 +460,23 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     `FIRE: REMOVE` / `SELECT: REMOVE` (84 / 103). All measured against the `STCFN` lumps.
   - **The Xbox preset binds A and B to them**, and clearing a pad clears them. A pad assigned
     before this change keeps RT/A in menus until it is assigned again.
-  - **The guided setup clears them** for its panel: it teaches fire and use from scratch, and a
+  - **The guided setup asks for them**, as its last two steps, after the ten scheme controls.
+    They are not in the scheme's `CK_*` table (Tank / WASD has nothing to swap in them), so the
+    wizard keeps them in two slots past its end, `GUIDED_MENU_SELECT`/`GUIDED_MENU_BACK` in
+    `guided_keys[]`, and writes them straight to `gamecontrol_pl` at the finish --
+    `G_Save_CustomControls` only reads the first `CK_NUMKEYS`. Always both, always replacing: a
     Menu Select left pointing at a previously assigned pad would leave the arcade panel's own fire
-    button unable to select anything.
+    button unable to select anything. On an arcade panel the operator presses 1 and 4, the same
+    keys as fire and use, which behaves exactly like leaving them unbound.
+    - **Menu Back the same button as Menu Select is refused and asked again**, with
+      `NOT THE SAME AS MENU SELECT` (195 wide) under the label. Select is checked first and a
+      bound Back replaces use, so one button for both would leave that panel no way back out of
+      a menu. No other step checks for repeats; this is the only one where a repeat strands the
+      operator.
+    - Verified headlessly with a temporary console command that ran the real wizard on panel 3
+      with simulated presses, including a repeated Back: all twelve steps asked, the repeat
+      re-asked step 12, a stale pad binding was replaced, and a `-devmode` quit saved
+      `setcontrol3 "menuselect" "h"` beside `setcontrol3 "fire" "h"`.
   - The Cabinet Link test harness (`d_linkgame.c`: the `-linkkeys` `f`/`b` tokens, and the
     automatic presses on a message box and an invite) presses the panel's menu select/back, not
     fire/use, so it keeps working on a panel with them bound.
