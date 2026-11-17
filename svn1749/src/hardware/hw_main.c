@@ -322,6 +322,7 @@
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
 #endif
+#include "hw_glow.h"  // [Arcade] DERP glow
 
 
 // #define DEBUG_FIT_RATIO  1
@@ -928,6 +929,10 @@ void HWR_RenderPlane(poly_subsector_t * xsub, fixed_t fixedheight,
                            PolyFlags | PF_Masked | PF_Modulated | PF_Clip);
     }
 
+    // [Arcade] DERP glow, before the light pass rewrites the texture coords.
+    HWR_Glow_Plane(planeVerts, nrPlaneVerts, levelflats[picnum].lumpnum,
+                   PolyFlags);
+
     //12/11/99: Hurdler: add here code for dynamic lighting on planes
     HWR_PlaneLighting(planeVerts, nrPlaneVerts);
 
@@ -1362,6 +1367,9 @@ void HWR_ProjectWall(vxtx3d_t * vxtx, FSurfaceInfo_t * pSurf, int blendmode)
 {
     HWD.pfnDrawPolygon(pSurf, vxtx, 4,
                        blendmode | PF_Modulated | PF_Occlude | PF_Clip);
+
+    // [Arcade] DERP glow, before the passes below rewrite the texture coords.
+    HWR_Glow_Wall(vxtx, pSurf, blendmode);
 
     if (gr_curline->linedef->splats && cv_splats.value)
         HWR_DrawSegsSplats(pSurf);
@@ -3660,6 +3668,7 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
     if (!cv_grmd2.value || (md2_models[spr->mobj->sprite].scale < 0.0f))
     {
         int blend = 0;
+        boolean opaque = false;  // [Arcade] only an ordinary sprite gets eyes
         if (spr->mobj->frame & FF_TRANSMASK)
             blend = HWR_TranstableToAlpha((spr->mobj->frame & FF_TRANSMASK) >> FF_TRANSSHIFT, &Surf);
         else if (spr->mobj->frame & FF_SMOKESHADE)
@@ -3714,9 +3723,15 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
             // scales the colour, which premultiplied alpha survives.
             if( sprite_premultiplied )
                 blend = PF_Environment | PF_Occlude;
+            opaque = true;
         }
 
         HWD.pfnDrawPolygon(&Surf, vxtx, 4, blend | PF_Modulated | PF_Clip);
+
+        // [Arcade] DERP glowing eyes, over the sprite just drawn.
+        if( opaque )
+            HWR_Glow_Sprite(vxtx, spr->patch_lumpnum, smip,
+                            spr->mobj->flags, spr->mobj->health);
     }
 sprite_drawn:
     ;   // a label must be followed by a statement
@@ -5173,6 +5188,7 @@ void HWR_Register_Gr1Commands(void)
     CV_RegisterVar(&cv_grmlook_extends_fov);
     CV_RegisterVar(&cv_grfiltermode);
     CV_RegisterVar(&cv_grshader);  // [Arcade]
+    HWR_Glow_Register();  // [Arcade] DERP glow, hw_glow.c
     CV_RegisterVar(&cv_grvanilla_weapon_light);  // [Arcade]
     CV_RegisterVar(&cv_grcorrecttricks);
     CV_RegisterVar(&cv_grsolvetjoin);

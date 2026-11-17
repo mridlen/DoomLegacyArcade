@@ -135,6 +135,12 @@ to get you banned.
 - **OpenGL screen shaders:** CRT (zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom), FXAA, Software Look
   (snaps colours to Doom's palette), VHS, Greyscale, Sepia, Night Vision and Game Boy. Off by
   default. Under **Options → Video Options → OpenGL 3D Card Options → Shaders**.
+- **DERP glow effects (OpenGL):** Glowing Lights (lamps, light strips, computer panels and exit
+  signs stay lit in dark rooms, and blink with a blinking room), Glowing Liquids (nukage, slime and
+  lava pools glow and throw their colour up the walls standing in them) and Glowing Eyes (monsters'
+  eyes glow in the dark). Ideas and data from [DERP](https://github.com/robongrui/derp). Drawing only, so demos,
+  netgames and scores are unaffected. Each is Off by default, under **Options → Video Options →
+  OpenGL 3D Card Options → DERP**.
 - **A usable video mode list** that pages, sorts, removes duplicates and filters by aspect ratio.
 - **Menu switches** under **Options → Arcade Options → Disable/Enable Menu Options**: Cheats Menu,
   Quit Menu, Multiplayer Menu, Game Options and Enable No Monsters.
@@ -1300,8 +1306,10 @@ and the default `gnu23` standard both give errors that don't point at the cause.
 DoomLegacy is by Fabrice Denis, Boris Pereira and the DoomLegacy team, based on the Doom source
 released by id Software. This build tracks DoomLegacy 1.48.18 (SVN r1749) with local arcade changes.
 
-Licensed under the **GNU General Public License**; see [`LICENSE`](LICENSE), and
-[`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt) for the copy that came with the port. Doom,
+Licensed under the **GNU General Public License, version 3**; see [`LICENSE`](LICENSE). DoomLegacy
+itself is "GPL version 2 or later" ([`svn1749/docs/LICENSE.txt`](svn1749/docs/LICENSE.txt) is the copy
+that came with the port, and its source files keep that notice); this build includes GPLv3 code from
+DERP, so the program as a whole is distributed under GPLv3. Doom,
 Doom II, Final Doom and Heretic game data belong to their respective owners and are not distributed
 here.
 
@@ -1310,3 +1318,10 @@ The CRT shaders in [`svn1749/src/sdl/shaders/`](svn1749/src/sdl/shaders/) come f
 cgwg, Themaister and DOLLS, all GPL v2 or later, and crt-lottes by Timothy Lottes, public domain.
 The other shaders were written for this project; the FXAA one follows Timothy Lottes' published
 method.
+
+The OpenGL glow effects (**DERP >>**) are borrowed from **DERP, the DOOM Engine Remaster Project**
+(<https://github.com/robongrui/derp>), GPLv3. The list of glowing artwork and its per-pixel test
+([`svn1749/src/derp/emissive.h`](svn1749/src/derp/emissive.h)) and the hand-picked monster eye pixels
+([`svn1749/src/derp/sprite_eyes_stock.h`](svn1749/src/derp/sprite_eyes_stock.h)) are DERP's own
+work, copied with its notice; see [`svn1749/src/derp/NOTICE`](svn1749/src/derp/NOTICE). Thanks to
+DERP's author for publishing them.

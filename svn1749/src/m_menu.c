@@ -224,6 +224,7 @@
 
 #ifdef HWRENDER
 #include "hardware/hw_main.h"
+#include "hardware/hw_glow.h"  // [Arcade] DERP glow cvars
 #endif
 
 #include "d_net.h"
@@ -13799,6 +13800,8 @@ static void M_HandleFogColor (int choice);
 
 menu_t OGL_LightingDef, OGL_FogDef, OGL_ColorDef, OGL_DevDef;
 menu_t OGL_ShaderDef;  // [Arcade]
+menu_t OGL_DerpDef;    // [Arcade] DERP glow effects, hardware/hw_glow.c
+static void M_OGL_DrawDerpMenu(void);  // [Arcade]
 
 #define QUALITY_ITEM   2
 menuitem_t OpenGLOptionsMenu[]=
@@ -13815,6 +13818,8 @@ menuitem_t OpenGLOptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Development >>"    , &OGL_DevDef        , 95},
     // [Arcade] Post-process shaders, docs/arcade/shaders.md
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Shaders >>"        , &OGL_ShaderDef     , 105},
+    // [Arcade] Effects borrowed from DERP, docs/arcade/derp-glow.md
+    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "DERP >>"           , &OGL_DerpDef       , 115},
 };
 
 menuitem_t OGL_LightingMenu[]=
@@ -13847,6 +13852,15 @@ menuitem_t OGL_ColorMenu[]=
 menuitem_t OGL_ShaderMenu[]=
 {
     {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Shader"          , &cv_grshader           ,  0},
+};
+
+// [Arcade] DERP glow effects.  Drawing only: none of them touches the game,
+// so they are safe in demos, netgames and ranked play.
+menuitem_t OGL_DerpMenu[]=
+{
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Lights"  , &cv_grglow_lights      ,  0},
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Liquids" , &cv_grglow_liquids     , 10},
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Eyes"    , &cv_grglow_eyes        , 20},
 };
 
 menuitem_t OGL_DevMenu[]=
@@ -13915,6 +13929,18 @@ menu_t  OGL_ShaderDef =
     M_OGL_DrawShaderMenu,
     NULL,
     sizeof(OGL_ShaderMenu)/sizeof(menuitem_t),
+    60,40,
+    0,
+};
+
+menu_t  OGL_DerpDef =
+{
+    "M_OPTTTL",
+    "OPTIONS",
+    OGL_DerpMenu,
+    M_OGL_DrawDerpMenu,
+    NULL,
+    sizeof(OGL_DerpMenu)/sizeof(menuitem_t),
     60,40,
     0,
 };
@@ -14005,6 +14031,21 @@ void M_OGL_DrawShaderMenu(void)
         msg = "Shader failed to build";
     if( msg )
         V_DrawString( OGL_ShaderDef.x, OGL_ShaderDef.y + 20, 0, msg );  // 0 is red
+}
+
+
+//======================================================================
+// [Arcade] M_OGL_DrawDerpMenu()
+//======================================================================
+// The rows, and a line crediting where the effects come from.
+static
+void M_OGL_DrawDerpMenu(void)
+{
+    M_DrawGenericMenu();
+    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 45, V_WHITEMAP,
+                  "From DERP, the DOOM Engine" );
+    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 55, V_WHITEMAP,
+                  "Remaster Project" );
 }
 
 
