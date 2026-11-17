@@ -1,0 +1,11 @@
+Files in this directory come from DERP, the DOOM Engine Remaster Project
+  https://github.com/robongrui/derp
+  commit ebfaaf4815ee47ce529a0094fb5566b9caaa32b8 (2026-11-09)
+
+  emissive.h           verbatim (plus a header comment)
+  sprite_eyes_stock.h  table verbatim; lookup function rewritten in C
+
+DERP is licensed under the GNU General Public License, version 3.  Doom Legacy
+itself is "GPL version 2 or later"; a build that includes these files is
+therefore distributed under the GNU GPL version 3 as a whole.  See LICENSE at
+the top of the repository.

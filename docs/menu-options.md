@@ -465,8 +465,9 @@ Operator only.
 | Gamma >> | Red, green and blue gamma. |
 | Development >> | MD2 models, translucent walls, polygon shape. |
 | **Shaders >>** ★ | A post-process screen shader: Off, zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom, FXAA, Software Look, VHS, Greyscale, Sepia, Night Vision, Game Boy. |
+| **DERP >>** ★ | Glow effects borrowed from DERP, each On/Off, all Off by default. **Glowing Lights**: lamp, light-strip, computer-panel and exit-sign pixels stay fully lit in dark rooms, and follow a blinking or flickering room. **Glowing Liquids**: nukage, slime and lava pools glow, and throw their colour up the walls standing in them. **Glowing Eyes**: living monsters' eyes glow (stock Doom and Doom II sprites only). Drawing only. |
 
-→ [`arcade/shaders.md`](arcade/shaders.md), [`arcade/invulnerability.md`](arcade/invulnerability.md)
+→ [`arcade/shaders.md`](arcade/shaders.md), [`arcade/invulnerability.md`](arcade/invulnerability.md), [`arcade/derp-glow.md`](arcade/derp-glow.md)
 
 ### Setup Controls
 

@@ -119,6 +119,7 @@
 #include "z_zone.h"
 #include "v_video.h"
 #include "r_sky.h"
+#include "hw_glow.h"  // [Arcade]
 
 #if 0
 // [WDJ] Replaced global cache draw flags with drawflags parameter and TF_ flags
@@ -719,6 +720,20 @@ static void HWR_GenerateTexture (int texnum, MipTexture_t* grtex,
 
 
 // [WDJ] Generate a foggy texture from base texture as an alternate
+// [Arcade] hw_glow.c: the texture composited exactly as HWR_GetTexture
+// builds it, into the caller's mipmap, so a glow mask made from it lines up
+// texel for texel with the wall.  RGBA only, which is what OpenGL uses; the
+// mask is converted in place.
+boolean HWR_Glow_Composite_Texture( int texnum, Mipmap_t * mipmap )
+{
+    MipTexture_t scratch;  // HWR_GenerateTexture sets its scale; not wanted
+
+    if( textureformat != GR_RGBA )
+        return false;
+    HWR_GenerateTexture( texnum, &scratch, mipmap, 0 );
+    return ( mipmap->GR_data != NULL );
+}
+
 static void HWR_GenerateFogTexture (int texnum, Mipmap_t * mipmap,
                                     uint32_t drawflags)
 {
@@ -1109,6 +1124,10 @@ void HWR_Free_TextureCache (void)
     // Our goal is only the textures since user of the texture is the texture cache.
     Z_FreeTags (PU_HWRCACHE, PU_HWRCACHE);
 
+    // [Arcade] The glow masks' tables, which the two calls above both write
+    // into (the driver's list, the GR_data owners), so only now.
+    HWR_Glow_Free();
+
     // free all skin after each level: must be done after pfnClearMipMapCache!
     for(wf=0; wf<numwadfiles; wf++)
     {
@@ -1297,6 +1316,8 @@ MipTexture_t* HWR_GetTexture (int tex, uint32_t drawflags)
 
 found_mipmap:
     HWD.pfnSetTexture (mipmap);
+    hwr_glow_bound = mipmap;  // [Arcade] hw_glow.c puts it back after a glow pass
+    hwr_glow_texnum = tex;
     return miptex;
 }
 
@@ -1365,6 +1386,8 @@ void HWR_GetFlat (lumpnum_t flatlumpnum)
             HWR_CacheFlat (grmip, flatlumpnum);
 
     HWD.pfnSetTexture (grmip);
+    hwr_glow_bound = grmip;  // [Arcade] hw_glow.c
+    hwr_glow_texnum = -1;
 }
 
 //

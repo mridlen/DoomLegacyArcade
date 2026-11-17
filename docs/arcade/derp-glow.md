@@ -1,0 +1,116 @@
+# DERP glow effects (OpenGL)
+
+Read this before touching `hardware/hw_glow.c`, `svn1749/src/derp/`, the glow hooks in
+`HWR_ProjectWall`/`HWR_RenderPlane`/`HWR_DrawSprite` (`hw_main.c`), `HWR_Glow_Composite_Texture` or
+the `hwr_glow_bound`/`hwr_glow_texnum` assignments in `hw_cache.c`, or the **DERP >>** page.
+
+## What it is
+
+Three switches on **Options → Video Options → OpenGL 3D Card Options → DERP >>**, all **Off** by
+default (a new switch defaults to what the cabinet already did, `gameplay-defaults.md`):
+
+| Row | cvar | What it draws |
+| --- | --- | --- |
+| Glowing Lights | `gr_glow_lights` | The glowing pixels of lamp, light-strip, computer-panel and exit-sign textures and flats, drawn again at full brightness over the lit surface. |
+| Glowing Liquids | `gr_glow_liquids` | Nukage, slime and lava pools add their own bright cells on top of themselves, and every wall standing in one gets a gradient of the liquid's colour climbing 96 units up from the waterline. |
+| Glowing Eyes | `gr_glow_eyes` | A living monster's eye pixels, unlit, so eyes show in the dark. |
+
+The ideas, and two pieces of data, come from **DERP**, the DOOM Engine Remaster Project
+(<https://github.com/robongrui/derp>), which is GPLv3. That is why the repository's licence is now
+GPLv3 as a whole: see `svn1749/src/derp/NOTICE` and the README's credits.
+
+They are **OpenGL only**. DERP has its own Vulkan/Metal renderer built around a level-load light
+bake and per-pixel lighting, so none of its renderer code could be used; these are re-done as extra
+passes over the fixed-function GL renderer. The software renderer (the Pi) does not get them, and
+the page is not reachable in software mode (`M_OpenGLOption` refuses).
+
+## What was taken from DERP, and what was not
+
+- `derp/emissive.h` — **verbatim**. A list of glowing artwork by name (`doom_emissive_kind`) and a
+  per-pixel test of how strongly a texel glows (`doom_emissive_pixel`). Plain C.
+- `derp/sprite_eyes_stock.h` — **table verbatim**, lookup rewritten in C. Hand-picked eye pixels for
+  every living frame of the stock Doom and Doom II monsters, each keyed by the lump's size and an
+  FNV-1a hash of its decoded pixels, so a PWAD's replacement sprite simply gets no eyes.
+  `glow_decode_sprite` decodes exactly as DERP does (palette index and coverage pairs, row by row,
+  tall-patch posts) or the hashes never match.
+- DERP's **automatic eye finder** (`sprite_eyes.h`, C++) was not taken. Without it, monsters from a
+  PWAD with new sprites have no glowing eyes.
+
+## How it is drawn
+
+Every effect is a second polygon on the **same vertices** as the surface, right after the surface's
+own draw and before the splat and dynamic-light passes (which rewrite the texture coordinates).
+`PF_Decal` puts it a hair in front; the depth test is already `GL_LEQUAL`.
+
+**The masks line up because the cache builds them.** A wall's mask is the texture composited by the
+cache's own `HWR_GenerateTexture` (through `HWR_Glow_Composite_Texture`, since that is static), then
+converted in place; an eye mask is a synthetic patch holding only the eye pixels, run through
+`HWR_MakePatch` with the sprite copy's own flags, so it gets the same margin and the same block size.
+Building them any other way would mean re-deriving the power-of-two sizing, the margin rule and the
+padding fill, and getting one of them wrong would offset every glow by a texel. `HWR_Glow_Sprite` still
+refuses to draw if the margin came out different.
+
+**Lights and eyes are premultiplied, drawn `PF_Environment`** (`ONE, ONE_MINUS_SRC_ALPHA`), for the
+same reason sprites are (`HWR_DrawSprite`): a linear filter over a texture whose clear texels are
+black otherwise puts a dark rim round every glowing pixel.
+
+**Liquids are additive** (`PF_Additive`). Drawing a pool's glowing pixels at full brightness, as a
+lamp's are, changed it by about 1/255 in testing: DERP's test lights only the brightest third of
+NUKAGE1, at 19/255 on average, because DERP uses it to emit light, not to replace the texel. Adding
+the bright cells on top (`GLOW_LIQUID_ALPHA`) is what makes nukage read as glowing.
+
+**The wall glow** is the liquid's colour (its glowing pixels' average, raised so the brightest channel
+is full) through an 8x64 alpha ramp (`glow_ramp`, clamped, alpha falling as the square of height),
+added over the part of any wall in a sector whose floor is a glowing liquid. Strength
+`GLOW_WALL_ALPHA`, less in bright rooms.
+
+### Lights follow blinking sectors, otherwise always on
+
+The first version faded the light masks with the sector's light level, and that turned them off in
+exactly the rooms where they show — the GL renderer draws a light-128 room near full brightness
+already, so a full-bright lamp only differs from the lit one in a dark room. So a lamp is always
+fully lit (GZDoom's brightmaps do the same), **except** in a sector whose light is animated (Doom
+types 1, 2, 3, 4, 8, 12, 13, 17, read through `special & 31` so Boom's generalized sectors count):
+there it follows the swing, off at the bottom and full at the top, as DERP's lamps do. The swing is
+learnt by watching — the lowest and highest light each such sector has been drawn at this level —
+so until a sector has been seen to move, its lamps are on. Rendering only; nothing is read from the
+light thinkers.
+
+Expect **Glowing Lights to be subtle** in ordinary lighting. It is meant for dark rooms.
+
+## Lifetime of the masks
+
+The mask mipmaps live in three tables: wall textures by number, flats and sprites by lump (open
+addressed, 1024 and 4096 slots; a full table just means that lump does not glow). Two things write
+**into** those tables after a mipmap is used: the GL driver links each uploaded mipmap into its own
+list (`nextmipmap`), and `Z_Free` clears a block's owner pointer, which is `&mip.GR_data`. So the
+tables are freed only in `HWR_Glow_Free`, called from `HWR_Free_TextureCache` **after both**
+`pfnClearMipMapCache` and `Z_FreeTags(PU_HWRCACHE)`. Freeing them anywhere earlier leaves the driver
+or the zone writing into freed memory.
+
+The texel blocks are `PU_HWRCACHE` like every other upload, so the zone may purge them; a mask with
+neither `downloaded` nor `GR_data` is simply rebuilt. A palette change (`HWR_SetPalette`) and a filter
+change flush everything the same way.
+
+The glow pass rebinds whatever the cache last bound (`hwr_glow_bound`), so a caller drawing a second
+piece of the same wall without calling `HWR_GetTexture` again still gets its own texture.
+
+## Determinism
+
+Nothing here reads or writes game state, draws a random number, or spawns anything. `make demotest`
+cannot see the renderer anyway (`-nodraw`); it was run to confirm that, and showed 0 desyncs. The
+"ended at a different tic" lines it printed for four or five long episode demos appear identically
+with the unmodified binary: pre-existing noise in the test, not this feature.
+
+## Testing it
+
+- Headless captures: `SDL_VIDEODRIVER=offscreen` with `drawmode "OpenGL"`, `-devmode`, an autoexec
+  that `setpos`es the camera, screenshots, turns the three cvars on and screenshots again. Space the
+  two shots **24 tics apart** (`wait 24`): the nukage animation is three frames of eight tics, and two
+  shots four tics apart compared different animation frames and looked like the glow had darkened the
+  pool.
+- A flickering sector or a monster's attack between the two shots changes the picture too. Take a
+  control run with the cvars left off before believing a difference.
+- To check alignment, temporarily paint every mask texel magenta in `glow_texel`; a tint through
+  `FlatColor` is useless on red LEDs.
+- A level change with all three on (`map E1M2` from an autoexec) exercises `HWR_Glow_Free`.

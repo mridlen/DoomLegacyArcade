@@ -790,7 +790,7 @@ ifeq ($(SMIF), SDL)
   MAINOBJ:=i_main.o
   CDMUSOBJ:=i_cdmus.o
   SMIFOBJS:=i_system.o i_video.o i_sound.o i_net.o \
-    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o \
+    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o hw_glow.o \
     r_opengl.o ogl_sdl.o ogl_shader.o hwsym_sdl.o \
     filesrch.o dosstr.o endtxt.o
 
@@ -990,7 +990,7 @@ ifeq ($(SMIF), LINUX_X11)
   MAINOBJ:=i_main.o
   CDMUSOBJ:=i_cdmus.o
   SMIFOBJS:=i_system.o i_sound.o i_net.o \
-    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o \
+    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o hw_glow.o \
     r_opengl.o ogl_x11.o \
     searchp.o filesrch.o dosstr.o endtxt.o
 
@@ -1075,7 +1075,7 @@ ifeq ($(SMIF), FREEBSD_X11)
   MAINOBJ:=i_main.o
   CDMUSOBJ:=i_cdmus_fbsd.o
   SMIFOBJS:=i_system.o i_sound.o i_net.o \
-    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o \
+    hw_bsp.o hw_draw.o hw_light.o hw_main.o hw_md2.o hw_cache.o hw_trick.o hw_glow.o \
     searchp.o filesrch.o dosstr.o endtxt.o
 
   INSTALL_SUPPL:=r_opengl.so
