@@ -816,7 +816,7 @@ static void glow_switch_stat( int texnum, glow_swstat_t * st )
 {
     int i, k;
     memset( st, 0, sizeof(*st) );
-    if( texnum <= 0 )
+    if( texnum <= 0 || texnum >= numtextures )
         return;
     for( i = 0; i < textures[texnum]->patchcount; i++ )
     {
@@ -853,6 +853,10 @@ static int glow_switch_partner( int texnum )
 {
     char name[9];
     int t;
+    // 0 is no texture (a '-' on a wall), and textures[0] is not one: the
+    // attract cycle segfaulted here on E3M1's first frame.
+    if( texnum <= 0 || texnum >= numtextures )
+        return -1;
     memcpy( name, textures[texnum]->name, 8 );
     name[8] = 0;
     if( ! glow_is_switch_name( name ) )
