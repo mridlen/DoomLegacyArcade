@@ -533,7 +533,15 @@ typedef struct {
     RGBA_t     color;       // already scaled by the lamp's strength
     sector_t * sector;
     byte       ceiling;     // hangs from the ceiling
+    // A wall light follows its texture (glow_lamp_follow): a switch thrown
+    // from SW1 to SW2 changes the indicator's colour, and a texture swapped
+    // for an unlit one puts the light out.
+    side_t   * side;        // NULL for a ceiling light
+    byte       part;        // GLOW_PART_*
+    short      texnum;      // the texture its colour was taken from
 } glow_lamp_t;
+
+enum { GLOW_PART_TOP = 1, GLOW_PART_MID, GLOW_PART_BOTTOM };
 
 typedef struct {
     int        sec;         // the sector it lights
@@ -613,7 +621,8 @@ static void glow_cstat_add( glow_cstat_t * st, int kind, const byte * pairs, int
 // DERP's glowing pixels when there are any; a neutral strip or ceiling lamp
 // that DERP's test passes over (it wants a bright *and* a coloured or very
 // pale pixel, and TLITE6_4 has none) is taken from its bright pixels.
-static boolean glow_cstat_finish( glow_cstat_t * st, int kind, glow_lampcolor_t * out )
+static boolean glow_cstat_finish( glow_cstat_t * st, int kind, int minstrength,
+                                  glow_lampcolor_t * out )
 {
     uint32_t r, g, b, hi;
     int frac;
@@ -636,15 +645,20 @@ static boolean glow_cstat_finish( glow_cstat_t * st, int kind, glow_lampcolor_t 
     if( b > hi )  hi = b;
     if( hi == 0 )
         return false;
-    out->color.s.red   = (byte)( r * 255 / hi );
-    out->color.s.green = (byte)( g * 255 / hi );
-    out->color.s.blue  = (byte)( b * 255 / hi );
+    // In 64 bits: the sums are of colour * strength over every pixel, up to
+    // 4096 * 255 * 255, and times 255 that wraps 32 bits.  It did, on any
+    // art with many bright pixels -- the red ceiling light came out brown
+    // and LITE3 at 1,1,1 -- while the exit sign, with fewer, was right.
+    out->color.s.red   = (byte)( (uint64_t) r * 255 / hi );
+    out->color.s.green = (byte)( (uint64_t) g * 255 / hi );
+    out->color.s.blue  = (byte)( (uint64_t) b * 255 / hi );
     out->color.s.alpha = 255;
     // DERP's rule that a few LEDs light a little is for panels.  A lamp is
     // a lamp: TLITE6_5, the red ceiling light, is a fixture whose bulb is a
     // tenth of the flat, and by its share of lit pixels it came out at a
     // quarter strength and lit nothing anyone could see.
     if( kind == DOOM_EMISSIVE_LAMP && frac < 220 )  frac = 220;
+    if( frac < minstrength )  frac = minstrength;
     if( frac < 48 )   frac = 48;
     if( frac > 255 )  frac = 255;
     if( kind == DOOM_EMISSIVE_DIFFUSE && frac > 128 )  frac = 128;
@@ -689,7 +703,11 @@ static glow_lampcolor_t * glow_texture_light( int texnum )
                 free( px );
             }
         }
-        if( glow_cstat_finish( &st, kind, lc ) )
+        // A switch's indicator is a few pixels, but it is the point of the
+        // switch: give it enough light to see (DERP has no switches).
+        if( glow_cstat_finish( &st, kind,
+                               ( strncmp( name, "SW1", 3 ) == 0 || strncmp( name, "SW2", 3 ) == 0 )? 170 : 0,
+                               lc ) )
             lc->state = GLOW_HAS;
     }
     return ( lc->state == GLOW_HAS )? lc : NULL;
@@ -723,7 +741,7 @@ static boolean glow_flat_light( lumpnum_t lump, glow_lampcolor_t * out )
     memset( &st, 0, sizeof(st) );
     glow_cstat_add( &st, kind, pairs, n );
     free( pairs );
-    return glow_cstat_finish( &st, kind, out );
+    return glow_cstat_finish( &st, kind, 0, out );
 }
 
 static glow_lamp_t * glow_new_lamp( void )
@@ -749,8 +767,8 @@ static void glow_set_lamp_color( glow_lamp_t * L, glow_lampcolor_t * lc )
 }
 
 // Lights along one lit part of a wall, from bottom to top in height.
-static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, int texnum,
-                             fixed_t bottom, fixed_t top )
+static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, side_t * sd, int part,
+                             int texnum, fixed_t bottom, fixed_t top )
 {
     glow_lampcolor_t * lc;
     float x1, y1, x2, y2, len, nx, ny, z;
@@ -783,6 +801,9 @@ static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, int texnum,
         L->z = z;
         L->sector = sec;
         L->ceiling = 0;
+        L->side = sd;
+        L->part = part;
+        L->texnum = texnum;
         glow_set_lamp_color( L, lc );
     }
 }
@@ -831,6 +852,7 @@ static void glow_ceiling_lamps( sector_t * sec )
             L->x = x;  L->y = y;  L->z = ceil - LAMP_CEIL_DROP;
             L->sector = sec;
             L->ceiling = 1;
+            L->side = NULL;
             glow_set_lamp_color( L, &lc );
             // A ceiling lamp has to reach the floor under it, and spread
             // over it.
@@ -848,6 +870,7 @@ static void glow_ceiling_lamps( sector_t * sec )
         L->z = ceil - LAMP_CEIL_DROP;
         L->sector = sec;
         L->ceiling = 1;
+        L->side = NULL;
         glow_set_lamp_color( L, &lc );
         if( L->radius < height * 1.5f + 64.0f )
             L->radius = height * 1.5f + 64.0f;
@@ -889,15 +912,15 @@ static boolean glow_build_lamps( void )
             other = side ? ld->frontsector : ld->backsector;
             if( sec == NULL )  continue;
             if( other == NULL )
-                glow_wall_lamps( ld, side, sec, sd->midtexture,
+                glow_wall_lamps( ld, side, sec, sd, GLOW_PART_MID, sd->midtexture,
                                  sec->floorheight, sec->ceilingheight );
             else
             {
                 if( other->ceilingheight < sec->ceilingheight )
-                    glow_wall_lamps( ld, side, sec, sd->toptexture,
+                    glow_wall_lamps( ld, side, sec, sd, GLOW_PART_TOP, sd->toptexture,
                                      other->ceilingheight, sec->ceilingheight );
                 if( other->floorheight > sec->floorheight )
-                    glow_wall_lamps( ld, side, sec, sd->bottomtexture,
+                    glow_wall_lamps( ld, side, sec, sd, GLOW_PART_BOTTOM, sd->bottomtexture,
                                      sec->floorheight, other->floorheight );
             }
         }
@@ -979,6 +1002,28 @@ static void glow_set_disc( void )
     HWD.pfnSetTexture( &glow_disc );
 }
 
+// A wall light whose texture has changed since the level loaded takes the
+// new texture's colour, or goes out if it is not a light.  Cached per
+// texture, so this is a compare per light per use.
+static void glow_lamp_follow( glow_lamp_t * L )
+{
+    short now;
+    glow_lampcolor_t * lc;
+    if( L->side == NULL )
+        return;
+    now = ( L->part == GLOW_PART_TOP )? L->side->toptexture
+        : ( L->part == GLOW_PART_BOTTOM )? L->side->bottomtexture
+        : L->side->midtexture;
+    if( now == L->texnum )
+        return;
+    L->texnum = now;
+    lc = glow_texture_light( now );
+    if( lc )
+        glow_set_lamp_color( L, lc );
+    else
+        L->color.rgba = 0;   // dark until it changes back
+}
+
 static boolean glow_opening_open( line_t * ld )
 {
     fixed_t top, bot;
@@ -1004,6 +1049,8 @@ static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff,
 {
     FSurfaceInfo_t Surf;
     int k = (int)( falloff * glow_sector_scale( L->sector ) );
+    if( ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
+        return;   // a light that has gone out
     if( k <= 0 )
         return;
     if( ! *bound )
@@ -1054,6 +1101,7 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
         int i;
         if( ! glow_opening_open( glow_lamp_refs[r].via ) )
             continue;
+        glow_lamp_follow( L );
         rx = L->x - vxtx[0].x;
         rz = L->y - vxtx[0].z;
         // Only the face the lamp is in front of (HWR_WallLighting's test).
@@ -1111,6 +1159,7 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
         float dh, rp;
         if( ! glow_opening_open( glow_lamp_refs[r].via ) )
             continue;
+        glow_lamp_follow( L );
         if( isfloor ? (L->z <= h) : (L->z >= h || L->ceiling) )
             continue;
         dh = fabs( L->z - h );
@@ -1149,6 +1198,7 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t fx, fixed_t fy, fixed_t fz, sector_t * s
         float dx, dy, dz, k;
         if( ! glow_opening_open( glow_lamp_refs[r].via ) )
             continue;
+        glow_lamp_follow( L );
         dx = L->x - x;  dy = L->y - y;  dz = L->z - z;
         k = glow_falloff( sqrt( dx*dx + dy*dy + dz*dz ), L->radius )
             * glow_sector_scale( L->sector );
