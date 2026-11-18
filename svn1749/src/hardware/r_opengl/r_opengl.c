@@ -963,7 +963,9 @@ typedef struct
 } gl_blend_param_t;
 
 // The blend param for the PF_blend_field values.
-gl_blend_param_t blend_param[8] =
+// [Arcade] All 16 of the field, not 8: PF_LightMul is the ninth.  The rest
+// are unused and blend as none.
+gl_blend_param_t blend_param[16] =
 {
   // { sfac, dfac }
   //   sfac = alpha to apply to source
@@ -995,6 +997,14 @@ gl_blend_param_t blend_param[8] =
   // photographic negative of what is already on screen, which is how the
   // invulnerability view is done without a colormap.
   { GL_ONE_MINUS_DST_COLOR, GL_ZERO },
+// PF_LightMul
+  // [Arcade] dest = src*dest + dest = dest * (1 + src).  A light that
+  // brightens and tints what is already drawn by its own colour, keeping
+  // the texture's detail, instead of washing a flat colour over it as an
+  // additive light does.  The lamp light in hw_glow.c.
+  { GL_DST_COLOR, GL_ONE },
+  { GL_ONE, GL_ZERO }, { GL_ONE, GL_ZERO }, { GL_ONE, GL_ZERO }, { GL_ONE, GL_ZERO },
+  { GL_ONE, GL_ZERO }, { GL_ONE, GL_ZERO }, { GL_ONE, GL_ZERO },
 };
 #endif
 
@@ -1014,7 +1024,7 @@ EXPORT void HWRAPI( SetBlend ) ( FBITFIELD polyflags )
     {
         // PF_blend_field values: 0, PF_Environment, PF_Additive, PF_Translucent, PF_Masked, PF_Subtractive
         // Blend mode must be changed.
-        gl_blend_param_t *  bp = & blend_param[ polyflags & PF_blend_field8 ];  // PF_Blend field, only 8 entries
+        gl_blend_param_t *  bp = & blend_param[ polyflags & PF_blend_field ];  // [Arcade] all 16 entries
         glBlendFunc( bp->sfac, bp->dfac );
 
         // This is highly correlated with PF_Additive.

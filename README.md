@@ -137,8 +137,9 @@ to get you banned.
   default. Under **Options → Video Options → OpenGL 3D Card Options → Shaders**.
 - **DERP glow effects (OpenGL):** Glowing Lights (lamps, light strips, computer panels and exit
   signs stay lit in dark rooms, and blink with a blinking room), Glowing Liquids (nukage, slime and
-  lava pools glow and throw their colour up the walls standing in them) and Glowing Eyes (monsters'
-  eyes glow in the dark). Ideas and data from [DERP](https://github.com/robongrui/derp). Drawing only, so demos,
+  lava pools glow and throw their colour up the walls standing in them), Glowing Eyes (monsters'
+  eyes glow in the dark) and Lamp Light (lamps and panels light the room round them in their own
+  colour). Ideas and data from [DERP](https://github.com/robongrui/derp). Drawing only, so demos,
   netgames and scores are unaffected. Each is Off by default, under **Options → Video Options →
   OpenGL 3D Card Options → DERP**.
 - **A usable video mode list** that pages, sorts, removes duplicates and filters by aspect ratio.

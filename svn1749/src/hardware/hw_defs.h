@@ -207,6 +207,7 @@ typedef enum
    
     PF_InvisibleB       = 0x00000006,   // Invisible poly affects Z-buffer
     PF_Invert           = 0x00000007,   // [Arcade] dest = white - dest, the invulnerability view
+    PF_LightMul         = 0x00000008,   // [Arcade] dest = dest * (1 + src): light that tints what is lit (hw_glow.c)
     PF_invalid          = 0x0000000F,
      
     // additional effects
