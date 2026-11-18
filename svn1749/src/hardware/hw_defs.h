@@ -242,6 +242,7 @@ typedef enum
     PF_NoTexture        = 0x00002000,   // Use the small white texture
     PF_Corona           = 0x00004000,   // Tell the rendrer we are drawing a corona
     PF_MD2              = 0x00008000,   // Tell the rendrer we are drawing an MD2
+    PF_NoTint           = 0x00010000,   // [Arcade] not mixed with the damage/pickup flash tint: a light pass, not a surface
     PF_Clip             = 0x40000000,   // clip to frustum and nearz plane (glide only, automatic in opengl)
     PF_NoZClip          = 0x20000000,   // in conjonction with PF_Clip
     PF_Debug            = 0x80000000    // print debug message in driver :)

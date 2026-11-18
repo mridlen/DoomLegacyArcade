@@ -224,6 +224,7 @@ static  GLuint      tex_downloaded  = 0;
 static  GLfloat     fov             = 90.0;
 static  GLuint      tint_color_id   = 0;  // Imitate the special object palette tints
 static  RGBA_float_t  tint_rgb;
+static  float       tint_mix = 0.5f;  // [Arcade] how far toward the tint, 0..1
 static  FBITFIELD   cur_polyflags;
 
 static  FTextureInfo_t*  gr_cachetail = NULL;
@@ -1396,12 +1397,23 @@ EXPORT void HWRAPI( DrawPolygon ) ( FSurfaceInfo_t  *pSurf,
     // If Modulated, mix the surface colour to the texture
     if( (cur_polyflags & PF_Modulated) && pSurf)
     {
-        if (tint_color_id)
+        if (tint_color_id && !(polyflags & PF_NoTint))
         {
-            // Imitate the damage, and special object palette tints
-            c.red   = (tint_rgb.red   + to_glcolor_float[pSurf->FlatColor.s.red])  /2.0f;
-            c.green = (tint_rgb.green + to_glcolor_float[pSurf->FlatColor.s.green])/2.0f;
-            c.blue  = (tint_rgb.blue  + to_glcolor_float[pSurf->FlatColor.s.blue]) /2.0f;
+            // Imitate the damage, and special object palette tints.
+            // [Arcade] By the palette's own strength (tint_mix, from the
+            // tint's alpha byte), as Doom's palettes do, not half and half
+            // every time: the average turned a dark room's light 30 into
+            // 140 on picking up a bonus, and every flash, however slight,
+            // replaced half of every surface's light.  PF_NoTint passes
+            // (the light passes, which add to a surface already tinted)
+            // skip it, or each one added the flash again.
+            float l;
+            l = to_glcolor_float[pSurf->FlatColor.s.red];
+            c.red   = l + (tint_rgb.red   - l) * tint_mix;
+            l = to_glcolor_float[pSurf->FlatColor.s.green];
+            c.green = l + (tint_rgb.green - l) * tint_mix;
+            l = to_glcolor_float[pSurf->FlatColor.s.blue];
+            c.blue  = l + (tint_rgb.blue  - l) * tint_mix;
             c.alpha = to_glcolor_float[pSurf->FlatColor.s.alpha];
         }
         else
@@ -1505,6 +1517,8 @@ EXPORT void HWRAPI( SetSpecialState ) (hwd_specialstate_e IdState, int Value)
             tint_rgb.blue  = to_glcolor_float[((Value>>16)&0xff)];
             tint_rgb.green = to_glcolor_float[((Value>>8)&0xff)];
             tint_rgb.red   = to_glcolor_float[((Value)&0xff)];
+            // [Arcade] The alpha byte is the strength (palette_to_tint).
+            tint_mix = to_glcolor_float[((Value>>24)&0xff)];
             break;
         }
 
