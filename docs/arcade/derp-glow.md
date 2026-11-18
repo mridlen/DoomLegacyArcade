@@ -79,6 +79,11 @@ light thinkers.
 
 Expect **Glowing Lights to be subtle** in ordinary lighting. It is meant for dark rooms.
 
+## Liquid ceilings
+
+Nukage, slime and lava on a **ceiling** glow down the walls as well as glowing themselves
+(`glow_liquid_band` with `down`), the ramp running from the ceiling downward.
+
 ## Lamp Light
 
 Glowing Lights only brightens the lamp's own pixels, and on the cabinet that read as "a couple of
@@ -99,6 +104,18 @@ a room's height under a ceiling light kept a third of the light.
 glowing pixels and the light: emissive.h is kept verbatim, so the cabinet's additions live there. A
 switch's indicator is a few pixels, so switches get a minimum strength of 170 whatever their share of
 lit pixels.
+
+**A switch glows only when it is on, unless it is a red/green switch.** Which state is "on" is read
+from the art, not assumed from the name: a switch's light is whichever of its red, green and blue
+pixel groups is *brighter than in its other state* (`glow_switch_stat`, the rise in summed brightness,
+at least a handful of pixels' worth). An ordinary switch lights something in one state only, so it is
+dark in the other (SW1COMP, SW1SLAD, SW1BRNGN dark; their SW2s lit). SW1BRCOM's red indicator dims
+in SW2BRCOM while a green one lights, so both states rise in some group and it glows red one way,
+green the other -- the red/green switches fall out of the rule. The glow mask of a lit switch keeps
+only the pixels of its lit group (`glow_switch_mask_group`), or the dimmed red on SW2BRCOM still
+glowed. Averaging every lit pixel, as for other lights, made SW2BRCOM orange: that dimmed red passes
+DERP's test. Every switch wall gets a light at load, dark while the switch is off, so throwing it
+turns the light on (`glow_lamp_follow`).
 
 **A wall light follows its texture** (`glow_lamp_follow`): each remembers its side, which part, and the
 texture its colour came from, and when the texture there changes it takes the new one's colour, or goes
@@ -135,11 +152,25 @@ at most double a texel, and a grey or dark surface barely takes a colour from it
 drawn twice: the `PF_LightMul` multiply, then a `PF_Additive` pass of the same disc at `LAMP_ADD`,
 which is what puts a lamp's colour onto a dark wall. The disc is broad (`1 - r^2`, three quarters left
 half way out), not a spot. Both passes stack, and the multiply stacks as a product: ten panels round
-one computer wall made it ten times as bright and white. So every surface first gathers the lights
-reaching it (`glow_hit_t`), sums their weights, and if the sum is over one light scales them all to
-fit (`glow_norm`). A lone lamp keeps its full strength; a crowd shares one lamp's worth. A wall light
-also never lights the wall it is on (its own glow is that wall; lit from 12 units away it blew out).
-Sprites and the weapon take `LAMP_SPRITE_GAIN` times the light, capped the same way.
+one computer wall made it ten times as bright and white.
+
+**Crowding is per lamp** (`glow_lamp_shares`, once at load): each lamp's strength is scaled by
+`1 / (1 + how much the lamps round it overlap it)`. A lone switch keeps all of it, a strip of lights
+or a wall of panels shares about one light's worth. It was first done **per surface** (each surface
+summed the lights reaching it and scaled them to one), and that was visibly wrong: the wall pieces
+beside a switch had one lamp reaching them and kept full strength, the floor and side walls had
+several and were scaled almost to nothing, so every switch had a hard-edged lit rectangle beside it
+and its room stayed unlit. Anything that varies between surfaces cuts the light at their edges; keep
+such decisions on the lamp.
+
+**A light near a wall lights a tight pool on it.** The disc's radius on a wall is capped at
+`4 x distance + 48`: light grazing a wall falls off fast along it. A switch 12 units out lights a pool
+about 100 wide round itself, on its own wall and the coplanar pieces either side alike, and the rest
+of the room normally. (Before, a lamp skipped its own wall entirely, which left the switch's wall
+dark between two lit neighbours.)
+
+Sprites and the weapon take `LAMP_SPRITE_GAIN` times the light, each lamp at its share, capped at one
+light's worth.
 
 **Where the light reaches**: the source's own sector and every sector one two-sided line away, the
 latter only while that opening is open *now* (`glow_opening_open`), so a closed door stops it. There

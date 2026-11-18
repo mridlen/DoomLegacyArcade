@@ -189,9 +189,13 @@ static byte glow_texel( int kind, RGBA_t * px, byte coverage )
 
 // ---- walls
 
+static int glow_switch_mask_group( int texnum );   // the lamp light, below
+static int glow_rgb_group( int r, int g, int b );
+
 static glow_entry_t * glow_wall_mask( int texnum )
 {
     glow_entry_t * e;
+    int swgroup;
 
     if( texnum <= 0 || texnum >= numtextures )
         return NULL;
@@ -222,6 +226,11 @@ static glow_entry_t * glow_wall_mask( int texnum )
     }
     if( e->state != GLOW_HAS )
         return NULL;
+    // A switch that is off does not glow (its light follows it on); one
+    // that is on glows only in its lit indicator.
+    swgroup = glow_switch_mask_group( texnum );
+    if( swgroup < 0 )
+        return NULL;
 
     if( ! e->mip.downloaded && ! e->mip.GR_data )
     {
@@ -235,7 +244,15 @@ static glow_entry_t * glow_wall_mask( int texnum )
         px = (RGBA_t *) e->mip.GR_data;
         n = e->mip.width * e->mip.height;
         for( i = 0; i < n; i++ )
+        {
+            if( swgroup > 0
+                && glow_rgb_group( px[i].s.red, px[i].s.green, px[i].s.blue ) != swgroup )
+            {
+                px[i].rgba = 0;
+                continue;
+            }
             lit |= glow_texel( e->kind, &px[i], px[i].s.alpha );
+        }
         if( ! lit )
         {
             // Named like a light, but nothing in it is bright enough.
@@ -461,29 +478,33 @@ static void glow_set_ramp( void )
     HWD.pfnSetTexture( &glow_ramp );
 }
 
-static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
+// The glow from one liquid plane, up from a floor (down = 0) or down from a
+// ceiling (down = 1).
+static void glow_liquid_band( vxtx3d_t * vxtx, byte lightlum, short pic, fixed_t height,
+                              int down )
 {
-    sector_t * sec = gr_frontsector;
     glow_entry_t * e;
     vxtx3d_t v[4];
     FSurfaceInfo_t Surf;
-    float floor;
+    float plane;
     int i;
 
-    if( sec == NULL || sec->floorpic < 0 || (unsigned) sec->floorpic >= numlevelflats )
+    if( pic < 0 || (unsigned) pic >= numlevelflats )
         return;
-    e = glow_flat_entry( levelflats[ sec->floorpic ].lumpnum );
+    e = glow_flat_entry( levelflats[ pic ].lumpnum );
     if( e == NULL || ! glow_is_liquid( e->kind ) )
         return;
 
-    floor = FIXED_TO_FLOAT( sec->floorheight );
+    plane = FIXED_TO_FLOAT( height );
     // Wall quads are 0,1 along the bottom and 2,3 along the top.
-    if( vxtx[0].y > floor + GLOW_WALL_HEIGHT && vxtx[1].y > floor + GLOW_WALL_HEIGHT )
+    if( ! down && vxtx[0].y > plane + GLOW_WALL_HEIGHT && vxtx[1].y > plane + GLOW_WALL_HEIGHT )
+        return;
+    if( down && vxtx[2].y < plane - GLOW_WALL_HEIGHT && vxtx[3].y < plane - GLOW_WALL_HEIGHT )
         return;
 
     for( i = 0; i < 4; i++ )
     {
-        float t = ( vxtx[i].y - floor ) / GLOW_WALL_HEIGHT;
+        float t = ( down ? plane - vxtx[i].y : vxtx[i].y - plane ) / GLOW_WALL_HEIGHT;
         v[i] = vxtx[i];
         v[i].sow = 0.5f;
         v[i].tow = ( t < 0.0f )? 0.0f : t;
@@ -496,6 +517,16 @@ static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
     Surf.texflags = 0;
     glow_set_ramp();
     HWD.pfnDrawPolygon( &Surf, v, 4, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
+}
+
+static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
+{
+    sector_t * sec = gr_frontsector;
+    if( sec == NULL )
+        return;
+    glow_liquid_band( vxtx, lightlum, sec->floorpic, sec->floorheight, 0 );
+    // Nukage on a ceiling glows down the walls too.
+    glow_liquid_band( vxtx, lightlum, sec->ceilingpic, sec->ceilingheight, 1 );
 }
 
 // ---- lamp light
@@ -545,7 +576,8 @@ typedef struct {
     // from SW1 to SW2 changes the indicator's colour, and a texture swapped
     // for an unlit one puts the light out.
     side_t   * side;        // NULL for a ceiling light
-    line_t   * line;        // the wall it is on, which it does not light
+    line_t   * line;        // the wall it is on
+    float      share;       // of its strength, among lamps crowding it (glow_lamp_shares)
     byte       part;        // GLOW_PART_*
     short      texnum;      // the texture its colour was taken from
 } glow_lamp_t;
@@ -569,7 +601,18 @@ typedef struct {
     byte    state;     // glow_state_e
     byte    strength;  // 0..255
     RGBA_t  color;     // brightest channel 255
+    byte    sw;        // GLOW_SW_*: the switch rule, once worked out
+    byte    swgroup;   // a lit switch's indicator colour group, GLOW_GRP_*
 } glow_lampcolor_t;
+
+// Switches.  A switch's light is the indicator that lights up when it
+// changes state: of its red, green and blue pixels, the group that is
+// brighter than in its other state.  So an ordinary switch glows only in the
+// state where something lights (on), and a red/green switch -- SW1BRCOM's
+// red indicator dims and a green one lights in SW2BRCOM -- glows red one way
+// and green the other.  Averaging every lit pixel instead made SW2BRCOM
+// orange: its dimmed red still passes DERP's test.
+enum { GLOW_SW_UNKNOWN = 0, GLOW_SW_NOT, GLOW_SW_LIT, GLOW_SW_DARK };
 static glow_lampcolor_t * glow_texcolor = NULL;   // by texture number
 
 static Mipmap_t glow_disc;
@@ -677,7 +720,7 @@ static boolean glow_cstat_finish( glow_cstat_t * st, int kind, int minstrength,
 
 static byte * glow_decode_sprite( lumpnum_t lump, int * pw, int * ph );
 
-static glow_lampcolor_t * glow_texture_light( int texnum )
+static glow_lampcolor_t * glow_texture_light_raw( int texnum )
 {
     glow_lampcolor_t * lc;
     if( texnum <= 0 || texnum >= numtextures )
@@ -753,6 +796,132 @@ static boolean glow_flat_light( lumpnum_t lump, glow_lampcolor_t * out )
     return glow_cstat_finish( &st, kind, 0, out );
 }
 
+enum { GLOW_GRP_NONE = 0, GLOW_GRP_RED, GLOW_GRP_GREEN, GLOW_GRP_BLUE, GLOW_NUMGRP };
+
+static int glow_rgb_group( int r, int g, int b )
+{
+    if( r >= 100 && r > 2 * g && r > 2 * b )            return GLOW_GRP_RED;
+    if( g >= 100 && g * 10 > r * 14 && g * 10 > b * 12 )  return GLOW_GRP_GREEN;
+    if( b >= 100 && b * 10 > r * 14 && b * 10 > g * 12 )  return GLOW_GRP_BLUE;
+    return GLOW_GRP_NONE;
+}
+
+typedef struct {
+    uint32_t  energy[GLOW_NUMGRP];     // sum of brightest channels
+    uint32_t  sum[GLOW_NUMGRP][3];
+    uint32_t  n[GLOW_NUMGRP];
+} glow_swstat_t;
+
+static void glow_switch_stat( int texnum, glow_swstat_t * st )
+{
+    int i, k;
+    memset( st, 0, sizeof(*st) );
+    if( texnum <= 0 )
+        return;
+    for( i = 0; i < textures[texnum]->patchcount; i++ )
+    {
+        int w, h;
+        byte * px = glow_decode_sprite( textures[texnum]->patches[i].lumpnum, &w, &h );
+        if( px == NULL )
+            continue;
+        for( k = 0; k < w * h; k++ )
+        {
+            RGBA_t c;
+            int g, hi;
+            if( ! px[ k*2 + 1 ] )  continue;
+            c = V_GetColor( px[ k*2 ] );
+            g = glow_rgb_group( c.s.red, c.s.green, c.s.blue );
+            if( ! g )  continue;
+            hi = c.s.red;
+            if( c.s.green > hi )  hi = c.s.green;
+            if( c.s.blue > hi )   hi = c.s.blue;
+            st->n[g]++;
+            st->energy[g] += hi;
+            st->sum[g][0] += c.s.red;  st->sum[g][1] += c.s.green;  st->sum[g][2] += c.s.blue;
+        }
+        free( px );
+    }
+}
+
+static boolean glow_is_switch_name( const char * name )
+{
+    return strncasecmp( name, "SW1", 3 ) == 0 || strncasecmp( name, "SW2", 3 ) == 0;
+}
+
+// The texture of the switch's other state, or -1.
+static int glow_switch_partner( int texnum )
+{
+    char name[9];
+    int t;
+    memcpy( name, textures[texnum]->name, 8 );
+    name[8] = 0;
+    if( ! glow_is_switch_name( name ) )
+        return -1;
+    name[2] = ( name[2] == '1' )? '2' : '1';
+    t = R_CheckTextureNumForName( name );
+    return ( t > 0 )? t : -1;
+}
+
+// A texture's light, the switch rule applied: NULL for a switch that is off.
+static glow_lampcolor_t * glow_texture_light( int texnum )
+{
+    glow_lampcolor_t * lc = glow_texture_light_raw( texnum );
+    if( lc == NULL )
+        return NULL;
+    if( lc->sw == GLOW_SW_UNKNOWN )
+    {
+        char name[9];
+        int partner = glow_switch_partner( texnum );
+        memcpy( name, textures[texnum]->name, 8 );
+        name[8] = 0;
+        if( ! glow_is_switch_name( name ) || partner < 0 )
+            lc->sw = GLOW_SW_NOT;          // a switch with no other state lights as a panel
+        else
+        {
+            glow_swstat_t a, b;
+            int g, best = GLOW_GRP_NONE, bestrise = 0;
+            glow_switch_stat( texnum, &a );
+            glow_switch_stat( partner, &b );
+            for( g = 1; g < GLOW_NUMGRP; g++ )
+            {
+                int rise = (int) a.energy[g] - (int) b.energy[g];
+                if( rise > bestrise )  { bestrise = rise;  best = g; }
+            }
+            // At least a handful of indicator pixels' worth brighter.
+            if( best && bestrise >= 600 && a.n[best] )
+            {
+                uint32_t r = a.sum[best][0], gg = a.sum[best][1], bb = a.sum[best][2], hi;
+                hi = r;
+                if( gg > hi )  hi = gg;
+                if( bb > hi )  hi = bb;
+                lc->color.s.red   = (byte)( (uint64_t) r  * 255 / hi );
+                lc->color.s.green = (byte)( (uint64_t) gg * 255 / hi );
+                lc->color.s.blue  = (byte)( (uint64_t) bb * 255 / hi );
+                lc->color.s.alpha = 255;
+                if( lc->strength < 200 )  lc->strength = 200;
+                lc->swgroup = best;
+                lc->sw = GLOW_SW_LIT;
+            }
+            else
+                lc->sw = GLOW_SW_DARK;     // nothing lights in this state: off
+        }
+    }
+    return ( lc->sw == GLOW_SW_DARK )? NULL : lc;
+}
+
+// For the glow masks: -1 for a switch in its off state (no glow), the lit
+// indicator's colour group for one that is on (only those pixels glow), 0
+// for anything else.
+static int glow_switch_mask_group( int texnum )
+{
+    glow_lampcolor_t * lc = glow_texture_light_raw( texnum );
+    if( lc == NULL )
+        return 0;
+    if( glow_texture_light( texnum ) == NULL )
+        return -1;
+    return ( lc->sw == GLOW_SW_LIT )? lc->swgroup : 0;
+}
+
 static glow_lamp_t * glow_new_lamp( void )
 {
     if( glow_numlamps >= LAMP_MAX )
@@ -762,6 +931,7 @@ static glow_lamp_t * glow_new_lamp( void )
         glow_lamps = malloc( LAMP_MAX * sizeof(glow_lamp_t) );
         if( glow_lamps == NULL )  return NULL;
     }
+    glow_lamps[ glow_numlamps ].share = 1.0f;
     return &glow_lamps[ glow_numlamps++ ];
 }
 
@@ -783,11 +953,20 @@ static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, side_t * sd,
     float x1, y1, x2, y2, len, nx, ny, z;
     int n, j;
 
+    glow_lampcolor_t * plc = NULL;
+
     if( top - bottom < 4 * FRACUNIT )
         return;
     lc = glow_texture_light( texnum );
     if( lc == NULL )
-        return;
+    {
+        // A switch that is off now still gets its light, dark until it is
+        // thrown (glow_lamp_follow), sized by its other state's.
+        int partner = glow_switch_partner( texnum );
+        plc = ( partner > 0 )? glow_texture_light( partner ) : NULL;
+        if( plc == NULL )
+            return;
+    }
     x1 = FIXED_TO_FLOAT( ld->v1->x );  y1 = FIXED_TO_FLOAT( ld->v1->y );
     x2 = FIXED_TO_FLOAT( ld->v2->x );  y2 = FIXED_TO_FLOAT( ld->v2->y );
     len = sqrt( (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) );
@@ -814,7 +993,13 @@ static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, side_t * sd,
         L->line = ld;
         L->part = part;
         L->texnum = texnum;
-        glow_set_lamp_color( L, lc );
+        if( lc )
+            glow_set_lamp_color( L, lc );
+        else
+        {
+            glow_set_lamp_color( L, plc );
+            L->color.rgba = 0;
+        }
     }
 }
 
@@ -889,6 +1074,40 @@ static void glow_ceiling_lamps( sector_t * sec )
     }
 }
 
+// Crowding, per lamp.  Each light is two passes and the multiply stacks as a
+// product, so ten panels round one computer wall made it white.  Each lamp
+// gets a share of its strength, 1 / (1 + how much the lamps round it
+// overlap it), once, at load.  A lone switch keeps all of it; a strip of
+// lights or a wall of panels shares about one light's worth.  (It used to
+// be done per surface, which cut the light hard at the edge between a wall
+// with one lamp reaching it and the floor with several -- a lit rectangle
+// beside every switch, and the switch's room unlit.)
+static void glow_lamp_shares( void )
+{
+    int i, j;
+    for( i = 0; i < glow_numlamps; i++ )
+    {
+        glow_lamp_t * A = &glow_lamps[i];
+        float crowd = 0.0f;
+        for( j = 0; j < glow_numlamps; j++ )
+        {
+            glow_lamp_t * B = &glow_lamps[j];
+            float dx, dy, dz, d2, r2;
+            if( j == i )  continue;
+            dx = B->x - A->x;
+            if( dx > A->radius || dx < -A->radius )  continue;
+            dy = B->y - A->y;
+            if( dy > A->radius || dy < -A->radius )  continue;
+            dz = B->z - A->z;
+            d2 = dx*dx + dy*dy + dz*dz;
+            r2 = A->radius * A->radius;
+            if( d2 < r2 )
+                crowd += 1.0f - d2 / r2;
+        }
+        A->share = 1.0f / (1.0f + crowd);
+    }
+}
+
 static int glow_ref_cmp( const void * a, const void * b )
 {
     const glow_lamp_ref_t * ra = a, * rb = b;
@@ -939,6 +1158,8 @@ static boolean glow_build_lamps( void )
     }
     for( s = 0; s < numsectors; s++ )
         glow_ceiling_lamps( &sectors[s] );
+
+    glow_lamp_shares();
 
     // Who each lamp lights: its sector, and those one opening away.
     maxrefs = 0;
@@ -1068,16 +1289,6 @@ typedef struct {
     float         s[4], t[4]; // the disc's coords at the quad's corners
 } glow_hit_t;
 
-// Crowding.  Each light is two passes, and the multiply stacks as a
-// product: ten panels round one computer wall made it ten times as bright
-// and it blew out to white.  So the lights on a surface share one light's
-// worth between them: a lone lamp keeps all of its strength, a crowd is
-// scaled down to fit.
-static float glow_norm( float total )
-{
-    return ( total > 1.0f )? 1.0f / total : 1.0f;
-}
-
 static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff, boolean * bound )
 {
     FSurfaceInfo_t Surf;
@@ -1112,7 +1323,7 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
     static glow_hit_t hit[GLOW_MAX_HITS];
     sector_t * sec = gr_frontsector;
     int si, r, nhit;
-    float wx, wz, len, ux, uz, ybot, ytop, total, norm;
+    float wx, wz, len, ux, uz, ybot, ytop;
     boolean bound = false;
 
     if( sec == NULL || ! glow_build_lamps() )
@@ -1130,7 +1341,6 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
     ytop = vxtx[2].y > vxtx[3].y ? vxtx[2].y : vxtx[3].y;
 
     nhit = 0;
-    total = 0.0f;
     for( r = glow_sec_first[si]; r < glow_sec_first[si+1] && nhit < GLOW_MAX_HITS; r++ )
     {
         glow_lamp_t * L = &glow_lamps[ glow_lamp_refs[r].lamp ];
@@ -1139,10 +1349,6 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
         if( ! glow_opening_open( glow_lamp_refs[r].via ) )
             continue;
         glow_lamp_follow( L );
-        // Not the lamp's own wall: the lamp's glow is that wall, and lit
-        // from 12 units away it blew out to white.
-        if( L->line && gr_curline && gr_curline->linedef == L->line )
-            continue;
         rx = L->x - vxtx[0].x;
         rz = L->y - vxtx[0].z;
         // Only the face the lamp is in front of (HWR_WallLighting's test).
@@ -1152,11 +1358,18 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
         if( dist >= L->radius )
             continue;
         rp = sqrt( L->radius * L->radius - dist * dist );
+        // A light close to a wall lights a tight pool on it, not a broad
+        // one: light that grazes a wall falls off fast along it.  So a
+        // switch has a bright pool round it on its own wall and the pieces
+        // either side, and lights the rest of the room normally.
+        if( rp > dist * 4.0f + 48.0f )
+            rp = dist * 4.0f + 48.0f;
         a0 = rx * ux + rz * uz;
         if( a0 + rp < 0.0f || a0 - rp > len || L->z + rp < ybot || L->z - rp > ytop )
             continue;
         hit[nhit].L = L;
-        hit[nhit].w = glow_falloff( dist, L->radius ) * glow_sector_scale( L->sector ) / 255.0f;
+        hit[nhit].w = glow_falloff( dist, L->radius ) * L->share
+                      * glow_sector_scale( L->sector ) / 255.0f;
         if( hit[nhit].w <= 0.0f || ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
             continue;
         for( i = 0; i < 4; i++ )
@@ -1165,10 +1378,8 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
             hit[nhit].s[i] = 0.5f + (a - a0) / (2.0f * rp);
             hit[nhit].t[i] = 0.5f + (L->z - vxtx[i].y) / (2.0f * rp);
         }
-        total += hit[nhit].w;
         nhit++;
     }
-    norm = glow_norm( total );
     for( r = 0; r < nhit; r++ )
     {
         vxtx3d_t v[4];
@@ -1179,7 +1390,7 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
             v[i].sow = hit[r].s[i];
             v[i].tow = hit[r].t[i];
         }
-        glow_draw_lamp( hit[r].L, v, 4, hit[r].w * norm, &bound );
+        glow_draw_lamp( hit[r].L, v, 4, hit[r].w, &bound );
     }
     return bound;
 }
@@ -1191,7 +1402,7 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
     static glow_hit_t hit[GLOW_MAX_HITS];
     sector_t * sec = gr_frontsector;
     int si, r, i, nhit;
-    float h, minx, maxx, minz, maxz, total, norm;
+    float h, minx, maxx, minz, maxz;
     boolean isfloor, bound = false;
 
     if( sec == NULL || n < 3 || n > 512 || ! glow_build_lamps() )
@@ -1213,7 +1424,6 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
     }
 
     nhit = 0;
-    total = 0.0f;
     for( r = glow_sec_first[si]; r < glow_sec_first[si+1] && nhit < GLOW_MAX_HITS; r++ )
     {
         glow_lamp_t * L = &glow_lamps[ glow_lamp_refs[r].lamp ];
@@ -1230,14 +1440,13 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
         if( L->x + rp < minx || L->x - rp > maxx || L->y + rp < minz || L->y - rp > maxz )
             continue;
         hit[nhit].L = L;
-        hit[nhit].w = glow_falloff( dh, L->radius ) * glow_sector_scale( L->sector ) / 255.0f;
+        hit[nhit].w = glow_falloff( dh, L->radius ) * L->share
+                      * glow_sector_scale( L->sector ) / 255.0f;
         hit[nhit].s[0] = rp;   // the disc's radius on this plane
         if( hit[nhit].w <= 0.0f || ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
             continue;
-        total += hit[nhit].w;
         nhit++;
     }
-    norm = glow_norm( total );
     for( r = 0; r < nhit; r++ )
     {
         glow_lamp_t * L = hit[r].L;
@@ -1248,7 +1457,7 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
             v[i].sow = 0.5f + (pv[i].x - L->x) / (2.0f * rp);
             v[i].tow = 0.5f + (pv[i].z - L->y) / (2.0f * rp);
         }
-        glow_draw_lamp( L, v, n, hit[r].w * norm, &bound );
+        glow_draw_lamp( L, v, n, hit[r].w, &bound );
     }
     return bound;
 }
@@ -1274,7 +1483,7 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t fx, fixed_t fy, fixed_t fz, sector_t * s
             continue;
         glow_lamp_follow( L );
         dx = L->x - x;  dy = L->y - y;  dz = L->z - z;
-        k = glow_falloff( sqrt( dx*dx + dy*dy + dz*dz ), L->radius )
+        k = glow_falloff( sqrt( dx*dx + dy*dy + dz*dz ), L->radius ) * L->share
             * glow_sector_scale( L->sector );
         if( k <= 0.0f )
             continue;
@@ -1284,7 +1493,7 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t fx, fixed_t fy, fixed_t fz, sector_t * s
     }
     {
         int v, hi = add[0];
-        // Crowding, as glow_norm: no more than one full light's worth.
+        // Crowding: no more than one full light's worth on a sprite.
         if( add[1] > hi )  hi = add[1];
         if( add[2] > hi )  hi = add[2];
         if( hi > 255 )
