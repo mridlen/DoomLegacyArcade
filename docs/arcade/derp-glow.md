@@ -241,3 +241,12 @@ with the unmodified binary: pre-existing noise in the test, not this feature.
 - To check alignment, temporarily paint every mask texel magenta in `glow_texel`; a tint through
   `FlatColor` is useless on red LEDs.
 - A level change with all three on (`map E1M2` from an autoexec) exercises `HWR_Glow_Free`.
+- **Play every record demo in OpenGL with all four switches on before calling a change here done.**
+  `make demotest` runs with `-nodraw` under the dummy driver and never reaches this file, and a
+  single-level check only reaches that level's walls. The cabinet segfaulted on the first frame of
+  the E3M1 attract demo because `glow_switch_partner` -- asked of every wall part that is not a light,
+  to find switches that are off -- read `textures[0]` for a blank (`-`) part; texture 0 is "no
+  texture" and not a real one. Every texture-number entry point here now range-checks. The sweep that
+  checks this: each demo under `SDL_VIDEODRIVER=offscreen`, `drawmode "OpenGL"`, the four `gr_glow_*`
+  on, `-timedemo`, four at a time, flagging any run that dies on a signal or leaves a `crash.txt`
+  (the game id and level pack parsed from the file name as `tools/demotest.sh` does).
