@@ -90,11 +90,24 @@ emissive.h calls a light (`LAMP`, `PANEL`, `DIFFUSE`, `GLASS`; not the liquids, 
 glow) gets a source every `LAMP_SPACING` units along it, `LAMP_OUT` in front of the face, at the
 middle of that part's height. Every sector with a lamp ceiling flat gets sources on a grid (at most
 `LAMP_CEIL_MAX`), placed with `R_PointInSubsector`, `LAMP_CEIL_DROP` under the ceiling, with a
-reach long enough to touch the floor.
+reach of 1.5x the room's height plus 64 so it spreads over the floor.
+
+**Fall-off with distance is quadratic** (`glow_falloff`, `1 - (d/R)^2`), not linear: linearly, a floor
+a room's height under a ceiling light kept a third of the light.
+
+**The wall switches** (`SW1*`, `SW2*`) are added to DERP's list as panels, in `glow_kind`, for both the
+glowing pixels and the light: emissive.h is kept verbatim, so the cabinet's additions live there.
+
+**Sprites and the weapon** take the lamp light too: `HWR_Glow_Tint` sums the sources reaching the point
+(the mobj's middle, or the view for the weapon) and scales the sprite's light colour by `1 + lamps`,
+the same rule `PF_LightMul` applies to walls. Called from `HWR_DrawSprite` and `HWR_DrawPSprite`.
 
 **Colour and strength from the art**: the texture's patches (or the flat) are decoded and DERP's
 pixel test averaged over them. A panel dotted with a few LEDs gives proportionally little light
-(DERP's rule, `frac`). Neutral strips and ceiling lamps that DERP's test passes over (TLITE6_4 has no
+(DERP's rule, `frac`) -- **panels only**. A `LAMP` gets at least 220/255: the first version applied the
+rule to everything, and the red and blue ceiling lights (`TLITE6_5`, `FLAT22`), whose bulb is a tenth of
+the flat and the rest fixture, came out at a quarter strength and visibly lit nothing, while the exit
+sign (mostly lit pixels) worked. That was the cabinet's first report. Neutral strips and ceiling lamps that DERP's test passes over (TLITE6_4 has no
 pixel it counts) fall back to their bright pixels (any channel >= 176).
 
 **Drawn with `PF_LightMul`**, a blend added for this: `dest * (1 + src)` (`GL_DST_COLOR, GL_ONE`,

@@ -18,6 +18,7 @@
 #define HW_GLOW_H
 
 #include "doomtype.h"
+#include "m_fixed.h"
 #include "command.h"
 #include "hw_defs.h"
 #include "hw_data.h"
@@ -43,6 +44,10 @@ void HWR_Glow_Plane( vxtx3d_t * v, int numverts, lumpnum_t flatlump,
                      FBITFIELD polyflags );
 void HWR_Glow_Sprite( vxtx3d_t * vxtx, lumpnum_t patch_lumpnum,
                       Mipmap_t * smip, uint32_t mobjflags, int health );
+
+// Tints a sprite's or the weapon's FlatColor by the lamp light at a point.
+struct sector_s;
+void HWR_Glow_Tint( RGBA_t * c, fixed_t x, fixed_t y, fixed_t z, struct sector_s * sec );
 
 // hw_cache.c: composite a wall texture exactly as HWR_GetTexture does, into
 // the caller's mipmap.  False when the texture format is not RGBA.
