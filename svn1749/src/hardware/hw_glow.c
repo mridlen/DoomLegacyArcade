@@ -69,6 +69,7 @@ consvar_t cv_grglow_eyes    = { "gr_glow_eyes",    "Off", CV_SAVE, CV_OnOff };
 consvar_t cv_grglow_lamplight = { "gr_glow_lamplight", "Off", CV_SAVE, CV_OnOff };
 
 extern sector_t * gr_frontsector;   // hw_main.c, the sector being drawn
+extern seg_t    * gr_curline;       // hw_main.c, the wall being drawn
 
 Mipmap_t * hwr_glow_bound = NULL;
 int        hwr_glow_texnum = -1;
@@ -523,7 +524,14 @@ static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
 #define LAMP_RADIUS_MIN   128.0f   // reach of the dimmest
 #define LAMP_RADIUS_MAX   224.0f   // and the brightest
 #define LAMP_CEIL_DROP    8.0f     // a ceiling lamp hangs this far down
-#define LAMP_STRENGTH     190      // colour scale at full strength, of 255
+#define LAMP_STRENGTH     255      // colour scale at full strength, of 255
+// The additive half of the light, of 255: what lets a lamp colour a dark or
+// grey surface, which multiplying alone can at most double.  The cabinet
+// found multiply-only "very subtle".
+#define LAMP_ADD          56
+// How much harder sprites and the weapon take the light than a wall's
+// multiply does (HWR_Glow_Tint), in 1/255: they have no additive pass.
+#define LAMP_SPRITE_GAIN  2
 #define LAMP_MAX          4096
 #define LAMP_CEIL_MAX     24       // lights per lamp-ceilinged sector
 
@@ -537,6 +545,7 @@ typedef struct {
     // from SW1 to SW2 changes the indicator's colour, and a texture swapped
     // for an unlit one puts the light out.
     side_t   * side;        // NULL for a ceiling light
+    line_t   * line;        // the wall it is on, which it does not light
     byte       part;        // GLOW_PART_*
     short      texnum;      // the texture its colour was taken from
 } glow_lamp_t;
@@ -802,6 +811,7 @@ static void glow_wall_lamps( line_t * ld, int side, sector_t * sec, side_t * sd,
         L->sector = sec;
         L->ceiling = 0;
         L->side = sd;
+        L->line = ld;
         L->part = part;
         L->texnum = texnum;
         glow_set_lamp_color( L, lc );
@@ -853,6 +863,7 @@ static void glow_ceiling_lamps( sector_t * sec )
             L->sector = sec;
             L->ceiling = 1;
             L->side = NULL;
+            L->line = NULL;
             glow_set_lamp_color( L, &lc );
             // A ceiling lamp has to reach the floor under it, and spread
             // over it.
@@ -871,6 +882,7 @@ static void glow_ceiling_lamps( sector_t * sec )
         L->sector = sec;
         L->ceiling = 1;
         L->side = NULL;
+        L->line = NULL;
         glow_set_lamp_color( L, &lc );
         if( L->radius < height * 1.5f + 64.0f )
             L->radius = height * 1.5f + 64.0f;
@@ -988,10 +1000,13 @@ static void glow_set_disc( void )
             for( x = 0; x < 64; x++ )
             {
                 float dx = (x - 31.5f) / 31.5f, dy = (y - 31.5f) / 31.5f;
-                float f = 1.0f - sqrt( dx*dx + dy*dy );
+                // Broad, not a spot: 1 - r^2, so half way out it still has
+                // three quarters.  (1 - r)^2 had a quarter there, which read
+                // as a small dot of colour under each lamp.
+                float f = 1.0f - ( dx*dx + dy*dy );
                 byte v;
                 if( f < 0.0f )  f = 0.0f;
-                v = (byte)( 255.0f * f * f );
+                v = (byte)( 255.0f * f );
                 data[ y * 64 + x ] = (v << 8) | v;
             }
         }
@@ -1045,10 +1060,28 @@ static float glow_falloff( float d, float radius )
     return ( f >= 1.0f )? 0.0f : 1.0f - f * f;
 }
 
+// The lights reaching one surface, gathered before any is drawn.
+#define GLOW_MAX_HITS  48
+typedef struct {
+    glow_lamp_t * L;
+    float         w;          // falloff * blink, 0..1
+    float         s[4], t[4]; // the disc's coords at the quad's corners
+} glow_hit_t;
+
+// Crowding.  Each light is two passes, and the multiply stacks as a
+// product: ten panels round one computer wall made it ten times as bright
+// and it blew out to white.  So the lights on a surface share one light's
+// worth between them: a lone lamp keeps all of its strength, a crowd is
+// scaled down to fit.
+static float glow_norm( float total )
+{
+    return ( total > 1.0f )? 1.0f / total : 1.0f;
+}
+
 static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff, boolean * bound )
 {
     FSurfaceInfo_t Surf;
-    int k = (int)( falloff * glow_sector_scale( L->sector ) );
+    int k = (int)( falloff * 255.0f );   // blink and crowding already in it
     if( ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
         return;   // a light that has gone out
     if( k <= 0 )
@@ -1066,17 +1099,20 @@ static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff,
     Surf.texflags = 0;
 #ifdef BLEND_FIELD
     HWD.pfnDrawPolygon( &Surf, v, n, PF_LightMul | PF_Modulated | PF_Decal | PF_Clip );
-#else
-    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip );
 #endif
+    // And the additive half: colour * disc (texture) * disc (its alpha) *
+    // LAMP_ADD, on top of the multiply.
+    Surf.FlatColor.s.alpha = LAMP_ADD;
+    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip );
 }
 
 // The lamps' light on a wall quad.  Returns whether anything was drawn.
 static boolean glow_lamp_wall( vxtx3d_t * vxtx )
 {
+    static glow_hit_t hit[GLOW_MAX_HITS];
     sector_t * sec = gr_frontsector;
-    int si, r;
-    float wx, wz, len, ux, uz, ybot, ytop;
+    int si, r, nhit;
+    float wx, wz, len, ux, uz, ybot, ytop, total, norm;
     boolean bound = false;
 
     if( sec == NULL || ! glow_build_lamps() )
@@ -1093,15 +1129,20 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
     ybot = vxtx[0].y < vxtx[1].y ? vxtx[0].y : vxtx[1].y;
     ytop = vxtx[2].y > vxtx[3].y ? vxtx[2].y : vxtx[3].y;
 
-    for( r = glow_sec_first[si]; r < glow_sec_first[si+1]; r++ )
+    nhit = 0;
+    total = 0.0f;
+    for( r = glow_sec_first[si]; r < glow_sec_first[si+1] && nhit < GLOW_MAX_HITS; r++ )
     {
         glow_lamp_t * L = &glow_lamps[ glow_lamp_refs[r].lamp ];
         float rx, rz, dist, rp, a0;
-        vxtx3d_t v[4];
         int i;
         if( ! glow_opening_open( glow_lamp_refs[r].via ) )
             continue;
         glow_lamp_follow( L );
+        // Not the lamp's own wall: the lamp's glow is that wall, and lit
+        // from 12 units away it blew out to white.
+        if( L->line && gr_curline && gr_curline->linedef == L->line )
+            continue;
         rx = L->x - vxtx[0].x;
         rz = L->y - vxtx[0].z;
         // Only the face the lamp is in front of (HWR_WallLighting's test).
@@ -1114,14 +1155,31 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
         a0 = rx * ux + rz * uz;
         if( a0 + rp < 0.0f || a0 - rp > len || L->z + rp < ybot || L->z - rp > ytop )
             continue;
+        hit[nhit].L = L;
+        hit[nhit].w = glow_falloff( dist, L->radius ) * glow_sector_scale( L->sector ) / 255.0f;
+        if( hit[nhit].w <= 0.0f || ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
+            continue;
         for( i = 0; i < 4; i++ )
         {
             float a = (vxtx[i].x - vxtx[0].x) * ux + (vxtx[i].z - vxtx[0].z) * uz;
-            v[i] = vxtx[i];
-            v[i].sow = 0.5f + (a - a0) / (2.0f * rp);
-            v[i].tow = 0.5f + (L->z - vxtx[i].y) / (2.0f * rp);
+            hit[nhit].s[i] = 0.5f + (a - a0) / (2.0f * rp);
+            hit[nhit].t[i] = 0.5f + (L->z - vxtx[i].y) / (2.0f * rp);
         }
-        glow_draw_lamp( L, v, 4, glow_falloff( dist, L->radius ), &bound );
+        total += hit[nhit].w;
+        nhit++;
+    }
+    norm = glow_norm( total );
+    for( r = 0; r < nhit; r++ )
+    {
+        vxtx3d_t v[4];
+        int i;
+        for( i = 0; i < 4; i++ )
+        {
+            v[i] = vxtx[i];
+            v[i].sow = hit[r].s[i];
+            v[i].tow = hit[r].t[i];
+        }
+        glow_draw_lamp( hit[r].L, v, 4, hit[r].w * norm, &bound );
     }
     return bound;
 }
@@ -1130,9 +1188,10 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
 static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
 {
     static vxtx3d_t v[512];
+    static glow_hit_t hit[GLOW_MAX_HITS];
     sector_t * sec = gr_frontsector;
-    int si, r, i;
-    float h, minx, maxx, minz, maxz;
+    int si, r, i, nhit;
+    float h, minx, maxx, minz, maxz, total, norm;
     boolean isfloor, bound = false;
 
     if( sec == NULL || n < 3 || n > 512 || ! glow_build_lamps() )
@@ -1153,7 +1212,9 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
         if( pv[i].z > maxz )  maxz = pv[i].z;
     }
 
-    for( r = glow_sec_first[si]; r < glow_sec_first[si+1]; r++ )
+    nhit = 0;
+    total = 0.0f;
+    for( r = glow_sec_first[si]; r < glow_sec_first[si+1] && nhit < GLOW_MAX_HITS; r++ )
     {
         glow_lamp_t * L = &glow_lamps[ glow_lamp_refs[r].lamp ];
         float dh, rp;
@@ -1168,13 +1229,26 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
         rp = sqrt( L->radius * L->radius - dh * dh );
         if( L->x + rp < minx || L->x - rp > maxx || L->y + rp < minz || L->y - rp > maxz )
             continue;
+        hit[nhit].L = L;
+        hit[nhit].w = glow_falloff( dh, L->radius ) * glow_sector_scale( L->sector ) / 255.0f;
+        hit[nhit].s[0] = rp;   // the disc's radius on this plane
+        if( hit[nhit].w <= 0.0f || ! (L->color.s.red | L->color.s.green | L->color.s.blue) )
+            continue;
+        total += hit[nhit].w;
+        nhit++;
+    }
+    norm = glow_norm( total );
+    for( r = 0; r < nhit; r++ )
+    {
+        glow_lamp_t * L = hit[r].L;
+        float rp = hit[r].s[0];
         for( i = 0; i < n; i++ )
         {
             v[i] = pv[i];
             v[i].sow = 0.5f + (pv[i].x - L->x) / (2.0f * rp);
             v[i].tow = 0.5f + (pv[i].z - L->y) / (2.0f * rp);
         }
-        glow_draw_lamp( L, v, n, glow_falloff( dh, L->radius ), &bound );
+        glow_draw_lamp( L, v, n, hit[r].w * norm, &bound );
     }
     return bound;
 }
@@ -1209,10 +1283,19 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t fx, fixed_t fy, fixed_t fz, sector_t * s
         add[2] += (int)( L->color.s.blue  * k / 255.0f );
     }
     {
-        int v;
-        v = c->s.red   * (255 + add[0]) / 255;  c->s.red   = (v > 255)? 255 : v;
-        v = c->s.green * (255 + add[1]) / 255;  c->s.green = (v > 255)? 255 : v;
-        v = c->s.blue  * (255 + add[2]) / 255;  c->s.blue  = (v > 255)? 255 : v;
+        int v, hi = add[0];
+        // Crowding, as glow_norm: no more than one full light's worth.
+        if( add[1] > hi )  hi = add[1];
+        if( add[2] > hi )  hi = add[2];
+        if( hi > 255 )
+        {
+            add[0] = add[0] * 255 / hi;
+            add[1] = add[1] * 255 / hi;
+            add[2] = add[2] * 255 / hi;
+        }
+        v = c->s.red   * (255 + LAMP_SPRITE_GAIN * add[0]) / 255;  c->s.red   = (v > 255)? 255 : v;
+        v = c->s.green * (255 + LAMP_SPRITE_GAIN * add[1]) / 255;  c->s.green = (v > 255)? 255 : v;
+        v = c->s.blue  * (255 + LAMP_SPRITE_GAIN * add[2]) / 255;  c->s.blue  = (v > 255)? 255 : v;
     }
 }
 

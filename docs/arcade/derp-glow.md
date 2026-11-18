@@ -130,6 +130,17 @@ source's colour. Multiplying keeps the texture's detail and tints it, where the 
 (additive) wash a flat colour over it. The trade: it cannot light black, so a pitch-dark room stays
 dark, and the brightest it can make a texel is twice what it was.
 
+**Two passes per light, and crowding.** Multiply alone read as "very subtle" on the cabinet: it can
+at most double a texel, and a grey or dark surface barely takes a colour from it. So each light is
+drawn twice: the `PF_LightMul` multiply, then a `PF_Additive` pass of the same disc at `LAMP_ADD`,
+which is what puts a lamp's colour onto a dark wall. The disc is broad (`1 - r^2`, three quarters left
+half way out), not a spot. Both passes stack, and the multiply stacks as a product: ten panels round
+one computer wall made it ten times as bright and white. So every surface first gathers the lights
+reaching it (`glow_hit_t`), sums their weights, and if the sum is over one light scales them all to
+fit (`glow_norm`). A lone lamp keeps its full strength; a crowd shares one lamp's worth. A wall light
+also never lights the wall it is on (its own glow is that wall; lit from 12 units away it blew out).
+Sprites and the weapon take `LAMP_SPRITE_GAIN` times the light, capped the same way.
+
 **Where the light reaches**: the source's own sector and every sector one two-sided line away, the
 latter only while that opening is open *now* (`glow_opening_open`), so a closed door stops it. There
 is no other occlusion, which is why the reach is short (`LAMP_RADIUS_MIN`..`MAX`). Walls only take
@@ -139,8 +150,11 @@ follows its sector's blink, through `glow_sector_scale`.
 **Cost**: one extra polygon per source per surface it reaches. Sources are bucketed per sector
 (`glow_sec_first`/`glow_lamp_refs`), so a surface only looks at the few that can reach it.
 
-Tuning is the constants at the top of the lamp section of `hw_glow.c`; `LAMP_STRENGTH` is the overall
-brightness.
+Tuning is the constants at the top of the lamp section of `hw_glow.c`: `LAMP_STRENGTH` (the
+multiply), `LAMP_ADD` (the additive colour) and `LAMP_SPRITE_GAIN`.
+
+When capturing before/after shots, force `gr_glow_lamplight "Off"` in the scratch config: the live
+`legacyhome` may already have it on, and then both shots have it.
 
 ## Lifetime of the masks
 
