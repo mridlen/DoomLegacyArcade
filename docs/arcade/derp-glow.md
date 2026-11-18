@@ -96,7 +96,20 @@ reach of 1.5x the room's height plus 64 so it spreads over the floor.
 a room's height under a ceiling light kept a third of the light.
 
 **The wall switches** (`SW1*`, `SW2*`) are added to DERP's list as panels, in `glow_kind`, for both the
-glowing pixels and the light: emissive.h is kept verbatim, so the cabinet's additions live there.
+glowing pixels and the light: emissive.h is kept verbatim, so the cabinet's additions live there. A
+switch's indicator is a few pixels, so switches get a minimum strength of 170 whatever their share of
+lit pixels.
+
+**A wall light follows its texture** (`glow_lamp_follow`): each remembers its side, which part, and the
+texture its colour came from, and when the texture there changes it takes the new one's colour, or goes
+dark if the new one is not a light. Throwing a switch swaps SW1 for SW2 and the light's colour with it.
+
+**The colour sums need 64 bits.** `glow_cstat_t` sums colour times strength over every pixel, up to
+4096 x 255 x 255, and normalising multiplies that by 255 again, which wrapped 32 bits on any art with
+many bright pixels. For two rounds of cabinet reports the red ceiling light came out brown, the white
+strips at 1,1,1 (no light at all) and only the exit sign, with few bright pixels, was right. It was found
+by dumping every source's colour and strength at build time (temporary `fprintf` in `glow_wall_lamps` and
+`glow_ceiling_lamps`) instead of tuning by eye; do that first if a light looks wrong again.
 
 **Sprites and the weapon** take the lamp light too: `HWR_Glow_Tint` sums the sources reaching the point
 (the mobj's middle, or the view for the weapon) and scales the sprite's light colour by `1 + lamps`,
