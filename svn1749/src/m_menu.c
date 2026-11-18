@@ -13861,6 +13861,7 @@ menuitem_t OGL_DerpMenu[]=
     {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Lights"  , &cv_grglow_lights      ,  0},
     {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Liquids" , &cv_grglow_liquids     , 10},
     {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Eyes"    , &cv_grglow_eyes        , 20},
+    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Lamp Light"      , &cv_grglow_lamplight   , 30},
 };
 
 menuitem_t OGL_DevMenu[]=
@@ -14042,9 +14043,9 @@ static
 void M_OGL_DrawDerpMenu(void)
 {
     M_DrawGenericMenu();
-    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 45, V_WHITEMAP,
-                  "From DERP, the DOOM Engine" );
     V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 55, V_WHITEMAP,
+                  "From DERP, the DOOM Engine" );
+    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 65, V_WHITEMAP,
                   "Remaster Project" );
 }
 

@@ -14,6 +14,7 @@ default (a new switch defaults to what the cabinet already did, `gameplay-defaul
 | Glowing Lights | `gr_glow_lights` | The glowing pixels of lamp, light-strip, computer-panel and exit-sign textures and flats, drawn again at full brightness over the lit surface. |
 | Glowing Liquids | `gr_glow_liquids` | Nukage, slime and lava pools add their own bright cells on top of themselves, and every wall standing in one gets a gradient of the liquid's colour climbing 96 units up from the waterline. |
 | Glowing Eyes | `gr_glow_eyes` | A living monster's eye pixels, unlit, so eyes show in the dark. |
+| Lamp Light | `gr_glow_lamplight` | Light from those lamps onto the walls and floors round them, in each lamp's own colour. |
 
 The ideas, and two pieces of data, come from **DERP**, the DOOM Engine Remaster Project
 (<https://github.com/robongrui/derp>), which is GPLv3. That is why the repository's licence is now
@@ -78,6 +79,43 @@ light thinkers.
 
 Expect **Glowing Lights to be subtle** in ordinary lighting. It is meant for dark rooms.
 
+## Lamp Light
+
+Glowing Lights only brightens the lamp's own pixels, and on the cabinet that read as "a couple of
+changes": nothing round a red panel turned red. Lamp Light is the missing half, the part of DERP's
+"light comes from things that look like lights" a fixed-function renderer can do.
+
+**Sources, found once per level** (`glow_build_lamps`, on first use): every wall part whose texture
+emissive.h calls a light (`LAMP`, `PANEL`, `DIFFUSE`, `GLASS`; not the liquids, which have their own
+glow) gets a source every `LAMP_SPACING` units along it, `LAMP_OUT` in front of the face, at the
+middle of that part's height. Every sector with a lamp ceiling flat gets sources on a grid (at most
+`LAMP_CEIL_MAX`), placed with `R_PointInSubsector`, `LAMP_CEIL_DROP` under the ceiling, with a
+reach long enough to touch the floor.
+
+**Colour and strength from the art**: the texture's patches (or the flat) are decoded and DERP's
+pixel test averaged over them. A panel dotted with a few LEDs gives proportionally little light
+(DERP's rule, `frac`). Neutral strips and ceiling lamps that DERP's test passes over (TLITE6_4 has no
+pixel it counts) fall back to their bright pixels (any channel >= 176).
+
+**Drawn with `PF_LightMul`**, a blend added for this: `dest * (1 + src)` (`GL_DST_COLOR, GL_ONE`,
+the ninth entry of `blend_param[]`, which is now 16 long and indexed by the full `PF_blend_field`).
+A soft disc (`glow_disc`) is projected onto each wall and floor polygon near a source, in the
+source's colour. Multiplying keeps the texture's detail and tints it, where the stock dynamic lights
+(additive) wash a flat colour over it. The trade: it cannot light black, so a pitch-dark room stays
+dark, and the brightest it can make a texel is twice what it was.
+
+**Where the light reaches**: the source's own sector and every sector one two-sided line away, the
+latter only while that opening is open *now* (`glow_opening_open`), so a closed door stops it. There
+is no other occlusion, which is why the reach is short (`LAMP_RADIUS_MIN`..`MAX`). Walls only take
+light on the face the source is in front of; ceiling sources do not light ceilings. Each source
+follows its sector's blink, through `glow_sector_scale`.
+
+**Cost**: one extra polygon per source per surface it reaches. Sources are bucketed per sector
+(`glow_sec_first`/`glow_lamp_refs`), so a surface only looks at the few that can reach it.
+
+Tuning is the constants at the top of the lamp section of `hw_glow.c`; `LAMP_STRENGTH` is the overall
+brightness.
+
 ## Lifetime of the masks
 
 The mask mipmaps live in three tables: wall textures by number, flats and sprites by lump (open
@@ -86,7 +124,8 @@ addressed, 1024 and 4096 slots; a full table just means that lump does not glow)
 list (`nextmipmap`), and `Z_Free` clears a block's owner pointer, which is `&mip.GR_data`. So the
 tables are freed only in `HWR_Glow_Free`, called from `HWR_Free_TextureCache` **after both**
 `pfnClearMipMapCache` and `Z_FreeTags(PU_HWRCACHE)`. Freeing them anywhere earlier leaves the driver
-or the zone writing into freed memory.
+or the zone writing into freed memory. The lamp list is freed there too (`glow_lamps_free`), which is
+also what makes it rebuild for the next level.
 
 The texel blocks are `PU_HWRCACHE` like every other upload, so the zone may purge them; a mask with
 neither `downloaded` nor `GR_data` is simply rebuilt. A palette change (`HWR_SetPalette`) and a filter
