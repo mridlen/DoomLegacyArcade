@@ -411,7 +411,7 @@ static void glow_draw_additive( Mipmap_t * mip, vxtx3d_t * v, int n, byte alpha 
     Surf.polyflags = 0;
     Surf.texflags = 0;
     HWD.pfnSetTexture( mip );
-    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip );
+    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
 }
 
 static void glow_draw_mask( Mipmap_t * mip, vxtx3d_t * v, int n, byte scale )
@@ -423,7 +423,7 @@ static void glow_draw_mask( Mipmap_t * mip, vxtx3d_t * v, int n, byte scale )
     Surf.polyflags = 0;
     Surf.texflags = 0;
     HWD.pfnSetTexture( mip );
-    HWD.pfnDrawPolygon( &Surf, v, n, PF_Environment | PF_Modulated | PF_Decal | PF_Clip );
+    HWD.pfnDrawPolygon( &Surf, v, n, PF_Environment | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
 }
 
 static void glow_rebind( void )
@@ -495,7 +495,7 @@ static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
     Surf.polyflags = 0;
     Surf.texflags = 0;
     glow_set_ramp();
-    HWD.pfnDrawPolygon( &Surf, v, 4, PF_Additive | PF_Modulated | PF_Decal | PF_Clip );
+    HWD.pfnDrawPolygon( &Surf, v, 4, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
 }
 
 // ---- lamp light
@@ -1098,12 +1098,12 @@ static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff,
     Surf.polyflags = 0;
     Surf.texflags = 0;
 #ifdef BLEND_FIELD
-    HWD.pfnDrawPolygon( &Surf, v, n, PF_LightMul | PF_Modulated | PF_Decal | PF_Clip );
+    HWD.pfnDrawPolygon( &Surf, v, n, PF_LightMul | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
 #endif
     // And the additive half: colour * disc (texture) * disc (its alpha) *
     // LAMP_ADD, on top of the multiply.
     Surf.FlatColor.s.alpha = LAMP_ADD;
-    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip );
+    HWD.pfnDrawPolygon( &Surf, v, n, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
 }
 
 // The lamps' light on a wall quad.  Returns whether anything was drawn.

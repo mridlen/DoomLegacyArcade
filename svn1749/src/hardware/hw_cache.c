@@ -1209,24 +1209,31 @@ void HWR_SetPalette( RGBA_t *palette )
 // Imitate the special object screen tints for each special palette.
 // Corresponding to Doom special effect palettes.
 // These seem to be the same for Doom and Heretic.
+// [Arcade] 0xAABBGGRR, and the alpha byte is now the strength: how far the
+// surface light moves toward the colour.  It used to be ignored and every
+// tint was a straight average with the surface's light, half and half,
+// which made the faintest damage flash as strong as the heaviest and lit a
+// dark room up on every pickup.  The strengths follow Doom's own palettes:
+// the eight damage palettes shift toward red by 1/9 to 8/9, the four bonus
+// palettes toward gold by 1/8 to 1/2, the radiation suit by 1/8.
 static uint32_t  palette_to_tint[16] =
 {
    0x0,  // 00 normal
-   0xff373797, // 01 red
-   0xff373797, // 02 red
-   0xff3030a7, // 03 red
-   0xff2727b7, // 04 red
-   0xff2020c7, // 05 red
-   0xff1717d7, // 06 red
-   0xff1010e7, // 07 red
-   0xff0707f7, // 08 red
-   0xffff6060, // 09 blue
-   0xff70a090, // 0A light green
-   0xff67b097, // 0B light green
-   0xff60c0a0, // 0C light green
-   0xff60ff60, // 0D green
-   0xffff6060, // 0E blue
-   0xffff6060  // 0F blue
+   0x1c373797, // 01 red     1/9
+   0x39373797, // 02 red     2/9
+   0x553030a7, // 03 red     3/9
+   0x712727b7, // 04 red     4/9
+   0x8e2020c7, // 05 red     5/9
+   0xaa1717d7, // 06 red     6/9
+   0xc61010e7, // 07 red     7/9
+   0xe30707f7, // 08 red     8/9
+   0x20ff6060, // 09 blue (bonus 1/8)
+   0x4070a090, // 0A light green (bonus 2/8)
+   0x6067b097, // 0B light green (bonus 3/8)
+   0x8060c0a0, // 0C light green (bonus 4/8)
+   0x2060ff60, // 0D green (radiation suit 1/8)
+   0x20ff6060, // 0E blue
+   0x20ff6060  // 0F blue
 };
 
 

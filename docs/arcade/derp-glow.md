@@ -156,6 +156,23 @@ multiply), `LAMP_ADD` (the additive colour) and `LAMP_SPRITE_GAIN`.
 When capturing before/after shots, force `gr_glow_lamplight "Off"` in the scratch config: the live
 `legacyhome` may already have it on, and then both shots have it.
 
+## The damage and pickup flashes (`PF_NoTint`)
+
+OpenGL does the palette flashes as a *tint* (`HWR_SetFlashPalette` → `HWD_SET_TINT_COLOR`), applied
+in `DrawPolygon` to every `PF_Modulated` polygon. Stock, it was a straight average of the tint with the
+polygon's light colour, and that collided with these passes twice over:
+
+- Every glow and lamp pass is a modulated polygon too, so each one got the mix: a lamp pass meant to
+  add almost nothing added half the flash colour, two passes a lamp. Getting shot under Lamp Light
+  turned the screen bright red. Every pass here, and the stock dynamic lights (`LIGHTMAPFLAGS`), now
+  carry **`PF_NoTint`** (0x00010000), which the driver honours: a light added on top of a surface
+  that is already tinted.
+- The average itself was the second report (a dark room lighting up on a pickup), stock behaviour: a
+  surface light of 30 became about 140 under the gold bonus tint, and the faintest flash replaced
+  half of every surface's light. The tint's alpha byte, never read before, is now the **strength**
+  (`tint_mix`): `light + (tint - light) * strength`, with `palette_to_tint` giving Doom's own palette
+  steps (damage 1/9..8/9, bonus 1/8..1/2, radiation suit 1/8).
+
 ## Lifetime of the masks
 
 The mask mipmaps live in three tables: wall textures by number, flats and sprites by lump (open

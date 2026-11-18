@@ -237,6 +237,11 @@ Each is described in full in its commit and in [`docs/arcade/`](docs/arcade/).
 - Black seams and outlines through see-through bars (such as round E1M1's nukage pool), and bars
   hanging below their openings on 118 line sides in the stock IWADs.
 - A palette tint (radiation suit green, damage red) carried over past the end of a level.
+- Every damage and pickup flash was a straight half-and-half mix with each surface's light, so the
+  faintest flash was as strong as the heaviest and picking up a bonus lit a dark room right up. The
+  flashes now follow the strength of Doom's own palettes (damage 1/9 to 8/9 red, pickups 1/8 to 1/2
+  gold), and light added on top of a surface (dynamic lights, the DERP glow and lamp light) is no
+  longer flashed a second time.
 - Changing resolution did nothing. Three separate bugs kept OpenGL at the desktop resolution.
 
 **Demos**

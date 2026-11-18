@@ -140,7 +140,9 @@
 
 #define DL_HIGH_QUALITY
 //#define LIGHTMAPFLAGS  (PF_Masked|PF_Clip|PF_NoAlphaTest)  // debug see overdraw
-#define LIGHTMAPFLAGS (PF_Modulated|PF_Additive|PF_Clip)
+// [Arcade] PF_NoTint: a light added on top of a surface already tinted by
+// the damage/pickup flash; tinted itself, it added the flash a second time.
+#define LIGHTMAPFLAGS (PF_Modulated|PF_Additive|PF_Clip|PF_NoTint)
 
 //#define DYN_LIGHT_VERTEX
 
