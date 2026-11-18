@@ -151,6 +151,19 @@ static glow_entry_t * glow_lookup( glow_entry_t ** table, int slots, lumpnum_t l
     return NULL;  // full: that lump just does not glow
 }
 
+// DERP's list of glowing artwork, plus what the cabinet adds to it: the
+// wall switches, whose lit indicators read as panel lights (SW1 is the
+// switch in one state, SW2 in the other; both carry lights).  emissive.h is
+// kept verbatim, so additions go here.
+static int glow_kind( const char * name, int flat )
+{
+    int kind = doom_emissive_kind( name, flat );
+    if( kind == DOOM_EMISSIVE_NONE && ! flat
+        && ( strncmp( name, "SW1", 3 ) == 0 || strncmp( name, "SW2", 3 ) == 0 ) )
+        kind = DOOM_EMISSIVE_PANEL;
+    return kind;
+}
+
 static void glow_lump_name( lumpnum_t lump, char name[9] )
 {
     int i;
@@ -199,7 +212,7 @@ static glow_entry_t * glow_wall_mask( int texnum )
         name[8] = 0;
         for( i = 0; i < 8; i++ )
             name[i] = toupper( (unsigned char) name[i] );
-        e->kind = doom_emissive_kind( name, 0 );
+        e->kind = glow_kind( name, 0 );
         // The skies are composited by a special case; never a light.
         e->state = ( e->kind == DOOM_EMISSIVE_NONE
                      || strncmp( name, "SKY", 3 ) == 0 )? GLOW_NONE : GLOW_HAS;
@@ -256,7 +269,7 @@ static glow_entry_t * glow_flat_entry( lumpnum_t lump )
     {
         char name[9];
         glow_lump_name( lump, name );
-        e->kind = doom_emissive_kind( name, 1 );
+        e->kind = glow_kind( name, 1 );
         e->state = ( e->kind == DOOM_EMISSIVE_NONE )? GLOW_NONE : GLOW_HAS;
     }
     if( e->state != GLOW_HAS )
@@ -627,6 +640,11 @@ static boolean glow_cstat_finish( glow_cstat_t * st, int kind, glow_lampcolor_t 
     out->color.s.green = (byte)( g * 255 / hi );
     out->color.s.blue  = (byte)( b * 255 / hi );
     out->color.s.alpha = 255;
+    // DERP's rule that a few LEDs light a little is for panels.  A lamp is
+    // a lamp: TLITE6_5, the red ceiling light, is a fixture whose bulb is a
+    // tenth of the flat, and by its share of lit pixels it came out at a
+    // quarter strength and lit nothing anyone could see.
+    if( kind == DOOM_EMISSIVE_LAMP && frac < 220 )  frac = 220;
     if( frac < 48 )   frac = 48;
     if( frac > 255 )  frac = 255;
     if( kind == DOOM_EMISSIVE_DIFFUSE && frac > 128 )  frac = 128;
@@ -656,7 +674,7 @@ static glow_lampcolor_t * glow_texture_light( int texnum )
         name[8] = 0;
         for( i = 0; i < 8; i++ )
             name[i] = toupper( (unsigned char) name[i] );
-        kind = doom_emissive_kind( name, 0 );
+        kind = glow_kind( name, 0 );
         lc->state = GLOW_NONE;
         if( ! glow_casts_light( kind ) )
             return NULL;
@@ -687,7 +705,7 @@ static boolean glow_flat_light( lumpnum_t lump, glow_lampcolor_t * out )
     if( ! VALID_LUMP( lump ) )
         return false;
     glow_lump_name( lump, name );
-    kind = doom_emissive_kind( name, 1 );
+    kind = glow_kind( name, 1 );
     if( ! glow_casts_light( kind ) )
         return false;
     size = W_LumpLength( lump );
@@ -814,9 +832,10 @@ static void glow_ceiling_lamps( sector_t * sec )
             L->sector = sec;
             L->ceiling = 1;
             glow_set_lamp_color( L, &lc );
-            // A ceiling lamp has to reach the floor under it.
-            if( L->radius < height + 64.0f )
-                L->radius = height + 64.0f;
+            // A ceiling lamp has to reach the floor under it, and spread
+            // over it.
+            if( L->radius < height * 1.5f + 64.0f )
+                L->radius = height * 1.5f + 64.0f;
             made++;
         }
     }
@@ -830,8 +849,8 @@ static void glow_ceiling_lamps( sector_t * sec )
         L->sector = sec;
         L->ceiling = 1;
         glow_set_lamp_color( L, &lc );
-        if( L->radius < height + 64.0f )
-            L->radius = height + 64.0f;
+        if( L->radius < height * 1.5f + 64.0f )
+            L->radius = height * 1.5f + 64.0f;
     }
 }
 
@@ -971,6 +990,16 @@ static boolean glow_opening_open( line_t * ld )
     return top > bot;
 }
 
+// How much of a source's strength is left at a distance from it, before the
+// disc's own fade across the surface: falling as the square, so a floor a
+// room's height under a ceiling light still gets most of it.  (Falling
+// linearly, it got a third, which with the strength above was nothing.)
+static float glow_falloff( float d, float radius )
+{
+    float f = d / radius;
+    return ( f >= 1.0f )? 0.0f : 1.0f - f * f;
+}
+
 static void glow_draw_lamp( glow_lamp_t * L, vxtx3d_t * v, int n, float falloff, boolean * bound )
 {
     FSurfaceInfo_t Surf;
@@ -1044,7 +1073,7 @@ static boolean glow_lamp_wall( vxtx3d_t * vxtx )
             v[i].sow = 0.5f + (a - a0) / (2.0f * rp);
             v[i].tow = 0.5f + (L->z - vxtx[i].y) / (2.0f * rp);
         }
-        glow_draw_lamp( L, v, 4, 1.0f - dist / L->radius, &bound );
+        glow_draw_lamp( L, v, 4, glow_falloff( dist, L->radius ), &bound );
     }
     return bound;
 }
@@ -1096,9 +1125,45 @@ static boolean glow_lamp_plane( vxtx3d_t * pv, int n )
             v[i].sow = 0.5f + (pv[i].x - L->x) / (2.0f * rp);
             v[i].tow = 0.5f + (pv[i].z - L->y) / (2.0f * rp);
         }
-        glow_draw_lamp( L, v, n, 1.0f - dh / L->radius, &bound );
+        glow_draw_lamp( L, v, n, glow_falloff( dh, L->radius ), &bound );
     }
     return bound;
+}
+
+// Tints a sprite's or the weapon's light colour by the lamps reaching the
+// point it stands at, as PF_LightMul does a wall: colour * (1 + lamps).
+void HWR_Glow_Tint( RGBA_t * c, fixed_t fx, fixed_t fy, fixed_t fz, sector_t * sec )
+{
+    int si, r, add[3] = { 0, 0, 0 };
+    float x, y, z;
+
+    if( ! cv_grglow_lamplight.EV || fixedcolormap || sec == NULL || ! glow_build_lamps() )
+        return;
+    si = sec - sectors;
+    if( si < 0 || si >= glow_lamp_numsec || glow_sec_first[si] == glow_sec_first[si+1] )
+        return;
+    x = FIXED_TO_FLOAT( fx );  y = FIXED_TO_FLOAT( fy );  z = FIXED_TO_FLOAT( fz );
+    for( r = glow_sec_first[si]; r < glow_sec_first[si+1]; r++ )
+    {
+        glow_lamp_t * L = &glow_lamps[ glow_lamp_refs[r].lamp ];
+        float dx, dy, dz, k;
+        if( ! glow_opening_open( glow_lamp_refs[r].via ) )
+            continue;
+        dx = L->x - x;  dy = L->y - y;  dz = L->z - z;
+        k = glow_falloff( sqrt( dx*dx + dy*dy + dz*dz ), L->radius )
+            * glow_sector_scale( L->sector );
+        if( k <= 0.0f )
+            continue;
+        add[0] += (int)( L->color.s.red   * k / 255.0f );
+        add[1] += (int)( L->color.s.green * k / 255.0f );
+        add[2] += (int)( L->color.s.blue  * k / 255.0f );
+    }
+    {
+        int v;
+        v = c->s.red   * (255 + add[0]) / 255;  c->s.red   = (v > 255)? 255 : v;
+        v = c->s.green * (255 + add[1]) / 255;  c->s.green = (v > 255)? 255 : v;
+        v = c->s.blue  * (255 + add[2]) / 255;  c->s.blue  = (v > 255)? 255 : v;
+    }
 }
 
 // ---- hooks

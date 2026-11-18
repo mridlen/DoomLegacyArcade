@@ -3663,6 +3663,11 @@ static void HWR_DrawSprite(gr_vissprite_t * spr)
                                    /*OUT*/ & Surf );
         }
     }
+    // [Arcade] DERP Lamp Light: monsters and items take the colour of the
+    // lamps round them, at their middle.
+    HWR_Glow_Tint( &Surf.FlatColor, spr->mobj->x, spr->mobj->y,
+                   spr->mobj->z + (spr->mobj->height >> 1),
+                   spr->mobj->subsector->sector );
 
     //TODO: do the test earlier
     if (!cv_grmd2.value || (md2_models[spr->mobj->sprite].scale < 0.0f))
@@ -4331,6 +4336,9 @@ void HWR_DrawPSprite(pspdef_t * psp,  byte lightlum)
                                        /*OUT*/ & Surf );
             }
         }
+        // [Arcade] DERP Lamp Light: the gun takes the colour of the lamps
+        // round the player.
+        HWR_Glow_Tint( &Surf.FlatColor, viewx, viewy, viewz, viewer_sector );
     }
 
     // invis player doesnt look good with PF_Environment so use PF_Translucent instead
