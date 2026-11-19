@@ -512,7 +512,12 @@ static void glow_liquid_band( vxtx3d_t * vxtx, byte lightlum, short pic, fixed_t
         float t = ( down ? plane - vxtx[i].y : vxtx[i].y - plane ) / GLOW_WALL_HEIGHT;
         v[i] = vxtx[i];
         v[i].sow = 0.5f;
-        v[i].tow = ( t < 0.0f )? 0.0f : t;
+        // Not clamped here: the texture clamps.  A corner past the plane
+        // (E1M8 line 107: a lower wall running 32 units above the nukage
+        // ceiling) clamped to 0 stretched the whole fade over the full wall,
+        // since the coordinate is interpolated between corners, and the
+        // band all but vanished.  The part past the plane is hidden by it.
+        v[i].tow = t;
     }
 
     Surf.FlatColor = e->color;
@@ -708,7 +713,12 @@ static boolean glow_ripple_band( vxtx3d_t * vxtx, short pic, fixed_t height, int
         float t = ( down ? plane - vxtx[i].y : vxtx[i].y - plane ) / RIPPLE_HEIGHT;
         v[i] = vxtx[i];
         v[i].sow = a / 64.0f + drift;
-        v[i].tow = ( t < 0.0f )? 0.0f : t;
+        // Not clamped here: the texture clamps.  A corner past the plane
+        // (E1M8 line 107: a lower wall running 32 units above the nukage
+        // ceiling) clamped to 0 stretched the whole fade over the full wall,
+        // since the coordinate is interpolated between corners, and the
+        // band all but vanished.  The part past the plane is hidden by it.
+        v[i].tow = t;
     }
     Surf.FlatColor = e->color;
     Surf.FlatColor.s.alpha = RIPPLE_ALPHA;
