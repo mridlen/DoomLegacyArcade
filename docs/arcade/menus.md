@@ -1033,6 +1033,19 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
     labels shorter than ~90 units fit beside it — `Crosshair` (93) and `Your color` (103) do.
 
 
+## Greyed rows on a small-font page
+
+- **Greyed rows on a small-font page drew nothing until the DERP page showed it.** `IT_DISABLED` is
+  `IT_SPACE | IT_GRAYPATCH`, and the `IT_GRAYPATCH` drawer only knows the big font (`FONTB_S`, which
+  only Heretic has) or a picture. A small-font text row has neither, so under Doom it drew nothing and
+  still advanced a big-font line (16 instead of 10): the row vanished and everything below moved down
+  over whatever was there. That was true of every greyed row in the tree -- *Render Threads* and *Row
+  Padding* in OpenGL, *Keep aspect*, the Single Level replay rows, the Cheats page -- and was first
+  noticed on the DERP page in software mode, where five rows grey at once and its credit lines ended
+  up under them. `M_DrawGenericMenu` now draws such a row as small text through `graymap`, with the
+  cvar's value when `itemaction` is one (`CV_Is_Registered`, since the status no longer says
+  `IT_CVAR`), in one ordinary 10-line row. Big-font and picture menus are unchanged.
+
 ## Arcade Options had to be split
 
 Sixteen rows from y=40, at the generic menu's spacing, reaches the bottom of a 200 unit screen with

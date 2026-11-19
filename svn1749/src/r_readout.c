@@ -64,13 +64,33 @@ void R_Readout_Register( void )
     CV_RegisterVar( &cv_readouts );
 }
 
-// One readout texel: where it is, and where in its readout.
+// What a texel follows.
+enum {
+    RO_READOUT = 0,   // a cell of one of DERP's LED readouts (outside screens)
+    RO_CELL,          // an indicator square on a screen: blinks
+    RO_METER          // a segment slot of a level meter on a screen
+};
+
+// One animated texel: where it is, and what decides what it shows.
 typedef struct {
     uint16_t  x, y;
-    byte      fx, fy;     // offset from the readout's top-left texel
+    byte      kind;       // RO_*
+    byte      fx, fy;     // readout: offset from its top-left texel; meter: fx = slot
     byte      rw;         // readout width
-    byte      pairx;      // cells two texels wide
+    byte      pairx;      // readout cells two texels wide
+    byte      dx, dy;     // meter: offset within the slot
+    uint16_t  elem;       // cell or meter: which element
 } ro_texel_t;
+
+// An indicator square or a level meter found on a screen (ro_find_elements).
+typedef struct {
+    byte      kind;          // RO_CELL or RO_METER
+    byte      nslots;        // meter: slots, numbered from the lit end
+    uint32_t  seed;
+    uint16_t  litx, lity;    // meter: a lit segment's top-left texel
+    uint16_t  unlitx, unlity;  // meter: an unlit one's
+    byte      dimunlit;      // meter: no unlit segment painted; dim the lit one
+} ro_elem_t;
 
 typedef struct {
     int          texnum;
@@ -78,6 +98,8 @@ typedef struct {
     byte       * index;     // the original texels, w*h palette indices
     int          ntexels;
     ro_texel_t * texels;
+    int          nelems;
+    ro_elem_t  * elems;
     byte       * shown;     // what each readout texel shows now
     // OpenGL: the block geometry the last write used, and whether a change
     // is waiting to be uploaded.
@@ -111,6 +133,57 @@ static uint32_t ro_hash( uint32_t a, uint32_t b, uint32_t c, uint32_t d )
     return h;
 }
 
+// An indicator's off look: its own colour, darker, from the light tables.
+#define RO_DIM_LEVEL  22   // of the 32 light levels; 0 is full bright
+
+static byte ro_dim( byte idx )
+{
+    return reg_colormaps ? reg_colormaps[ LIGHTTABLE( RO_DIM_LEVEL ) + idx ] : idx;
+}
+
+// A screen indicator is on about three quarters of the time, each holding
+// 1 to 5 seconds before it may change.
+static boolean ro_cell_on( ro_elem_t * e, tic_t now )
+{
+    uint32_t hold = 35 + e->seed % 140;
+    uint32_t step = ( now + (e->seed >> 8) % hold ) / hold;
+    return ( ro_hash( e->seed, step, 0xce11, 0 ) % 8 ) < 6;
+}
+
+// A level meter's level, 0..nslots, a new one every few tenths of a second,
+// leaning toward the middle so it bounces rather than flickers end to end.
+static int ro_meter_level( ro_elem_t * e, tic_t now )
+{
+    uint32_t step = now / 10;
+    uint32_t a = ro_hash( e->seed, step, 0x3e7e, 1 ) % (e->nslots + 1);
+    uint32_t b = ro_hash( e->seed, step, 0x3e7e, 2 ) % (e->nslots + 1);
+    return (int)( (a + b + 1) / 2 );
+}
+
+static byte ro_texel_now( ro_tex_t * r, ro_texel_t * t, tic_t now );
+
+// The palette index any animated texel should show at time `now`.
+static byte ro_want( ro_tex_t * r, ro_texel_t * t, tic_t now )
+{
+    ro_elem_t * e;
+    switch( t->kind )
+    {
+     case RO_CELL:
+        e = &r->elems[ t->elem ];
+        return ro_cell_on( e, now )? r->index[ t->y * r->w + t->x ]
+                                   : ro_dim( r->index[ t->y * r->w + t->x ] );
+     case RO_METER:
+        e = &r->elems[ t->elem ];
+        if( t->fx < ro_meter_level( e, now ) )
+            return r->index[ (e->lity + t->dy) * r->w + e->litx + t->dx ];
+        if( e->dimunlit )
+            return ro_dim( r->index[ (e->lity + t->dy) * r->w + e->litx + t->dx ] );
+        return r->index[ (e->unlity + t->dy) * r->w + e->unlitx + t->dx ];
+     default:
+        return ro_texel_now( r, t, now );
+    }
+}
+
 // The palette index readout texel t should show at time `now`.
 static byte ro_texel_now( ro_tex_t * r, ro_texel_t * t, tic_t now )
 {
@@ -139,6 +212,7 @@ static void ro_free( void )
         free( ro_tex[i].index );
         free( ro_tex[i].texels );
         free( ro_tex[i].shown );
+        free( ro_tex[i].elems );
     }
     free( ro_tex );
     ro_tex = NULL;
@@ -194,6 +268,285 @@ static byte * ro_composite( int texnum )
     return pairs;
 }
 
+// ---- screen elements
+//
+// DERP's finder looks for readouts only outside screens; COMPSTA1/2 draw
+// every light they have inside one (indicator squares, a level meter, status
+// dots), so nothing on them moved.  This finds, inside the screens: blobs
+// of one hue (doom_readout_hue), 2-8 texels across, three-quarters filled,
+// grouped by hue, size and exact pixel shape.  Three or more identical ones
+// are indicators -- letters are neither that solid nor repeated that
+// exactly.  A group stacked in one column at a regular step, with dimmer
+// segments carrying on beyond it, is a level meter instead.
+
+typedef struct {
+    int       x0, y0, w, h, count, hue;
+    uint64_t  mask;     // the blob's texels within its box, w*h <= 64
+    int       group;
+} ro_comp_t;
+
+typedef struct {
+    ro_texel_t * texels;  int ntexels, cap;
+    ro_elem_t  * elems;   int nelems, ecap;
+} ro_build_t;
+
+static ro_texel_t * ro_add_texel( ro_build_t * b )
+{
+    if( b->ntexels == b->cap )
+    {
+        int cap = b->cap ? b->cap * 2 : 256;
+        ro_texel_t * t = realloc( b->texels, cap * sizeof(ro_texel_t) );
+        if( t == NULL )  return NULL;
+        b->texels = t;
+        b->cap = cap;
+    }
+    memset( &b->texels[ b->ntexels ], 0, sizeof(ro_texel_t) );
+    return &b->texels[ b->ntexels++ ];
+}
+
+static int ro_add_elem( ro_build_t * b, byte kind, uint32_t seed )
+{
+    if( b->nelems >= 0xffff )
+        return -1;
+    if( b->nelems == b->ecap )
+    {
+        int cap = b->ecap ? b->ecap * 2 : 32;
+        ro_elem_t * e = realloc( b->elems, cap * sizeof(ro_elem_t) );
+        if( e == NULL )  return -1;
+        b->elems = e;
+        b->ecap = cap;
+    }
+    memset( &b->elems[ b->nelems ], 0, sizeof(ro_elem_t) );
+    b->elems[ b->nelems ].kind = kind;
+    b->elems[ b->nelems ].seed = seed;
+    return b->nelems++;
+}
+
+static int ro_bright( const byte * palette, byte idx )
+{
+    const byte * c = palette + idx * 3;
+    int hi = c[0] > c[1] ? c[0] : c[1];
+    return hi > c[2] ? hi : c[2];
+}
+
+// Whether a slot-sized box at x,y lies on a screen and has something
+// painted in it (an unlit meter segment is dim, not black).
+static boolean ro_slot_ok( int x, int y, int sw, int sh, int w, int h,
+                           const byte * pairs, const byte * palette, const byte * glass )
+{
+    int dx, dy, ink = 0;
+    if( x < 0 || y < 0 || x + sw > w || y + sh > h )
+        return false;
+    for( dy = 0; dy < sh; dy++ )
+        for( dx = 0; dx < sw; dx++ )
+        {
+            size_t i = (size_t)(y + dy) * w + x + dx;
+            if( glass[i] == DOOM_GLASS_NONE || ! pairs[ i*2 + 1 ] )
+                return false;
+            if( ro_bright( palette, pairs[ i*2 ] ) >= 40 )
+                ink++;
+        }
+    return ink * 2 >= sw * sh;
+}
+
+static void ro_find_elements( int texnum, int w, int h, const byte * pairs,
+                              const byte * palette, const byte * glass, ro_build_t * b )
+{
+    size_t n = (size_t) w * h, i;
+    byte * hue = calloc( n, 1 ), * seen = calloc( n, 1 );
+    int * stack = malloc( n * sizeof(int) );
+    ro_comp_t * comps = NULL;
+    int ncomps = 0, capc = 0, c, ngroups = 0;
+
+    if( hue == NULL || seen == NULL || stack == NULL )
+        goto done;
+    for( i = 0; i < n; i++ )
+        if( pairs[ i*2 + 1 ] && glass[i] != DOOM_GLASS_NONE )
+            hue[i] = (byte) doom_readout_hue( palette + pairs[ i*2 ] * 3 );
+
+    // The blobs.
+    for( i = 0; i < n; i++ )
+    {
+        int top = 0, x0 = w, y0 = h, x1 = -1, y1 = -1, count = 0, bw, bh, k;
+        if( ! hue[i] || seen[i] )  continue;
+        stack[top++] = (int) i;
+        seen[i] = 1;
+        while( top )
+        {
+            int q = stack[--top], x = q % w, y = q / w;
+            int nx[4] = { x + 1, x - 1, x, x }, ny[4] = { y, y, y + 1, y - 1 };
+            count++;
+            if( x < x0 )  x0 = x;
+            if( x > x1 )  x1 = x;
+            if( y < y0 )  y0 = y;
+            if( y > y1 )  y1 = y;
+            for( k = 0; k < 4; k++ )
+            {
+                size_t m;
+                if( nx[k] < 0 || ny[k] < 0 || nx[k] >= w || ny[k] >= h )  continue;
+                m = (size_t) ny[k] * w + nx[k];
+                if( hue[m] == hue[i] && ! seen[m] )  { seen[m] = 1;  stack[top++] = (int) m; }
+            }
+        }
+        bw = x1 - x0 + 1;
+        bh = y1 - y0 + 1;
+        // Solid: 85% filled.  Indicator squares are 88-100%; the blocky
+        // screen font's letters are 80% at most, and a test at 75% marked
+        // whole words on COMPSTA1 as indicators.
+        if( bw < 2 || bw > 8 || bh < 1 || bh > 8 || count < 4 || count * 20 < bw * bh * 17 )
+            continue;
+        if( ncomps == capc )
+        {
+            ro_comp_t * g;
+            capc = capc ? capc * 2 : 64;
+            g = realloc( comps, capc * sizeof(ro_comp_t) );
+            if( g == NULL )  goto done;
+            comps = g;
+        }
+        {
+            ro_comp_t * cp = &comps[ ncomps++ ];
+            int dx, dy;
+            cp->x0 = x0;  cp->y0 = y0;  cp->w = bw;  cp->h = bh;
+            cp->count = count;  cp->hue = hue[i];  cp->group = -1;  cp->mask = 0;
+            for( dy = 0; dy < bh; dy++ )
+                for( dx = 0; dx < bw; dx++ )
+                    if( hue[ (size_t)(y0 + dy) * w + x0 + dx ] == hue[i] )
+                        cp->mask |= (uint64_t) 1 << (dy * bw + dx);
+        }
+    }
+
+    // Identical blobs, in groups of three or more.
+    for( c = 0; c < ncomps; c++ )
+    {
+        int d, members = 0;
+        if( comps[c].group >= 0 )  continue;
+        for( d = c; d < ncomps; d++ )
+            if( comps[d].group < 0 && comps[d].hue == comps[c].hue && comps[d].w == comps[c].w
+                && comps[d].h == comps[c].h && comps[d].mask == comps[c].mask )
+            {
+                comps[d].group = ngroups;
+                members++;
+            }
+        if( members < 3 )
+        {
+            for( d = c; d < ncomps; d++ )
+                if( comps[d].group == ngroups )  comps[d].group = -2;   // not a group
+            continue;
+        }
+
+        {
+            // A meter: members in one column at a regular step.  Collect the
+            // column of the first member, sorted by y.
+            int col[16], ncol = 0, step = 0, regular = 1, k, gid = ngroups;
+            int sw = comps[c].w, sh = comps[c].h;
+            for( d = c; d < ncomps && ncol < 16; d++ )
+                if( comps[d].group == gid && comps[d].x0 == comps[c].x0 )
+                    col[ncol++] = d;
+            for( k = 1; k < ncol; k++ )   // insertion sort by y
+            {
+                int v = col[k], j = k - 1;
+                while( j >= 0 && comps[ col[j] ].y0 > comps[v].y0 )  { col[j+1] = col[j];  j--; }
+                col[j+1] = v;
+            }
+            if( ncol >= 3 )
+            {
+                step = comps[ col[1] ].y0 - comps[ col[0] ].y0;
+                for( k = 2; k < ncol; k++ )
+                    if( comps[ col[k] ].y0 - comps[ col[k-1] ].y0 != step )  regular = 0;
+            }
+            // Segments at least two texels tall: a column of one-texel
+            // lines is a text list, not a meter.
+            if( sh >= 2 && ncol >= 3 && regular && step >= sh && step <= sh + 3 )
+            {
+                // Carry on above and below for dimmer segments.
+                int up = 0, down = 0, y;
+                for( y = comps[ col[0] ].y0 - step;
+                     up < 16 && ro_slot_ok( comps[c].x0, y, sw, sh, w, h, pairs, palette, glass );
+                     y -= step )
+                    up++;
+                for( y = comps[ col[ncol-1] ].y0 + step;
+                     down < 16 && ro_slot_ok( comps[c].x0, y, sw, sh, w, h, pairs, palette, glass );
+                     y += step )
+                    down++;
+                // Four or more segments.  With no dim segments painted beyond
+                // the lit ones (the column of red squares on PLANET1) the
+                // unlit look is the lit one, darker.
+                if( ncol + up + down >= 4 && ncol + up + down <= 32 )
+                {
+                    // Fills from the end the lit segments are at.
+                    int fromtop = ( up == 0 );   // lit at the top, dim below
+                    int total = ncol + up + down, s2;
+                    int firsty = comps[ col[0] ].y0 - up * step;
+                    int e = ro_add_elem( b, RO_METER, ro_hash( texnum, comps[c].x0, comps[c].y0, 0x3e7e ) );
+                    if( e < 0 )  goto done;
+                    b->elems[e].nslots = (byte) total;
+                    b->elems[e].litx = comps[c].x0;
+                    b->elems[e].lity = fromtop ? comps[ col[0] ].y0 : comps[ col[ncol-1] ].y0;
+                    b->elems[e].unlitx = comps[c].x0;
+                    b->elems[e].unlity = fromtop ? comps[ col[ncol-1] ].y0 + down * step
+                                                 : firsty;
+                    b->elems[e].dimunlit = ( up == 0 && down == 0 );
+                    for( s2 = 0; s2 < total; s2++ )
+                    {
+                        int sy = firsty + s2 * step, dx, dy;
+                        int slot = fromtop ? s2 : total - 1 - s2;   // 0 at the lit end
+                        for( dy = 0; dy < sh; dy++ )
+                            for( dx = 0; dx < sw; dx++ )
+                            {
+                                ro_texel_t * t = ro_add_texel( b );
+                                if( t == NULL )  goto done;
+                                t->x = comps[c].x0 + dx;
+                                t->y = sy + dy;
+                                t->kind = RO_METER;
+                                t->fx = (byte) slot;
+                                t->dx = dx;  t->dy = dy;
+                                t->elem = (uint16_t) e;
+                            }
+                    }
+                    for( k = 0; k < ncol; k++ )
+                        comps[ col[k] ].group = -3;   // used by the meter
+                }
+            }
+        }
+
+        // The rest of the group blink, each on its own -- if they are
+        // squares: within a texel of square and two or more tall.  Bars of a
+        // graph and dashes in a text list repeat exactly too.
+        for( d = c; d < ncomps; d++ )
+        {
+            int dx, dy, e;
+            if( comps[d].group != ngroups )  continue;
+            if( comps[d].h < 2 || comps[d].w - comps[d].h > 1 || comps[d].h - comps[d].w > 1 )
+                continue;
+            // And completely solid.  The screen font's letters are 3x3
+            // blocks with one texel out (8 of 9); the indicator squares are
+            // all 9 (COMPSTA1's blue ones).  Only that tells them apart.
+            if( comps[d].count != comps[d].w * comps[d].h )
+                continue;
+            e = ro_add_elem( b, RO_CELL, ro_hash( texnum, comps[d].x0, comps[d].y0, 0xce11 ) );
+            if( e < 0 )  goto done;
+            for( dy = 0; dy < comps[d].h; dy++ )
+                for( dx = 0; dx < comps[d].w; dx++ )
+                {
+                    ro_texel_t * t;
+                    if( ! (comps[d].mask & ((uint64_t) 1 << (dy * comps[d].w + dx))) )  continue;
+                    t = ro_add_texel( b );
+                    if( t == NULL )  goto done;
+                    t->x = comps[d].x0 + dx;
+                    t->y = comps[d].y0 + dy;
+                    t->kind = RO_CELL;
+                    t->elem = (uint16_t) e;
+                }
+        }
+        ngroups++;
+    }
+done:
+    free( hue );
+    free( seen );
+    free( stack );
+    free( comps );
+}
+
 static void ro_find( int texnum, const byte * palette )
 {
     texture_t * tex;
@@ -201,6 +554,9 @@ static void ro_find( int texnum, const byte * palette )
     byte * pairs, * glass, * frame;
     int w, h, i, n, nt;
     ro_tex_t * r;
+    ro_build_t eb;
+
+    memset( &eb, 0, sizeof(eb) );
 
     if( texnum <= 0 || texnum >= numtextures )
         return;
@@ -225,15 +581,15 @@ static void ro_find( int texnum, const byte * palette )
     if( pairs == NULL || glass == NULL || frame == NULL )
         goto done;
     doom_screen_glass( w, h, pairs, palette, glass, NULL );
-    if( doom_screen_readouts( w, h, pairs, palette, glass, frame ) <= 0 )
-        goto done;
+    doom_screen_readouts( w, h, pairs, palette, glass, frame );
+    ro_find_elements( texnum, w, h, pairs, palette, glass, &eb );
 
     n = w * h;
     nt = 0;
     for( i = 0; i < n; i++ )
         if( frame[ i*4 + 2 ] )   // a readout texel has its readout's width
             nt++;
-    if( nt == 0 )
+    if( nt + eb.ntexels == 0 )
         goto done;
 
     {
@@ -248,8 +604,8 @@ static void ro_find( int texnum, const byte * palette )
     r->w = w;
     r->h = h;
     r->index = malloc( n );
-    r->texels = malloc( nt * sizeof(ro_texel_t) );
-    r->shown = malloc( nt );
+    r->texels = malloc( (nt + eb.ntexels) * sizeof(ro_texel_t) );
+    r->shown = malloc( nt + eb.ntexels );
     if( r->index == NULL || r->texels == NULL || r->shown == NULL )
     {
         free( r->index );  free( r->texels );  free( r->shown );
@@ -270,14 +626,28 @@ static void ro_find( int texnum, const byte * palette )
         t->fy = f[1];
         t->rw = f[2] & 0x7f;
         t->pairx = ( f[2] & DOOM_READOUT_PAIR )? 1 : 0;
+        t->kind = RO_READOUT;
+        t->dx = t->dy = 0;
+        t->elem = 0;
         r->shown[ r->ntexels ] = r->index[i];   // the art, to start with
         r->ntexels++;
     }
+    for( i = 0; i < eb.ntexels; i++ )
+    {
+        r->texels[ r->ntexels ] = eb.texels[i];
+        r->shown[ r->ntexels ] = r->index[ eb.texels[i].y * w + eb.texels[i].x ];
+        r->ntexels++;
+    }
+    r->nelems = eb.nelems;
+    r->elems = eb.elems;     // ownership moves to the texture
+    eb.elems = NULL;
     ro_num++;
 done:
     free( pairs );
     free( glass );
     free( frame );
+    free( eb.texels );
+    free( eb.elems );
 }
 
 // Every readout on the level's walls, once per level.
@@ -324,7 +694,7 @@ static void ro_apply_soft( ro_tex_t * r, boolean restore, tic_t now )
     for( i = 0; i < r->ntexels; i++ )
     {
         ro_texel_t * t = &r->texels[i];
-        byte want = restore ? r->index[ t->y * r->w + t->x ] : ro_texel_now( r, t, now );
+        byte want = restore ? r->index[ t->y * r->w + t->x ] : ro_want( r, t, now );
         byte * px = texren->cache + texren->columnofs[ t->x ] + texren->pixel_data_offset + t->y;
         if( *px != want )
             *px = want;
@@ -343,7 +713,7 @@ static void ro_apply_gl( ro_tex_t * r, boolean restore, tic_t now )
     for( i = 0; i < r->ntexels; i++ )
     {
         byte want = restore ? r->index[ r->texels[i].y * r->w + r->texels[i].x ]
-                            : ro_texel_now( r, &r->texels[i], now );
+                            : ro_want( r, &r->texels[i], now );
         if( r->shown[i] != want )
         {
             r->shown[i] = want;

@@ -91,6 +91,17 @@ static boolean CV_Var_Command ( byte cfg );
 static char *  CV_StringValue (const char * var_name);
 static consvar_t * consvar_vars;       // list of registered console variables
 
+// [Arcade] Whether p is a registered console variable.  For the menu's
+// greyed rows, whose status no longer says IT_CVAR.
+boolean CV_Is_Registered( const void * p )
+{
+    consvar_t * cvar;
+    for( cvar = consvar_vars; cvar; cvar = cvar->next )
+        if( (const void *) cvar == p )
+            return true;
+    return false;
+}
+
 #define COM_TOKEN_MAX   1024
 static char    com_token[COM_TOKEN_MAX];
 static const char *  COM_Parse (const char * data, boolean script);

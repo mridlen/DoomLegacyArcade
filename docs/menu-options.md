@@ -311,7 +311,7 @@ Operator only. The rows marked OpenGL are greyed out in software mode, with a no
 | **Glowing Eyes** ★ | OpenGL. Living monsters' eyes glow (stock Doom and Doom II sprites only). |
 | **Lamp Light** ★ | OpenGL. Those lamps, lit switches included, light the walls, floors, monsters, items and your weapon round them in their own colour (red panels red, white strips white), through open doorways but not closed doors. |
 | **Liquid Light Ripples** ★ | OpenGL. Wavy light from a pool moves across the walls standing in it, in the liquid's colour, made from the liquid's own animation. Water too. |
-| **Busy Computer Panels** ★ | Both renderers. The LED readouts on computer walls (the green grids on COMPUTE2, and the like) change now and then, cell by cell, so the consoles look busy. |
+| **Busy Computer Panels** ★ | Both renderers. The LED readouts on computer walls (the green grids on COMPUTE2, and the like) change now and then, cell by cell, so the consoles look busy; the lights on the screens themselves blink (COMPSTA1's blue squares) and their level meters rise and fall (COMPSTA1's red gauge). |
 
 → [`arcade/derp-glow.md`](arcade/derp-glow.md)
 
