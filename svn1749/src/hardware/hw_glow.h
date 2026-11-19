@@ -53,4 +53,9 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t x, fixed_t y, fixed_t z, struct sector_s
 // the caller's mipmap.  False when the texture format is not RGBA.
 boolean HWR_Glow_Composite_Texture( int texnum, Mipmap_t * mipmap );
 
+// hw_cache.c, for r_readout.c: a wall texture's base texels to change in
+// place, and the call that has them uploaded again.
+RGBA_t * HWR_Texture_Texels( int texnum, int * bw, int * bh, boolean * fresh );
+void     HWR_Texture_Reupload( int texnum );
+
 #endif

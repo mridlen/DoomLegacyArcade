@@ -98,6 +98,7 @@
 #include "r_sky.h"
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
+#include "r_readout.h"  // [Arcade]
 #endif
 #include "st_stuff.h"
 #include "p_local.h"
@@ -2136,5 +2137,6 @@ void R_Register_EngineStuff (void)
     // [Arcade] How many cores the software renderer may use.  Registered
     // here so config.cfg can carry it like any other video setting.
     CV_RegisterVar( &cv_render_threads );
+    R_Readout_Register();  // [Arcade] Busy Computer Panels
 #endif
 }
