@@ -670,23 +670,27 @@ static glow_entry_t * glow_ripple_entry( lumpnum_t lump )
     return e;
 }
 
-// The ripples on a wall standing in a liquid.  Returns whether drawn.
-static boolean glow_ripple_wall( vxtx3d_t * vxtx )
+// The ripples from one liquid plane: up a wall from a liquid floor
+// (down = 0), or down it from a liquid ceiling (down = 1), as the liquid's
+// glow does (glow_liquid_band).  Returns whether drawn.
+static boolean glow_ripple_band( vxtx3d_t * vxtx, short pic, fixed_t height, int down )
 {
-    sector_t * sec = gr_frontsector;
     glow_entry_t * e;
     FSurfaceInfo_t Surf;
     vxtx3d_t v[4];
-    float floor, wx, wz, len, ux, uz, drift;
+    float plane, wx, wz, len, ux, uz, drift;
     int i;
 
-    if( sec == NULL || sec->floorpic < 0 || (unsigned) sec->floorpic >= numlevelflats )
+    if( pic < 0 || (unsigned) pic >= numlevelflats )
         return false;
-    e = glow_ripple_entry( levelflats[ sec->floorpic ].lumpnum );
+    e = glow_ripple_entry( levelflats[ pic ].lumpnum );
     if( e == NULL )
         return false;
-    floor = FIXED_TO_FLOAT( sec->floorheight );
-    if( vxtx[0].y > floor + RIPPLE_HEIGHT && vxtx[1].y > floor + RIPPLE_HEIGHT )
+    plane = FIXED_TO_FLOAT( height );
+    // Wall quads are 0,1 along the bottom and 2,3 along the top.
+    if( ! down && vxtx[0].y > plane + RIPPLE_HEIGHT && vxtx[1].y > plane + RIPPLE_HEIGHT )
+        return false;
+    if( down && vxtx[2].y < plane - RIPPLE_HEIGHT && vxtx[3].y < plane - RIPPLE_HEIGHT )
         return false;
     wx = vxtx[1].x - vxtx[0].x;
     wz = vxtx[1].z - vxtx[0].z;
@@ -698,9 +702,10 @@ static boolean glow_ripple_wall( vxtx3d_t * vxtx )
     for( i = 0; i < 4; i++ )
     {
         // Along the wall in map units from the origin, so the pattern runs
-        // on unbroken from one wall piece to the next in line.
+        // on unbroken from one wall piece to the next in line.  Up the
+        // texture is away from the liquid, whichever way that is.
         float a = vxtx[i].x * ux + vxtx[i].z * uz;
-        float t = ( vxtx[i].y - floor ) / RIPPLE_HEIGHT;
+        float t = ( down ? plane - vxtx[i].y : vxtx[i].y - plane ) / RIPPLE_HEIGHT;
         v[i] = vxtx[i];
         v[i].sow = a / 64.0f + drift;
         v[i].tow = ( t < 0.0f )? 0.0f : t;
@@ -712,6 +717,20 @@ static boolean glow_ripple_wall( vxtx3d_t * vxtx )
     HWD.pfnSetTexture( &e->mip );
     HWD.pfnDrawPolygon( &Surf, v, 4, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
     return true;
+}
+
+// The ripples on a wall in a sector with a liquid floor or ceiling (E1M8's
+// nukage ceiling had none: only floors were looked at).
+static boolean glow_ripple_wall( vxtx3d_t * vxtx )
+{
+    sector_t * sec = gr_frontsector;
+    boolean drew;
+    if( sec == NULL )
+        return false;
+    drew = glow_ripple_band( vxtx, sec->floorpic, sec->floorheight, 0 );
+    if( glow_ripple_band( vxtx, sec->ceilingpic, sec->ceilingheight, 1 ) )
+        drew = true;
+    return drew;
 }
 
 // ---- lamp light

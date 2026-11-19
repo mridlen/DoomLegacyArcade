@@ -103,6 +103,11 @@ placed by the wall's position along its own direction from the map origin, so it
 across wall pieces in line. Added in the liquid's colour (`glow_flat_entry`'s for nukage, slime and
 lava; the flat's average for water, `FWATER*`/`SWATER*`) at `RIPPLE_ALPHA`, `PF_NoTint`.
 
+A liquid **ceiling** ripples down the walls too (`glow_ripple_band` with `down`, the texture's
+row 0 at the ceiling), as its glow does. The ripples first looked only at floors, and E1M8's
+nukage ceiling had none while the glow below it worked -- when a pass reads a sector's floor, ask
+whether its ceiling needs the same.
+
 ## Busy Computer Panels (`r_readout.c`)
 
 The LED readouts on computer textures change now and then, cell by cell. DERP's finder is used
