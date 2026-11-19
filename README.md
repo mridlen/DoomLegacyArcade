@@ -135,13 +135,15 @@ to get you banned.
 - **OpenGL screen shaders:** CRT (zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom), FXAA, Software Look
   (snaps colours to Doom's palette), VHS, Greyscale, Sepia, Night Vision and Game Boy. Off by
   default. Under **Options → Video Options → OpenGL 3D Card Options → Shaders**.
-- **DERP glow effects (OpenGL):** Glowing Lights (lamps, light strips, computer panels and exit
-  signs stay lit in dark rooms, and blink with a blinking room), Glowing Liquids (nukage, slime and
-  lava pools glow and throw their colour up the walls standing in them), Glowing Eyes (monsters'
-  eyes glow in the dark) and Lamp Light (lamps, panels and lit switches light the room, the
-  monsters and your weapon round them in their own colour). Ideas and data from [DERP](https://github.com/robongrui/derp). Drawing only, so demos,
-  netgames and scores are unaffected. Each is Off by default, under **Options → Video Options →
-  OpenGL 3D Card Options → DERP**.
+- **DERP effects:** Glowing Lights (lamps, light strips, computer panels and exit signs stay lit
+  in dark rooms, and blink with a blinking room), Glowing Liquids (nukage, slime and lava pools
+  glow and throw their colour up the walls standing in them), Glowing Eyes (monsters' eyes glow in
+  the dark), Lamp Light (lamps, panels and lit switches light the room, the monsters and your
+  weapon round them in their own colour) and Liquid Light Ripples (wavy light from a pool on the
+  walls in it), all OpenGL; and Busy Computer Panels (the LED readouts on computer walls change
+  now and then), in both renderers. Ideas and data from [DERP](https://github.com/robongrui/derp).
+  Drawing only, so demos, netgames and scores are unaffected. Each is Off by default, under
+  **Options → Effects Options → Next → DERP**.
 - **A usable video mode list** that pages, sorts, removes duplicates and filters by aspect ratio.
 - **Menu switches** under **Options → Arcade Options → Disable/Enable Menu Options**: Cheats Menu,
   Quit Menu, Multiplayer Menu, Game Options and Enable No Monsters.
@@ -1325,9 +1327,10 @@ cgwg, Themaister and DOLLS, all GPL v2 or later, and crt-lottes by Timothy Lotte
 The other shaders were written for this project; the FXAA one follows Timothy Lottes' published
 method.
 
-The OpenGL glow effects (**DERP >>**) are borrowed from **DERP, the DOOM Engine Remaster Project**
+The glow, lamp-light, ripple and busy-panel effects (**DERP >>**) are borrowed from **DERP, the DOOM Engine Remaster Project**
 (<https://github.com/robongrui/derp>), GPLv3. The list of glowing artwork and its per-pixel test
 ([`svn1749/src/derp/emissive.h`](svn1749/src/derp/emissive.h)) and the hand-picked monster eye pixels
-([`svn1749/src/derp/sprite_eyes_stock.h`](svn1749/src/derp/sprite_eyes_stock.h)) are DERP's own
+([`svn1749/src/derp/sprite_eyes_stock.h`](svn1749/src/derp/sprite_eyes_stock.h)) and the finder for
+the LED readouts on computer walls ([`svn1749/src/derp/screen_glass.h`](svn1749/src/derp/screen_glass.h)) are DERP's own
 work, copied with its notice; see [`svn1749/src/derp/NOTICE`](svn1749/src/derp/NOTICE). Thanks to
 DERP's author for publishing them.

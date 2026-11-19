@@ -27,6 +27,7 @@ extern consvar_t cv_grglow_lights;
 extern consvar_t cv_grglow_liquids;
 extern consvar_t cv_grglow_eyes;
 extern consvar_t cv_grglow_lamplight;
+extern consvar_t cv_grglow_ripples;
 
 // The texture or flat the cache last handed the driver (hw_cache.c), so a
 // glow pass can put it back when it is done with its own.

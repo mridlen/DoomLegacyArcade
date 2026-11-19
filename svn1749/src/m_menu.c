@@ -222,6 +222,7 @@
 #include "p_saveg.h"
   // savegame header read
 
+#include "r_readout.h"  // [Arcade] Busy Computer Panels
 #ifdef HWRENDER
 #include "hardware/hw_main.h"
 #include "hardware/hw_glow.h"  // [Arcade] DERP glow cvars
@@ -6812,6 +6813,8 @@ menu_t  MenuOptionsDef =
 //                        Effects OPTIONS MENU
 //===========================================================================
 
+menu_t  DerpDef;   // [Arcade] DERP effects, below
+
 menuitem_t EffectsOption1Menu[]=
 {
     {IT_SUBMENU | IT_WHITESTRING, 0, "Light Options >>"  , &LightingDef  , 'l'},
@@ -6843,7 +6846,66 @@ menuitem_t EffectsOption2Menu[]=
     {IT_STRING | IT_CVAR,0, "Width Clip"      , &cv_corr_clip_width , 0},
     {IT_STRING | IT_CVAR,0, "Weapon Flash Fix", &cv_weapon_flash_fix, 0},  // [Arcade]
     {IT_STRING | IT_CVAR,0, "Super Gore"      , &cv_supergore     , 0},  // [Arcade] 5x wall splats
+    // [Arcade] Effects borrowed from DERP, docs/arcade/derp-glow.md.  Here,
+    // not under OpenGL 3D Card Options, since Busy Computer Panels works in
+    // both renderers and that page cannot be opened in software mode.
+    {IT_SUBMENU | IT_WHITESTRING, 0, "DERP >>"         , &DerpDef          , 0},
 };
+
+// [Arcade] DERP effects.  Drawing only: none of them touches the game, so
+// they are safe in demos, netgames and ranked play.  The OpenGL rows are
+// greyed out in software mode by M_Draw_DerpMenu, and absent from a build
+// without the hardware renderer.  No IT_YOFFSET, so rows can drop out.
+menuitem_t DerpMenu[]=
+{
+#ifdef HWRENDER
+    {IT_STRING | IT_CVAR,0, "Glowing Lights"  , &cv_grglow_lights    , 0},
+    {IT_STRING | IT_CVAR,0, "Glowing Liquids" , &cv_grglow_liquids   , 0},
+    {IT_STRING | IT_CVAR,0, "Glowing Eyes"    , &cv_grglow_eyes      , 0},
+    {IT_STRING | IT_CVAR,0, "Lamp Light"      , &cv_grglow_lamplight , 0},
+    {IT_STRING | IT_CVAR,0, "Liquid Light Ripples", &cv_grglow_ripples, 0},
+#endif
+    {IT_STRING | IT_CVAR,0, "Busy Computer Panels", &cv_readouts     , 0},
+};
+
+static void M_Draw_DerpMenu( void );
+
+menu_t  DerpDef =
+{
+    "M_OPTTTL",
+    "Effects",
+    DerpMenu,
+    M_Draw_DerpMenu,
+    NULL,
+    sizeof(DerpMenu)/sizeof(menuitem_t),
+    60,40,
+    0
+};
+
+// The OpenGL-only rows greyed out in software mode, as Keep aspect is in
+// OpenGL (M_Draw_VideoOptions): set from the drawmode every frame, so it
+// follows a drawmode change.  Then a credit, and in software why the grey.
+static void M_Draw_DerpMenu( void )
+{
+    const int num = sizeof(DerpMenu)/sizeof(menuitem_t);
+    int i, y;
+
+    for( i = 0; i < num; i++ )
+    {
+        if( DerpMenu[i].itemaction == &cv_readouts )
+            continue;   // both renderers
+        DerpMenu[i].status = ( rendermode == render_soft )? (IT_STRING | IT_DISABLED)
+                                                          : (IT_STRING | IT_CVAR);
+    }
+    M_DrawGenericMenu();
+    y = DerpDef.y + num * STRINGHEIGHT + 10;
+    V_DrawString( DerpDef.x, y, V_WHITEMAP, "From DERP, the DOOM Engine" );
+    V_DrawString( DerpDef.x, y + 10, V_WHITEMAP, "Remaster Project" );
+#ifdef HWRENDER
+    if( rendermode == render_soft )
+        V_DrawString( DerpDef.x, y + 25, 0, "Grey rows need OpenGL" );  // 0 is red
+#endif
+}
 
 
 menu_t  EffectsOption1Def =
@@ -13800,8 +13862,6 @@ static void M_HandleFogColor (int choice);
 
 menu_t OGL_LightingDef, OGL_FogDef, OGL_ColorDef, OGL_DevDef;
 menu_t OGL_ShaderDef;  // [Arcade]
-menu_t OGL_DerpDef;    // [Arcade] DERP glow effects, hardware/hw_glow.c
-static void M_OGL_DrawDerpMenu(void);  // [Arcade]
 
 #define QUALITY_ITEM   2
 menuitem_t OpenGLOptionsMenu[]=
@@ -13818,8 +13878,6 @@ menuitem_t OpenGLOptionsMenu[]=
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Development >>"    , &OGL_DevDef        , 95},
     // [Arcade] Post-process shaders, docs/arcade/shaders.md
     {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "Shaders >>"        , &OGL_ShaderDef     , 105},
-    // [Arcade] Effects borrowed from DERP, docs/arcade/derp-glow.md
-    {IT_SUBMENU | IT_WHITESTRING | IT_YOFFSET, 0, "DERP >>"           , &OGL_DerpDef       , 115},
 };
 
 menuitem_t OGL_LightingMenu[]=
@@ -13852,16 +13910,6 @@ menuitem_t OGL_ColorMenu[]=
 menuitem_t OGL_ShaderMenu[]=
 {
     {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Shader"          , &cv_grshader           ,  0},
-};
-
-// [Arcade] DERP glow effects.  Drawing only: none of them touches the game,
-// so they are safe in demos, netgames and ranked play.
-menuitem_t OGL_DerpMenu[]=
-{
-    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Lights"  , &cv_grglow_lights      ,  0},
-    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Liquids" , &cv_grglow_liquids     , 10},
-    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Glowing Eyes"    , &cv_grglow_eyes        , 20},
-    {IT_STRING | IT_CVAR | IT_YOFFSET, 0, "Lamp Light"      , &cv_grglow_lamplight   , 30},
 };
 
 menuitem_t OGL_DevMenu[]=
@@ -13930,18 +13978,6 @@ menu_t  OGL_ShaderDef =
     M_OGL_DrawShaderMenu,
     NULL,
     sizeof(OGL_ShaderMenu)/sizeof(menuitem_t),
-    60,40,
-    0,
-};
-
-menu_t  OGL_DerpDef =
-{
-    "M_OPTTTL",
-    "OPTIONS",
-    OGL_DerpMenu,
-    M_OGL_DrawDerpMenu,
-    NULL,
-    sizeof(OGL_DerpMenu)/sizeof(menuitem_t),
     60,40,
     0,
 };
@@ -14032,21 +14068,6 @@ void M_OGL_DrawShaderMenu(void)
         msg = "Shader failed to build";
     if( msg )
         V_DrawString( OGL_ShaderDef.x, OGL_ShaderDef.y + 20, 0, msg );  // 0 is red
-}
-
-
-//======================================================================
-// [Arcade] M_OGL_DrawDerpMenu()
-//======================================================================
-// The rows, and a line crediting where the effects come from.
-static
-void M_OGL_DrawDerpMenu(void)
-{
-    M_DrawGenericMenu();
-    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 55, V_WHITEMAP,
-                  "From DERP, the DOOM Engine" );
-    V_DrawString( OGL_DerpDef.x, OGL_DerpDef.y + 65, V_WHITEMAP,
-                  "Remaster Project" );
 }
 
 

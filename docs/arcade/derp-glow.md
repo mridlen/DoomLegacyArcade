@@ -1,13 +1,14 @@
-# DERP glow effects (OpenGL)
+# DERP effects (glow, lamp light, ripples, busy panels)
 
-Read this before touching `hardware/hw_glow.c`, `svn1749/src/derp/`, the glow hooks in
-`HWR_ProjectWall`/`HWR_RenderPlane`/`HWR_DrawSprite` (`hw_main.c`), `HWR_Glow_Composite_Texture` or
-the `hwr_glow_bound`/`hwr_glow_texnum` assignments in `hw_cache.c`, or the **DERP >>** page.
+Read this before touching `hardware/hw_glow.c`, `r_readout.c`, `svn1749/src/derp/`, the glow hooks in
+`HWR_ProjectWall`/`HWR_RenderPlane`/`HWR_DrawSprite` (`hw_main.c`), `HWR_Glow_Composite_Texture`,
+`HWR_Texture_Texels`/`HWR_Texture_Reupload` or the `hwr_glow_bound`/`hwr_glow_texnum` assignments in
+`hw_cache.c`, the `DeleteTexture` driver call, or the **DERP >>** page.
 
 ## What it is
 
-Three switches on **Options → Video Options → OpenGL 3D Card Options → DERP >>**, all **Off** by
-default (a new switch defaults to what the cabinet already did, `gameplay-defaults.md`):
+Switches on **Options → Effects Options → Next → DERP >>**, all **Off** by default (a new switch
+defaults to what the cabinet already did, `gameplay-defaults.md`):
 
 | Row | cvar | What it draws |
 | --- | --- | --- |
@@ -15,15 +16,25 @@ default (a new switch defaults to what the cabinet already did, `gameplay-defaul
 | Glowing Liquids | `gr_glow_liquids` | Nukage, slime and lava pools add their own bright cells on top of themselves, and every wall standing in one gets a gradient of the liquid's colour climbing 96 units up from the waterline. |
 | Glowing Eyes | `gr_glow_eyes` | A living monster's eye pixels, unlit, so eyes show in the dark. |
 | Lamp Light | `gr_glow_lamplight` | Light from those lamps onto the walls and floors round them, in each lamp's own colour. |
+| Liquid Light Ripples | `gr_glow_ripples` | Wavy light from a pool on the walls standing in it. |
+| Busy Computer Panels | `busy_readouts` | The LED readouts on computer walls change now and then. **Both renderers.** |
 
+The page was first under OpenGL 3D Card Options. It moved to Effects Options when Busy Computer
+Panels came, because that page cannot be opened in software mode (`M_OpenGLOption` refuses), and
+the Pi runs software. `M_Draw_DerpMenu` greys the OpenGL rows out in software mode, from the
+drawmode every frame (as `M_Draw_VideoOptions` does *Keep aspect*), and says why in red. The rows
+have no `IT_YOFFSET`, so the OpenGL ones can be compiled out of a build without `HWRENDER`.
+
+"Liquid Light Ripples" is DERP's *caustics*. The word was kept off the menu on purpose: players
+read "caustic" as damaging. "Ripples of light near liquid (caustics)" was the first choice and is
+267 pixels in the menu font against 171 available (`hu_font`, measured from the `STCFN` lumps).
 The ideas, and two pieces of data, come from **DERP**, the DOOM Engine Remaster Project
 (<https://github.com/robongrui/derp>), which is GPLv3. That is why the repository's licence is now
 GPLv3 as a whole: see `svn1749/src/derp/NOTICE` and the README's credits.
 
-They are **OpenGL only**. DERP has its own Vulkan/Metal renderer built around a level-load light
-bake and per-pixel lighting, so none of its renderer code could be used; these are re-done as extra
-passes over the fixed-function GL renderer. The software renderer (the Pi) does not get them, and
-the page is not reachable in software mode (`M_OpenGLOption` refuses).
+All but Busy Computer Panels are **OpenGL only**. DERP has its own Vulkan/Metal renderer built
+around a level-load light bake and per-pixel lighting, so none of its renderer code could be used;
+these are re-done as extra passes over the fixed-function GL renderer.
 
 ## What was taken from DERP, and what was not
 
@@ -78,6 +89,48 @@ so until a sector has been seen to move, its lamps are on. Rendering only; nothi
 light thinkers.
 
 Expect **Glowing Lights to be subtle** in ordinary lighting. It is meant for dark rooms.
+
+## Liquid Light Ripples
+
+DERP's liquid caustics, much simplified (`glow_ripple_entry`, `glow_ripple_wall`). Per liquid flat
+lump a 64x64 alpha-intensity pattern is made from that flat's own brightness: softened over 3x3 so
+lone bright texels drop out, minus the flat's mean, divided by its strongest streak, then a square
+root (without it only the single brightest streak showed), faded with height as the square. Row 0
+is the waterline; one texel is one map unit (`RIPPLE_HEIGHT` 64). Each animation frame of the flat
+is its own lump, so the ripples step with the floor's animation, and `RIPPLE_DRIFT` slides them
+along the wall. The fade is baked into the texture because a pass takes one texture. The pattern is
+placed by the wall's position along its own direction from the map origin, so it runs on unbroken
+across wall pieces in line. Added in the liquid's colour (`glow_flat_entry`'s for nukage, slime and
+lava; the flat's average for water, `FWATER*`/`SWATER*`) at `RIPPLE_ALPHA`, `PF_NoTint`.
+
+## Busy Computer Panels (`r_readout.c`)
+
+The LED readouts on computer textures change now and then, cell by cell. DERP's finder is used
+verbatim (`derp/screen_glass.h`, `doom_screen_glass` then `doom_screen_readouts`), over each
+computer texture on the level's walls (`doom_screen_texture`), composited from its patches at level
+load; it labels each readout texel with its offset in the readout, the readout's width and whether
+cells are two texels wide. A cell shows, now and then, **the original pixels of another cell in its
+row** (DERP's rule), so the panel keeps its share of lit cells and only the pattern moves. Which, and
+when, is a hash of texture, cell and level clock (`ro_texel_now`): each cell holds 35-140 tics, and
+changes only on 5-tic boundaries (`RO_QUANTUM`).
+
+The texels themselves are rewritten, once a frame from `D_Display` before any view (no render worker
+is running), which is why it works in **both renderers**:
+
+- **Software**: `texren->cache`. A wall column is drawn as one solid run from `columnofs[x] +
+  pixel_data_offset` whatever the storage model, so a texel is a byte store. Textures whose columns
+  have holes or several posts (`TD_hole`, `TD_odd_post`) are skipped, since a write there would land
+  on post headers. A purged and regenerated cache holds the art again; software re-checks every
+  frame, cheaply, so it is put right.
+- **OpenGL**: the cache's own RGBA copy (`HWR_Texture_Texels`, compositing it first if it was
+  purged), written through the same nearest mapping `HWR_DrawPatchInCache` uses for a scaled block,
+  then `HWR_Texture_Reupload`, which calls the new driver entry `DeleteTexture`: it drops that one
+  texture, unlinking it from the driver's cache list, so its next `SetTexture` uploads the changed
+  texels. The only way before was flushing every texture. Uploads happen only when a cell changes,
+  and the 5-tic quantum caps them; each rebuilds that texture's mipmaps.
+
+Turned off, every texel is put back. Nothing reads or writes game state and there are no random
+numbers.
 
 ## Liquid ceilings
 
