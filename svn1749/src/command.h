@@ -259,6 +259,9 @@ consvar_t *  CV_IteratorFirst( void );
 consvar_t *  CV_Iterator( consvar_t * cv );
 
 consvar_t * CV_FindVar (const char * name);
+// [Arcade] Whether p is a registered console variable (the menu's greyed
+// rows show a cvar's value without knowing from their status that it is one).
+boolean CV_Is_Registered( const void * p );
 
 // True when name is a registered console command (as opposed to a cvar).
 boolean COM_Exists (const char * com_name);

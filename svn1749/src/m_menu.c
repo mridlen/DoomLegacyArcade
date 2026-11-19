@@ -1148,6 +1148,29 @@ void M_DrawGenericMenu(void)
                {
                    V_DrawMappedPatch_Name (x,y, mip->patch, graymap );
                }
+               else
+               if( mip->text )
+               {
+                   // [Arcade] A greyed small-font row (IT_DISABLED on a
+                   // text page).  The big-font branch above needs FONTB_S,
+                   // which only Heretic has, so under Doom these rows drew
+                   // nothing and still took a big-font line: rows vanished
+                   // and everything under them moved down over whatever
+                   // was there -- the DERP page in software mode, Render
+                   // Threads in OpenGL, the Cheats page.  Drawn dim, with
+                   // the setting's value when it is a cvar, in one ordinary
+                   // row.  The cursor already skips it (IT_SPACE).
+                   V_DrawString_Mapped( x, y, 0, graymap, mip->text );
+                   if( mip->itemaction && CV_Is_Registered( mip->itemaction ) )
+                   {
+                       consvar_t * cv = (consvar_t *) mip->itemaction;
+                       if( cv->string )
+                           V_DrawString_Mapped( BASEVIDWIDTH - x - V_StringWidth( cv->string ),
+                                                y, 0, graymap, cv->string );
+                   }
+                   y += STRINGHEIGHT;
+                   break;
+               }
                y += LINEHEIGHT;
                break;
 

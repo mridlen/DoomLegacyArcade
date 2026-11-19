@@ -132,6 +132,38 @@ is running), which is why it works in **both renderers**:
 Turned off, every texel is put back. Nothing reads or writes game state and there are no random
 numbers.
 
+### Lights on the screens (`ro_find_elements`)
+
+DERP's finder looks for readouts only *outside* the screens it finds (its renderer gives screens
+curved glass instead), and COMPSTA1/COMPSTA2 draw every light they have *inside* one, so nothing on
+them moved. `ro_find_elements` works inside the screens (`glass != DOOM_GLASS_NONE`):
+
+- **Blobs**: 4-connected texels of one `doom_readout_hue`, 2-8 across, at least 85% filled.
+- **Groups**: blobs with the same hue, size and exact pixel mask; three or more make a group.
+- **Level meters**: a group with three or more members in one column at a regular step, segments
+  two or more texels tall, continued above or below by dimmer segments (`ro_slot_ok`: on the screen,
+  half its texels at brightness 40 or more), four or more slots in all. It fills from the end the lit
+  segments are at; a lit slot copies a lit segment's texels, an unlit one an unlit segment's -- or,
+  with no unlit segment painted (PLANET1's red column), the lit one darker. The level is a hash every
+  10 tics, the mean of two so it bounces rather than flickers end to end. COMPSTA1's red-and-brown
+  gauge and PLANET1's red column.
+- **Indicators**: the rest of a group, if each is within a texel of square, two or more tall and
+  **completely solid**. They blink, about three quarters on, 1-5 s at a time, the off look the same
+  colour darker (`reg_colormaps` at light level 22). COMPSTA1's blue squares, COMPSTA2's blue blocks,
+  the small grids on COMP2 and COMPTALL.
+
+The thresholds came from looking at overlays of every stock computer texture (the finder's result
+painted over the texture), and each one is there because something wrong got through without it:
+
+- At 75% fill, whole words of the screen font were indicators: its letters are 80% at most.
+- Bars of the bar graph and dashes in text lists repeat exactly too: hence near-square and two tall.
+- The font's letters at this size are 3x3 blocks with one texel out (8 of 9); the blue squares are
+  all 9. Only "completely solid" separates them, and a few glyphs that are genuinely solid blocks in
+  "UAC BASE" still pass.
+
+Not animated: COMPSTA2's three green dots (soft round glows, not solid) and the lit squares of its
+grid (joined to the grid lines, so not separable as cells). The bar graph's bars are left alone.
+
 ## Liquid ceilings
 
 Nukage, slime and lava on a **ceiling** glow down the walls as well as glowing themselves
