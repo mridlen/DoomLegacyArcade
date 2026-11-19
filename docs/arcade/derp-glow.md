@@ -108,6 +108,14 @@ row 0 at the ceiling), as its glow does. The ripples first looked only at floors
 nukage ceiling had none while the glow below it worked -- when a pass reads a sector's floor, ask
 whether its ceiling needs the same.
 
+**The coordinate up the wall is never clamped per corner.** A wall can run past the liquid plane --
+E1M8 line 107 is a lower wall from 0 to 208 under a nukage ceiling at 176, its back sector's floor
+being above this room's ceiling. Clamping the corners' coordinate to 0 there stretched the fade over
+the whole 208 units, because the coordinate is interpolated between corners, and the band all but
+vanished; line 193 next to it, a wall ending at the ceiling, was fine. The textures clamp at their
+edge, so the true (negative) value is passed, and the part of the wall past the plane is hidden by the
+plane anyway. The liquid glow (`glow_liquid_band`) had the same clamp and the same fault.
+
 ## Busy Computer Panels (`r_readout.c`)
 
 The LED readouts on computer textures change now and then, cell by cell. DERP's finder is used
