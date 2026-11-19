@@ -148,6 +148,10 @@ EXPORT void HWRAPI( ReadScreenRect ) (int x, int y, int width, int height, byte 
 EXPORT void HWRAPI( DrawScreenRect ) (int x, int y, int width, int height, byte * buf ) ;
 EXPORT void HWRAPI( GClipRect ) (int minx, int miny, int maxx, int maxy, float nearclip) ;
 EXPORT void HWRAPI( ClearMipMapCache ) (void) ;
+// [Arcade] Drop one texture from the driver, so its next use uploads its
+// GR_data again (the busy computer panels change texels in place).  May be
+// NULL on a backend that lacks it.
+EXPORT void HWRAPI( DeleteTexture ) (FTextureInfo_t *TexInfo) ;
 
 //Hurdler: added for backward compatibility
 EXPORT void HWRAPI( SetSpecialState ) (hwd_specialstate_e IdState, int Value) ;
@@ -188,6 +192,7 @@ struct hwdriver_s {
     DrawScreenRect      pfnDrawScreenRect;  // [Arcade] screen wipe, may be NULL
     GClipRect           pfnGClipRect;
     ClearMipMapCache    pfnClearMipMapCache;
+    DeleteTexture       pfnDeleteTexture;   // [Arcade] r_readout.c, may be NULL
     SetSpecialState     pfnSetSpecialState;//Hurdler: added for backward compatibility
     DrawMD2             pfnDrawMD2;
     SetTransform        pfnSetTransform;

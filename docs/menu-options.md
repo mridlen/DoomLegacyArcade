@@ -296,8 +296,24 @@ Operator only.
 | Width Clip | Stock clipping-width correction switch. |
 | **Weapon Flash Fix** ★ | Draws the weapon fullbright while its muzzle flash shows, hiding the hard line in dark rooms. Drawing only. |
 | **Super Gore** ★ | Off by default. Five times the blood splats on walls for every hit, thrown twice as far (at least 128 units) and over a taller band, and a 4096-splat pool (ignores *Max splats*) so the extra blood is not recycled faster. Needs *Splats* on. Does not affect scores or demos. |
+| **DERP >>** ★ | Effects borrowed from DERP (see below), each On/Off, all Off by default. Drawing only: demos, netgames and scores are unaffected. |
 
 → [`arcade/spectre-fuzz.md`](arcade/spectre-fuzz.md), [`arcade/gameplay-defaults.md`](arcade/gameplay-defaults.md)
+
+**DERP**
+
+Operator only. The rows marked OpenGL are greyed out in software mode, with a note saying so.
+
+| Item | What it does |
+| --- | --- |
+| **Glowing Lights** ★ | OpenGL. Lamp, light-strip, computer-panel and exit-sign pixels stay fully lit in dark rooms, and follow a blinking or flickering room. Wall switches glow too: only when on, except red/green switches, which glow red or green either way. |
+| **Glowing Liquids** ★ | OpenGL. Nukage, slime and lava pools glow, and throw their colour up the walls standing in them (or down them, from a liquid ceiling). |
+| **Glowing Eyes** ★ | OpenGL. Living monsters' eyes glow (stock Doom and Doom II sprites only). |
+| **Lamp Light** ★ | OpenGL. Those lamps, lit switches included, light the walls, floors, monsters, items and your weapon round them in their own colour (red panels red, white strips white), through open doorways but not closed doors. |
+| **Liquid Light Ripples** ★ | OpenGL. Wavy light from a pool moves across the walls standing in it, in the liquid's colour, made from the liquid's own animation. Water too. |
+| **Busy Computer Panels** ★ | Both renderers. The LED readouts on computer walls (the green grids on COMPUTE2, and the like) change now and then, cell by cell, so the consoles look busy. |
+
+→ [`arcade/derp-glow.md`](arcade/derp-glow.md)
 
 ### Connect, Network and Server Options
 
@@ -465,9 +481,8 @@ Operator only.
 | Gamma >> | Red, green and blue gamma. |
 | Development >> | MD2 models, translucent walls, polygon shape. |
 | **Shaders >>** ★ | A post-process screen shader: Off, zfast CRT, CRT-Pi, CRT-Lottes, CRT-Geom, FXAA, Software Look, VHS, Greyscale, Sepia, Night Vision, Game Boy. |
-| **DERP >>** ★ | Glow effects borrowed from DERP, each On/Off, all Off by default. **Glowing Lights**: lamp, light-strip, computer-panel and exit-sign pixels stay fully lit in dark rooms, and follow a blinking or flickering room. **Glowing Liquids**: nukage, slime and lava pools glow, and throw their colour up the walls standing in them (or down them, from a liquid ceiling). **Glowing Eyes**: living monsters' eyes glow (stock Doom and Doom II sprites only). **Lamp Light**: those lamps, lit wall switches included (a switch only when it is on, except red/green switches, which glow red or green either way), light the walls, floors, monsters, items and your weapon round them in their own colour (red panels red, white strips white), through open doorways but not closed doors. Drawing only. |
 
-→ [`arcade/shaders.md`](arcade/shaders.md), [`arcade/invulnerability.md`](arcade/invulnerability.md), [`arcade/derp-glow.md`](arcade/derp-glow.md)
+→ [`arcade/shaders.md`](arcade/shaders.md), [`arcade/invulnerability.md`](arcade/invulnerability.md)
 
 ### Setup Controls
 

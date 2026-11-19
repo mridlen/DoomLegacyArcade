@@ -1102,6 +1102,53 @@ void HWR_release_Patch ( MipPatch_t* grPatch, Mipmap_t *grMipmap )
 static int  gr_numtextures = 0;
 static MipTexture_t*  gr_textures = NULL;  // for ALL Doom textures, malloc
 
+// [Arcade] r_readout.c: the texels of a wall texture's base copy, RGBA, to
+// change in place, and the block's size.  Composited here first when the
+// copy has none (never made, or purged), in which case *fresh is set: the
+// texels are the original art again.  NULL outside OpenGL or with no
+// level's textures yet.
+RGBA_t * HWR_Texture_Texels( int texnum, int * bw, int * bh, boolean * fresh )
+{
+    MipTexture_t * miptex;
+    Mipmap_t * mip;
+
+    *fresh = false;
+    if( gr_textures == NULL || texnum <= 0 || texnum >= gr_numtextures
+        || textureformat != GR_RGBA )
+        return NULL;
+    miptex = &gr_textures[texnum];
+    mip = &miptex->mipmap;
+    if( mip->GR_data == NULL )
+    {
+        if( mip->downloaded )
+        {
+            if( HWD.pfnDeleteTexture == NULL )
+                return NULL;   // could not show a change anyway
+            HWD.pfnDeleteTexture( mip );
+        }
+        HWR_GenerateTexture( texnum, miptex, mip, 0 );
+        if( mip->GR_data == NULL )
+            return NULL;
+        *fresh = true;
+    }
+    *bw = mip->width;
+    *bh = mip->height;
+    return (RGBA_t *) mip->GR_data;
+}
+
+// [Arcade] r_readout.c: the base copy's texels have changed; upload them
+// again on its next use.
+void HWR_Texture_Reupload( int texnum )
+{
+    Mipmap_t * mip;
+    if( gr_textures == NULL || texnum <= 0 || texnum >= gr_numtextures )
+        return;
+    mip = &gr_textures[texnum].mipmap;
+    if( mip->downloaded && HWD.pfnDeleteTexture )
+        HWD.pfnDeleteTexture( mip );
+}
+
+
 void HWR_Init_TextureCache (void)
 {
     gr_numtextures = 0;

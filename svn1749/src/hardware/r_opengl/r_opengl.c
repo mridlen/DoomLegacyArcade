@@ -673,6 +673,40 @@ EXPORT void HWRAPI( ClearMipMapCache ) ( void )
     VIDGL_Flush_GL_textures();
 }
 
+// -----------------+
+// [Arcade] DeleteTexture : drop one texture, so its next SetTexture uploads
+//                          its GR_data again.  The busy computer panels
+//                          (r_readout.c) change texels in place; without
+//                          this the only way to show them was to flush every
+//                          texture.  Unlinks it from the cache list, which
+//                          ClearMipMapCache walks.
+// -----------------+
+EXPORT void HWRAPI( DeleteTexture ) ( FTextureInfo_t *pTexInfo )
+{
+    FTextureInfo_t * p, * prev = NULL;
+
+    if( pTexInfo == NULL || pTexInfo->downloaded == 0 )
+        return;
+    for( p = gr_cachehead; p; prev = p, p = p->nextmipmap )
+    {
+        if( p == pTexInfo )
+        {
+            if( prev )
+                prev->nextmipmap = p->nextmipmap;
+            else
+                gr_cachehead = p->nextmipmap;
+            if( gr_cachetail == p )
+                gr_cachetail = prev;
+            break;
+        }
+    }
+    glDeleteTextures( 1, &pTexInfo->downloaded );
+    if( tex_downloaded == pTexInfo->downloaded )
+        tex_downloaded = 0;   // so the next SetTexture of anything rebinds
+    pTexInfo->downloaded = 0;
+    pTexInfo->nextmipmap = NULL;
+}
+
 
 // -----------------+
 // ReadRect         : Read a rectangle region of the truecolor framebuffer.

@@ -27,6 +27,7 @@ extern consvar_t cv_grglow_lights;
 extern consvar_t cv_grglow_liquids;
 extern consvar_t cv_grglow_eyes;
 extern consvar_t cv_grglow_lamplight;
+extern consvar_t cv_grglow_ripples;
 
 // The texture or flat the cache last handed the driver (hw_cache.c), so a
 // glow pass can put it back when it is done with its own.
@@ -52,5 +53,10 @@ void HWR_Glow_Tint( RGBA_t * c, fixed_t x, fixed_t y, fixed_t z, struct sector_s
 // hw_cache.c: composite a wall texture exactly as HWR_GetTexture does, into
 // the caller's mipmap.  False when the texture format is not RGBA.
 boolean HWR_Glow_Composite_Texture( int texnum, Mipmap_t * mipmap );
+
+// hw_cache.c, for r_readout.c: a wall texture's base texels to change in
+// place, and the call that has them uploaded again.
+RGBA_t * HWR_Texture_Texels( int texnum, int * bw, int * bh, boolean * fresh );
+void     HWR_Texture_Reupload( int texnum );
 
 #endif

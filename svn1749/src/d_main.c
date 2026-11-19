@@ -222,6 +222,7 @@
 #include "f_wipe.h"
 #ifdef THINKER_INTERPOLATIONS
 #include "r_fps.h"
+#include "r_readout.h"  // [Arcade]
 #include "r_threads.h"
 #endif
 #include "f_finale.h"
@@ -1460,6 +1461,9 @@ void D_Display(void)
         // would corrupt the next tic's collision and sight checks.
         R_Interp_Frame_Begin();
 #endif
+        // [Arcade] Busy Computer Panels: rewrite this frame's readout texels
+        // before any view, on this thread, while no render worker runs.
+        R_Readout_Frame();
         if (!automapactive)
         {
             // see if the border needs to be updated to the screen

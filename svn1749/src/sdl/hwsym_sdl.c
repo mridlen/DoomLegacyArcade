@@ -99,6 +99,10 @@ void *hwSym(const char *funcName)
     {
 	return &ClearMipMapCache;
     }
+    else if(0 == strcmp("DeleteTexture", funcName))  // [Arcade]
+    {
+	return &DeleteTexture;
+    }
     else if(0 == strcmp("SetSpecialState", funcName))
     {
 	return &SetSpecialState;

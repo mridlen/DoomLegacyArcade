@@ -67,6 +67,7 @@ consvar_t cv_grglow_lights  = { "gr_glow_lights",  "Off", CV_SAVE, CV_OnOff };
 consvar_t cv_grglow_liquids = { "gr_glow_liquids", "Off", CV_SAVE, CV_OnOff };
 consvar_t cv_grglow_eyes    = { "gr_glow_eyes",    "Off", CV_SAVE, CV_OnOff };
 consvar_t cv_grglow_lamplight = { "gr_glow_lamplight", "Off", CV_SAVE, CV_OnOff };
+consvar_t cv_grglow_ripples = { "gr_glow_ripples", "Off", CV_SAVE, CV_OnOff };
 
 extern sector_t * gr_frontsector;   // hw_main.c, the sector being drawn
 extern seg_t    * gr_curline;       // hw_main.c, the wall being drawn
@@ -80,6 +81,7 @@ void HWR_Glow_Register( void )
     CV_RegisterVar( &cv_grglow_liquids );
     CV_RegisterVar( &cv_grglow_eyes );
     CV_RegisterVar( &cv_grglow_lamplight );
+    CV_RegisterVar( &cv_grglow_ripples );
 }
 
 typedef enum { GLOW_UNKNOWN = 0, GLOW_NONE, GLOW_HAS } glow_state_e;
@@ -100,6 +102,8 @@ static int            glow_numtex = 0;
 #define GLOW_SPRITE_SLOTS  4096
 static glow_entry_t * glow_flat = NULL;
 static glow_entry_t * glow_sprite = NULL;
+#define GLOW_RIPPLE_SLOTS  256
+static glow_entry_t * glow_ripple = NULL;   // Liquid Light Ripples, by flat lump
 
 // The gradient the liquids throw up the walls.
 static Mipmap_t glow_ramp;
@@ -120,6 +124,7 @@ void HWR_Glow_Free( void )
     free( glow_tex );     glow_tex = NULL;  glow_numtex = 0;
     free( glow_flat );    glow_flat = NULL;
     free( glow_sprite );  glow_sprite = NULL;
+    free( glow_ripple );  glow_ripple = NULL;
     free( glow_sec_lo );  glow_sec_lo = NULL;
     free( glow_sec_hi );  glow_sec_hi = NULL;
     glow_numsec = 0;
@@ -527,6 +532,186 @@ static void glow_liquid_wall( vxtx3d_t * vxtx, byte lightlum )
     glow_liquid_band( vxtx, lightlum, sec->floorpic, sec->floorheight, 0 );
     // Nukage on a ceiling glows down the walls too.
     glow_liquid_band( vxtx, lightlum, sec->ceilingpic, sec->ceilingheight, 1 );
+}
+
+// ---- Liquid Light Ripples
+//
+// The wavy light a pool throws on the walls standing in it (DERP's liquid
+// caustics, much simplified).  Per liquid flat lump, a 64x64 pattern made
+// from that flat's own brightness ripples -- softened over 3x3 so lone
+// bright texels drop out, minus the flat's mean, scaled so its strongest
+// streak is full -- faded with height, one texel to the map unit.  Each
+// animation frame of the flat is its own lump, so the ripples animate with
+// the floor; a slow drift along the wall is added.  Added in the liquid's
+// colour, one pass, with the fade baked into the texture since a pass takes
+// only one texture.  Water ripples too: it does not glow, but light off it
+// moves.
+
+#define RIPPLE_HEIGHT  64.0f   // map units above the waterline the ripples reach
+#define RIPPLE_ALPHA   180     // their strength, of 255
+#define RIPPLE_DRIFT   0.0025f // along the wall, in pattern widths per tic
+
+static boolean glow_is_water_name( const char * name )
+{
+    return strncmp( name, "FWATER", 6 ) == 0 || strncmp( name, "SWATER", 6 ) == 0;
+}
+
+static glow_entry_t * glow_ripple_entry( lumpnum_t lump )
+{
+    glow_entry_t * e;
+
+    if( ! VALID_LUMP( lump ) )
+        return NULL;
+    e = glow_lookup( &glow_ripple, GLOW_RIPPLE_SLOTS, lump );
+    if( e == NULL )
+        return NULL;
+    if( e->state == GLOW_UNKNOWN )
+    {
+        char name[9];
+        int kind;
+        glow_lump_name( lump, name );
+        kind = glow_kind( name, 1 );
+        e->kind = kind;
+        e->state = ( glow_is_liquid( kind ) || glow_is_water_name( name ) )? GLOW_HAS : GLOW_NONE;
+        if( e->state == GLOW_NONE )
+            return NULL;
+    }
+    if( e->state != GLOW_HAS )
+        return NULL;
+
+    if( ! e->mip.downloaded && ! e->mip.GR_data )
+    {
+        static float bright[64*64], soft[64*64];
+        byte * raw;
+        uint16_t * data;
+        float mean = 0.0f, top = 0.0f;
+        uint32_t sum[3] = { 0, 0, 0 };
+        int x, y, i;
+
+        if( W_LumpLength( lump ) < 4096 )
+        {
+            e->state = GLOW_NONE;
+            return NULL;
+        }
+        raw = W_CacheLumpNum( lump, PU_STATIC );
+        for( i = 0; i < 4096; i++ )
+        {
+            RGBA_t c = V_GetColor( raw[i] );
+            int hi = c.s.red;
+            if( c.s.green > hi )  hi = c.s.green;
+            if( c.s.blue > hi )   hi = c.s.blue;
+            bright[i] = hi;
+            sum[0] += c.s.red;  sum[1] += c.s.green;  sum[2] += c.s.blue;
+        }
+        Z_ChangeTag( raw, PU_CACHE );
+        for( y = 0; y < 64; y++ )
+        {
+            for( x = 0; x < 64; x++ )
+            {
+                float t = 0.0f;
+                int dx, dy;
+                for( dy = -1; dy <= 1; dy++ )
+                    for( dx = -1; dx <= 1; dx++ )
+                        t += bright[ ((y + dy) & 63) * 64 + ((x + dx) & 63) ];
+                soft[ y * 64 + x ] = t / 9.0f;
+                mean += t / 9.0f;
+            }
+        }
+        mean /= 4096.0f;
+        for( i = 0; i < 4096; i++ )
+        {
+            soft[i] -= mean;
+            if( soft[i] > top )  top = soft[i];
+        }
+        if( top < 1.0f )
+        {
+            e->state = GLOW_NONE;   // a flat with no ripples to show
+            return NULL;
+        }
+        data = Z_Malloc( 64 * 64 * sizeof(uint16_t), PU_STATIC, &e->mip.GR_data );
+        for( y = 0; y < 64; y++ )
+        {
+            // Row 0 is the waterline; the light fades out by the top row.
+            float f = 1.0f - (float) y / 63.0f;
+            f = f * f;
+            for( x = 0; x < 64; x++ )
+            {
+                float v = soft[ y * 64 + x ] / top;
+                byte a;
+                if( v < 0.0f )  v = 0.0f;
+                // The square root lifts the many faint streaks toward the
+                // one brightest, or only that one showed.
+                a = (byte)( 255.0f * sqrt( v ) * f );
+                data[ y * 64 + x ] = (a << 8) | a;
+            }
+        }
+        {
+            // The colour: a glowing liquid's own glow, water its average.
+            glow_entry_t * g = glow_is_liquid( e->kind )? glow_flat_entry( lump ) : NULL;
+            if( g )
+                e->color = g->color;
+            else
+            {
+                uint32_t hi = sum[0];
+                if( sum[1] > hi )  hi = sum[1];
+                if( sum[2] > hi )  hi = sum[2];
+                if( hi == 0 )  hi = 1;
+                e->color.s.red   = (byte)( (uint64_t) sum[0] * 255 / hi );
+                e->color.s.green = (byte)( (uint64_t) sum[1] * 255 / hi );
+                e->color.s.blue  = (byte)( (uint64_t) sum[2] * 255 / hi );
+                e->color.s.alpha = 255;
+            }
+        }
+        e->mip.GR_format = GR_TEXFMT_ALPHA_INTENSITY_88;
+        e->mip.width = e->mip.height = 64;
+        e->mip.tfflags = TF_WRAPX;   // repeats along the wall, not up it
+        Z_ChangeTag( data, PU_HWRCACHE );
+    }
+    return e;
+}
+
+// The ripples on a wall standing in a liquid.  Returns whether drawn.
+static boolean glow_ripple_wall( vxtx3d_t * vxtx )
+{
+    sector_t * sec = gr_frontsector;
+    glow_entry_t * e;
+    FSurfaceInfo_t Surf;
+    vxtx3d_t v[4];
+    float floor, wx, wz, len, ux, uz, drift;
+    int i;
+
+    if( sec == NULL || sec->floorpic < 0 || (unsigned) sec->floorpic >= numlevelflats )
+        return false;
+    e = glow_ripple_entry( levelflats[ sec->floorpic ].lumpnum );
+    if( e == NULL )
+        return false;
+    floor = FIXED_TO_FLOAT( sec->floorheight );
+    if( vxtx[0].y > floor + RIPPLE_HEIGHT && vxtx[1].y > floor + RIPPLE_HEIGHT )
+        return false;
+    wx = vxtx[1].x - vxtx[0].x;
+    wz = vxtx[1].z - vxtx[0].z;
+    len = sqrt( wx*wx + wz*wz );
+    if( len < 1.0f )
+        return false;
+    ux = wx / len;  uz = wz / len;
+    drift = leveltime * RIPPLE_DRIFT;
+    for( i = 0; i < 4; i++ )
+    {
+        // Along the wall in map units from the origin, so the pattern runs
+        // on unbroken from one wall piece to the next in line.
+        float a = vxtx[i].x * ux + vxtx[i].z * uz;
+        float t = ( vxtx[i].y - floor ) / RIPPLE_HEIGHT;
+        v[i] = vxtx[i];
+        v[i].sow = a / 64.0f + drift;
+        v[i].tow = ( t < 0.0f )? 0.0f : t;
+    }
+    Surf.FlatColor = e->color;
+    Surf.FlatColor.s.alpha = RIPPLE_ALPHA;
+    Surf.polyflags = 0;
+    Surf.texflags = 0;
+    HWD.pfnSetTexture( &e->mip );
+    HWD.pfnDrawPolygon( &Surf, v, 4, PF_Additive | PF_Modulated | PF_Decal | PF_Clip | PF_NoTint );
+    return true;
 }
 
 // ---- lamp light
@@ -1585,6 +1770,9 @@ void HWR_Glow_Wall( vxtx3d_t * vxtx, FSurfaceInfo_t * pSurf, int blendmode )
         glow_liquid_wall( vxtx, lum );
         drew = true;
     }
+
+    if( cv_grglow_ripples.EV && glow_ripple_wall( vxtx ) )
+        drew = true;
 
     if( cv_grglow_lamplight.EV && glow_lamp_wall( vxtx ) )
         drew = true;
