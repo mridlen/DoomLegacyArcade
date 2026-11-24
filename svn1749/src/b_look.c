@@ -237,8 +237,16 @@ ret_edge_center:
 byte regulate( mobj_t * mo, int id, int on_time, int period_time )
 {
     // Periodic, individualized for each id and mo.
-    int mobjid = (intptr_t) mo;
-    int pr = (gametic + id + (mobjid>>1)) % period_time;  // periodic ramp
+    // [Arcade] Every node runs the bots itself (G_Ticker), so nothing here may
+    // differ between machines.  This used the mobj's *memory address* to stagger
+    // the bots, and gametic, the program's tic count, as the clock: each cabinet
+    // in a linked game then had a bot choose to shoot a barrel on different
+    // tics, the barrel went off on one cabinet and not the other, and the
+    // joining cabinet was kicked with "Consistency failure".  The player number
+    // and leveltime are the same everywhere.  97 tics apart keeps the bots out
+    // of step with one another, which is what the address was for.
+    int mobjid = mo->player ? (int)(mo->player - players) * 97 : mo->type;
+    int pr = (int)( ( leveltime + id + mobjid ) % period_time );  // periodic ramp
     
     if( mo->health < 5 ) // more desperate
     {

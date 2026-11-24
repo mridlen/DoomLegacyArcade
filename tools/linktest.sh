@@ -42,7 +42,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame multiplayer multiplayernojoin campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick wrapidle wrapidlemaster wrapreconnect wraplockout wrapgame"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame multiplayer multiplayernojoin linkbots linkbotsstart campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick wrapidle wrapidlemaster wrapreconnect wraplockout wrapgame"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -465,6 +465,48 @@ case_linkgame() {
     expect "the joiner is in the level as client, two players" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
     expect "the host opens sealed packets" "$d/master" "^LINKNET host sealed=[1-9][0-9]* opened=[1-9]"
     expect "the joiner opens sealed packets" "$d/member" "^LINKNET client sealed=[1-9][0-9]* opened=[1-9]"
+}
+
+# Bots in a linked game: every node runs the bots itself, so they must stay
+# identical on both cabinets.  The joining cabinet used to be kicked with
+# "Consistency failure" while the host played on.
+case_linkbots() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    # addbot typed at the host's console once the level is running: the
+    # ranked ruleset pins cv_bots to 0 in a player session, so "bots N" is
+    # reset before the game starts.
+    GAME=doomu run "$d/master" 70 0 -linktest -linkautohost multiplayer -linkcmdafter 4 "addbot;addbot" -udpport $((p+100))
+    sleep 2
+    GAME=doomu run "$d/member" 66 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the host started a linked game" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the joiner is in the level with the bots" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=4 "
+    expect_not "nobody is kicked for a consistency failure" "$d/master" "Consistency failure"
+    expect_not "the joiner never leaves the linked game while in the level" "$d/member" "^LINKGAME gamestate=1 netgame=1 .* none$"
+}
+
+# The same with the bots already in the game before the other cabinet
+# connects -- Bots set on the Multiplayer page, so G_InitNew adds them on the
+# host, and the joiner has to be sent them rather than watch them arrive.
+# -linkbots sets the page's Bots row just before Start (no console access).
+case_linkbotsstart() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    GAME=doomu run "$d/master" 70 0 -linktest -linkautohost multiplayer -linkbots 2 -udpport $((p+100))
+    sleep 2
+    GAME=doomu run "$d/member" 66 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the host started a linked game" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the joiner is in the level with the bots" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=4 "
+    expect_not "nobody is kicked for a consistency failure" "$d/master" "Consistency failure"
+    expect_not "the joiner never leaves the linked game while in the level" "$d/member" "^LINKGAME gamestate=1 netgame=1 .* none$"
 }
 
 # New Game -> Multiplayer -> Start Game invites like Deathmatch and Campaign.

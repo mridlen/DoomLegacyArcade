@@ -1670,11 +1670,17 @@ void B_SpawnBot(bot_t* bot)
     // [WDJ] Bot skill = 0..5, Game skill = 0..4.
     switch( cv_bot_skill.EV )
     {
+      // [Arcade] B_Random, not E_Random.  B_SpawnBot runs on every node, at
+      // every spawn and respawn, and E_Random is each machine's own generator:
+      // a linked game gave the same bot a different skill on each cabinet.
+      // B_Random's index is synced to joining nodes (random_state_t) and
+      // advances identically everywhere.  Also guarded against gameskill 0
+      // (I'm Too Young To Die), which divided by zero.
       case 6: // randmed
-         sk = E_Random() % gameskill;  // random bots, 0 to gameskill-1
+         sk = gameskill ? (B_Random() % gameskill) : 0;  // random bots, 0 to gameskill-1
          break;
       case 7: // randgame
-         sk = (E_Random() % gameskill) + 1;  // random bots, 1 to gameskill
+         sk = gameskill ? (B_Random() % gameskill) + 1 : 1;  // random bots, 1 to gameskill
          break;
       case 8: // gamemed
          sk = gameskill;  // bot lower skill levels

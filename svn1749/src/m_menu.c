@@ -5241,6 +5241,12 @@ void  M_Link_Test_Host( byte category )
     {
         M_TwoPlayerMenu( 0 );          // as New Game -> Multiplayer
         M_StartServerMenu( 0 );        // -> Start Game
+        // -linkbots N: the page's Bots row.  cv_bots is CV_HIDEN, so a script
+        // cannot reach it from the console, and the ranked ruleset resets it
+        // at every return to the title anyway -- set it here, as a player
+        // pressing left/right on the row would, just before Start.
+        if( M_CheckParm( "-linkbots" ) && M_IsNextParm() )
+            CV_SetValue( &cv_bots, atoi( M_GetNextParm() ) );
         M_StartServer( server_start ); // -> Start, with the page as set
     }
     else
