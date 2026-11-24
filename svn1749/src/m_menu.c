@@ -1931,6 +1931,14 @@ static int   startserver_choice;
 // M_StartServer_Go.  False when it was skipped (one panel, or Join Time 0).
 static boolean  startserver_asked = false;
 
+// [Arcade] The Multiplayer page's local game, as opposed to Networked
+// Multiplayer's Create Server or the Dedicated row.  Only this one shares a
+// game with players on this cabinet, so only this one invites over Cabinet Link.
+static boolean  M_StartServer_Is_Local( void )
+{
+    return StartSplitScreenGame && startserver_choice != server_dedicated;
+}
+
 // [Arcade] Two Player Game -> Start Game reaches the game through here rather
 // than through M_ChooseSkill, so it needs its own join-screen hook or that
 // whole route would skip the page.
@@ -1992,11 +2000,18 @@ static void  M_StartServer_Go( void )
     boolean  hold_joined = startserver_asked && StartSplitScreenGame
                            && ! dedicated;
     int  prev_wait = cv_wait_players.value;
+    int  prev_timeout = cv_wait_timeout.value;
     if( hold_joined )
     {
         byte  joined = D_Num_Joined_Players();
-        split = ( joined > 1 );
-        CV_SetValue( &cv_wait_players, joined );
+        // [Arcade] Cabinet Link: players who pressed in on other cabinets are
+        // waited for too, but not for ever -- one that never arrives must not
+        // hang this cabinet.  The same rule and timeout as M_Arcade_MP_Go.
+        int  remote = LKG_Remote_Players();
+        split = ( joined > 1 );   // the split is this screen's players only
+        CV_SetValue( &cv_wait_players, joined + remote );
+        if( remote )
+            CV_SetValue( &cv_wait_timeout, 15 );
     }
     startserver_asked = false;
 
@@ -2032,7 +2047,7 @@ static void  M_StartServer_Go( void )
 
     // [Arcade] Only now, behind the map command: see above.
     if( hold_joined )
-        COM_BufAddText( va("wait_players %d\n", prev_wait ) );
+        COM_BufAddText( va("wait_players %d\nwait_timeout %d\n", prev_wait, prev_timeout ) );
    
 #if 0
 // Needs to be done after players have grabbed the player slots.
@@ -5014,9 +5029,15 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
     byte panel;
     // [Arcade] Cabinet Link: Deathmatch and Campaign invite other cabinets, and
     // a single panel cabinet asks who is playing when there is someone to ask.
+    // [Arcade] And the Multiplayer page's Start Game -- the local one only:
+    // the same function serves Networked Multiplayer's Create Server, which is
+    // reached without StartSplitScreenGame, and its Dedicated row, which has no
+    // player here to share a game with.
     byte category = ( startfunc == M_Deathmatch_Go ) ? LKG_CAT_DEATHMATCH
                   : ( startfunc == M_TeamDeathmatch_Go ) ? LKG_CAT_TEAMDM
-                  : ( startfunc == M_NewGame_Go ) ? LKG_CAT_CAMPAIGN : LKG_CAT_NONE;
+                  : ( startfunc == M_NewGame_Go ) ? LKG_CAT_CAMPAIGN
+                  : ( startfunc == M_StartServer_Go && M_StartServer_Is_Local() )
+                    ? LKG_CAT_MULTIPLAYER : LKG_CAT_NONE;
     boolean invite = cv_jointime.EV && LKG_Would_Invite( category );
 
     if( M_Join_NumPanels() < 2 && ! invite )  return false;
@@ -5038,7 +5059,16 @@ boolean  M_Join_Open( void (*startfunc)(void), boolean first_press_starts )
     join_remote = false;
     Push_Setup_Menu( &JoinDef );
     if( invite )
-        LKG_Host_Begin( category, newgame_map, newgame_skill, cv_jointime.EV );
+    {
+        // The Multiplayer page keeps its map and skill in its own cvars, not in
+        // newgame_map/newgame_skill.  Only shown to the invited, see LKG_CAT_*.
+        if( category == LKG_CAT_MULTIPLAYER )
+            LKG_Host_Begin( category,
+                            (gamemode==doom2_commercial)? cv_nextmap.string : cv_nextepmap.string,
+                            cv_skill.value - 1, cv_jointime.EV );
+        else
+            LKG_Host_Begin( category, newgame_map, newgame_skill, cv_jointime.EV );
+    }
     return true;
 }
 
@@ -5206,6 +5236,12 @@ void  M_Link_Test_Host( byte category )
     {
         epi = 0;
         M_ChooseSkill( sk_medium );
+    }
+    else if( category == LKG_CAT_MULTIPLAYER )
+    {
+        M_TwoPlayerMenu( 0 );          // as New Game -> Multiplayer
+        M_StartServerMenu( 0 );        // -> Start Game
+        M_StartServer( server_start ); // -> Start, with the page as set
     }
     else
     {
