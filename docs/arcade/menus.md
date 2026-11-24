@@ -259,6 +259,13 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
       `D_NumLocalPlayers` then reports two players whether or not two joined — which is also why
       taking that bump out of the *decision* (above) has to be paired with this.
       `M_Arcade_MP_Go` sets the cvar and calls `D_WaitPlayer_Setup`.
+      - **That accident was itself the bug on the Multiplayer page: one person pressing in got a
+        two player game**, with a second, empty view, while Deathmatch from the same join screen
+        correctly played solo. `M_StartServer_Go` now takes the split from the join count
+        (`joined > 1`) whenever the join screen answered (`startserver_asked`), and holds the start
+        for exactly that many the same way, restore queued behind `map`. With no join screen (one
+        panel, or Join Time 0) it still issues the page's `splitscreen 1` unchanged, and the
+        Dedicated row is left alone.
       - **It used to put the cvar straight back, and that undid the fix.** The belief was that the
         value is copied into `wait_netplayer` and read nowhere else — but the `map` command it queues
         runs `SV_SpawnServer`, which calls `D_WaitPlayer_Setup` *again* and re-read the restored

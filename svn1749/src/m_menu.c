@@ -1927,6 +1927,9 @@ enum
 
 static void  M_StartServer_Go( void );
 static int   startserver_choice;
+// [Arcade] Whether the join screen answered how many are playing, for
+// M_StartServer_Go.  False when it was skipped (one panel, or Join Time 0).
+static boolean  startserver_asked = false;
 
 // [Arcade] Two Player Game -> Start Game reaches the game through here rather
 // than through M_ChooseSkill, so it needs its own join-screen hook or that
@@ -1935,9 +1938,11 @@ void M_StartServer( int choice )
 {
     startserver_choice = choice;
 
+    startserver_asked = true;
     if( M_Join_Open( M_StartServer_Go, false ) )   // wait for everyone
         return;
 
+    startserver_asked = false;
     D_Clear_Join_Count();   // no join screen: every panel plays
     D_Reset_View_Cells();
     M_StartServer_Go();
@@ -1971,6 +1976,30 @@ static void  M_StartServer_Go( void )
         I_ShutdownGraphics();
     }
 
+    // [Arcade] How many play is the join screen's answer, not the menu's.
+    // StartSplitScreenGame is set by the Multiplayer page itself, so this
+    // always issued "splitscreen 1", and the cv_splitscreen bump inside
+    // D_NumLocalPlayers then made a second player out of nobody: one person
+    // pressing in got a two player game.  With no join screen it stays as it
+    // was -- every panel plays, and the split is what the page asked for.
+    //
+    // Dropping the split means holding the start for the people who joined,
+    // too, or a lone player sits on "waiting for players" for ever (the
+    // default wait is 2 with no timeout).  Exactly as M_Arcade_MP_Go does it,
+    // including restoring the operator's value only behind the map command,
+    // because SV_SpawnServer re-reads it -- see the long comment there.
+    boolean  split = StartSplitScreenGame;
+    boolean  hold_joined = startserver_asked && StartSplitScreenGame
+                           && ! dedicated;
+    int  prev_wait = cv_wait_players.value;
+    if( hold_joined )
+    {
+        byte  joined = D_Num_Joined_Players();
+        split = ( joined > 1 );
+        CV_SetValue( &cv_wait_players, joined );
+    }
+    startserver_asked = false;
+
     // Need to set server before this func.
     D_WaitPlayer_Setup();
 
@@ -1985,10 +2014,10 @@ static void  M_StartServer_Go( void )
     int  dmm = cv_deathmatch_menu.value;
     int  tl  = (dmm >= 1 && dmm <= 4) ? cv_dm_timelimit.value : 0;
     COM_BufAddText(va("stopdemo;splitscreen %d;deathmatch %d;timelimit %d\n",
-                      StartSplitScreenGame, dmm, tl ) );
+                      split, dmm, tl ) );
 
     // skin change
-    if (StartSplitScreenGame
+    if (split
         && ! ( displayplayer2_ptr
              && displayplayer2_ptr->skin
              && (strcasecmp(cv_skin[1].string, skins[displayplayer2_ptr->skin]->name) == 0 )
@@ -2000,6 +2029,10 @@ static void  M_StartServer_Go( void )
     COM_BufAddText(va("map \"%s\" -skill %d -monsters %d\n", 
                       (gamemode==doom2_commercial)? cv_nextmap.string : cv_nextepmap.string,
                       cv_skill.value, cv_monsters.value));
+
+    // [Arcade] Only now, behind the map command: see above.
+    if( hold_joined )
+        COM_BufAddText( va("wait_players %d\n", prev_wait ) );
    
 #if 0
 // Needs to be done after players have grabbed the player slots.
