@@ -42,7 +42,7 @@ SELFCHECK=0
 JOBS=2
 CASES=()
 
-ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick wrapidle wrapidlemaster wrapreconnect wraplockout wrapgame"
+ALL_CASES="pair passcode allow emptyallow lockout identity fakemaster pinnedfake garbage bigframe unbound linkgame multiplayer multiplayernojoin campaign musiccab wipejoin nojoin noshow stranger convert iwadname iwadversion memberhost rehost memberpress silentmember lockinlate lockinthird slowclock idlejoin musicwad gamewad msgfire menusetup idleshared idleall idlehost joinview rehostview demojoin slowjoin8 move8 lossy8 chaos8 names8 teamdm names12 names12memberhost rejoin12 nojoinmaster scores scoreclear scoreclearlive scorebad scorerules scorewads scorewadextra scoreattract scorebusy scoreslarge scorerestore scorerestorepath gamesync gamesyncoff gamesyncmissing gamesyncbusy gamesyncpack gamesynccopy gamesynccopypack gamesynccopybad gamesyncunload gamesyncattract gamesyncunloadkeep wadsync wadsyncbusy wadsyncoff wadsyncpick wrapidle wrapidlemaster wrapreconnect wraplockout wrapgame"
 
 # Which check each case proves, for --selfcheck.  "-" = nothing to switch off.
 selfcheck_of() {
@@ -465,6 +465,44 @@ case_linkgame() {
     expect "the joiner is in the level as client, two players" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
     expect "the host opens sealed packets" "$d/master" "^LINKNET host sealed=[1-9][0-9]* opened=[1-9]"
     expect "the joiner opens sealed packets" "$d/member" "^LINKNET client sealed=[1-9][0-9]* opened=[1-9]"
+}
+
+# New Game -> Multiplayer -> Start Game invites like Deathmatch and Campaign.
+# It used to invite nobody: the join screen only knew those routes' categories.
+case_multiplayer() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 50 0 -linktest -linkautohost multiplayer -udpport $((p+100))
+    sleep 2
+    run "$d/member" 46 0 -linktest -linkautojoin -clientport $((p+101))
+    wait
+    expect "the host invited the other cabinet" "$d/master" "^LINKLOG .*invited other cabinets to MULTIPLAYER"
+    expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to MULTIPLAYER"
+    expect "the host started a linked game" "$d/master" "^LINKLOG .*starting a linked game with 1 player"
+    expect "the host is in the level as server, two players" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=2 "
+    expect "the joiner is in the level as client, two players" "$d/member" "^LINKGAME gamestate=1 netgame=1 server=0 players=2 "
+    expect_not "the joiner never leaves the linked game while in the level" "$d/member" "^LINKGAME gamestate=1 netgame=1 .* none$"
+}
+
+# The same, with nobody joining: the host plays alone, one player -- not the
+# two player split the Multiplayer page used to force, and not stuck waiting.
+case_multiplayernojoin() {
+    local d=$1 p=$2
+    mkcab "$d/master"; mkcab "$d/member"
+    cfg "$d/master" "role master" "name HOSTCAB" "port $p" "$PASS" "allow 127.0.0.1"
+    cfg "$d/member" "role member" "name JOINCAB" "master 127.0.0.1" "port $p" "$PASS"
+    gamecfg "$d/master" 20; gamecfg "$d/member" 20
+    run "$d/master" 48 0 -linktest -linkautohost multiplayer -udpport $((p+100))
+    sleep 2
+    run "$d/member" 46 0 -linktest -clientport $((p+101))
+    wait
+    expect "the other cabinet was invited" "$d/member" "^LINKLOG .*HOSTCAB invited this cabinet to MULTIPLAYER"
+    expect_not "the host did not start a linked game" "$d/master" "starting a linked game"
+    expect "the host plays alone" "$d/master" "^LINKGAME gamestate=1 netgame=1 server=1 players=1 "
+    expect_not "the host never has a phantom second player" "$d/master" "^LINKGAME gamestate=1 .* players=2 "
 }
 
 case_campaign() {

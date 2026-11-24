@@ -150,7 +150,8 @@ static uint16_t  get16( const byte * p )  { return p[0] | (p[1] << 8); }
 static const char *  lkg_cat_word( byte cat )
 {
     return ( cat == LKG_CAT_DEATHMATCH ) ? "DEATHMATCH"
-         : ( cat == LKG_CAT_TEAMDM ) ? "TEAM DEATHMATCH" : "CAMPAIGN";
+         : ( cat == LKG_CAT_TEAMDM ) ? "TEAM DEATHMATCH"
+         : ( cat == LKG_CAT_MULTIPLAYER ) ? "MULTIPLAYER" : "CAMPAIGN";
 }
 
 byte  LKG_Category( void )
@@ -605,7 +606,8 @@ static void  lkg_on_invite( const lk_event_t * ev )
 
     if( ev->len != LKG_INVITE_LEN || ( me && ! memcmp( ev->source, me, LK_FP_BYTES ) ) )  return;
     cat = p[8];
-    if( cat != LKG_CAT_DEATHMATCH && cat != LKG_CAT_CAMPAIGN && cat != LKG_CAT_TEAMDM )  return;
+    if( cat != LKG_CAT_DEATHMATCH && cat != LKG_CAT_CAMPAIGN && cat != LKG_CAT_TEAMDM
+        && cat != LKG_CAT_MULTIPLAYER )  return;
     memcpy( game, p + 21, LK_GAME_LEN );
     game[LK_GAME_LEN-1] = 0;
     if( strcmp( game, LK_Game_Id() ) )  return;   // cannot play that here
@@ -823,7 +825,9 @@ void  LKG_Ticker( void )
             {
                 const char * c = M_GetNextParm();
                 lkg_test_host_cat = ! strcasecmp( c, "campaign" ) ? LKG_CAT_CAMPAIGN
-                                  : ! strcasecmp( c, "teamdm" ) ? LKG_CAT_TEAMDM : LKG_CAT_DEATHMATCH;
+                                  : ! strcasecmp( c, "teamdm" ) ? LKG_CAT_TEAMDM
+                                  : ! strcasecmp( c, "multiplayer" ) ? LKG_CAT_MULTIPLAYER
+                                  : LKG_CAT_DEATHMATCH;
             }
             lkg_test_join = M_CheckParm( "-linkautojoin" ) ? 1 : M_CheckParm( "-linkautopress" ) ? 2 : 0;
             if( M_CheckParm( "-linkhostafter" ) && M_IsNextParm() )

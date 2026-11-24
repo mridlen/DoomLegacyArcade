@@ -930,7 +930,9 @@ member refuses anything else claiming to be that master.
 
 #### Linked games
 
-Starting a **Deathmatch**, **Team Deathmatch** or **Campaign** on one cabinet invites the others.
+Starting a **Deathmatch**, **Team Deathmatch**, **Campaign** or **Multiplayer** game on one cabinet
+invites the others. A Multiplayer game is played exactly as the host's Multiplayer page is set (map,
+skill, co-op or deathmatch variant, monsters).
 
 - A cabinet on its attract screen or in its menus, running the **same game** (IWAD and level pack),
   shows a join screen such as `DEATHMATCH ON LAPTOP, 1 IN THERE`. Cabinets mid-game or entering

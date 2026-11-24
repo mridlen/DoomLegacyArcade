@@ -20,7 +20,12 @@ enum
     LKG_CAT_CAMPAIGN,
     // [Arcade] Appended, so a cabinet built before it ignores the invite
     // (lkg_on_invite) rather than opening the wrong game.
-    LKG_CAT_TEAMDM
+    LKG_CAT_TEAMDM,
+    // [Arcade] New Game -> Multiplayer -> Start Game: whatever the Multiplayer
+    // page is set to (coop or a deathmatch variant, any map and skill).  The
+    // joining cabinet takes all of that from the host's server, so the
+    // category only labels the invite.  Appended for the same reason as above.
+    LKG_CAT_MULTIPLAYER
 };
 
 // The category of the game this cabinet is hosting or was invited to.

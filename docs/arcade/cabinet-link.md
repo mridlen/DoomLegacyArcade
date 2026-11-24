@@ -2291,6 +2291,26 @@ themselves are `CV_NETVAR`s and arrive from the host with the rest. `-linkautoho
 one; `tools/linktest.sh teamdm` plays four a side and checks every player's colour and both rules on
 both cabinets.
 
+## Multiplayer over the link
+
+New Game → Multiplayer → Start Game invited nobody: `M_Join_Open` picked the category from the start
+function, and `M_StartServer_Go` was not one of the three it knew. It is now a fourth category,
+**`LKG_CAT_MULTIPLAYER`**, appended for the same reason as Team Deathmatch. Only the *local* use of
+that function invites (`M_StartServer_Is_Local`: `StartSplitScreenGame` set, not the Dedicated row);
+Networked Multiplayer's Create Server goes through the same function and must not.
+
+- **The category is only a label.** The joining cabinet takes the game -- coop or deathmatch
+  variant, map, skill, monsters -- from the host's server like any other client, so nothing on its
+  side had to learn what the Multiplayer page holds. The invite's map and skill fields are filled
+  from the page's own `cv_nextmap`/`cv_nextepmap` and `cv_skill`, not `newgame_map`.
+- **`M_StartServer_Go` had to count the remote players**, as `M_Arcade_MP_Go` already did:
+  `cv_wait_players` is joined + `LKG_Remote_Players()`, with a 15 second `cv_wait_timeout` when
+  anyone is remote, both restored behind the `map` command. Without it the host would start before
+  the other cabinet connected. The split still counts only this screen's players.
+- `-linkautohost multiplayer` hosts one through the real menu entry points;
+  `tools/linktest.sh multiplayer` (one joins) and `multiplayernojoin` (nobody joins: the host
+  must play alone, one player, no phantom second view). Both go red with the category removed.
+
 ## Tracing an unexplained PAUSE
 
 A linked game that shows **PAUSE** with nobody having pressed it is almost always the server's
