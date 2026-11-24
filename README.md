@@ -574,7 +574,8 @@ out as the game will be, and each square is headed with that panel's player name
 3. The last row is **LOCK IN**, so pressing fire four times keeps your current settings.
 
 The game starts **when everyone who joined has locked in**, or when the countdown ends. Panels that
-never pressed in are not waited for.
+never pressed in are not waited for. Only the players who joined play: one person pressing in on
+Deathmatch or Multiplayer gets a one player game, never an empty second view.
 
 **This decides whether a Campaign is co-op.** One player is a normal scored solo run; two or more
 is co-op, which is not scored.
