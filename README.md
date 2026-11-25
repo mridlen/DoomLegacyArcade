@@ -946,6 +946,8 @@ skill, co-op or deathmatch variant, monsters).
   solo run.
 - If two cabinets start the same kind of game at once, one becomes a join of the other.
 - Up to eight players: four per cabinet.
+- **Bots** work in linked games. They used to get the joining cabinet kicked with "Consistency
+  failure" after a few seconds on any map with barrels.
 - **The host's timeouts apply to everyone**: idle timeout, idle warning and join countdown. A host
   with **Join Screen Timeout** Off never invites.
 - **The idle timeout counts everyone.** The game continues while anyone on any cabinet is playing.

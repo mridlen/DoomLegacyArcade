@@ -2311,6 +2311,33 @@ Networked Multiplayer's Create Server goes through the same function and must no
   `tools/linktest.sh multiplayer` (one joins) and `multiplayernojoin` (nobody joins: the host
   must play alone, one player, no phantom second view). Both go red with the category removed.
 
+## Bots over the link
+
+Bots in a linked game got the **joining** cabinet kicked with `Consistency failure` within seconds,
+while the host played on. The engine does not send bot moves: every node runs the bot AI itself
+(`G_Ticker` → `B_BuildTiccmd`), so bot code must give the same answer on every machine. Two places
+did not:
+
+- **`regulate()` (`b_look.c`), which rations how often a bot fires at a barrel**, mixed in the bot
+  mobj's *memory address* and the program's `gametic`. Each cabinet got a different phase, a bot
+  shot a barrel on one and not the other, and the explosion was the desync. Now the player number
+  (x97 tics, still staggering the bots) and `leveltime`.
+- **`B_SpawnBot`'s random skill modes** (`randmed`, `randgame`) used `E_Random`, each machine's own
+  generator, at every spawn and respawn on every node. Now `B_Random`, whose index joins in
+  `random_state_t`. Also guarded against `gameskill` 0, where `% gameskill` divided by zero. The
+  cabinets run `gamemed`, so this was latent.
+
+**Why the tests missed it:** every link case played Doom 2 MAP01, which has no barrel a bot will
+target. `tools/linktest.sh linkbotsstart` (Bots set on the Multiplayer page before Start, via the
+test-only `-linkbots N`, since `cv_bots` is `CV_HIDEN` and has no console access) and `linkbots`
+(`addbot` typed mid-level with `-linkcmdafter`) both play **Ultimate Doom E1M1**. With the old
+`regulate()`, `linkbotsstart` was kicked 3 runs of 3 (tic 350); with the fix it passes 3 of 3.
+
+**Running the bots only on the server** was considered and not done. The client/server protocol
+would then have to carry each bot's ticcmd like a remote player's, and a client drops its own copy
+of the AI -- a protocol change for both cabinets, where the actual fault was two lines of bot code
+reading machine-local state. If another such read turns up, that is the change that ends the class.
+
 ## Tracing an unexplained PAUSE
 
 A linked game that shows **PAUSE** with nobody having pressed it is almost always the server's

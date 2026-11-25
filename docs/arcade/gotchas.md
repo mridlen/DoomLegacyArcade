@@ -6,6 +6,17 @@ See `CLAUDE.md` for the build, headless verification and the cross-cutting rules
 
 ---
 
+- **Bot code runs on every node, so it must not read anything that differs between machines.**
+  `G_Ticker` calls `B_BuildTiccmd` for each bot on every node ("All clients run the bots,
+  identically") -- bot moves are never sent over the network. `regulate()` (`b_look.c`) staggered
+  the bots by the mobj's **memory address** and timed them on `gametic`, and that decides whether a
+  bot shoots a barrel: in a linked game a barrel went off on one cabinet and not the other, and the
+  joiner was kicked with "Consistency failure" about ten seconds into E1M1. `B_SpawnBot` rolled the
+  random skill modes on `E_Random`, each machine's own generator. Use the player number,
+  `leveltime` and `B_Random` (whose index `random_state_t` syncs). It hid because Doom 2's MAP01,
+  which every link test played, has no barrels in reach: test bots on a map that has them.
+  → `cabinet-link.md`
+
 - **A sprite drawn wholly below its origin is a floor decal, and OpenGL buried it.** Floor blood
   is not a floor splat — `FLOORSPLATS` is compiled out (`r_splats.h`). It is the `MT_BLOOD` mobj
   itself: `S_BLOOD3` lasts `cv_bloodtime` (`p_fab.c`), and `legacy.wad` replaces `BLUDA0`/`BLUDB0`
